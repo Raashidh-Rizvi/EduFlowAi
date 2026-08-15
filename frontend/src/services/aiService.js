@@ -1,0 +1,36 @@
+import api from './api';
+
+export const aiService = {
+  async getPendingProposals() {
+    try {
+      const response = await api.get('/aireview/pending-proposals');
+      return response.data;
+    } catch {
+      return [
+        {
+          id: 'wf-78a9c2',
+          studentName: 'Alex Rivera',
+          targetGoal: 'Master Entity Framework Core indexing, transactions, and prepare for Midterm Quiz in 2 weeks.',
+          targetWeeks: 2,
+          hoursPerWeek: 8.0,
+          status: 'PendingInstructorApproval'
+        }
+      ];
+    }
+  },
+
+  async orchestrateStudyPlan(data) {
+    const response = await api.post('/aireview/orchestrate', data);
+    return response.data;
+  },
+
+  async submitDecision(proposalId, decision, comments) {
+    const response = await api.post(`/aireview/proposals/${proposalId}/decision`, { decision, comments });
+    return response.data;
+  },
+
+  async chatWithCoach(message, studentId = '33333333-3333-3333-3333-333333333333', courseId = '44444444-4444-4444-4444-444444444444') {
+    const response = await api.post('/aireview/coach/chat', { student_id: studentId, course_id: courseId, message });
+    return response.data;
+  }
+};

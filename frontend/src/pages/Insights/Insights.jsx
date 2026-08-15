@@ -7,12 +7,12 @@ import {
   Users, 
   Clock, 
   CheckCircle2, 
-  ChevronRight,
-  ShieldAlert,
-  Search
+  ChevronRight, 
+  ShieldAlert, 
+  Search 
 } from 'lucide-react';
 
-export default function Analytics({ onTriggerRemedial }) {
+export default function Insights({ onTriggerRemedial }) {
   const [selectedTopic, setSelectedTopic] = useState('ef-core');
   const [searchFilter, setSearchFilter] = useState('');
 

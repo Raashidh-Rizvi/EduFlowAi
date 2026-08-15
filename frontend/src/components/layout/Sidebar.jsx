@@ -19,7 +19,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
     { id: 'courses', label: 'Curriculum & Maps', icon: BookOpen },
     { id: 'assessments', label: 'Quizzes & Boss Battles', icon: CheckCircle2 },
     { id: 'gamification', label: 'Gamification & XP', icon: Trophy, badge: 'Live', badgeColor: 'warning' },
-    { id: 'analytics', label: 'Cohort Analytics', icon: BarChart3 },
+    { id: 'insights', label: 'Cohort Insights', icon: BarChart3 },
     { id: 'communications', label: 'Communications', icon: Bell }
   ];
 
@@ -102,55 +102,46 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
         })}
       </nav>
 
-      {/* Live System Status Indicator */}
+      {/* Footer / Instructor Profile Pill */}
       <div style={{
-        margin: '16px 0',
-        padding: '12px',
-        borderRadius: 'var(--radius-sm)',
-        backgroundColor: 'rgba(16, 185, 129, 0.06)',
-        border: '1px solid rgba(16, 185, 129, 0.2)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px'
-      }}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-        </div>
-        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>LangGraph Multi-Agent</span>
-          <div>Status: <span style={{ color: 'var(--success)' }}>Operational</span></div>
-        </div>
-      </div>
-
-      {/* User Profile Footer */}
-      <div style={{
-        padding: '12px',
-        borderRadius: 'var(--radius-sm)',
+        marginTop: 'auto',
+        padding: '14px',
+        borderRadius: 'var(--radius-md)',
         backgroundColor: 'rgba(255, 255, 255, 0.03)',
         border: '1px solid var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        gap: '12px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, #4F46E5, #06B6D4)',
+        <div style={{
+          width: '38px',
+          height: '38px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--primary)',
+          color: '#FFFFFF',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontWeight: '700',
+          fontSize: '14px',
+          boxShadow: '0 0 10px rgba(99, 102, 241, 0.4)'
+        }}>
+          DJ
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+            Dr. Jenkins
+          </h4>
+          <span style={{
+            fontSize: '10px',
+            color: 'var(--secondary)',
+            fontWeight: '600',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: '700',
-            fontSize: '13px',
-            color: '#FFFFFF'
+            gap: '4px'
           }}>
-            SJ
-          </div>
-          <div style={{ overflow: 'hidden' }}>
-            <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Dr. Sarah Jenkins</p>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Lead Instructor</p>
-          </div>
+            <ShieldCheck size={12} /> Course Lead
+          </span>
         </div>
       </div>
     </aside>

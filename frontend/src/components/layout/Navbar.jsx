@@ -8,7 +8,7 @@ export default function Navbar({ activeTab, unreadNotifications = 3 }) {
     'courses': { title: 'Curriculum & Learning Journey Map 🗺️', subtitle: 'Design modular courses, video lessons, and interactive RPG-style world map nodes' },
     'assessments': { title: 'Assessment Engine & Boss Battles ⚔️', subtitle: 'Author dynamic quizzes, timed Boss Battles, rubric scoring matrices, and coding tests' },
     'gamification': { title: 'Gamification Engine, XP & Leaderboards 🏆', subtitle: 'Manage XP multipliers, streaks, unlockable badges, and squad competitions' },
-    'analytics': { title: 'Cohort Analytics & At-Risk Early Warning 📊', subtitle: 'Inspect learning pace velocity, comprehension heatmaps, and early risk intervention' },
+    'insights': { title: 'Cohort Insights & At-Risk Early Warning 📊', subtitle: 'Inspect learning pace velocity, comprehension heatmaps, and early risk intervention' },
     'communications': { title: 'Communications & Notification Hub 📢', subtitle: 'Broadcast course-wide announcements, AI study nudges, and urgent milestone alerts' }
   };
 
@@ -101,7 +101,7 @@ export default function Navbar({ activeTab, unreadNotifications = 3 }) {
               backgroundColor: 'var(--accent)',
               color: '#FFFFFF',
               fontSize: '9px',
-              fontWeight: '800',
+              fontWeight: 'bold',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'

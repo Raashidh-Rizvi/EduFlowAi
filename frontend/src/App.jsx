@@ -6,7 +6,7 @@ import AiReview from './pages/AiReview/AiReview';
 import Courses from './pages/Courses/Courses';
 import Assessments from './pages/Assessments/Assessments';
 import Gamification from './pages/Gamification/Gamification';
-import Analytics from './pages/Analytics/Analytics';
+import Insights from './pages/Insights/Insights';
 import Communications from './pages/Communications/Communications';
 
 export default function App() {
@@ -60,8 +60,8 @@ export default function App() {
             <Gamification />
           )}
 
-          {activeTab === 'analytics' && (
-            <Analytics onTriggerRemedial={() => setActiveTab('ai-review')} />
+          {activeTab === 'insights' && (
+            <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />
           )}
 
           {activeTab === 'communications' && (
