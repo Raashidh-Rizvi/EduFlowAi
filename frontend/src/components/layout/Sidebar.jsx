@@ -12,27 +12,35 @@ import {
   Flame,
   User,
   ChevronUp,
-  Shield
+  Shield,
+  Settings
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-
-  const navItems = [
-    { id: 'dashboard', label: 'Command Center', icon: Layers },
-    { id: 'ai-review', label: 'AI Study Approvals', icon: Sparkles, badge: pendingCount > 0 ? `${pendingCount} Pending` : null, badgeColor: 'accent' },
-    { id: 'courses', label: 'Curriculum & Maps', icon: BookOpen },
-    { id: 'assessments', label: 'Quizzes & Boss Battles', icon: CheckCircle2 },
-    { id: 'gamification', label: 'Gamification & XP', icon: Trophy, badge: 'Live', badgeColor: 'warning' },
-    { id: 'insights', label: 'Cohort Insights', icon: BarChart3 },
-    { id: 'communications', label: 'Communications', icon: Bell }
-  ];
 
   const user = currentUser || {
     fullName: 'Dr. Sarah Jenkins',
     email: 'instructor@eduflow.ai',
     role: 'Instructor'
   };
+
+  const isAdmin = user.role === 'Admin';
+  const isInstructor = user.role === 'Instructor' || isAdmin;
+
+  // Role-filtered navigation items
+  const navItems = [
+    { id: 'dashboard', label: 'Command Center', icon: Layers, minRole: 'Instructor' },
+    ...(isAdmin ? [{ id: 'admin', label: 'System Admin & Users', icon: Shield, badge: 'Root', badgeColor: 'accent', minRole: 'Admin' }] : []),
+    { id: 'ai-review', label: 'AI Study Approvals', icon: Sparkles, badge: pendingCount > 0 ? `${pendingCount} Pending` : null, badgeColor: 'accent', minRole: 'Instructor' },
+    { id: 'courses', label: 'Curriculum & Maps', icon: BookOpen, minRole: 'All' },
+    { id: 'assessments', label: 'Quizzes & Boss Battles', icon: CheckCircle2, minRole: 'All' },
+    { id: 'gamification', label: 'Gamification & XP', icon: Trophy, badge: 'Live', badgeColor: 'warning', minRole: 'All' },
+    ...(isInstructor ? [
+      { id: 'insights', label: 'Cohort Insights', icon: BarChart3, minRole: 'Instructor' },
+      { id: 'communications', label: 'Communications', icon: Bell, minRole: 'Instructor' }
+    ] : [])
+  ];
 
   const getInitials = (name) => {
     if (!name) return 'U';
@@ -70,13 +78,15 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
           <h2 style={{ fontSize: '19px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
             EduFlow <span style={{ color: 'var(--secondary)', fontSize: '15px' }}>AI</span>
           </h2>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '500' }}>Gamified LMS Console</p>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '500' }}>
+            {isAdmin ? 'System Admin Console' : isInstructor ? 'Instructor Console' : 'Student Portal'}
+          </p>
         </div>
       </div>
 
       {/* Navigation Links */}
       <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-subtle)', fontWeight: '700', paddingLeft: '12px', marginBottom: '8px' }}>
-        Navigation
+        {isAdmin ? 'Full Administrator Access' : isInstructor ? 'Instructor Tools' : 'Learning Space'}
       </div>
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
         {navItems.map(tab => {
@@ -121,7 +131,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
         })}
       </nav>
 
-      {/* Profile Modal / Popover */}
+      {/* Profile Popover */}
       {showProfileMenu && (
         <div style={{
           position: 'absolute',
@@ -143,7 +153,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
               width: '36px',
               height: '36px',
               borderRadius: '50%',
-              backgroundColor: 'var(--primary)',
+              backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
@@ -172,7 +182,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
             backgroundColor: 'rgba(255, 255, 255, 0.04)',
             fontSize: '11.5px'
           }}>
-            <span style={{ color: 'var(--text-muted)' }}>Role:</span>
+            <span style={{ color: 'var(--text-muted)' }}>Role Scope:</span>
             <span style={{
               fontWeight: '700',
               color: user.role === 'Admin' ? 'var(--accent)' : user.role === 'Instructor' ? 'var(--secondary)' : 'var(--primary)'
@@ -228,14 +238,14 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
           width: '38px',
           height: '38px',
           borderRadius: '50%',
-          backgroundColor: 'var(--primary)',
+          backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontWeight: '700',
           fontSize: '14px',
-          boxShadow: '0 0 10px rgba(99, 102, 241, 0.4)'
+          boxShadow: isAdmin ? '0 0 12px rgba(244, 63, 94, 0.4)' : '0 0 10px rgba(99, 102, 241, 0.4)'
         }}>
           {getInitials(user.fullName)}
         </div>

@@ -1,9 +1,10 @@
 import React from 'react';
-import { Search, Bell, Sparkles, Activity, ShieldCheck, Flame, LogOut } from 'lucide-react';
+import { Search, Bell, Sparkles, Activity, ShieldCheck, Flame, LogOut, Shield } from 'lucide-react';
 
 export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
   const titles = {
     'dashboard': { title: 'Executive Command Center 🚀', subtitle: 'Real-time overview of curriculum health, active missions, and AI queues' },
+    'admin': { title: 'System Administration & Platform Governance 🛡️', subtitle: 'Global user management, RBAC elevations, system settings, and infrastructure health' },
     'ai-review': { title: 'Human-in-the-Loop AI Review & Approval 🤖', subtitle: 'Review, modify, and authorize agent-generated personalized quests and study plans' },
     'courses': { title: 'Curriculum & Learning Journey Map 🗺️', subtitle: 'Design modular courses, video lessons, and interactive RPG-style world map nodes' },
     'assessments': { title: 'Assessment Engine & Boss Battles ⚔️', subtitle: 'Author dynamic quizzes, timed Boss Battles, rubric scoring matrices, and coding tests' },

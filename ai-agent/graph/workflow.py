@@ -224,28 +224,43 @@ class AdaptiveChallengeOrchestrator:
 
 class AiCoachOrchestrator:
     """
-    Tool-augmented conversational AI Learning Coach.
+    Tool-augmented conversational AI Learning Coach powered by LangChain and OpenAI.
     """
     @staticmethod
     def answer_student_query(request: CoachChatRequest) -> CoachChatResponse:
-        user_msg = request.message.lower()
+        import os
+        from langchain_openai import ChatOpenAI
+        from langchain_core.prompts import ChatPromptTemplate
+        
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key or api_key == "your_openai_api_key_here":
+            # Fallback if API key is not configured
+            return CoachChatResponse(
+                reply="I'm the EduFlow AI Coach, but my OpenAI API key is missing. Please configure OPENAI_API_KEY in the .env file so I can assist you!",
+                suggested_action="Configure API Key",
+                confidence_score=0.0
+            )
 
-        if "stuck" in user_msg or "index" in user_msg or "help" in user_msg:
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7, api_key=api_key)
+        structured_llm = llm.with_structured_output(CoachChatResponse)
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "You are the EduFlow AI Learning Coach. You are an expert tutor in software engineering and database design. Answer the student's question concisely, helpfully, and encourage them. Suggest a relevant action they can take. Always output exactly in the requested schema format."),
+            ("user", "Course ID: {course_id}\nStudent ID: {student_id}\nStudent Message: {message}")
+        ])
+
+        chain = prompt | structured_llm
+        
+        try:
+            result = chain.invoke({
+                "course_id": request.course_id,
+                "student_id": request.student_id,
+                "message": request.message
+            })
+            return result
+        except Exception as e:
             return CoachChatResponse(
-                reply="I notice you're working through PostgreSQL composite indexes! Remember: the order of columns in a composite index must match the query's WHERE clause filters from most selective to least selective.",
-                suggested_action="Try a 5-minute adaptive practice quest to earn +80 XP and reinforce this concept!",
-                recommended_challenge_id=str(uuid.uuid4()),
-                confidence_score=0.96
-            )
-        elif "streak" in user_msg or "level" in user_msg:
-            return CoachChatResponse(
-                reply="You're currently on a 5-day streak 🔥! You are only 250 XP away from reaching Level 3 (Logic Adept). Complete today's daily mission to level up!",
-                suggested_action="Open Today's Mission from the Home tab.",
-                confidence_score=0.98
-            )
-        else:
-            return CoachChatResponse(
-                reply="I'm your EduFlow AI Learning Coach 🤖. I track your learning velocity and quiz mistakes to recommend the most engaging and rewarding next activity for you. How can I help with your coursework today?",
-                suggested_action="Review Clean Architecture or start a Practice Quiz.",
-                confidence_score=0.92
+                reply=f"Sorry, I encountered an error while thinking: {str(e)}",
+                suggested_action="Check server logs",
+                confidence_score=0.0
             )
