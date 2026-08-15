@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Sparkles, 
   BookOpen, 
@@ -9,10 +9,15 @@ import {
   ShieldCheck, 
   LogOut,
   Layers,
-  Flame
+  Flame,
+  User,
+  ChevronUp,
+  Shield
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
+export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout }) {
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: Layers },
     { id: 'ai-review', label: 'AI Study Approvals', icon: Sparkles, badge: pendingCount > 0 ? `${pendingCount} Pending` : null, badgeColor: 'accent' },
@@ -23,6 +28,18 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
     { id: 'communications', label: 'Communications', icon: Bell }
   ];
 
+  const user = currentUser || {
+    fullName: 'Dr. Sarah Jenkins',
+    email: 'instructor@eduflow.ai',
+    role: 'Instructor'
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.split(' ');
+    return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <aside style={{
       width: '270px',
@@ -32,7 +49,8 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
       flexDirection: 'column',
       padding: '24px 16px',
       flexShrink: 0,
-      userSelect: 'none'
+      userSelect: 'none',
+      position: 'relative'
     }}>
       {/* Brand Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px', paddingLeft: '8px' }}>
@@ -80,7 +98,8 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
                 border: isActive ? '1px solid var(--border-accent)' : '1px solid transparent',
                 textAlign: 'left',
                 transition: 'all 0.2s ease',
-                position: 'relative'
+                position: 'relative',
+                cursor: 'pointer'
               }}
             >
               <Icon size={18} color={isActive ? 'var(--primary)' : 'var(--text-muted)'} />
@@ -102,17 +121,109 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
         })}
       </nav>
 
-      {/* Footer / Instructor Profile Pill */}
-      <div style={{
-        marginTop: 'auto',
-        padding: '14px',
-        borderRadius: 'var(--radius-md)',
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-        border: '1px solid var(--border-subtle)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px'
-      }}>
+      {/* Profile Modal / Popover */}
+      {showProfileMenu && (
+        <div style={{
+          position: 'absolute',
+          bottom: '84px',
+          left: '16px',
+          right: '16px',
+          backgroundColor: 'var(--bg-card)',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid var(--border-accent)',
+          padding: '16px',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)',
+          zIndex: 100,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--primary)',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: '700',
+              fontSize: '13px'
+            }}>
+              {getInitials(user.fullName)}
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.fullName}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.email}
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            fontSize: '11.5px'
+          }}>
+            <span style={{ color: 'var(--text-muted)' }}>Role:</span>
+            <span style={{
+              fontWeight: '700',
+              color: user.role === 'Admin' ? 'var(--accent)' : user.role === 'Instructor' ? 'var(--secondary)' : 'var(--primary)'
+            }}>
+              {user.role}
+            </span>
+          </div>
+
+          <button
+            onClick={() => {
+              setShowProfileMenu(false);
+              if (onLogout) onLogout();
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              width: '100%',
+              padding: '9px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'rgba(244, 63, 94, 0.15)',
+              border: '1px solid rgba(244, 63, 94, 0.35)',
+              color: 'var(--accent)',
+              fontSize: '12.5px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <LogOut size={15} /> Sign Out / Logout
+          </button>
+        </div>
+      )}
+
+      {/* Footer Profile Pill */}
+      <div 
+        onClick={() => setShowProfileMenu(!showProfileMenu)}
+        style={{
+          marginTop: 'auto',
+          padding: '12px 14px',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: showProfileMenu ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+          border: showProfileMenu ? '1px solid var(--border-accent)' : '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease'
+        }}
+      >
         <div style={{
           width: '38px',
           height: '38px',
@@ -126,23 +237,24 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1 }) {
           fontSize: '14px',
           boxShadow: '0 0 10px rgba(99, 102, 241, 0.4)'
         }}>
-          DJ
+          {getInitials(user.fullName)}
         </div>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-            Dr. Jenkins
+            {user.fullName}
           </h4>
           <span style={{
-            fontSize: '10px',
-            color: 'var(--secondary)',
+            fontSize: '10.5px',
+            color: user.role === 'Admin' ? 'var(--accent)' : 'var(--secondary)',
             fontWeight: '600',
             display: 'flex',
             alignItems: 'center',
             gap: '4px'
           }}>
-            <ShieldCheck size={12} /> Course Lead
+            <ShieldCheck size={12} /> {user.role}
           </span>
         </div>
+        <ChevronUp size={16} color="var(--text-muted)" style={{ transform: showProfileMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
       </div>
     </aside>
   );

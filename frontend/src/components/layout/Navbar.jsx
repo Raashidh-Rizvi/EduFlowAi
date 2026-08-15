@@ -1,7 +1,7 @@
 import React from 'react';
-import { Search, Bell, Sparkles, Activity, ShieldCheck, Flame } from 'lucide-react';
+import { Search, Bell, Sparkles, Activity, ShieldCheck, Flame, LogOut } from 'lucide-react';
 
-export default function Navbar({ activeTab, unreadNotifications = 3 }) {
+export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
   const titles = {
     'dashboard': { title: 'Executive Command Center 🚀', subtitle: 'Real-time overview of curriculum health, active missions, and AI queues' },
     'ai-review': { title: 'Human-in-the-Loop AI Review & Approval 🤖', subtitle: 'Review, modify, and authorize agent-generated personalized quests and study plans' },
@@ -110,6 +110,31 @@ export default function Navbar({ activeTab, unreadNotifications = 3 }) {
             </span>
           )}
         </div>
+
+        {/* Quick Logout Button */}
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title="Sign Out / Logout"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '7px 12px',
+              borderRadius: 'var(--radius-full)',
+              backgroundColor: 'rgba(244, 63, 94, 0.12)',
+              border: '1px solid rgba(244, 63, 94, 0.3)',
+              color: 'var(--accent)',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
+        )}
       </div>
     </header>
   );

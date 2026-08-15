@@ -36,6 +36,7 @@ public class User : BaseEntity
     public ICollection<TeamMember> TeamMemberships { get; set; } = new List<TeamMember>();
     public ICollection<StudyPlan> StudyPlans { get; set; } = new List<StudyPlan>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public ICollection<LessonCompletion> LessonCompletions { get; set; } = new List<LessonCompletion>();
 }
 
 public class RefreshToken : BaseEntity

@@ -64,7 +64,9 @@ public enum StudyPlanStatus
 public enum AssessmentType
 {
     Quiz,
-    Assignment
+    Assignment,
+    Exam,
+    BossBattle
 }
 
 public enum QuestionType

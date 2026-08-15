@@ -12,46 +12,44 @@ public class ApplicationDbContext : DbContext
     {
     }
 
-    // 1. Identity
+    // Auth & Identity
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    // 2. Education & Curriculum
+    // Curriculum & Learning
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<LessonCompletion> LessonCompletions => Set<LessonCompletion>();
 
-    // 3. Assessment
+    // Assessments & Quizzes
     public DbSet<Assessment> Assessments => Set<Assessment>();
     public DbSet<Question> Questions => Set<Question>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
 
-    // 4. Gamification
-    public DbSet<XpTransaction> XpTransactions => Set<XpTransaction>();
+    // Gamification Engine
     public DbSet<StudentXp> StudentXp => Set<StudentXp>();
+    public DbSet<XpTransaction> XpTransactions => Set<XpTransaction>();
     public DbSet<Level> Levels => Set<Level>();
     public DbSet<Badge> Badges => Set<Badge>();
     public DbSet<StudentBadge> StudentBadges => Set<StudentBadge>();
     public DbSet<StudentStreak> StudentStreaks => Set<StudentStreak>();
     public DbSet<StreakHistory> StreakHistories => Set<StreakHistory>();
     public DbSet<Challenge> Challenges => Set<Challenge>();
-    public DbSet<DailyChallenge> DailyChallenges => Set<DailyChallenge>();
     public DbSet<StudentChallenge> StudentChallenges => Set<StudentChallenge>();
 
-    // 5. Social & Teams
+    // Social & Teams
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
-    public DbSet<TeamChallenge> TeamChallenges => Set<TeamChallenge>();
 
-    // 6. AI & Governance
+    // Agentic AI Workflows & Review Queue
     public DbSet<StudyPlan> StudyPlans => Set<StudyPlan>();
     public DbSet<StudyPlanItem> StudyPlanItems => Set<StudyPlanItem>();
     public DbSet<AiWorkflowLog> AiWorkflowLogs => Set<AiWorkflowLog>();
 
-    // 7. Notifications
+    // Notifications & Broadcasts
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
 
@@ -59,30 +57,28 @@ public class ApplicationDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // --- Identity ---
+        // --- Identity & Users ---
         modelBuilder.Entity<User>(entity =>
         {
             entity.HasIndex(u => u.Email).IsUnique();
-            entity.Property(u => u.FullName).HasMaxLength(150).IsRequired();
-            entity.Property(u => u.Email).HasMaxLength(150).IsRequired();
             entity.Property(u => u.Role).HasConversion<string>();
         });
 
         modelBuilder.Entity<RefreshToken>(entity =>
         {
+            entity.HasIndex(r => r.Token).IsUnique();
             entity.HasOne(r => r.User)
                   .WithMany(u => u.RefreshTokens)
                   .HasForeignKey(r => r.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // --- Education ---
+        // --- Courses & Curriculum ---
         modelBuilder.Entity<Course>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
-            entity.Property(c => c.Title).HasMaxLength(200).IsRequired();
             entity.HasOne(c => c.Instructor)
-                  .WithMany(u => u.InstructedCourses)
+                  .WithMany()
                   .HasForeignKey(c => c.InstructorId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
@@ -105,19 +101,32 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Enrollment>(entity =>
         {
-            entity.HasIndex(e => new { e.StudentId, e.CourseId }).IsUnique();
+            entity.HasIndex(e => new { e.CourseId, e.StudentId }).IsUnique();
             entity.Property(e => e.Status).HasConversion<string>();
-            entity.HasOne(e => e.Student)
-                  .WithMany(u => u.Enrollments)
-                  .HasForeignKey(e => e.StudentId)
-                  .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(e => e.Course)
                   .WithMany(c => c.Enrollments)
                   .HasForeignKey(e => e.CourseId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Student)
+                  .WithMany(u => u.Enrollments)
+                  .HasForeignKey(e => e.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // --- Assessment ---
+        modelBuilder.Entity<LessonCompletion>(entity =>
+        {
+            entity.HasIndex(lc => new { lc.LessonId, lc.StudentId }).IsUnique();
+            entity.HasOne(lc => lc.Lesson)
+                  .WithMany(l => l.Completions)
+                  .HasForeignKey(lc => lc.LessonId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(lc => lc.Student)
+                  .WithMany(u => u.LessonCompletions)
+                  .HasForeignKey(lc => lc.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // --- Assessments ---
         modelBuilder.Entity<Assessment>(entity =>
         {
             entity.Property(a => a.Type).HasConversion<string>();
@@ -146,6 +155,18 @@ public class ApplicationDbContext : DbContext
                   .WithMany(u => u.Submissions)
                   .HasForeignKey(s => s.StudentId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SubmissionAnswer>(entity =>
+        {
+            entity.HasOne(sa => sa.Submission)
+                  .WithMany(s => s.Answers)
+                  .HasForeignKey(sa => sa.SubmissionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(sa => sa.Question)
+                  .WithMany()
+                  .HasForeignKey(sa => sa.QuestionId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // --- Gamification ---
@@ -262,7 +283,7 @@ public class ApplicationDbContext : DbContext
 
     private static void SeedData(ModelBuilder modelBuilder)
     {
-        // 1. Levels Seed (Levels 1 to 10 with progressive curves)
+        // 1. Levels Seed (Levels 1 to 8 with progressive mathematical curves)
         modelBuilder.Entity<Level>().HasData(
             new Level { Id = 1, Name = "Novice Explorer", MinimumXp = 0, MaximumXp = 499, RewardCoins = 50, BadgeIcon = "🌱" },
             new Level { Id = 2, Name = "Code Apprentice", MinimumXp = 500, MaximumXp = 1499, RewardCoins = 100, BadgeIcon = "⚡" },
@@ -283,13 +304,18 @@ public class ApplicationDbContext : DbContext
             new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75 }
         );
 
-        // 3. Demo Users
+        // 3. Realistic Demo Users with Roles (Admin, Instructor, Students)
         var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var studentId = Guid.Parse("33333333-3333-3333-3333-333333333333");
-        var courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var student1Id = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Alex Rivera
+        var student2Id = Guid.Parse("33333333-3333-3333-3333-333333333334"); // Maya Patel
+        var student3Id = Guid.Parse("33333333-3333-3333-3333-333333333335"); // Chen Wei
+        var student4Id = Guid.Parse("33333333-3333-3333-3333-333333333336"); // Elena Rostova
 
-        // Plain BCrypt hash for "Password123!"
+        var course1Id = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        var course2Id = Guid.Parse("44444444-4444-4444-4444-444444444445");
+
+        // Hash for "Password123!"
         var defaultPasswordHash = "$2a$11$e8.Z/qUj5k.P5jRzY9E4ee46h2Q9D7G5m3D6Q9a5Z8r.X6m8Z4K8S";
 
         modelBuilder.Entity<User>().HasData(
@@ -305,7 +331,7 @@ public class ApplicationDbContext : DbContext
             new User
             {
                 Id = instructorId,
-                FullName = "Prof. Alan Turing",
+                FullName = "Dr. Sarah Jenkins",
                 Email = "instructor@eduflow.ai",
                 PasswordHash = defaultPasswordHash,
                 Role = UserRole.Instructor,
@@ -313,72 +339,112 @@ public class ApplicationDbContext : DbContext
             },
             new User
             {
-                Id = studentId,
+                Id = student1Id,
                 FullName = "Alex Rivera",
                 Email = "student@eduflow.ai",
+                PasswordHash = defaultPasswordHash,
+                Role = UserRole.Student,
+                IsActive = true
+            },
+            new User
+            {
+                Id = student2Id,
+                FullName = "Maya Patel",
+                Email = "maya@eduflow.ai",
+                PasswordHash = defaultPasswordHash,
+                Role = UserRole.Student,
+                IsActive = true
+            },
+            new User
+            {
+                Id = student3Id,
+                FullName = "Chen Wei",
+                Email = "chen@eduflow.ai",
+                PasswordHash = defaultPasswordHash,
+                Role = UserRole.Student,
+                IsActive = true
+            },
+            new User
+            {
+                Id = student4Id,
+                FullName = "Elena Rostova",
+                Email = "elena@eduflow.ai",
                 PasswordHash = defaultPasswordHash,
                 Role = UserRole.Student,
                 IsActive = true
             }
         );
 
+        // Student Gamification Profiles
         modelBuilder.Entity<StudentXp>().HasData(
-            new StudentXp
-            {
-                StudentId = studentId,
-                TotalXp = 1250,
-                CurrentLevel = 2,
-                Coins = 180,
-                UpdatedAt = DateTime.UtcNow
-            }
+            new StudentXp { StudentId = student1Id, TotalXp = 1250, CurrentLevel = 2, Coins = 180, UpdatedAt = DateTime.UtcNow },
+            new StudentXp { StudentId = student2Id, TotalXp = 8420, CurrentLevel = 6, Coins = 650, UpdatedAt = DateTime.UtcNow },
+            new StudentXp { StudentId = student3Id, TotalXp = 4650, CurrentLevel = 4, Coins = 380, UpdatedAt = DateTime.UtcNow },
+            new StudentXp { StudentId = student4Id, TotalXp = 2940, CurrentLevel = 3, Coins = 240, UpdatedAt = DateTime.UtcNow }
         );
 
         modelBuilder.Entity<StudentStreak>().HasData(
-            new StudentStreak
-            {
-                StudentId = studentId,
-                CurrentStreak = 5,
-                LongestStreak = 12,
-                FreezeTokensAvailable = 2,
-                LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                UpdatedAt = DateTime.UtcNow
-            }
+            new StudentStreak { StudentId = student1Id, CurrentStreak = 5, LongestStreak = 12, FreezeTokensAvailable = 2, LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow), UpdatedAt = DateTime.UtcNow },
+            new StudentStreak { StudentId = student2Id, CurrentStreak = 18, LongestStreak = 25, FreezeTokensAvailable = 3, LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow), UpdatedAt = DateTime.UtcNow },
+            new StudentStreak { StudentId = student3Id, CurrentStreak = 9, LongestStreak = 14, FreezeTokensAvailable = 2, LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow), UpdatedAt = DateTime.UtcNow },
+            new StudentStreak { StudentId = student4Id, CurrentStreak = 6, LongestStreak = 10, FreezeTokensAvailable = 2, LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow), UpdatedAt = DateTime.UtcNow }
         );
 
-        // 4. Demo Course & Modules
+        // 4. Curriculum: SE3090 & CS2040 Courses
         modelBuilder.Entity<Course>().HasData(
             new Course
             {
-                Id = courseId,
+                Id = course1Id,
                 Code = "SE3090",
                 Title = "Software Engineering Frameworks & Adaptive Systems",
                 Description = "Master modern enterprise architectures, ASP.NET Core Clean Architecture, Flutter mobile design, and LangGraph multi-agent AI orchestration.",
                 Category = "Software Engineering",
                 IsPublished = true,
                 InstructorId = instructorId
+            },
+            new Course
+            {
+                Id = course2Id,
+                Code = "CS2040",
+                Title = "Data Structures & Algorithmic Complexity",
+                Description = "Master binary search trees, graph shortest path algorithms, dynamic programming, and transactional state validation.",
+                Category = "Computer Science",
+                IsPublished = true,
+                InstructorId = instructorId
             }
         );
 
-        var moduleId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var module1Id = Guid.Parse("55555555-5555-5555-5555-555555555555");
+        var module2Id = Guid.Parse("55555555-5555-5555-5555-555555555556");
+
         modelBuilder.Entity<Module>().HasData(
             new Module
             {
-                Id = moduleId,
-                CourseId = courseId,
+                Id = module1Id,
+                CourseId = course1Id,
                 Title = "Module 1: Clean Architecture & Gamification Mechanics",
                 Description = "Domain modeling, repository patterns, event-driven XP accounting, and game loops.",
                 OrderIndex = 1
+            },
+            new Module
+            {
+                Id = module2Id,
+                CourseId = course1Id,
+                Title = "Module 2: Agentic AI Orchestration & Guardrails",
+                Description = "LangGraph state machine graphs, deterministic schema guards, and human-in-the-loop approvals.",
+                OrderIndex = 2
             }
         );
 
         var lesson1Id = Guid.Parse("66666666-6666-6666-6666-666666666666");
         var lesson2Id = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var lesson3Id = Guid.Parse("77777777-7777-7777-7777-777777777778");
 
         modelBuilder.Entity<Lesson>().HasData(
             new Lesson
             {
                 Id = lesson1Id,
-                ModuleId = moduleId,
+                ModuleId = module1Id,
                 Title = "1.1 Introduction to Clean Architecture in .NET 8",
                 Content = "Clean Architecture decouples core business logic and entities from external frameworks, databases, and UI representations.",
                 VideoUrl = "https://www.youtube.com/watch?v=dK4Yb6-LxAk",
@@ -389,23 +455,34 @@ public class ApplicationDbContext : DbContext
             new Lesson
             {
                 Id = lesson2Id,
-                ModuleId = moduleId,
+                ModuleId = module1Id,
                 Title = "1.2 Deterministic XP Ledgers & Game Mechanics",
                 Content = "Never mutate user XP directly. Record every action as an immutable transaction in `xp_transactions` for auditability.",
                 VideoUrl = "https://www.youtube.com/watch?v=Y4Z4Kj5n6mQ",
                 XpReward = 40,
                 EstimatedMinutes = 25,
                 OrderIndex = 2
+            },
+            new Lesson
+            {
+                Id = lesson3Id,
+                ModuleId = module2Id,
+                Title = "2.1 Multi-Agent StateGraph Workflows with LangGraph",
+                Content = "Orchestrate specialized AI agents in a state machine graph to decompose learning goals and validate safety constraints.",
+                VideoUrl = "https://www.youtube.com/watch?v=v0_N6vYq3kU",
+                XpReward = 50,
+                EstimatedMinutes = 30,
+                OrderIndex = 1
             }
         );
 
-        // 5. Demo Challenge & Quiz
+        // 5. Challenges & Boss Raids
         var challengeId = Guid.Parse("88888888-8888-8888-8888-888888888888");
         modelBuilder.Entity<Challenge>().HasData(
             new Challenge
             {
                 Id = challengeId,
-                CourseId = courseId,
+                CourseId = course1Id,
                 Title = "Daily Mission: Clean Architecture Deep Dive",
                 Description = "Complete 1 lesson and score >= 80% on the Clean Architecture Quiz to claim +100 XP!",
                 Difficulty = DifficultyLevel.Medium,
@@ -419,12 +496,15 @@ public class ApplicationDbContext : DbContext
             }
         );
 
+        // 6. Quizzes & Boss Battles
         var quizId = Guid.Parse("99999999-9999-9999-9999-999999999999");
+        var bossId = Guid.Parse("99999999-9999-9999-9999-999999999998");
+
         modelBuilder.Entity<Assessment>().HasData(
             new Assessment
             {
                 Id = quizId,
-                CourseId = courseId,
+                CourseId = course1Id,
                 Title = "Module 1 Mastery Quiz",
                 Description = "Evaluate your understanding of Clean Architecture and Gamification Engines.",
                 Type = AssessmentType.Quiz,
@@ -432,6 +512,18 @@ public class ApplicationDbContext : DbContext
                 PassingScorePercent = 70,
                 XpReward = 60,
                 CoinReward = 25
+            },
+            new Assessment
+            {
+                Id = bossId,
+                CourseId = course1Id,
+                Title = "👹 PostgreSQL Concurrency Dungeon Boss",
+                Description = "Survive 15 intense scenario challenges covering lock contention, deadlock resolution, and serializable isolation!",
+                Type = AssessmentType.Exam,
+                TimeLimitMinutes = 20,
+                PassingScorePercent = 80,
+                XpReward = 500,
+                CoinReward = 150
             }
         );
 
@@ -459,6 +551,22 @@ public class ApplicationDbContext : DbContext
                 Explanation = "The backend remains authoritative and validates all AI proposals against strict business rules.",
                 Points = 10,
                 OrderIndex = 2
+            }
+        );
+
+        // 7. Seed Pending Study Plan for HITL Review
+        var planId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        modelBuilder.Entity<StudyPlan>().HasData(
+            new StudyPlan
+            {
+                Id = planId,
+                StudentId = student1Id,
+                CourseId = course1Id,
+                TargetGoal = "Master Entity Framework Core indexing, transactions, and prepare for Midterm Quiz in 2 weeks.",
+                TargetWeeks = 2,
+                HoursPerWeek = 8.0,
+                Status = StudyPlanStatus.PendingInstructorApproval,
+                CreatedAt = DateTime.UtcNow
             }
         );
     }
