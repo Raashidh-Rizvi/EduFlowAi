@@ -58,6 +58,68 @@ public class ChallengesController : ControllerBase
         return Ok(challenges);
     }
 
+    [HttpPost]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateChallenge([FromBody] CreateChallengeRequest request)
+    {
+        var challenge = new Challenge
+        {
+            CourseId = request.CourseId,
+            Title = request.Title,
+            Description = request.Description,
+            Difficulty = request.Difficulty,
+            Type = request.Type,
+            XpReward = request.XpReward,
+            CoinReward = request.CoinReward,
+            TimeLimitMinutes = request.TimeLimitMinutes,
+            QuestionsJson = request.QuestionsJson ?? "[]",
+            IsActive = true
+        };
+
+        await _dbContext.Challenges.AddAsync(challenge);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(challenge);
+    }
+
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateChallenge(Guid id, [FromBody] CreateChallengeRequest request)
+    {
+        var challenge = await _dbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
+        if (challenge == null)
+        {
+            return NotFound(new { message = "Challenge not found." });
+        }
+
+        challenge.Title = request.Title;
+        challenge.Description = request.Description;
+        challenge.Difficulty = request.Difficulty;
+        challenge.Type = request.Type;
+        challenge.XpReward = request.XpReward;
+        challenge.CoinReward = request.CoinReward;
+        challenge.TimeLimitMinutes = request.TimeLimitMinutes;
+        challenge.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(challenge);
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteChallenge(Guid id)
+    {
+        var challenge = await _dbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
+        if (challenge == null)
+        {
+            return NotFound(new { message = "Challenge not found." });
+        }
+
+        _dbContext.Challenges.Remove(challenge);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Challenge deleted successfully." });
+    }
+
     [HttpPost("{id}/submit")]
     [Authorize]
     public async Task<IActionResult> SubmitChallenge(Guid id, [FromBody] SubmitChallengeRequest request)
@@ -111,3 +173,15 @@ public class ChallengesController : ControllerBase
         return Ok(result);
     }
 }
+
+public record CreateChallengeRequest(
+    Guid? CourseId,
+    string Title,
+    string Description,
+    DifficultyLevel Difficulty,
+    ChallengeType Type,
+    int XpReward,
+    int CoinReward,
+    int TimeLimitMinutes,
+    string? QuestionsJson
+);

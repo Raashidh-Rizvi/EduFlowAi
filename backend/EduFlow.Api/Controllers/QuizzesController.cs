@@ -51,6 +51,115 @@ public class QuizzesController : ControllerBase
         return Ok(quizzes);
     }
 
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetQuizById(Guid id)
+    {
+        var quiz = await _dbContext.Assessments
+            .Include(a => a.Questions.OrderBy(q => q.OrderIndex))
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        var questionsDto = quiz.Questions.Select(q => new QuizQuestionDto(
+            q.Id,
+            q.Prompt,
+            q.Type,
+            JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>(),
+            q.Points,
+            q.OrderIndex
+        )).ToList();
+
+        var result = new QuizDetailDto(
+            quiz.Id,
+            quiz.CourseId,
+            quiz.Title,
+            quiz.Description,
+            quiz.TimeLimitMinutes,
+            quiz.PassingScorePercent,
+            quiz.XpReward,
+            quiz.CoinReward,
+            questionsDto
+        );
+
+        return Ok(result);
+    }
+
+    [HttpPost]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateQuiz([FromBody] CreateQuizRequest request)
+    {
+        var quiz = new Assessment
+        {
+            CourseId = request.CourseId,
+            Title = request.Title,
+            Description = request.Description,
+            Type = AssessmentType.Quiz,
+            TimeLimitMinutes = request.TimeLimitMinutes,
+            PassingScorePercent = request.PassingScorePercent,
+            XpReward = request.XpReward,
+            CoinReward = request.CoinReward
+        };
+
+        foreach (var q in request.Questions)
+        {
+            quiz.Questions.Add(new Question
+            {
+                Prompt = q.Prompt,
+                Type = q.Type,
+                OptionsJson = JsonSerializer.Serialize(q.Options),
+                CorrectAnswer = q.CorrectAnswer,
+                Explanation = q.Explanation,
+                Points = q.Points,
+                OrderIndex = q.OrderIndex
+            });
+        }
+
+        await _dbContext.Assessments.AddAsync(quiz);
+        await _dbContext.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, quiz);
+    }
+
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateQuiz(Guid id, [FromBody] CreateQuizRequest request)
+    {
+        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        quiz.Title = request.Title;
+        quiz.Description = request.Description;
+        quiz.TimeLimitMinutes = request.TimeLimitMinutes;
+        quiz.PassingScorePercent = request.PassingScorePercent;
+        quiz.XpReward = request.XpReward;
+        quiz.CoinReward = request.CoinReward;
+        quiz.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(quiz);
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteQuiz(Guid id)
+    {
+        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        _dbContext.Assessments.Remove(quiz);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Quiz deleted successfully." });
+    }
+
     [HttpPost("{id}/start")]
     [Authorize]
     public async Task<IActionResult> StartQuizAttempt(Guid id)

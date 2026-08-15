@@ -94,6 +94,117 @@ public class CoursesController : ControllerBase
         return Ok(result);
     }
 
+    [HttpPost]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateCourse([FromBody] CreateCourseRequest request)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var instructorId = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed) 
+            ? parsed 
+            : Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        var course = new Course
+        {
+            Code = request.Code,
+            Title = request.Title,
+            Description = request.Description,
+            Category = request.Category,
+            ThumbnailUrl = request.ThumbnailUrl,
+            InstructorId = instructorId,
+            IsPublished = true
+        };
+
+        await _dbContext.Courses.AddAsync(course);
+        await _dbContext.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, course);
+    }
+
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateCourse(Guid id, [FromBody] CreateCourseRequest request)
+    {
+        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        course.Code = request.Code;
+        course.Title = request.Title;
+        course.Description = request.Description;
+        course.Category = request.Category;
+        course.ThumbnailUrl = request.ThumbnailUrl;
+        course.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(course);
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteCourse(Guid id)
+    {
+        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        _dbContext.Courses.Remove(course);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Course deleted successfully." });
+    }
+
+    [HttpPost("{courseId}/modules")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateModule(Guid courseId, [FromBody] CreateModuleRequest request)
+    {
+        var course = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
+        if (!course)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var module = new Module
+        {
+            CourseId = courseId,
+            Title = request.Title,
+            Description = request.Description,
+            OrderIndex = request.OrderIndex
+        };
+
+        await _dbContext.Modules.AddAsync(module);
+        await _dbContext.SaveChangesAsync();
+        return Ok(module);
+    }
+
+    [HttpPost("modules/{moduleId}/lessons")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateLesson(Guid moduleId, [FromBody] CreateLessonRequest request)
+    {
+        var module = await _dbContext.Modules.AnyAsync(m => m.Id == moduleId);
+        if (!module)
+        {
+            return NotFound(new { message = "Module not found." });
+        }
+
+        var lesson = new Lesson
+        {
+            ModuleId = moduleId,
+            Title = request.Title,
+            Content = request.Content,
+            VideoUrl = request.VideoUrl,
+            XpReward = request.XpReward,
+            EstimatedMinutes = request.EstimatedMinutes,
+            OrderIndex = request.OrderIndex
+        };
+
+        await _dbContext.Lessons.AddAsync(lesson);
+        await _dbContext.SaveChangesAsync();
+        return Ok(lesson);
+    }
+
     [HttpPost("{id}/enroll")]
     [Authorize]
     public async Task<IActionResult> EnrollInCourse(Guid id)
