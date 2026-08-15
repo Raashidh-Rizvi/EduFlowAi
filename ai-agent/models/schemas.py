@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+# --- Study Plan Schemas ---
 class StudyPlanRequest(BaseModel):
     student_id: str = Field(..., description="UUID of the requesting student")
     course_id: str = Field(..., description="UUID of the course")
@@ -24,8 +25,9 @@ class StudyPlanActivity(BaseModel):
     day_number: int
     activity_title: str
     description: str
-    activity_type: str # Lesson | Quiz | Lab | Self-Test
+    activity_type: str # Lesson | Quiz | Lab | Self-Test | Boss
     estimated_minutes: int = 45
+    xp_reward: int = 40
 
 class ValidationCheck(BaseModel):
     passed: bool
@@ -49,3 +51,43 @@ class StudyPlanProposalResponse(BaseModel):
     validation: ValidationCheck
     audit_trail: List[AgentExecutionLog]
     status: str = "PendingInstructorApproval"
+
+# --- Adaptive Challenge Generation Schemas ---
+class AdaptiveChallengeRequest(BaseModel):
+    student_id: str
+    course_id: str
+    student_level: int = 1
+    weak_topic: str = "Clean Architecture"
+    target_difficulty: str = "Medium" # Easy | Medium | Hard | Boss
+
+class ChallengeQuestionItem(BaseModel):
+    question_text: str
+    options: List[str]
+    correct_index: int
+    explanation: str
+    points: int = 10
+
+class AdaptiveChallengeResponse(BaseModel):
+    challenge_id: str
+    workflow_id: str
+    title: str
+    description: str
+    difficulty: str
+    xp_reward: int
+    coin_reward: int
+    time_limit_minutes: int
+    questions: List[ChallengeQuestionItem]
+    validation_passed: bool
+    status: str = "PendingInstructorApproval"
+
+# --- AI Coach Chat Schemas ---
+class CoachChatRequest(BaseModel):
+    student_id: str
+    course_id: str
+    message: str
+
+class CoachChatResponse(BaseModel):
+    reply: str
+    suggested_action: Optional[str] = None
+    recommended_challenge_id: Optional[str] = None
+    confidence_score: float = 0.95

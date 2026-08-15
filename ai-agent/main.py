@@ -1,16 +1,21 @@
-from fastapi import FastAPI, HTTPException, Security, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from models.schemas import StudyPlanRequest, StudyPlanProposalResponse
-from graph.workflow import StudyPlanOrchestrator
+from models.schemas import (
+    StudyPlanRequest, 
+    StudyPlanProposalResponse,
+    AdaptiveChallengeRequest,
+    AdaptiveChallengeResponse,
+    CoachChatRequest,
+    CoachChatResponse
+)
+from graph.workflow import StudyPlanOrchestrator, AdaptiveChallengeOrchestrator, AiCoachOrchestrator
 
 app = FastAPI(
-    title="EduFlow AI – Agentic AI Microservice",
-    version="1.0.0",
-    description="Internal LangGraph-based multi-agent orchestration service called strictly by ASP.NET Core API"
+    title="EduFlow AI – Multi-Agent Orchestration Service 🧠",
+    description="Internal Python LangGraph microservice powering multi-agent study plans, adaptive challenges, and AI coach interactions.",
+    version="1.0.0"
 )
 
-# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,36 +24,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
-
 @app.get("/health")
 def health_check():
     return {
-        "status": "Healthy",
+        "status": "healthy",
         "service": "EduFlow Agentic AI Microservice",
-        "framework": "LangGraph / Python 3.11",
-        "agents": [
-            "Planning Agent",
-            "Learning Analysis Agent",
-            "Recommendation Agent",
-            "Validation Agent"
-        ]
+        "framework": "LangGraph & FastAPI",
+        "active_agents": ["PlanningAgent", "LearningAnalysisAgent", "RecommendationAgent", "ValidationGuardAgent", "AiCoachAgent"]
     }
 
 @app.post("/orchestrate-study-plan", response_model=StudyPlanProposalResponse)
 def orchestrate_study_plan(request: StudyPlanRequest):
-    """
-    Executes the multi-agent pipeline:
-    Planning -> Learning Analysis -> Recommendation -> Deterministic Validation
-    """
     try:
-        response = StudyPlanOrchestrator.run_pipeline(request)
-        return response
-    except Exception as ex:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agentic orchestration error: {str(ex)}"
-        )
+        result = StudyPlanOrchestrator.run_pipeline(request)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate-adaptive-challenge", response_model=AdaptiveChallengeResponse)
+def generate_adaptive_challenge(request: AdaptiveChallengeRequest):
+    try:
+        result = AdaptiveChallengeOrchestrator.generate_challenge(request)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai-coach-chat", response_model=CoachChatResponse)
+def ai_coach_chat(request: CoachChatRequest):
+    try:
+        result = AiCoachOrchestrator.answer_student_query(request)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

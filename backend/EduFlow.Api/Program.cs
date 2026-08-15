@@ -1,5 +1,7 @@
 using System.Text;
+using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -7,16 +9,24 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Database Configuration
+// 1. Database Configuration (PostgreSQL with fallback retry)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? "Host=localhost;Port=5432;Database=eduflow_db;Username=postgres;Password=postgres";
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.EnableRetryOnFailure(3);
+    });
 });
 
-// 2. JWT Authentication & Authorization
+// 2. Register Domain & Infrastructure Services
+builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IGamificationService, GamificationService>();
+
+// 3. JWT Authentication & Authorization
 var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";
 var key = Encoding.UTF8.GetBytes(jwtSecret);
 
@@ -49,34 +59,34 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("InstructorOrAdmin", policy => policy.RequireRole("Instructor", "Admin"));
 });
 
-// 3. CORS Policy for React Web Client
+// 4. CORS Policy for React Web Client & Mobile Dev
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("EduFlowCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000", "http://localhost:8080")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     });
 });
 
-// 4. Controllers & JSON Options
+// 5. Controllers & JSON Options
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
-// 5. Swagger / OpenAPI Documentation
+// 6. Swagger / OpenAPI Documentation
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "EduFlow AI Web API",
+        Title = "EduFlow AI Web API 🎓🎮",
         Version = "v1",
-        Description = "Authoritative REST API Gateway for EduFlow AI Full-Stack Education Platform"
+        Description = "Authoritative REST API Gateway for EduFlow AI Gamified Education Platform"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -104,24 +114,24 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// 6. Health Checks
-builder.Services.AddHealthChecks();
-
 var app = builder.Build();
 
-// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "EduFlow AI API v1"));
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "EduFlow AI API v1");
+    });
 }
 
+app.UseHttpsRedirection();
 app.UseCors("EduFlowCorsPolicy");
-
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapHealthChecks("/health");
 
 app.Run();
+
+public partial class Program { }

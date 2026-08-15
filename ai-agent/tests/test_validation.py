@@ -1,7 +1,8 @@
-from models.schemas import StudyPlanRequest
-from graph.workflow import StudyPlanOrchestrator
+import pytest
+from models.schemas import StudyPlanRequest, AdaptiveChallengeRequest, CoachChatRequest
+from graph.workflow import StudyPlanOrchestrator, AdaptiveChallengeOrchestrator, AiCoachOrchestrator
 
-def test_multi_agent_pipeline_success():
+def test_pipeline_end_to_end():
     request = StudyPlanRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
@@ -26,8 +27,8 @@ def test_validation_agent_enforces_rules():
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
         student_name="Alex Rivera",
-        target_goal="Goal",  # < 5 chars should trigger validation error
-        hours_per_week=1.0,   # Very low hours will fail schedule constraint
+        target_goal="Goal",  # < 5 chars triggers validation error
+        hours_per_week=1.0,   # < 2.0 hrs fails safety constraint
         target_weeks=1
     )
 
@@ -36,3 +37,34 @@ def test_validation_agent_enforces_rules():
     assert result.validation.passed is False
     assert len(result.validation.errors) > 0
     assert result.status == "ValidationFailed"
+
+def test_adaptive_challenge_generation():
+    request = AdaptiveChallengeRequest(
+        student_id="33333333-3333-3333-3333-333333333333",
+        course_id="44444444-4444-4444-4444-444444444444",
+        student_level=2,
+        weak_topic="Entity Framework Core Indexing",
+        target_difficulty="Medium"
+    )
+
+    result = AdaptiveChallengeOrchestrator.generate_challenge(request)
+
+    assert result.workflow_id.startswith("wf-ch-")
+    assert result.difficulty == "Medium"
+    assert result.xp_reward == 120
+    assert len(result.questions) >= 2
+    assert result.validation_passed is True
+    assert result.status == "PendingInstructorApproval"
+
+def test_ai_coach_interactions():
+    request = CoachChatRequest(
+        student_id="33333333-3333-3333-3333-333333333333",
+        course_id="44444444-4444-4444-4444-444444444444",
+        message="I am stuck on database composite indexing."
+    )
+
+    response = AiCoachOrchestrator.answer_student_query(request)
+
+    assert "composite index" in response.reply.lower() or "postgresql" in response.reply.lower()
+    assert response.confidence_score >= 0.90
+    assert response.suggested_action is not None
