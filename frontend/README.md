@@ -5,117 +5,86 @@
 
 ## 1. Subsystem Overview
 
-The EduFlow AI Web Application serves as the primary administration, course authoring, analytics oversight, and **Human-in-the-Loop AI Study Plan Review Portal** for instructors and administrators.
+The EduFlow AI Web Application serves as the comprehensive control center for instructors and administrators to manage curricula, construct quizzes, oversee student progress, launch gamified missions, and review AI-generated challenges via a **Human-in-the-Loop (HITL) Approval Portal**.
 
-### Key Capabilities
-- **Course & Curriculum Builder**: Create, organize, re-order, and publish modules, lessons, video links, and reading materials.
-- **Assessment & Rubric Manager**: Author quizzes, configure auto-grading rules, design custom grading rubrics, and grade student submissions.
-- **Student Progress & At-Risk Analytics**: Visual charts displaying completion velocities, score distributions, and real-time early warnings for at-risk learners.
-- **Agentic AI Study Plan Approval Portal**: Dedicated review interface allowing instructors to inspect AI-generated study recommendations, review agent execution reasoning, modify steps, and execute **Approve / Reject / Revise** actions.
-- **Communication Center**: Send system-wide announcements and targeted batch course notifications.
+### Key Modules & Capabilities
+1. **Course & Curriculum Builder**: Create and organize modular courses, interactive lessons, video streams, and milestone checkpoints.
+2. **Interactive Assessment Author**: Build multi-format quizzes (MCQs, coding challenges, ordering puzzles) with custom scoring rubrics and time bounds.
+3. **Gamification & Challenge Manager**: Create daily and weekly challenges, boss encounters, configure XP rewards, and set difficulty tiers.
+4. **Student Analytics & At-Risk Early Warning**: Visual charts tracking completion velocity, score distributions, and flagging struggling students.
+5. **AI Challenge HITL Review & Approval Portal**: Review AI-generated adaptive challenges, inspect reasoning and schema compliance, edit questions or rewards, and click **Approve / Reject / Revise**.
+6. **Leaderboard & Competition Oversight**: Monitor live cohort rankings and manage student study teams.
 
 ---
 
 ## 2. Directory Structure
 
-```
+```text
 frontend/
 ├── public/
 │   └── favicon.ico
 ├── src/
-│   ├── assets/                # Icons, branding assets, images
+│   ├── assets/                # Icons, gamification badges, illustration assets
 │   ├── components/            # Reusable UI components
-│   │   ├── common/            # Buttons, Modals, Tables, Loaders, Pagination
-│   │   ├── layout/            # Sidebar, Header, ProtectedRoute, AppShell
-│   │   ├── courses/           # CourseCard, ModuleAccordion, LessonForm
-│   │   ├── assessments/       # QuizBuilder, RubricTable, SubmissionViewer
-│   │   └── ai-approval/       # StudyPlanDiffViewer, AgentAuditLogViewer, ApprovalActions
-│   ├── context/ / store/      # State Management (Zustand stores: authStore, courseStore, aiStore)
-│   ├── hooks/                 # Custom hooks (useAuth, usePagination, useToast)
-│   ├── pages/                 # Top-level route views
-│   │   ├── Auth/              # Login, Reset Password
-│   │   ├── Dashboard/         # Overview metrics, charts, urgent alerts
-│   │   ├── Courses/           # Course list, Course editor, Enrollment manager
-│   │   ├── Assessments/       # Assessment list, Gradebook, Submission review
-│   │   ├── Analytics/         # Cohort trends, At-risk student dashboard
-│   │   └── AiApproval/        # Pending AI Study Plan review & approval screen
-│   ├── services/              # Axios API service client with JWT interceptors
-│   │   ├── api.js             # Base Axios instance & token injection
-│   │   ├── authService.js     # Auth API endpoints
-│   │   ├── courseService.js   # Course management endpoints
-│   │   ├── gradingService.js  # Assessment & grading endpoints
-│   │   └── aiService.js       # AI study plan review & audit log endpoints
+│   │   ├── common/            # Buttons, Modal dialogs, DataTables, Badges, Loaders
+│   │   ├── layout/            # Sidebar, AppHeader, ProtectedRoute, DashboardShell
+│   │   ├── courses/           # CourseCard, ModuleTree, LessonEditor
+│   │   ├── assessments/       # QuizBuilder, QuestionForm, RubricMatrix
+│   │   ├── gamification/      # ChallengeForm, BadgeCard, RewardSelector
+│   │   └── ai-review/         # AiProposalDiff, SchemaInspector, ApprovalActions
+│   ├── store/                 # Zustand Stores (authStore, courseStore, aiStore, gamificationStore)
+│   ├── hooks/                 # Custom React hooks (useAuth, useSignalR, usePagination, useToast)
+│   ├── pages/                 # Route views
+│   │   ├── Auth/              # Login, Register, Forgot Password
+│   │   ├── Dashboard/         # Overview metrics, active challenges, urgent AI reviews
+│   │   ├── Courses/           # Course list, Curriculum builder, Enrolled students
+│   │   ├── Quizzes/           # Quiz management, Question banks, Gradebook
+│   │   ├── Challenges/        # Challenge creation, Daily missions, Boss battles
+│   │   ├── Leaderboards/      # Cohort rankings, Squad competitions
+│   │   ├── Analytics/         # Class progress, Velocity graphs, At-risk learners
+│   │   └── AiReview/          # Pending AI-generated challenges awaiting HITL decision
+│   ├── services/              # Axios API clients with JWT interceptors & SignalR listener
+│   │   ├── api.js             # Base Axios instance with refresh token rotation
+│   │   ├── authService.js     # Auth endpoints
+│   │   ├── courseService.js   # Course & Module endpoints
+│   │   ├── quizService.js     # Quiz & Question endpoints
+│   │   ├── challengeService.js# Gamification & Challenge endpoints
+│   │   └── aiReviewService.js # AI Proposal review & decision endpoints
 │   ├── App.jsx                # Router configuration & Role-based routes
 │   ├── main.jsx               # React DOM entry point
-│   └── index.css              # Custom styling & Design token variables
+│   └── index.css              # Custom styling, dark mode tokens & glassmorphism variables
 ├── package.json
-└── README.md                  # This file
+└── README.md
 ```
 
 ---
 
-## 3. State Management & Protected Routing
+## 3. Human-in-the-Loop (HITL) AI Approval Flow
 
-- **State Management**: Implemented using **Zustand** for clean, lightweight, decoupled reactive state stores (`authStore`, `courseStore`, `approvalStore`).
-- **Routing**: **React Router v6** with nested layouts and `ProtectedRoute` guards enforcing role-based access (`Admin`, `Instructor`).
-- **API Interceptors**: Axios request interceptors automatically attach `Authorization: Bearer <JWT>` from local storage and handle `401 Unauthorized` token refresh/logout redirects.
+The React dashboard provides an intuitive interface for instructors to audit and approve AI-generated challenges:
 
----
-
-## 4. Human-in-the-Loop AI Review & Approval Flow
-
-Instructors utilize the `/ai-approvals` view to examine proposals generated by the LangGraph multi-agent pipeline:
-1. **Summary Overview**: Student target goal, current course standing, and identified knowledge gaps.
-2. **Proposed Study Sequence**: Day-by-day or module-by-module sequence generated by the Recommendation Agent.
-3. **Deterministic Validation Report**: Schema verification checkmarks and constraint adherence from the Validation Agent.
-4. **Agent Audit Log**: Step-by-step breakdown of execution time, tool invocations, and agent handoffs.
-5. **Approval Controls**:
-   - 🟢 **Approve**: Immediately publishes the plan to the student's Flutter app and notifies them.
-   - 🟡 **Modify & Approve**: Instructor edits items in the plan before approving.
-   - 🔴 **Reject with Feedback**: Sends comments back, archiving the plan or requesting re-planning.
-
----
-
-## 5. Local Setup & Execution Guide
-
-### 5.1 Prerequisites
-- [Node.js 18+](https://nodejs.org/) and `npm`
-
-### 5.2 Environment Configuration (`.env`)
-Create a `.env` file in the `frontend` root:
-```env
-VITE_API_BASE_URL=https://localhost:7001/api
-VITE_APP_NAME=EduFlow AI Dashboard
+```text
+[AI Generates Challenge] ➔ [Deterministic Validation Pass] ➔ [Appears in Instructor Review Queue]
+                                                                        │
+                                   ┌────────────────────────────────────┼────────────────────────────────────┐
+                                   ▼                                    ▼                                    ▼
+                          [APPROVE]                           [MODIFY & APPROVE]                         [REJECT]
+                   Instantly published to               Instructor tunes questions / XP            Flagged with feedback
+                   target student / course                 before final publication                and sent back to AI
 ```
 
-### 5.3 Install Dependencies & Run Development Server
+---
+
+## 4. Local Setup & Development
+
 ```bash
+# Navigate to frontend
 cd frontend
 
-# Install node dependencies
+# Install npm packages
 npm install
 
-# Start Vite dev server
+# Start Vite development server
 npm run dev
+# Dashboard available at http://localhost:5173
 ```
-The web dashboard will be available at `http://localhost:5173`.
-
-### 5.4 Production Build
-```bash
-npm run build
-# Output bundle generated in dist/ directory ready for deployment
-```
-
----
-
-## 6. Testing & Quality Assurance
-
-```bash
-# Run unit & component tests
-npm run test
-
-# Run ESLint validation
-npm run lint
-```
-- **Component Tests**: Form validations, modal interactions, loading skeletons, and error boundary states.
-- **Routing Tests**: Verifying that unauthenticated users are redirected to login and unauthorized roles are blocked from administrative screens.

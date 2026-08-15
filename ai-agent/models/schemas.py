@@ -5,7 +5,7 @@ class StudyPlanRequest(BaseModel):
     student_id: str = Field(..., description="UUID of the requesting student")
     course_id: str = Field(..., description="UUID of the course")
     student_name: str = "Student"
-    target_goal: str = Field(..., min_length=5, description="Student's stated learning goal")
+    target_goal: str = Field(..., min_length=1, description="Student's stated learning goal")
     hours_per_week: float = Field(default=8.0, ge=1.0, le=40.0)
     target_weeks: int = Field(default=2, ge=1, le=16)
 

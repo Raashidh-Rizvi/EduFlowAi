@@ -5,124 +5,84 @@
 
 ## 1. Subsystem Overview
 
-The EduFlow AI Mobile App provides students with an interactive, on-the-go portal to engage with courses, complete timed quizzes, track academic progress, submit assignment artifacts via camera/file picker, and request **Personalized AI Study Plans**.
+The EduFlow AI Mobile App is the interactive student gateway engineered directly around the **Core Engagement Game Loop**. It turns traditional coursework into an exciting RPG-style learning journey with daily missions, animated XP bars, streak counters, interactive quiz runners, live leaderboards, and a conversational **AI Learning Coach**.
 
-### Key Capabilities
-- **Authentication & Security**: Student registration, login, biometric/pin unlock, and secure JWT storage in Android Keystore / iOS Keychain.
-- **Course & Lesson Player**: Access enrolled courses, browse module hierarchies, read rich lesson content, and view embedded video resources.
-- **Interactive Assessments**: Complete timed multiple-choice quizzes with instant feedback, or upload assignment solutions.
-- **AI Study Plan Workspace**: Request dynamic study plans tailored to specific learning targets and view instructor-approved personalized schedules.
-- **Push Notifications & Reminders**: Local and cloud notifications for daily study reminders, assessment deadlines, and instructor study plan approval alerts.
-- **Device Feature Integration**: Native camera/document picker for assignment evidence upload, local notifications, and date-time pickers.
+### Key Features & Experiences
+1. **Interactive Game Loop Home**:
+   - Live streak flame indicator with freeze tokens.
+   - Level indicator with animated XP progress bar ($X / Y\text{ XP}$).
+   - **Today's Mission Card** (e.g., "Complete Python Loops", "Score $\ge 80\%$ on Quiz", "+120 XP").
+   - Instant "Continue Learning" action.
+2. **Visual Learning Journey Map**: Node-based interactive path showing completed lessons, active missions, and locked boss encounters.
+3. **Interactive Quiz & Challenge Runner**: Timed multiple-choice and code snippet challenges with instant feedback animations and sound effects.
+4. **Social & Competition Leaderboard**: Live Weekly, Course, and Squad rankings powered by WebSockets.
+5. **Student Profile & Showcase**: Customizable avatars, earned badges gallery, streak history, and completion certificates.
+6. **Conversational AI Learning Coach**: Tool-augmented chat assistant providing instant hints, targeted remedial mini-challenges, and explanation of mistakes.
 
 ---
 
 ## 2. Directory Structure
 
-```
+```text
 mobile/
 ├── android/                   # Native Android configuration & Gradle build scripts
 ├── ios/                       # Native iOS configuration
 ├── lib/
-│   ├── core/                  # Core constants, themes, network interceptors, error handling
-│   │   ├── constants/         # API URLs, color schemes, font constants
-│   │   ├── theme/             # Dark/Light theme definitions
-│   │   └── utils/             # Date formatters, validation utilities
-│   ├── data/                  # Data layer: Models, Repositories, API Providers
-│   │   ├── models/            # CourseModel, QuizModel, StudyPlanModel, UserModel
-│   │   ├── providers/         # HttpApiClient using Dio / Http package
-│   │   └── repositories/      # Concrete repository implementations
-│   ├── logic/ / providers/    # State Management (BLoC / Cubit or ChangeNotifier)
-│   │   ├── auth/              # AuthBloc (Login, Logout, Token persistence)
-│   │   ├── course/            # CourseBloc (Catalog, Enrolled, Lesson Details)
-│   │   ├── quiz/              # QuizBloc (Timer, Submission, Scoring)
-│   │   ├── progress/          # ProgressBloc (Completion statistics)
-│   │   └── study_plan/        # StudyPlanBloc (Request AI plan, Track status)
-│   ├── presentation/          # UI Layer: Reusable Widgets & Screens
-│   │   ├── widgets/           # Custom buttons, progress rings, lesson cards, loaders
-│   │   └── screens/           # AuthScreen, HomeScreen, CourseDetailsScreen, QuizScreen, StudyPlanScreen
-│   └── main.dart              # Application entry point & provider bootstrapping
-├── test/                      # Unit, Widget, and Integration tests
-├── pubspec.yaml               # Flutter dependencies & assets
-└── README.md                  # This file
+│   ├── core/                  # Theme tokens, network interceptors, sound fx, utilities
+│   │   ├── constants/         # API endpoints, gamification constants, asset paths
+│   │   ├── theme/             # Vibrant dark/light gamified theme definitions
+│   │   └── utils/             # Sound player, XP calculators, date helpers
+│   ├── data/                  # Data layer: Models, API providers, Local storage
+│   │   ├── models/            # UserModel, ChallengeModel, QuizModel, BadgeModel, LeaderboardModel
+│   │   ├── providers/         # Dio HTTP client with JWT interceptors & SignalR listener
+│   │   └── repositories/      # GamificationRepository, QuizRepository, CourseRepository
+│   ├── logic/                 # State Management (BLoC / Cubit)
+│   │   ├── auth/              # AuthBloc (Login, Register, Token Persistence)
+│   │   ├── gamification/      # GamificationBloc (XP, Level, Badges, Streaks, SignalR Events)
+│   │   ├── challenge/         # ChallengeBloc (Daily Missions, Boss Battles, Attempts)
+│   │   ├── quiz/              # QuizRunnerBloc (Timer, Question state, Submission, Results)
+│   │   ├── leaderboard/       # LeaderboardBloc (Weekly & Course Rankings)
+│   │   └── ai_coach/          # AiCoachBloc (Chat interactions, challenge recommendations)
+│   ├── presentation/          # UI Layer: Widgets & Screens
+│   │   ├── widgets/           # XpProgressBar, StreakFlame, BadgeGrid, MissionCard, ConfettiOverlay
+│   │   └── screens/           # HomeScreen, JourneyScreen, QuizScreen, LeaderboardScreen, ProfileScreen, CoachScreen
+│   └── main.dart              # App bootstrap & Provider / BLoC initialization
+├── test/                      # Unit and Widget tests
+├── pubspec.yaml               # Flutter dependencies
+└── README.md
 ```
 
 ---
 
-## 3. State Management & Secure Storage
+## 3. Real-Time Engagement Loop
 
-- **State Management**: Implemented using **BLoC (Business Logic Component)** / **Provider** for clean unidirectional data flow and robust separation of UI from business logic.
-- **Secure Token Storage**: Utilizes `flutter_secure_storage` to encrypt and securely persist JWT access and refresh tokens.
-- **Network Layer**: Built with `dio` featuring request/response interceptors to automatically inject authorization headers and intercept connection timeouts.
-
----
-
-## 4. End-to-End Mobile Flow for AI Study Plans
-
-```
-1. Student navigates to "AI Study Coach" tab in Flutter app.
-2. Fills out Study Plan Request Form:
-   - Target Goal (e.g., "Prepare for Midterm Exam in 2 weeks")
-   - Available Weekly Study Hours (e.g., 8 hours/week)
-   - Challenging Topics (e.g., "PostgreSQL Indexing & Transactions")
-3. Submits request -> Flutter calls POST /api/study-plans/request.
-4. App enters 'Pending Instructor Review' state with real-time status badge.
-5. Once instructor approves in React Web Dashboard:
-   - Push notification arrives on mobile device.
-   - Flutter app loads approved dynamic study roadmap with daily checklist items.
+```text
+Student completes Quiz ➔ POST /api/quizzes/attempts/{id}/submit
+                                       │
+                                       ▼
+                       Backend records immutable XP
+                                       │
+                                       ▼
+                       SignalR broadcasts "XpEarned" Event
+                                       │
+                                       ▼
+    Flutter UI triggers +50 XP Floating Toast & Confetti Overlay 🎉
+                                       │
+                                       ▼
+             Leaderboard automatically updates rank position
 ```
 
 ---
 
-## 5. Local Setup & Execution Guide
+## 4. Local Setup & Running
 
-### 5.1 Prerequisites
-- [Flutter SDK 3.19+](https://docs.flutter.dev/get-started/install)
-- [Android Studio](https://developer.android.com/studio) with Android SDK & Emulator / Physical Device
-- [VS Code Flutter Extension](https://marketplace.visualstudio.com/items?itemName=Dart-Code.flutter)
-
-### 5.2 Install Dependencies
 ```bash
+# Navigate to mobile directory
 cd mobile
+
+# Fetch Flutter packages
 flutter pub get
-```
 
-### 5.3 Configure API Base URL
-Update `lib/core/constants/api_constants.dart` with your machine's local IP or backend URL:
-```dart
-class ApiConstants {
-  // For Android Emulator targeting localhost:
-  static const String baseUrl = "http://10.0.2.2:5000/api";
-  
-  // For Physical Device over WiFi:
-  // static const String baseUrl = "http://192.168.1.100:5000/api";
-}
-```
-
-### 5.4 Run on Device / Emulator
-```bash
+# Run on connected device or emulator
 flutter run
 ```
-
-### 5.5 Build Release Android APK (For Submission)
-```bash
-# Build standalone release APK
-flutter build apk --release
-
-# The runnable APK will be output at:
-# mobile/build/app/outputs/flutter-apk/app-release.apk
-```
-
----
-
-## 6. Automated Testing
-
-```bash
-# Run unit & widget tests
-flutter test
-
-# Run Flutter static analysis
-flutter analyze
-```
-- **Unit Tests**: Parsing JSON response models, validating request DTO formats.
-- **Widget Tests**: Testing button states, quiz timer countdowns, and form input validations.
