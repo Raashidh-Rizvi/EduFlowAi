@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="EduFlow.Api/EduFlow.Api.csproj" />
+  <Project Path="EduFlow.Core/EduFlow.Core.csproj" />
+  <Project Path="EduFlow.Infrastructure/EduFlow.Infrastructure.csproj" />
+  <Project Path="EduFlow.Tests/EduFlow.Tests.csproj" />
+</Solution>
