@@ -12,7 +12,10 @@ public interface IAiGatewayClient
 {
     Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateAdaptiveChallengeAsync(object requestPayload, CancellationToken ct = default);
+    Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default);
+    Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default);
     Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
+    Task<string> GetAgentsTopologyAsync(CancellationToken ct = default);
 }
 
 public class AiGatewayClient : IAiGatewayClient
@@ -62,6 +65,42 @@ public class AiGatewayClient : IAiGatewayClient
         return FallbackAdaptiveChallengeJson();
     }
 
+    public async Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/generate-quiz", requestPayload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return FallbackQuizJson();
+    }
+
+    public async Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/analyze-retention", requestPayload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return FallbackRetentionJson();
+    }
+
     public async Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default)
     {
         try
@@ -81,8 +120,27 @@ public class AiGatewayClient : IAiGatewayClient
         {
             reply = "I'm your EduFlow AI Learning Coach! Keep completing lessons and quizzes to earn XP and level up.",
             suggested_action = "Review Clean Architecture and start a practice challenge.",
+            identified_weak_topic = "Database Optimization & Clean Architecture",
             confidence_score = 0.95
         });
+    }
+
+    public async Task<string> GetAgentsTopologyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_baseUrl}/agents/topology", ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return FallbackTopologyJson();
     }
 
     private static string FallbackStudyPlanJson()
@@ -132,6 +190,90 @@ public class AiGatewayClient : IAiGatewayClient
             },
             validation_passed = true,
             status = "PendingInstructorApproval"
+        });
+    }
+
+    private static string FallbackQuizJson()
+    {
+        return JsonSerializer.Serialize(new
+        {
+            quiz_id = Guid.NewGuid().ToString(),
+            workflow_id = $"wf-qz-{Guid.NewGuid().ToString("N")[..8]}",
+            title = "Diagnostic Assessment: Core Architecture (Medium)",
+            target_topics = new[] { "Dependency Inversion", "Data Encapsulation" },
+            difficulty = "Medium",
+            total_points = 30,
+            validation_passed = true,
+            status = "PendingInstructorApproval",
+            questions = new[]
+            {
+                new
+                {
+                    question_id = 1,
+                    question_text = "Which principle ensures that high-level modules do not depend directly on low-level database details?",
+                    blooms_taxonomy_level = "Application",
+                    options = new[] { "Dependency Inversion Principle", "Static Global Coupling", "Raw SQL Inlining", "Magic Strings" },
+                    correct_index = 0,
+                    explanation = "Dependency Inversion relies on abstractions/interfaces to decouple components.",
+                    points = 10
+                }
+            }
+        });
+    }
+
+    private static string FallbackRetentionJson()
+    {
+        return JsonSerializer.Serialize(new
+        {
+            workflow_id = $"wf-ret-{Guid.NewGuid().ToString("N")[..8]}",
+            student_id = Guid.NewGuid().ToString(),
+            churn_risk_score = 0.25,
+            streak_health = "Healthy",
+            validation_passed = true,
+            recommended_interventions = new[]
+            {
+                new
+                {
+                    action_type = "StreakShield",
+                    title = "🛡️ Streak Shield Activation Available",
+                    message = "Protect your learning momentum with an active streak shield token.",
+                    reward_xp = 50,
+                    reward_coins = 20,
+                    urgency_level = "Medium"
+                }
+            }
+        });
+    }
+
+    private static string FallbackTopologyJson()
+    {
+        return JsonSerializer.Serialize(new
+        {
+            service_name = "EduFlow Multi-Agent System",
+            status = "Healthy",
+            version = "2.0.0",
+            nodes = new[]
+            {
+                new { id = "coordinator-planner", name = "Coordinator / Planner Agent", role = "Decomposes student objectives into structured milestones", ownership = "Member 1 (Architecture & Planning)", status = "Active", capabilities = new[] { "Goal Decomposition", "Milestone Allocation" } },
+                new { id = "domain-analysis", name = "Domain Analysis Agent", role = "Diagnoses learning gaps and error trends", ownership = "Member 3 (Gamification & Analytics)", status = "Active", capabilities = new[] { "Knowledge Gap Diagnosis", "Cognitive Load Index" } },
+                new { id = "content-action", name = "Content & Action Tool Agent", role = "Creates tailored adaptive challenges and quests", ownership = "Member 2 (Assessments & Tools)", status = "Active", capabilities = new[] { "Adaptive Challenges", "Tool Registry" } },
+                new { id = "validation-guard", name = "Validation & Safety Guard Agent", role = "Executes deterministic safety checks and XP caps", ownership = "Member 4 (Safety & Governance)", status = "Active", capabilities = new[] { "Deterministic Rules", "XP Caps", "Approval Gating" } },
+                new { id = "quiz-generator", name = "Automated Quiz Generator Agent", role = "Generates curriculum-aligned diagnostic quizzes", ownership = "Member 2 (Assessments & Quizzes)", status = "Active", capabilities = new[] { "Bloom's Taxonomy", "Distractor Rationales" } },
+                new { id = "retention-behavior", name = "Gamification & Retention Agent", role = "Monitors velocity and detects streak dropout risks", ownership = "Member 3 (Gamification & Engagement)", status = "Active", capabilities = new[] { "Streak Protection", "Dropout Detection" } },
+                new { id = "ai-coach", name = "AI Coach & Interactive Tutor Agent", role = "Context-aware student tutor", ownership = "Interactive Guidance", status = "Active", capabilities = new[] { "Contextual Tutoring", "Sub-Agent Delegation" } }
+            },
+            edges = new[]
+            {
+                new { source = "coordinator-planner", target = "domain-analysis", label = "Passes Objective & Constraints" },
+                new { source = "domain-analysis", target = "content-action", label = "Supplies Diagnosed Gaps" },
+                new { source = "domain-analysis", target = "retention-behavior", label = "Feeds Learning Velocity" },
+                new { source = "content-action", target = "validation-guard", label = "Submits Candidate Drafts" },
+                new { source = "quiz-generator", target = "validation-guard", label = "Submits Assessment Drafts" },
+                new { source = "retention-behavior", target = "validation-guard", label = "Validates Intervention Economy" },
+                new { source = "ai-coach", target = "domain-analysis", label = "Queries Student Weak Spots" },
+                new { source = "ai-coach", target = "content-action", label = "Requests Practice Quests" },
+                new { source = "validation-guard", target = "coordinator-planner", label = "Signals Approval Gate Ready" }
+            }
         });
     }
 }

@@ -599,21 +599,54 @@ function CoachTab() {
     'What is Clean Architecture domain isolation?'
   ];
 
-  const sendMessage = (text) => {
-    if (!text.trim()) return;
+  const [isLoading, setIsLoading] = useState(false);
+
+  const sendMessage = async (text) => {
+    if (!text.trim() || isLoading) return;
     setMessages(m => [...m, { sender: 'user', text }]);
     setInput('');
+    setIsLoading(true);
+
+    try {
+      const res = await aiService.chatWithCoach(text);
+      if (res && res.reply) {
+        setMessages(m => [
+          ...m, 
+          { 
+            sender: 'ai', 
+            text: res.reply,
+            action: res.suggested_action,
+            topic: res.identified_weak_topic
+          }
+        ]);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend coach chat fallback', err);
+    }
 
     let reply = 'Let me break down that concept for you:';
     const t = text.toLowerCase();
-    if (t.includes('index')) reply = 'In PostgreSQL, a composite index (col1, col2) evaluates left-to-right. Queries must filter by col1 to leverage the index structure. Always place higher cardinality columns first.';
-    else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) reply = 'In EF Core, DbContext.SaveChangesAsync() operates inside an explicit transaction scope. If any constraint validation fails, all operations roll back deterministically to maintain atomicity.';
-    else if (t.includes('clean') || t.includes('architecture')) reply = 'Clean Architecture separates core enterprise domain entities from frameworks and databases. All dependencies point strictly inward toward domain models.';
-    else reply = 'Review the curriculum module PDFs and test your understanding with the integrated assessments.';
+    let action = null;
+    if (t.includes('index')) {
+      reply = 'In PostgreSQL, a composite index (col1, col2) evaluates left-to-right. Queries must filter by col1 to leverage the index structure. Always place higher cardinality columns first.';
+      action = 'Review PostgreSQL Composite Index Slicing';
+    } else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) {
+      reply = 'In EF Core, DbContext.SaveChangesAsync() operates inside an explicit transaction scope. If any constraint validation fails, all operations roll back deterministically to maintain atomicity.';
+      action = 'Practice Transaction Isolation Lab';
+    } else if (t.includes('clean') || t.includes('architecture')) {
+      reply = 'Clean Architecture separates core enterprise domain entities from frameworks and databases. All dependencies point strictly inward toward domain models.';
+      action = 'Explore Dependency Inversion Rules';
+    } else {
+      reply = 'Review the curriculum module PDFs and test your understanding with the integrated assessments.';
+      action = 'Take Diagnostic Module Quiz';
+    }
 
     setTimeout(() => {
-      setMessages(m => [...m, { sender: 'ai', text: reply }]);
-    }, 500);
+      setMessages(m => [...m, { sender: 'ai', text: reply, action }]);
+      setIsLoading(false);
+    }, 400);
   };
 
   return (
@@ -632,7 +665,25 @@ function CoachTab() {
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
               color: msg.sender === 'user' ? '#FFFFFF' : 'var(--text-main)', fontSize: '12.5px', lineHeight: '1.5'
             }}>
-              {msg.text}
+              <div>{msg.text}</div>
+              {msg.action && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--primary-soft)',
+                  border: '1px solid var(--primary-border)',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <Sparkles size={12} />
+                  <span>Suggested Action: {msg.action}</span>
+                </div>
+              )}
             </div>
           </div>
         ))}

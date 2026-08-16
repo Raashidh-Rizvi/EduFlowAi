@@ -1,8 +1,21 @@
 import pytest
-from models.schemas import StudyPlanRequest, AdaptiveChallengeRequest, CoachChatRequest
-from graph.workflow import StudyPlanOrchestrator, AdaptiveChallengeOrchestrator, AiCoachOrchestrator
+from models.schemas import (
+    StudyPlanRequest, 
+    AdaptiveChallengeRequest, 
+    DiagnosticQuizRequest,
+    RetentionAnalysisRequest,
+    CoachChatRequest
+)
+from graph.workflow import (
+    StudyPlanOrchestrator, 
+    AdaptiveChallengeOrchestrator, 
+    QuizGeneratorOrchestrator,
+    RetentionOrchestrator,
+    AiCoachOrchestrator,
+    AgentTopologyRegistry
+)
 
-def test_pipeline_end_to_end():
+def test_study_plan_pipeline_end_to_end():
     request = StudyPlanRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
@@ -22,7 +35,9 @@ def test_pipeline_end_to_end():
     assert len(result.audit_trail) == 4
     assert all(log.passed for log in result.audit_trail)
 
+
 def test_validation_agent_enforces_rules():
+    # Test violation of min goal length and min hours
     request = StudyPlanRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
@@ -35,8 +50,9 @@ def test_validation_agent_enforces_rules():
     result = StudyPlanOrchestrator.run_pipeline(request)
 
     assert result.validation.passed is False
-    assert len(result.validation.errors) > 0
+    assert len(result.validation.errors) >= 2
     assert result.status == "ValidationFailed"
+
 
 def test_adaptive_challenge_generation():
     request = AdaptiveChallengeRequest(
@@ -55,28 +71,74 @@ def test_adaptive_challenge_generation():
     assert len(result.questions) >= 2
     assert result.validation_passed is True
     assert result.status == "PendingInstructorApproval"
+    assert len(result.audit_trail) == 2
 
-def test_ai_coach_interactions(monkeypatch):
+
+def test_quiz_generator_agent():
+    request = DiagnosticQuizRequest(
+        course_id="44444444-4444-4444-4444-444444444444",
+        module_title="PostgreSQL Indexing & Optimization",
+        target_topics=["B-Tree Indexes", "Execution Plans"],
+        difficulty="Medium",
+        question_count=2
+    )
+
+    result = QuizGeneratorOrchestrator.generate_quiz(request)
+
+    assert result.workflow_id.startswith("wf-qz-")
+    assert len(result.questions) == 2
+    assert result.total_points == 20
+    assert result.validation_passed is True
+    assert result.status == "PendingInstructorApproval"
+    assert result.questions[0].blooms_taxonomy_level in ["Knowledge", "Comprehension", "Application", "Analysis"]
+
+
+def test_retention_agent_risk_interventions():
+    # Test at-risk student with 2 days of inactivity and streak
+    request = RetentionAnalysisRequest(
+        student_id="33333333-3333-3333-3333-333333333333",
+        current_streak=6,
+        days_inactive=2,
+        recent_quiz_accuracy=55.0,
+        xp_velocity_7d=30
+    )
+
+    result = RetentionOrchestrator.analyze_retention(request)
+
+    assert result.workflow_id.startswith("wf-ret-")
+    assert result.streak_health == "AtRisk"
+    assert result.churn_risk_score > 0.4
+    assert len(result.recommended_interventions) >= 2
+    assert any(i.action_type == "StreakShield" for i in result.recommended_interventions)
+
+
+def test_ai_coach_agent_sub_agent_interconnection():
     request = CoachChatRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
-        message="I am stuck on database composite indexing."
+        message="Can you explain how composite B-Tree indexes work in PostgreSQL?"
     )
-
-    # Mock the OS environment to ensure API key check fails, so it uses fallback logic
-    # Or mock the whole class to return a deterministic output to ensure tests pass in CI.
-    from models.schemas import CoachChatResponse
-    def mock_answer(req):
-        return CoachChatResponse(
-            reply="Mocked LLM reply regarding composite indexes.",
-            suggested_action="Mocked action",
-            confidence_score=0.95
-        )
-    
-    monkeypatch.setattr(AiCoachOrchestrator, "answer_student_query", mock_answer)
 
     response = AiCoachOrchestrator.answer_student_query(request)
 
-    assert "composite index" in response.reply.lower() or "postgresql" in response.reply.lower() or "mocked" in response.reply.lower()
     assert response.confidence_score >= 0.90
+    assert "index" in response.reply.lower() or "b-tree" in response.reply.lower() or "postgresql" in response.reply.lower()
     assert response.suggested_action is not None
+    assert response.identified_weak_topic is not None
+
+
+def test_agent_topology_registry():
+    topology = AgentTopologyRegistry.get_topology()
+
+    assert topology.status == "Healthy"
+    assert len(topology.nodes) == 7
+    assert len(topology.edges) >= 8
+
+    node_names = [n.name for n in topology.nodes]
+    assert "Coordinator / Planner Agent" in node_names
+    assert "Domain Analysis Agent" in node_names
+    assert "Content & Action Tool Agent" in node_names
+    assert "Validation & Safety Guard Agent" in node_names
+    assert "Automated Quiz Generator Agent" in node_names
+    assert "Gamification & Retention Agent" in node_names
+    assert "AI Coach & Interactive Tutor Agent" in node_names

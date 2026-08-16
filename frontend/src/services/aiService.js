@@ -34,6 +34,21 @@ export const aiService = {
     return response.data;
   },
 
+  async generateQuiz(data) {
+    const response = await api.post('/aireview/generate-quiz', data);
+    return response.data;
+  },
+
+  async getRetentionInsights(data) {
+    const response = await api.post('/aireview/retention-insights', data);
+    return response.data;
+  },
+
+  async getAgentsTopology() {
+    const response = await api.get('/aireview/agents-topology');
+    return response.data;
+  },
+
   async submitDecision(proposalId, decision, comments) {
     const response = await api.post(`/aireview/proposals/${proposalId}/decision`, { decision, comments });
     return response.data;

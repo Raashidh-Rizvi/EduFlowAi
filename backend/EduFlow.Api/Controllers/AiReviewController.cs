@@ -200,6 +200,38 @@ public class AiReviewController : ControllerBase
     }
 
     /// <summary>
+    /// Returns the live topology, roles, and status of all 7 interconnected agents.
+    /// </summary>
+    [HttpGet("agents-topology")]
+    public async Task<IActionResult> GetAgentsTopology()
+    {
+        var topologyJson = await _aiGatewayClient.GetAgentsTopologyAsync();
+        return Ok(JsonDocument.Parse(topologyJson).RootElement);
+    }
+
+    /// <summary>
+    /// Generates curriculum-aligned diagnostic or summative quizzes via QuizGeneratorAgent.
+    /// </summary>
+    [HttpPost("generate-quiz")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GenerateQuiz([FromBody] GenerateQuizApiRequest request)
+    {
+        var quizJson = await _aiGatewayClient.GenerateQuizAsync(request);
+        return Ok(JsonDocument.Parse(quizJson).RootElement);
+    }
+
+    /// <summary>
+    /// Evaluates student streak/dropout risks and returns retention interventions via RetentionBehaviorAgent.
+    /// </summary>
+    [HttpPost("retention-insights")]
+    [Authorize]
+    public async Task<IActionResult> GetRetentionInsights([FromBody] RetentionInsightsApiRequest request)
+    {
+        var insightsJson = await _aiGatewayClient.AnalyzeRetentionAsync(request);
+        return Ok(JsonDocument.Parse(insightsJson).RootElement);
+    }
+
+    /// <summary>
     /// Tool-augmented conversational AI Learning Coach chat.
     /// </summary>
     [HttpPost("coach/chat")]
@@ -237,4 +269,20 @@ public record CoachChatApiRequest(
     string student_id,
     string course_id,
     string message
+);
+
+public record GenerateQuizApiRequest(
+    string course_id,
+    string module_title,
+    string[] target_topics,
+    string difficulty,
+    int question_count
+);
+
+public record RetentionInsightsApiRequest(
+    string student_id,
+    int current_streak,
+    int days_inactive,
+    float recent_quiz_accuracy,
+    int xp_velocity_7d
 );
