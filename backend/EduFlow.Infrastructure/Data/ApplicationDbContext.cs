@@ -12,6 +12,12 @@ public class ApplicationDbContext : DbContext
     {
     }
 
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    }
+
     // Auth & Identity
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
@@ -365,12 +371,15 @@ public class ApplicationDbContext : DbContext
         );
 
         // Student Gamification Baseline Profile
+        var staticSeedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var staticSeedDateOnly = new DateOnly(2026, 1, 1);
+
         modelBuilder.Entity<StudentXp>().HasData(
-            new StudentXp { StudentId = student1Id, TotalXp = 0, CurrentLevel = 1, Coins = 0, UpdatedAt = DateTime.UtcNow }
+            new StudentXp { StudentId = student1Id, TotalXp = 0, CurrentLevel = 1, Coins = 0, UpdatedAt = staticSeedDate }
         );
 
         modelBuilder.Entity<StudentStreak>().HasData(
-            new StudentStreak { StudentId = student1Id, CurrentStreak = 0, LongestStreak = 0, FreezeTokensAvailable = 1, LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow), UpdatedAt = DateTime.UtcNow }
+            new StudentStreak { StudentId = student1Id, CurrentStreak = 0, LongestStreak = 0, FreezeTokensAvailable = 1, LastActivityDate = staticSeedDateOnly, UpdatedAt = staticSeedDate }
         );
     }
 }

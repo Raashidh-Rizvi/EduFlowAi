@@ -1344,6 +1344,8 @@ export default function Courses({ currentUser }) {
             </div>
           </div>
         </div>
+      )}
+
       {/* ── TOAST NOTIFICATION ─────────────────────────────────────────── */}
       {quizToast && (
         <div style={{
