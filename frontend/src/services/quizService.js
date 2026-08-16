@@ -6,19 +6,7 @@ export const quizService = {
       const response = await api.get(`/quizzes/course/${courseId}`);
       return response.data;
     } catch {
-      return [
-        {
-          id: '99999999-9999-9999-9999-999999999999',
-          courseId: courseId || '44444444-4444-4444-4444-444444444444',
-          title: 'Diagnostic Quiz: PostgreSQL Indexing & Query Execution Plans',
-          description: 'Evaluate your understanding of Clean Architecture and Gamification Engines.',
-          timeLimitMinutes: 20,
-          passingScorePercent: 70,
-          xpReward: 60,
-          coinReward: 25,
-          questionsCount: 3
-        }
-      ];
+      return [];
     }
   },
 

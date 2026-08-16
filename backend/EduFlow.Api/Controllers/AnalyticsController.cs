@@ -221,20 +221,84 @@ public class AnalyticsController : ControllerBase
     }
 
     /// <summary>
-    /// Returns topic mastery and comprehension heatmap for SE3090 curriculum modules.
+    /// Returns topic mastery and comprehension heatmap computed dynamically from curriculum assessments and submissions.
     /// </summary>
     [HttpGet("topic-mastery")]
-    public IActionResult GetTopicMasteryHeatmap()
+    public async Task<IActionResult> GetTopicMasteryHeatmap()
     {
-        var topics = new[]
-        {
-            new { id = "ef-core", name = "EF Core Transactions & Concurrency", mastery = 58, atRiskCount = 42, status = "Needs Intervention" },
-            new { id = "postgres-idx", name = "PostgreSQL Composite Indexes & VACUUM", mastery = 74, atRiskCount = 18, status = "Moderate" },
-            new { id = "clean-arch", name = "Clean Architecture Domain Isolation", mastery = 86, atRiskCount = 8, status = "Strong" },
-            new { id = "langgraph", name = "LangGraph Deterministic Agent Guards", mastery = 69, atRiskCount = 26, status = "Moderate" }
-        };
+        var courses = await _dbContext.Courses
+            .Include(c => c.Modules)
+            .Include(c => c.Assessments)
+                .ThenInclude(a => a.Submissions)
+            .Where(c => c.IsPublished)
+            .ToListAsync();
 
-        return Ok(topics);
+        var topicList = new List<object>();
+
+        foreach (var course in courses)
+        {
+            if (course.Assessments.Any())
+            {
+                foreach (var assessment in course.Assessments)
+                {
+                    var submissions = assessment.Submissions.ToList();
+                    var total = submissions.Count;
+                    var avgScore = total > 0 ? (int)Math.Round(submissions.Average(s => s.PercentageScore)) : 0;
+                    var atRisk = submissions.Count(s => !s.Passed || s.PercentageScore < 60);
+
+                    string status;
+                    string badgeType;
+
+                    if (total == 0)
+                    {
+                        status = "Pending Data";
+                        badgeType = "badge-neutral";
+                    }
+                    else if (avgScore < 65)
+                    {
+                        status = "Needs Intervention";
+                        badgeType = "badge-danger";
+                    }
+                    else if (avgScore < 80)
+                    {
+                        status = "Moderate";
+                        badgeType = "badge-warning";
+                    }
+                    else
+                    {
+                        status = "Strong";
+                        badgeType = "badge-success";
+                    }
+
+                    topicList.Add(new
+                    {
+                        id = assessment.Id.ToString(),
+                        name = string.IsNullOrWhiteSpace(course.Code) ? assessment.Title : $"{course.Code}: {assessment.Title}",
+                        mastery = avgScore,
+                        atRiskCount = atRisk,
+                        status,
+                        badgeType
+                    });
+                }
+            }
+            else
+            {
+                foreach (var module in course.Modules)
+                {
+                    topicList.Add(new
+                    {
+                        id = module.Id.ToString(),
+                        name = string.IsNullOrWhiteSpace(course.Code) ? module.Title : $"{course.Code}: {module.Title}",
+                        mastery = 0,
+                        atRiskCount = 0,
+                        status = "Pending Data",
+                        badgeType = "badge-neutral"
+                    });
+                }
+            }
+        }
+
+        return Ok(topicList);
     }
 
     /// <summary>

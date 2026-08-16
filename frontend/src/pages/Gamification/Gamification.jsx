@@ -14,37 +14,28 @@ import {
 } from 'lucide-react';
 
 export default function Gamification() {
-  const [leaderboardTab, setLeaderboardTab] = useState('cohort'); // 'cohort' | 'squads' | 'streaks'
+  const [leaderboardTab, setLeaderboardTab] = useState('cohort'); // 'cohort' | 'squads'
   const [xpMultiplier, setXpMultiplier] = useState(1.0);
 
   const cohortLeaderboard = [
-    { rank: '🥇 1', name: 'Maya Patel', id: 'IT22301920', level: 'Level 6 Master', xp: 8420, streak: 18, badges: 14, avatar: 'MP' },
-    { rank: '🥈 2', name: 'Alex Rivera', id: 'IT22104500', level: 'Level 4 Scholar', xp: 4890, streak: 12, badges: 9, avatar: 'AR' },
-    { rank: '🥉 3', name: 'Chen Wei', id: 'IT22894102', level: 'Level 4 Scholar', xp: 4650, streak: 9, badges: 8, avatar: 'CW' },
-    { rank: '4', name: 'Elena Rostova', id: 'IT22987011', level: 'Level 3 Learner', xp: 2940, streak: 6, badges: 5, avatar: 'ER' },
-    { rank: '5', name: 'Tariq Mansoor', id: 'IT22765431', level: 'Level 3 Learner', xp: 2810, streak: 5, badges: 6, avatar: 'TM' }
+    { rank: '01', name: 'Alex Rivera', id: 'IT22104500', level: 'Level 1 Novice', xp: 0, streak: 0, badges: 0, avatar: 'AR' }
   ];
 
-  const squads = [
-    { rank: '1', name: '🛡️ Alpha Architects', members: 5, combinedXp: '24,850 XP', activeQuest: 'PostgreSQL Index Raid', completion: 88 },
-    { rank: '2', name: '⚡ Byte Brawlers', members: 4, combinedXp: '19,200 XP', activeQuest: 'Clean Architecture Dungeon', completion: 65 },
-    { rank: '3', name: '🤖 Agentic Slayers', members: 5, combinedXp: '16,740 XP', activeQuest: 'LangGraph Cyclic Quest', completion: 42 }
-  ];
+  const squads = [];
 
   const badges = [
-    { name: 'Boss Slayer', desc: 'Defeat a topic Boss Encounter with ≥ 80% score', tier: 'Legendary', icon: '👹', count: 118 },
-    { name: 'Quiz Master', desc: 'Score 100% on 5 consecutive quizzes', tier: 'Gold', icon: '🏅', count: 64 },
-    { name: '7-Day Learner', desc: 'Maintain an unbroken 7-day study streak', tier: 'Silver', icon: '🔥', count: 289 },
-    { name: 'First Step', desc: 'Complete your first interactive lesson module', tier: 'Bronze', icon: '🌱', count: 342 }
+    { name: 'Boss Slayer', desc: 'Complete milestone evaluation test with ≥ 80% score', tier: 'Legendary', icon: '🎯', count: 0, badgeClass: 'badge-pill badge-primary' },
+    { name: 'Quiz Master', desc: 'Score 100% on 5 consecutive technical evaluations', tier: 'Gold', icon: '🏅', count: 0, badgeClass: 'badge-gold' },
+    { name: '7-Day Learner', desc: 'Maintain an unbroken 7-day active study streak', tier: 'Silver', icon: '🔥', count: 0, badgeClass: 'badge-silver' },
+    { name: 'First Step', desc: 'Complete your first interactive lesson module', tier: 'Bronze', icon: '🌱', count: 0, badgeClass: 'badge-bronze' }
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner with XP Multiplier & Global Stats */}
-      <div className="glass-panel" style={{
+      <div className="card-premium" style={{
         padding: '22px 28px',
-        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(99, 102, 241, 0.1))',
-        border: '1px solid rgba(245, 158, 11, 0.3)',
+        backgroundColor: 'var(--bg-surface)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -53,122 +44,131 @@ export default function Gamification() {
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <span style={{
-              fontSize: '11px',
-              padding: '3px 10px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: 'rgba(245, 158, 11, 0.25)',
-              color: 'var(--warning)',
-              fontWeight: '700'
-            }}>
-              LIVE XP ECONOMY
+            <span className="badge-pill badge-warning">
+              REWARD ENGINE ACTIVE
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>SE3090 Gamification Engine</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>SE3090 Deterministic Ledger</span>
           </div>
-          <h2 style={{ fontSize: '20px', fontWeight: '800' }}>Experience Points, Levels & Squad Trophies</h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Reward genuine learning progress across daily missions, quizzes, streaks, and collaborative team raids.
+          <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+            Gamification & Experience Progression
+          </h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            Reward genuine learning progress across daily missions, quizzes, streaks, and collaborative team squads.
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '8px 14px',
+            padding: '7px 12px',
             borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'rgba(0, 0, 0, 0.3)',
-            border: '1px solid var(--border-subtle)'
+            backgroundColor: 'var(--bg-input)',
+            border: '1px solid var(--border-card)'
           }}>
-            <Zap size={16} color="var(--warning)" />
+            <Zap size={15} color="var(--warning)" />
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Global Event Multiplier:</span>
             <button
               onClick={() => setXpMultiplier(prev => prev === 1.0 ? 2.0 : 1.0)}
               style={{
-                fontSize: '12px',
-                fontWeight: '800',
+                fontSize: '11.5px',
+                fontWeight: '700',
                 padding: '3px 8px',
-                borderRadius: 'var(--radius-full)',
-                backgroundColor: xpMultiplier > 1 ? 'var(--warning)' : 'rgba(255, 255, 255, 0.1)',
-                color: xpMultiplier > 1 ? '#000000' : 'var(--text-main)'
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: xpMultiplier > 1 ? 'var(--warning)' : 'var(--bg-surface)',
+                color: xpMultiplier > 1 ? '#000000' : 'var(--text-main)',
+                border: '1px solid var(--border-subtle)',
+                cursor: 'pointer'
               }}
             >
-              {xpMultiplier}x {xpMultiplier > 1 ? '🔥 DOUBLE XP ACTIVE' : 'Normal'}
+              {xpMultiplier}x {xpMultiplier > 1 ? 'DOUBLE XP' : 'Standard'}
             </button>
           </div>
         </div>
       </div>
 
       {/* Main Grid: Leaderboard + Badges */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.65fr 1fr', gap: '20px' }}>
         {/* Left Column: Multi-Tier Leaderboards */}
-        <section className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <section className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={20} color="var(--warning)" />
-              <h3 style={{ fontSize: '17px', fontWeight: '800' }}>Real-Time Leaderboard Rankings</h3>
+              <Trophy size={18} color="var(--warning)" />
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Leaderboard Standings</h3>
             </div>
 
             <div style={{
               display: 'flex',
-              backgroundColor: 'rgba(0, 0, 0, 0.25)',
+              backgroundColor: 'var(--bg-canvas)',
               borderRadius: 'var(--radius-sm)',
               padding: '3px',
-              border: '1px solid var(--border-subtle)'
+              border: '1px solid var(--border-subtle)',
+              gap: '4px'
             }}>
               <button
                 onClick={() => setLeaderboardTab('cohort')}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: leaderboardTab === 'cohort' ? 'var(--primary)' : 'transparent',
-                  color: '#FFFFFF',
+                  padding: '5px 12px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: leaderboardTab === 'cohort' ? 'var(--bg-card)' : 'transparent',
+                  color: leaderboardTab === 'cohort' ? 'var(--text-main)' : 'var(--text-muted)',
                   fontSize: '12px',
-                  fontWeight: '700'
+                  fontWeight: '600',
+                  border: leaderboardTab === 'cohort' ? '1px solid var(--border-card)' : '1px solid transparent'
                 }}
               >
-                Individual Cohort
+                Individual Learners
               </button>
               <button
                 onClick={() => setLeaderboardTab('squads')}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: leaderboardTab === 'squads' ? 'var(--primary)' : 'transparent',
-                  color: '#FFFFFF',
+                  padding: '5px 12px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: leaderboardTab === 'squads' ? 'var(--bg-card)' : 'transparent',
+                  color: leaderboardTab === 'squads' ? 'var(--text-main)' : 'var(--text-muted)',
                   fontSize: '12px',
-                  fontWeight: '700'
+                  fontWeight: '600',
+                  border: leaderboardTab === 'squads' ? '1px solid var(--border-card)' : '1px solid transparent'
                 }}
               >
-                Squads & Teams 👥
+                Squads & Teams
               </button>
             </div>
           </div>
 
           {/* Individual Cohort Rankings */}
           {leaderboardTab === 'cohort' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {cohortLeaderboard.map((user, idx) => (
                 <div key={idx} style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '12px 16px',
+                  padding: '10px 14px',
                   borderRadius: 'var(--radius-sm)',
-                  backgroundColor: idx < 3 ? 'rgba(99, 102, 241, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                  border: idx < 3 ? '1px solid var(--border-accent)' : '1px solid var(--border-subtle)'
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <span style={{ fontSize: '16px', fontWeight: '800', width: '30px' }}>{user.rank}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{
+                      fontSize: '11.5px',
+                      fontWeight: '700',
+                      fontFamily: 'var(--font-mono)',
+                      color: idx === 0 ? 'var(--warning)' : 'var(--text-muted)',
+                      width: '20px'
+                    }}>
+                      {user.rank}
+                    </span>
                     <div style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      backgroundColor: idx === 0 ? '#F59E0B' : 'var(--primary)',
-                      color: '#FFFFFF',
-                      fontSize: '12px',
-                      fontWeight: '800',
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: 'var(--radius-xs)',
+                      backgroundColor: 'var(--bg-card)',
+                      border: '1px solid var(--border-subtle)',
+                      color: idx === 0 ? 'var(--warning)' : 'var(--text-main)',
+                      fontSize: '11px',
+                      fontWeight: '700',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center'
@@ -176,21 +176,21 @@ export default function Gamification() {
                       {user.avatar}
                     </div>
                     <div>
-                      <p style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{user.name}</p>
+                      <p style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>{user.name}</p>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{user.level} • {user.id}</span>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <span style={{ fontSize: '12px', color: '#F97316', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Flame size={14} /> {user.streak}d Streak
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Flame size={13} color="var(--warning)" /> {user.streak}d Streak
                     </span>
-                    <span style={{ fontSize: '12px', color: 'var(--warning)', fontWeight: '700' }}>
-                      🏅 {user.badges} Badges
+                    <span className="badge-pill badge-neutral" style={{ fontSize: '11px' }}>
+                      {user.badges} Badges
                     </span>
                     <span style={{
                       fontSize: '13px',
-                      fontWeight: '800',
+                      fontWeight: '700',
                       color: 'var(--secondary)',
                       minWidth: '75px',
                       textAlign: 'right'
@@ -205,70 +205,76 @@ export default function Gamification() {
 
           {/* Squad Teams */}
           {leaderboardTab === 'squads' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            squads.length === 0 ? (
+              <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No student squads formed yet. Squad challenges will appear here when student squads are created.
+              </div>
+            ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {squads.map((sq, i) => (
                 <div key={i} style={{
-                  padding: '16px',
+                  padding: '14px',
                   borderRadius: 'var(--radius-sm)',
-                  backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                  backgroundColor: 'var(--bg-surface)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '10px'
+                  gap: '8px'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <span style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)' }}>{sq.name}</span>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: '8px' }}>({sq.members} Members)</span>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>{sq.name}</span>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginLeft: '8px' }}>({sq.members} Members)</span>
                     </div>
-                    <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--secondary)' }}>{sq.combinedXp}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--secondary)' }}>{sq.combinedXp}</span>
                   </div>
 
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      <span>Active Raid: {sq.activeQuest}</span>
+                      <span>Active Project: {sq.activeQuest}</span>
                       <span>{sq.completion}% Completed</span>
                     </div>
-                    <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '5px', backgroundColor: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
                       <div style={{ width: `${sq.completion}%`, height: '100%', backgroundColor: 'var(--primary)', borderRadius: 'var(--radius-full)' }} />
                     </div>
                   </div>
                 </div>
               ))}
             </div>
+            )
           )}
         </section>
 
         {/* Right Column: Badges & Virtual Currency Items */}
-        <aside className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <aside className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Award size={18} color="var(--primary)" />
-              <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Badge Registry</h3>
+              <Award size={16} color="var(--primary)" />
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Milestone Registry</h3>
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>4 Active Tiers</span>
+            <span className="badge-pill badge-neutral">4 Rarity Tiers</span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {badges.map((b, idx) => (
               <div key={idx} style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                padding: '12px',
+                gap: '10px',
+                padding: '10px 12px',
                 borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                backgroundColor: 'var(--bg-surface)',
                 border: '1px solid var(--border-subtle)'
               }}>
-                <span style={{ fontSize: '24px' }}>{b.icon}</span>
+                <span style={{ fontSize: '20px' }}>{b.icon}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>{b.name}</strong>
-                    <span style={{ fontSize: '10px', color: 'var(--warning)', fontWeight: '700' }}>{b.tier}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '12.5px', color: 'var(--text-main)' }}>{b.name}</strong>
+                    <span className={b.badgeClass} style={{ fontSize: '10px' }}>{b.tier}</span>
                   </div>
                   <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{b.desc}</p>
-                  <span style={{ fontSize: '10px', color: 'var(--success)', marginTop: '4px', display: 'inline-block' }}>
-                    Earned by {b.count} students
+                  <span style={{ fontSize: '10.5px', color: 'var(--success)', marginTop: '2px', display: 'inline-block' }}>
+                    Unlocked by {b.count} learners
                   </span>
                 </div>
               </div>
@@ -277,19 +283,20 @@ export default function Gamification() {
 
           {/* Virtual Economy Box */}
           <div style={{
-            padding: '14px',
+            padding: '12px 14px',
             borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'rgba(245, 158, 11, 0.08)',
-            border: '1px solid rgba(245, 158, 11, 0.25)',
+            backgroundColor: 'var(--primary-soft)',
+            border: '1px solid var(--primary-border)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '6px'
+            gap: '4px',
+            marginTop: 'auto'
           }}>
-            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Coins size={15} /> EduCoins Cosmetic Shop
+            <p style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Coins size={14} color="var(--warning)" /> Virtual Reward Items
             </p>
             <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Non-pay-to-win items: Avatar robes, custom glowing title borders, and ❄️ Streak Freeze insurance tokens.
+              Streak freeze insurance tokens, theme identifiers, and certificate credential verification.
             </p>
           </div>
         </aside>

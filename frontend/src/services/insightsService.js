@@ -7,10 +7,13 @@ export const insightsService = {
       return response.data;
     } catch {
       return {
-        totalStudents: 1428,
-        totalXpAwarded: '482.6k',
-        activeStreaks: 892,
-        pendingAiApprovals: 3
+        totalStudents: 0,
+        totalInstructors: 0,
+        totalCourses: 0,
+        totalQuizzesPassed: 0,
+        totalXpAwarded: 0,
+        activeStreaks: 0,
+        pendingAiApprovals: 0
       };
     }
   },
@@ -21,14 +24,18 @@ export const insightsService = {
       return response.data;
     } catch {
       return {
-        totalUsers: 1540,
-        totalStudents: 1428,
-        totalCourses: 12,
-        publishedCourses: 10,
-        totalSubmissions: 3420,
-        quizPassRate: 84.2,
-        totalXpAwarded: 482600,
-        aiWorkflows: { pending: 3, approved: 42, total: 45 }
+        totalUsers: 0,
+        totalStudents: 0,
+        totalCourses: 0,
+        publishedCourses: 0,
+        totalEnrollments: 0,
+        totalSubmissions: 0,
+        passedSubmissions: 0,
+        quizPassRate: 0,
+        totalChallenges: 0,
+        totalXpAwarded: 0,
+        totalBadgesUnlocked: 0,
+        aiWorkflows: { pending: 0, approved: 0, total: 0 }
       };
     }
   },
@@ -38,15 +45,7 @@ export const insightsService = {
       const response = await api.get('/analytics/at-risk-students');
       return response.data;
     } catch {
-      return [
-        {
-          studentName: 'Alex Rivera',
-          assessmentTitle: 'PostgreSQL Indexing & Concurrency',
-          score: 54,
-          riskFactor: 'Failed multiple attempts on Indexing',
-          recommendedAction: 'Generate 5-min Remedial Challenge'
-        }
-      ];
+      return [];
     }
   },
 
@@ -65,12 +64,7 @@ export const insightsService = {
       const response = await api.get('/analytics/topic-mastery');
       return response.data;
     } catch {
-      return [
-        { id: 'ef-core', name: 'EF Core Transactions & Concurrency', mastery: 58, atRiskCount: 42, status: 'Needs Intervention' },
-        { id: 'postgres-idx', name: 'PostgreSQL Composite Indexes & VACUUM', mastery: 74, atRiskCount: 18, status: 'Moderate' },
-        { id: 'clean-arch', name: 'Clean Architecture Domain Isolation', mastery: 86, atRiskCount: 8, status: 'Strong' },
-        { id: 'langgraph', name: 'LangGraph Deterministic Agent Guards', mastery: 69, atRiskCount: 26, status: 'Moderate' }
-      ];
+      return [];
     }
   },
 

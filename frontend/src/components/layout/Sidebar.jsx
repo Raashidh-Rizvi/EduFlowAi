@@ -8,12 +8,13 @@ import {
   Bell, 
   ShieldCheck, 
   LogOut,
-  Layers,
+  LayoutDashboard,
   Flame,
   User,
   ChevronUp,
   Shield,
-  Settings
+  Settings,
+  Layers
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout }) {
@@ -28,18 +29,54 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
   const isAdmin = user.role === 'Admin';
   const isInstructor = user.role === 'Instructor' || isAdmin;
 
-  // Role-filtered navigation items
-  const navItems = [
-    { id: 'dashboard', label: 'Command Center', icon: Layers, minRole: 'Instructor' },
-    ...(isAdmin ? [{ id: 'admin', label: 'System Admin & Users', icon: Shield, badge: 'Root', badgeColor: 'accent', minRole: 'Admin' }] : []),
-    { id: 'ai-review', label: 'AI Study Approvals', icon: Sparkles, badge: pendingCount > 0 ? `${pendingCount} Pending` : null, badgeColor: 'accent', minRole: 'Instructor' },
-    { id: 'courses', label: 'Curriculum & Maps', icon: BookOpen, minRole: 'All' },
-    { id: 'assessments', label: 'Quizzes & Boss Battles', icon: CheckCircle2, minRole: 'All' },
-    { id: 'gamification', label: 'Gamification & XP', icon: Trophy, badge: 'Live', badgeColor: 'warning', minRole: 'All' },
-    ...(isInstructor ? [
-      { id: 'insights', label: 'Cohort Insights', icon: BarChart3, minRole: 'Instructor' },
-      { id: 'communications', label: 'Communications', icon: Bell, minRole: 'Instructor' }
-    ] : [])
+  // Categorized Navigation Sections
+  const navSections = [
+    {
+      label: 'Platform',
+      items: [
+        { id: 'dashboard', label: 'Overview', icon: LayoutDashboard, minRole: 'Instructor' }
+      ]
+    },
+    {
+      label: 'Academics & Content',
+      items: [
+        { id: 'courses', label: 'Curriculum & Modules', icon: BookOpen, minRole: 'All' },
+        { id: 'assessments', label: 'Assessments & Quizzes', icon: CheckCircle2, minRole: 'All' }
+      ]
+    },
+    {
+      label: 'AI & Intelligence',
+      items: [
+        { 
+          id: 'ai-review', 
+          label: 'AI Study Approvals', 
+          icon: Sparkles, 
+          badge: pendingCount > 0 ? `${pendingCount} Pending` : null, 
+          badgeType: 'primary',
+          minRole: 'Instructor' 
+        }
+      ]
+    },
+    {
+      label: 'Analytics & Rewards',
+      items: [
+        { id: 'gamification', label: 'Gamification & XP', icon: Trophy, minRole: 'All' },
+        ...(isInstructor ? [
+          { id: 'insights', label: 'Cohort Insights', icon: BarChart3, minRole: 'Instructor' }
+        ] : [])
+      ]
+    },
+    {
+      label: 'Governance & Comms',
+      items: [
+        ...(isAdmin ? [
+          { id: 'admin', label: 'Platform Governance', icon: Shield, badge: 'Root', badgeType: 'danger', minRole: 'Admin' }
+        ] : []),
+        ...(isInstructor ? [
+          { id: 'communications', label: 'Communications Hub', icon: Bell, minRole: 'Instructor' }
+        ] : [])
+      ]
+    }
   ];
 
   const getInitials = (name) => {
@@ -50,121 +87,153 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
 
   return (
     <aside style={{
-      width: '270px',
+      width: '260px',
       backgroundColor: 'var(--bg-surface)',
-      borderRight: '1px solid var(--border-subtle)',
+      borderRight: '1px solid var(--border-card)',
       display: 'flex',
       flexDirection: 'column',
-      padding: '24px 16px',
+      padding: '20px 14px',
       flexShrink: 0,
       userSelect: 'none',
       position: 'relative'
     }}>
       {/* Brand Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px', paddingLeft: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px', paddingLeft: '8px' }}>
         <div style={{
-          width: '42px',
-          height: '42px',
-          borderRadius: '12px',
-          background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+          width: '34px',
+          height: '34px',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: 'var(--primary)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: 'var(--shadow-glow)'
+          boxShadow: '0 2px 8px rgba(79, 70, 229, 0.4)'
         }}>
-          <Sparkles size={22} color="#FFFFFF" />
+          <Sparkles size={18} color="#FFFFFF" />
         </div>
         <div>
-          <h2 style={{ fontSize: '19px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            EduFlow <span style={{ color: 'var(--secondary)', fontSize: '15px' }}>AI</span>
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+              EduFlow
+            </span>
+            <span style={{
+              fontSize: '10px',
+              fontWeight: '700',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              backgroundColor: 'var(--primary-soft)',
+              color: '#818CF8',
+              border: '1px solid var(--primary-border)'
+            }}>
+              AI
+            </span>
+          </div>
           <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '500' }}>
-            {isAdmin ? 'System Admin Console' : isInstructor ? 'Instructor Console' : 'Student Portal'}
+            {isAdmin ? 'System Admin Portal' : isInstructor ? 'Instructor Console' : 'Student Portal'}
           </p>
         </div>
       </div>
 
-      {/* Navigation Links */}
-      <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-subtle)', fontWeight: '700', paddingLeft: '12px', marginBottom: '8px' }}>
-        {isAdmin ? 'Full Administrator Access' : isInstructor ? 'Instructor Tools' : 'Learning Space'}
-      </div>
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
-        {navItems.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
+      {/* Categorized Nav List */}
+      <div style={{ 
+        flex: 1, 
+        overflowY: 'auto', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        gap: '16px',
+        paddingRight: '2px'
+      }}>
+        {navSections.map((section, sIdx) => {
+          if (!section.items || section.items.length === 0) return null;
           return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '11px 14px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: isActive ? 'rgba(99, 102, 241, 0.16)' : 'transparent',
-                color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                fontWeight: isActive ? '600' : '500',
-                border: isActive ? '1px solid var(--border-accent)' : '1px solid transparent',
-                textAlign: 'left',
-                transition: 'all 0.2s ease',
-                position: 'relative',
-                cursor: 'pointer'
-              }}
-            >
-              <Icon size={18} color={isActive ? 'var(--primary)' : 'var(--text-muted)'} />
-              <span style={{ flex: 1, fontSize: '13.5px' }}>{tab.label}</span>
-              {tab.badge && (
-                <span style={{
-                  fontSize: '10px',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                  backgroundColor: tab.badgeColor === 'accent' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                  color: tab.badgeColor === 'accent' ? 'var(--accent)' : 'var(--warning)',
-                  fontWeight: '700'
-                }}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
+            <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <div style={{
+                fontSize: '10.5px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--text-subtle)',
+                fontWeight: '700',
+                paddingLeft: '10px',
+                marginBottom: '4px'
+              }}>
+                {section.label}
+              </div>
+
+              {section.items.map(tab => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: isActive ? 'var(--primary-soft)' : 'transparent',
+                      color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontWeight: isActive ? '600' : '500',
+                      border: isActive ? '1px solid var(--primary-border)' : '1px solid transparent',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <Icon size={16} color={isActive ? '#818CF8' : 'var(--text-muted)'} />
+                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {tab.label}
+                    </span>
+                    {tab.badge && (
+                      <span className={`badge-pill ${tab.badgeType === 'danger' ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           );
         })}
-      </nav>
+      </div>
 
-      {/* Profile Popover */}
+      {/* Profile Popover Menu */}
       {showProfileMenu && (
         <div style={{
           position: 'absolute',
-          bottom: '84px',
-          left: '16px',
-          right: '16px',
+          bottom: '75px',
+          left: '12px',
+          right: '12px',
           backgroundColor: 'var(--bg-card)',
           borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-accent)',
-          padding: '16px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.6)',
+          border: '1px solid var(--border-card)',
+          padding: '14px',
+          boxShadow: 'var(--shadow-popover)',
           zIndex: 100,
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px'
+          gap: '10px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
+              width: '34px',
+              height: '34px',
+              borderRadius: 'var(--radius-sm)',
               backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontWeight: '700',
-              fontSize: '13px'
+              fontSize: '12.5px'
             }}>
               {getInitials(user.fullName)}
             </div>
             <div style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user.fullName}
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -177,15 +246,16 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '6px 10px',
-            borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            padding: '6px 8px',
+            borderRadius: 'var(--radius-xs)',
+            backgroundColor: 'var(--bg-canvas)',
+            border: '1px solid var(--border-subtle)',
             fontSize: '11.5px'
           }}>
-            <span style={{ color: 'var(--text-muted)' }}>Role Scope:</span>
+            <span style={{ color: 'var(--text-muted)' }}>Role:</span>
             <span style={{
-              fontWeight: '700',
-              color: user.role === 'Admin' ? 'var(--accent)' : user.role === 'Instructor' ? 'var(--secondary)' : 'var(--primary)'
+              fontWeight: '600',
+              color: user.role === 'Admin' ? 'var(--accent)' : 'var(--primary)'
             }}>
               {user.role}
             </span>
@@ -196,24 +266,15 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
               setShowProfileMenu(false);
               if (onLogout) onLogout();
             }}
+            className="btn-danger"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
               width: '100%',
-              padding: '9px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'rgba(244, 63, 94, 0.15)',
-              border: '1px solid rgba(244, 63, 94, 0.35)',
-              color: 'var(--accent)',
-              fontSize: '12.5px',
-              fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              padding: '7px',
+              fontSize: '12px',
+              gap: '6px'
             }}
           >
-            <LogOut size={15} /> Sign Out / Logout
+            <LogOut size={13} /> Sign Out
           </button>
         </div>
       )}
@@ -223,48 +284,44 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
         onClick={() => setShowProfileMenu(!showProfileMenu)}
         style={{
           marginTop: 'auto',
-          padding: '12px 14px',
-          borderRadius: 'var(--radius-md)',
-          backgroundColor: showProfileMenu ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-          border: showProfileMenu ? '1px solid var(--border-accent)' : '1px solid var(--border-subtle)',
+          padding: '10px 12px',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: showProfileMenu ? 'var(--bg-card-hover)' : 'var(--bg-card)',
+          border: '1px solid var(--border-card)',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
           cursor: 'pointer',
-          transition: 'all 0.2s ease'
+          transition: 'all 0.15s ease'
         }}
       >
         <div style={{
-          width: '38px',
-          height: '38px',
-          borderRadius: '50%',
+          width: '32px',
+          height: '32px',
+          borderRadius: 'var(--radius-sm)',
           backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontWeight: '700',
-          fontSize: '14px',
-          boxShadow: isAdmin ? '0 0 12px rgba(244, 63, 94, 0.4)' : '0 0 10px rgba(99, 102, 241, 0.4)'
+          fontSize: '12px'
         }}>
           {getInitials(user.fullName)}
         </div>
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+          <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
             {user.fullName}
-          </h4>
-          <span style={{
+          </div>
+          <div style={{
             fontSize: '10.5px',
-            color: user.role === 'Admin' ? 'var(--accent)' : 'var(--secondary)',
-            fontWeight: '600',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
+            color: user.role === 'Admin' ? 'var(--accent)' : 'var(--text-muted)',
+            fontWeight: '500'
           }}>
-            <ShieldCheck size={12} /> {user.role}
-          </span>
+            {user.role}
+          </div>
         </div>
-        <ChevronUp size={16} color="var(--text-muted)" style={{ transform: showProfileMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }} />
+        <ChevronUp size={14} color="var(--text-muted)" style={{ transform: showProfileMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
       </div>
     </aside>
   );

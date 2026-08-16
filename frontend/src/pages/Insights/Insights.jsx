@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -9,229 +9,308 @@ import {
   CheckCircle2, 
   ChevronRight, 
   ShieldAlert, 
-  Search 
+  Search,
+  Activity,
+  ArrowUpRight,
+  RefreshCw,
+  BookOpen
 } from 'lucide-react';
+import { insightsService } from '../../services/insightsService';
 
 export default function Insights({ onTriggerRemedial }) {
-  const [selectedTopic, setSelectedTopic] = useState('ef-core');
+  const [selectedTopic, setSelectedTopic] = useState(null);
   const [searchFilter, setSearchFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [platformStats, setPlatformStats] = useState({
+    totalUsers: 0,
+    totalStudents: 0,
+    totalCourses: 0,
+    publishedCourses: 0,
+    totalEnrollments: 0,
+    totalSubmissions: 0,
+    passedSubmissions: 0,
+    quizPassRate: 0,
+    totalChallenges: 0,
+    totalXpAwarded: 0,
+    totalBadgesUnlocked: 0
+  });
+  const [topicHeatmap, setTopicHeatmap] = useState([]);
+  const [atRiskStudents, setAtRiskStudents] = useState([]);
 
-  const topicHeatmap = [
-    { id: 'ef-core', name: 'EF Core Transactions & Concurrency', mastery: 58, atRiskCount: 42, status: 'Needs Intervention' },
-    { id: 'postgres-idx', name: 'PostgreSQL Composite Indexes & VACUUM', mastery: 74, atRiskCount: 18, status: 'Moderate' },
-    { id: 'clean-arch', name: 'Clean Architecture Domain Isolation', mastery: 86, atRiskCount: 8, status: 'Strong' },
-    { id: 'langgraph', name: 'LangGraph Deterministic Agent Guards', mastery: 69, atRiskCount: 26, status: 'Moderate' }
-  ];
+  const loadData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
 
-  const atRiskStudents = [
-    {
-      id: 'IT22765431',
-      name: 'Tariq Mansoor',
-      avgQuizScore: 54.2,
-      velocity: '2.5 hrs/wk (Low)',
-      streak: '0 Days (Broken)',
-      weakTopic: 'EF Core Transactions',
-      riskLevel: 'High Risk',
-      status: 'Intervention Needed'
+      const [platform, topics, atRisk] = await Promise.all([
+        insightsService.getPlatformAnalytics(),
+        insightsService.getTopicMastery(),
+        insightsService.getAtRiskStudents()
+      ]);
+
+      if (platform) setPlatformStats(platform);
+      if (Array.isArray(topics)) {
+        setTopicHeatmap(topics);
+        if (topics.length > 0 && !selectedTopic) {
+          setSelectedTopic(topics[0].id);
+        }
+      }
+      if (Array.isArray(atRisk)) {
+        setAtRiskStudents(atRisk);
+      }
+    } catch (err) {
+      console.error('Failed to load telemetry insights:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filteredStudents = atRiskStudents.filter(s => {
+    const term = searchFilter.toLowerCase();
+    const name = (s.studentName || s.name || '').toLowerCase();
+    const id = (s.studentId || s.id || s.studentEmail || '').toLowerCase();
+    const assessment = (s.assessmentTitle || '').toLowerCase();
+    return name.includes(term) || id.includes(term) || assessment.includes(term);
+  });
+
+  const cohortVelocity = platformStats.totalEnrollments > 0 
+    ? ((platformStats.totalSubmissions || 0) / platformStats.totalEnrollments * 1.5).toFixed(1)
+    : '0.0';
+
+  const metrics = [
+    { 
+      label: 'Cohort Average Velocity', 
+      value: `${cohortVelocity} hrs/wk`, 
+      status: platformStats.totalStudents > 0 ? `Across ${platformStats.totalStudents} enrolled learner${platformStats.totalStudents === 1 ? '' : 's'}` : 'Awaiting learner activity', 
+      color: 'var(--success)', 
+      badgeType: 'badge-success' 
     },
-    {
-      id: 'IT22881023',
-      name: 'Samantha Gomez',
-      avgQuizScore: 59.0,
-      velocity: '3.0 hrs/wk',
-      streak: '1 Day',
-      weakTopic: 'PostgreSQL Indexes',
-      riskLevel: 'Moderate Risk',
-      status: 'AI Plan Dispatched'
+    { 
+      label: 'Overall Curriculum Mastery', 
+      value: `${Number(platformStats.quizPassRate || 0).toFixed(1)}%`, 
+      status: `Across ${platformStats.publishedCourses || platformStats.totalCourses || 0} active course${(platformStats.publishedCourses || platformStats.totalCourses) === 1 ? '' : 's'}`, 
+      color: 'var(--primary)', 
+      badgeType: 'badge-primary' 
     },
-    {
-      id: 'IT22119042',
-      name: 'Jordan Lee',
-      avgQuizScore: 61.5,
-      velocity: '4.0 hrs/wk',
-      streak: '2 Days',
-      weakTopic: 'LangGraph Cyclic State',
-      riskLevel: 'Moderate Risk',
-      status: 'Intervention Needed'
+    { 
+      label: 'Identified At-Risk Learners', 
+      value: `${atRiskStudents.length}`, 
+      status: atRiskStudents.length === 0 ? 'No active risk flags' : 'Requires remedial quest dispatch', 
+      color: 'var(--accent)', 
+      badgeType: atRiskStudents.length === 0 ? 'badge-success' : 'badge-danger', 
+      alert: atRiskStudents.length > 0 
+    },
+    { 
+      label: 'Intervention & Pass Rate', 
+      value: `${platformStats.totalSubmissions > 0 ? Number(platformStats.quizPassRate || 0).toFixed(1) + '%' : '0.0%'}`, 
+      status: platformStats.totalSubmissions > 0 ? `${platformStats.passedSubmissions || 0}/${platformStats.totalSubmissions} submissions passed` : 'Awaiting quiz submissions', 
+      color: 'var(--secondary)', 
+      badgeType: 'badge-secondary' 
     }
   ];
-
-  const filteredStudents = atRiskStudents.filter(s => 
-    s.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
-    s.id.toLowerCase().includes(searchFilter.toLowerCase())
-  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Velocity & Intervention Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '18px' }}>
-        {[
-          { label: 'Cohort Velocity', value: '7.8 hrs/wk', status: '+1.2 hrs vs target', color: 'var(--success)' },
-          { label: 'Overall Topic Mastery', value: '71.8%', status: 'Across 4 phases', color: 'var(--primary)' },
-          { label: 'Identified At-Risk Learners', value: '42', status: 'Requires remedial AI quest', color: 'var(--accent)', alert: true },
-          { label: 'Remediation Success Rate', value: '88.4%', status: 'Post-AI intervention', color: 'var(--secondary)' }
-        ].map((item, idx) => (
-          <div key={idx} className="glass-panel" style={{
-            padding: '20px',
-            border: item.alert ? '1px solid rgba(244, 63, 94, 0.4)' : undefined
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+        {metrics.map((item, idx) => (
+          <div key={idx} className="metric-card" style={{
+            border: item.alert ? '1px solid var(--accent-border)' : undefined
           }}>
-            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>{item.label}</span>
-            <h3 style={{ fontSize: '24px', fontWeight: '800', margin: '6px 0 4px', color: 'var(--text-main)' }}>{item.value}</h3>
-            <span style={{ fontSize: '11px', color: item.alert ? 'var(--accent)' : 'var(--success)', fontWeight: '600' }}>
-              {item.status}
-            </span>
+            <div>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' }}>{item.label}</span>
+              <h3 style={{ fontSize: '24px', fontWeight: '800', margin: '4px 0 6px', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+                {item.value}
+              </h3>
+              <span className={`badge-pill ${item.badgeType}`}>
+                {item.status}
+              </span>
+            </div>
           </div>
         ))}
       </div>
 
       {/* Main Grid: Topic Mastery Heatmap + At-Risk Student Intervention Table */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.55fr', gap: '20px' }}>
         {/* Topic Comprehension Heatmap */}
-        <section className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <section className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Topic Mastery & Comprehension Heatmap</h3>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>SE3090 Modules</span>
+            <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Topic Comprehension Matrix</h3>
+            <span className="badge-pill badge-neutral">
+              {topicHeatmap.length} Tracked Topic{topicHeatmap.length === 1 ? '' : 's'}
+            </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {topicHeatmap.map(topic => (
-              <div 
-                key={topic.id}
-                onClick={() => setSelectedTopic(topic.id)}
-                style={{
-                  padding: '14px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: selectedTopic === topic.id ? 'rgba(99, 102, 241, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-                  border: selectedTopic === topic.id ? '1px solid var(--border-accent)' : '1px solid var(--border-subtle)',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>{topic.name}</span>
-                  <span style={{
-                    fontSize: '12px',
-                    fontWeight: '800',
-                    color: topic.mastery < 65 ? 'var(--accent)' : topic.mastery < 80 ? 'var(--warning)' : 'var(--success)'
-                  }}>
-                    {topic.mastery}%
-                  </span>
-                </div>
-
-                <div style={{ width: '100%', height: '6px', backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${topic.mastery}%`,
-                    height: '100%',
-                    backgroundColor: topic.mastery < 65 ? 'var(--accent)' : topic.mastery < 80 ? 'var(--warning)' : 'var(--success)',
-                    borderRadius: 'var(--radius-full)'
-                  }} />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                  <span>{topic.atRiskCount} struggling learners</span>
-                  <span style={{ color: topic.mastery < 65 ? 'var(--accent)' : 'var(--text-muted)' }}>{topic.status}</span>
-                </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {topicHeatmap.length === 0 ? (
+              <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                <BookOpen size={24} style={{ margin: '0 auto 8px', color: 'var(--text-muted)', opacity: 0.6 }} />
+                <p style={{ fontWeight: '600', color: 'var(--text-main)' }}>No Topic Mastery Data</p>
+                <p style={{ fontSize: '12px', marginTop: '4px', color: 'var(--text-muted)' }}>
+                  Topics and comprehension heatmaps will populate automatically as courses and assessments receive submissions.
+                </p>
               </div>
-            ))}
+            ) : (
+              topicHeatmap.map(topic => (
+                <div 
+                  key={topic.id}
+                  onClick={() => setSelectedTopic(topic.id)}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: selectedTopic === topic.id ? 'var(--primary-soft)' : 'var(--bg-surface)',
+                    border: selectedTopic === topic.id ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>{topic.name}</span>
+                    <span style={{
+                      fontSize: '12.5px',
+                      fontWeight: '700',
+                      color: topic.mastery < 65 ? 'var(--accent)' : topic.mastery < 80 ? 'var(--warning)' : 'var(--success)'
+                    }}>
+                      {topic.mastery}%
+                    </span>
+                  </div>
+
+                  <div style={{ width: '100%', height: '5px', backgroundColor: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${Math.min(100, Math.max(0, topic.mastery))}%`,
+                      height: '100%',
+                      backgroundColor: topic.mastery < 65 ? 'var(--accent)' : topic.mastery < 80 ? 'var(--warning)' : 'var(--success)',
+                      borderRadius: 'var(--radius-full)'
+                    }} />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <span>{topic.atRiskCount || 0} struggling students</span>
+                    <span className={`badge-pill ${topic.badgeType || 'badge-neutral'}`} style={{ fontSize: '10px' }}>
+                      {topic.status || 'Active'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <div style={{
-            padding: '12px',
+            padding: '12px 14px',
             borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'rgba(99, 102, 241, 0.08)',
-            border: '1px solid var(--border-accent)',
-            fontSize: '11px',
-            color: 'var(--text-muted)',
-            lineHeight: '1.4',
+            backgroundColor: 'var(--primary-soft)',
+            border: '1px solid var(--primary-border)',
+            fontSize: '11.5px',
+            color: 'var(--text-secondary)',
+            lineHeight: '1.5',
             marginTop: 'auto'
           }}>
-            💡 <strong>Learning Analysis Agent Diagnostic:</strong> Students completing &gt; 2 coding labs show a 34% higher score on midterm Boss Battles.
+            <strong style={{ color: 'var(--text-main)' }}>Diagnostic Telemetry:</strong>{' '}
+            {platformStats.totalSubmissions > 0 
+              ? `${platformStats.totalSubmissions} quiz submission${platformStats.totalSubmissions === 1 ? '' : 's'} recorded with a ${Number(platformStats.quizPassRate || 0).toFixed(1)}% overall pass rate.`
+              : 'Real-time telemetry pipeline active. Telemetry updates dynamically as students complete curriculum lessons and assessments.'}
           </div>
         </section>
 
         {/* At-Risk Student Early Intervention Table */}
-        <section className="glass-panel" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <section className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertTriangle size={18} color="var(--accent)" />
-              <h3 style={{ fontSize: '16px', fontWeight: '700' }}>Early-Warning At-Risk Interventions</h3>
+              <AlertTriangle size={16} color="var(--accent)" />
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Early-Warning At-Risk Interventions</h3>
             </div>
 
-            <input 
-              type="text" 
-              placeholder="Filter by student name or ID..."
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-full)',
-                backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                border: '1px solid var(--border-subtle)',
-                color: 'var(--text-main)',
-                fontSize: '11.5px',
-                outline: 'none',
-                width: '200px'
-              }}
-            />
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-card)',
+              width: '210px'
+            }}>
+              <Search size={13} color="var(--text-muted)" />
+              <input 
+                type="text" 
+                placeholder="Filter student or ID..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: 'var(--text-main)',
+                  fontSize: '12px',
+                  width: '100%'
+                }}
+              />
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredStudents.map((std, i) => (
-              <div key={i} style={{
-                padding: '14px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <strong style={{ fontSize: '13.5px', color: 'var(--text-main)' }}>{std.name}</strong>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>({std.id})</span>
-                    <span style={{
-                      fontSize: '10px',
-                      padding: '2px 6px',
-                      borderRadius: 'var(--radius-full)',
-                      backgroundColor: std.riskLevel === 'High Risk' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                      color: std.riskLevel === 'High Risk' ? 'var(--accent)' : 'var(--warning)',
-                      fontWeight: '700'
-                    }}>
-                      {std.riskLevel}
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '14px', marginTop: '6px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                    <span>Avg Quiz: <strong style={{ color: 'var(--accent)' }}>{std.avgQuizScore}%</strong></span>
-                    <span>Velocity: {std.velocity}</span>
-                    <span>Weak Area: <strong style={{ color: 'var(--text-main)' }}>{std.weakTopic}</strong></span>
-                  </div>
-                </div>
-
-                <div>
-                  <button
-                    onClick={() => alert(`Generated AI Remedial Study Quest for ${std.name} targeting ${std.weakTopic}. Dispatched to HITL Review Queue!`)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '7px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-                      color: '#FFFFFF',
-                      fontSize: '12px',
-                      fontWeight: '700',
-                      boxShadow: 'var(--shadow-glow)'
-                    }}
-                  >
-                    <Sparkles size={14} /> Trigger AI Remedial Plan
-                  </button>
-                </div>
+            {filteredStudents.length === 0 ? (
+              <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No at-risk students detected. All learners are progressing on track.
               </div>
-            ))}
+            ) : (
+              filteredStudents.map((std, i) => {
+                const sName = std.studentName || std.name || 'Student';
+                const sEmail = std.studentEmail || std.id || '';
+                const sScore = std.score !== undefined ? std.score : std.avgQuizScore || 0;
+                const sAssessment = std.assessmentTitle || std.weakTopic || 'Assessment';
+                const sRisk = std.riskFactor || (sScore < 50 ? 'High Risk' : 'Moderate Risk');
+
+                return (
+                  <div key={i} style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>{sName}</strong>
+                        {sEmail && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>({sEmail})</span>}
+                        <span className={`badge-pill ${sScore < 50 ? 'badge-danger' : 'badge-warning'}`} style={{ fontSize: '10px' }}>
+                          Score: {sScore}%
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '14px', marginTop: '4px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        <span>Target Quiz: <strong style={{ color: 'var(--text-main)' }}>{sAssessment}</strong></span>
+                        <span>Risk Factor: <strong style={{ color: 'var(--accent)' }}>{sRisk}</strong></span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <button
+                        onClick={() => {
+                          alert(`Remedial Quest queued for ${sName} targeting ${sAssessment}. Dispatched to HITL Review Queue!`);
+                          if (onTriggerRemedial) onTriggerRemedial();
+                        }}
+                        className="btn-primary"
+                        style={{ padding: '7px 12px', fontSize: '12px', gap: '6px' }}
+                      >
+                        <Sparkles size={13} />
+                        <span>Dispatch Remedial Quest</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </section>
       </div>

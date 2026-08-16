@@ -1,19 +1,46 @@
 import React from 'react';
-import { Search, Bell, Sparkles, Activity, ShieldCheck, Flame, LogOut, Shield } from 'lucide-react';
+import { Search, Bell, Sparkles, Activity, ShieldCheck, LogOut, Shield } from 'lucide-react';
 
 export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
   const titles = {
-    'dashboard': { title: 'Executive Command Center 🚀', subtitle: 'Real-time overview of curriculum health, active missions, and AI queues' },
-    'admin': { title: 'System Administration & Platform Governance 🛡️', subtitle: 'Global user management, RBAC elevations, system settings, and infrastructure health' },
-    'ai-review': { title: 'Human-in-the-Loop AI Review & Approval 🤖', subtitle: 'Review, modify, and authorize agent-generated personalized quests and study plans' },
-    'courses': { title: 'Curriculum & Learning Journey Map 🗺️', subtitle: 'Design modular courses, video lessons, and interactive RPG-style world map nodes' },
-    'assessments': { title: 'Assessment Engine & Boss Battles ⚔️', subtitle: 'Author dynamic quizzes, timed Boss Battles, rubric scoring matrices, and coding tests' },
-    'gamification': { title: 'Gamification Engine, XP & Leaderboards 🏆', subtitle: 'Manage XP multipliers, streaks, unlockable badges, and squad competitions' },
-    'insights': { title: 'Cohort Insights & At-Risk Early Warning 📊', subtitle: 'Inspect learning pace velocity, comprehension heatmaps, and early risk intervention' },
-    'communications': { title: 'Communications & Notification Hub 📢', subtitle: 'Broadcast course-wide announcements, AI study nudges, and urgent milestone alerts' }
+    'dashboard': { 
+      title: 'Executive Overview', 
+      subtitle: 'Real-time telemetry on curriculum progression, student mastery, and AI agent queues' 
+    },
+    'admin': { 
+      title: 'Platform Governance & Administration', 
+      subtitle: 'Global directory management, RBAC elevations, system settings, and microservice health' 
+    },
+    'ai-review': { 
+      title: 'Human-in-the-Loop AI Review', 
+      subtitle: 'Review, modify, and authorize agentic personalized study roadmaps and remedial quests' 
+    },
+    'courses': { 
+      title: 'Curriculum & Learning Journey', 
+      subtitle: 'Manage modular course units, video resources, technical documentation, and visual roadmap nodes' 
+    },
+    'assessments': { 
+      title: 'Assessments & Evaluation Engine', 
+      subtitle: 'Author interactive quizzes, milestone challenges, rubric scoring, and code evaluation suites' 
+    },
+    'gamification': { 
+      title: 'Gamification & Reward Mechanics', 
+      subtitle: 'Monitor XP economy, streak velocity, unlockable milestone badges, and squad competitions' 
+    },
+    'insights': { 
+      title: 'Cohort Insights & Risk Telemetry', 
+      subtitle: 'Inspect student learning velocity, topic comprehension heatmaps, and automated intervention vectors' 
+    },
+    'communications': { 
+      title: 'Communications & Notification Center', 
+      subtitle: 'Broadcast course announcements, automated AI study nudges, and urgent milestone alerts' 
+    }
   };
 
-  const current = titles[activeTab] || { title: 'EduFlow AI Console', subtitle: 'SE3090 Assignment 1 Live Environment' };
+  const current = titles[activeTab] || { 
+    title: 'EduFlow AI Enterprise Console', 
+    subtitle: 'Adaptive Learning System' 
+  };
 
   return (
     <header style={{
@@ -22,90 +49,109 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
       alignItems: 'center',
       marginBottom: '28px',
       gap: '24px',
-      flexWrap: 'wrap'
+      flexWrap: 'wrap',
+      paddingBottom: '20px',
+      borderBottom: '1px solid var(--border-subtle)'
     }}>
       <div>
-        <h1 style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+        <h1 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.025em' }}>
           {current.title}
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px' }}>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px', fontWeight: '400' }}>
           {current.subtitle}
         </p>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-        {/* Search Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Search Bar with Keyboard Hint */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '8px 14px',
-          borderRadius: 'var(--radius-full)',
-          backgroundColor: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid var(--border-subtle)',
-          width: '220px'
+          padding: '7px 12px',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: 'var(--bg-input)',
+          border: '1px solid var(--border-card)',
+          width: '240px',
+          transition: 'all 0.15s ease'
         }}>
-          <Search size={15} color="var(--text-subtle)" />
+          <Search size={14} color="var(--text-muted)" />
           <input 
             type="text" 
-            placeholder="Search students, quests..." 
+            placeholder="Search resources, students..." 
             style={{
               background: 'transparent',
               border: 'none',
               outline: 'none',
               color: 'var(--text-main)',
-              fontSize: '12px',
+              fontSize: '12.5px',
               width: '100%'
             }}
           />
+          <kbd style={{
+            fontSize: '10px',
+            fontFamily: 'var(--font-mono)',
+            padding: '2px 5px',
+            borderRadius: '4px',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--text-muted)'
+          }}>
+            ⌘K
+          </kbd>
         </div>
 
-        {/* Live Backend Status */}
+        {/* Live Backend Telemetry Indicator */}
         <div style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '7px',
           padding: '6px 12px',
-          borderRadius: 'var(--radius-full)',
-          backgroundColor: 'rgba(16, 185, 129, 0.12)',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: 'var(--success-soft)',
           color: 'var(--success)',
           fontSize: '12px',
           fontWeight: '600',
-          border: '1px solid rgba(16, 185, 129, 0.25)'
+          border: '1px solid var(--success-border)'
         }}>
-          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: 'var(--success)' }}></span>
-          .NET 8 API: 18ms
+          <span className="status-dot-active"></span>
+          <span>API 8.0: 18ms</span>
         </div>
 
         {/* Notification Icon */}
-        <div style={{
-          width: '36px',
-          height: '36px',
-          borderRadius: '50%',
-          backgroundColor: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid var(--border-subtle)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-          cursor: 'pointer'
-        }}>
-          <Bell size={16} color="var(--text-muted)" />
+        <div 
+          title="Notifications"
+          style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-card)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            position: 'relative',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Bell size={15} color="var(--text-muted)" />
           {unreadNotifications > 0 && (
             <span style={{
               position: 'absolute',
-              top: '-2px',
-              right: '-2px',
+              top: '-3px',
+              right: '-3px',
               width: '14px',
               height: '14px',
               borderRadius: '50%',
-              backgroundColor: 'var(--accent)',
+              backgroundColor: 'var(--primary)',
               color: '#FFFFFF',
               fontSize: '9px',
-              fontWeight: 'bold',
+              fontWeight: '700',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              border: '1.5px solid var(--bg-canvas)'
             }}>
               {unreadNotifications}
             </span>
@@ -116,24 +162,17 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
         {onLogout && (
           <button
             onClick={onLogout}
-            title="Sign Out / Logout"
+            title="Sign Out of Session"
+            className="btn-ghost"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 12px',
-              borderRadius: 'var(--radius-full)',
-              backgroundColor: 'rgba(244, 63, 94, 0.12)',
-              border: '1px solid rgba(244, 63, 94, 0.3)',
-              color: 'var(--accent)',
+              padding: '6px 10px',
               fontSize: '12px',
-              fontWeight: '700',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              gap: '6px',
+              color: 'var(--text-muted)'
             }}
           >
             <LogOut size={14} />
-            <span>Logout</span>
+            <span>Sign Out</span>
           </button>
         )}
       </div>

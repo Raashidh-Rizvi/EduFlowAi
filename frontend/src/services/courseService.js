@@ -6,18 +6,7 @@ export const courseService = {
       const response = await api.get('/courses');
       return response.data;
     } catch {
-      return [
-        {
-          id: '44444444-4444-4444-4444-444444444444',
-          code: 'SE3090',
-          title: 'Software Engineering Frameworks & Adaptive Systems',
-          description: 'Enterprise architecture with ASP.NET Core, PostgreSQL, React, Flutter & LangGraph multi-agent systems.',
-          category: 'Software Engineering',
-          modulesCount: 2,
-          lessonsCount: 5,
-          isPublished: true
-        }
-      ];
+      return [];
     }
   },
 

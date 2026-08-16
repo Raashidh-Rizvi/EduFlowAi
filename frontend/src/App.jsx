@@ -12,6 +12,7 @@ import Communications from './pages/Communications/Communications';
 import Login from './pages/Auth/Login';
 import StudentPortal from './pages/Student/StudentPortal';
 import { authService } from './services/authService';
+import { ShieldAlert } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -36,7 +37,6 @@ export default function App() {
   const handleLoginSuccess = (user) => {
     localStorage.setItem('eduflow_user', JSON.stringify(user));
     setCurrentUser(user);
-    // Reset tab to default for role
     if (user.role === 'Admin' || user.role === 'Instructor') {
       setActiveTab('dashboard');
     }
@@ -47,7 +47,7 @@ export default function App() {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // ── Student Portal (completely separate experience) ────────────────────────
+  // ── Student Portal ─────────────────────────────────────────────────────────
   if (currentUser.role === 'Student') {
     return (
       <StudentPortal
@@ -59,8 +59,8 @@ export default function App() {
 
   // ── Instructor / Admin Console ─────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
-      {/* Sidebar — dynamically filtered by role */}
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
+      {/* Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -69,59 +69,61 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      {/* Main Content */}
+      {/* Main Content Area with max-width containment */}
       <main style={{
         flex: 1,
-        padding: '28px 36px',
+        padding: '24px 32px',
         overflowY: 'auto',
         maxHeight: '100vh',
         display: 'flex',
         flexDirection: 'column'
       }}>
-        <Navbar
-          activeTab={activeTab}
-          unreadNotifications={unreadNotifications}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-        />
+        <div style={{ width: '100%', maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <Navbar
+            activeTab={activeTab}
+            unreadNotifications={unreadNotifications}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
 
-        <div style={{ flex: 1, paddingBottom: '32px' }}>
-          {activeTab === 'dashboard' && (
-            <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} />
-          )}
+          <div style={{ flex: 1, paddingBottom: '32px' }}>
+            {activeTab === 'dashboard' && (
+              <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} />
+            )}
 
-          {/* Admin-only page */}
-          {activeTab === 'admin' && currentUser.role === 'Admin' && (
-            <AdminManagement />
-          )}
-          {activeTab === 'admin' && currentUser.role !== 'Admin' && (
-            <AccessDenied requiredRole="Admin" />
-          )}
+            {/* Admin-only page */}
+            {activeTab === 'admin' && currentUser.role === 'Admin' && (
+              <AdminManagement />
+            )}
+            {activeTab === 'admin' && currentUser.role !== 'Admin' && (
+              <AccessDenied requiredRole="Admin" />
+            )}
 
-          {/* Instructor + Admin pages */}
-          {activeTab === 'ai-review' && (
-            <AiReview />
-          )}
+            {/* Instructor + Admin pages */}
+            {activeTab === 'ai-review' && (
+              <AiReview />
+            )}
 
-          {activeTab === 'courses' && (
-            <Courses currentUser={currentUser} />
-          )}
+            {activeTab === 'courses' && (
+              <Courses currentUser={currentUser} />
+            )}
 
-          {activeTab === 'assessments' && (
-            <Assessments currentUser={currentUser} />
-          )}
+            {activeTab === 'assessments' && (
+              <Assessments currentUser={currentUser} />
+            )}
 
-          {activeTab === 'gamification' && (
-            <Gamification />
-          )}
+            {activeTab === 'gamification' && (
+              <Gamification />
+            )}
 
-          {activeTab === 'insights' && (
-            <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />
-          )}
+            {activeTab === 'insights' && (
+              <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />
+            )}
 
-          {activeTab === 'communications' && (
-            <Communications />
-          )}
+            {activeTab === 'communications' && (
+              <Communications />
+            )}
+          </div>
         </div>
       </main>
     </div>
@@ -139,11 +141,22 @@ function AccessDenied({ requiredRole }) {
       gap: '16px',
       textAlign: 'center'
     }}>
-      <div style={{ fontSize: '56px' }}>🚫</div>
-      <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#FFFFFF' }}>Access Denied</h2>
-      <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '380px' }}>
-        This section requires <strong style={{ color: 'var(--accent)' }}>{requiredRole}</strong> privileges.
-        Contact your system administrator to request elevated access.
+      <div style={{
+        width: '52px',
+        height: '52px',
+        borderRadius: 'var(--radius-md)',
+        backgroundColor: 'var(--accent-soft)',
+        border: '1px solid var(--accent-border)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <ShieldAlert size={28} color="var(--accent)" />
+      </div>
+      <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>Access Restricted</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: '13.5px', maxWidth: '380px' }}>
+        This section requires <strong style={{ color: 'var(--accent)' }}>{requiredRole}</strong> level authorization.
+        Please contact system governance to request elevated permissions.
       </p>
     </div>
   );
