@@ -26,6 +26,10 @@ public class CoursesController : ControllerBase
         _gamificationService = gamificationService;
     }
 
+    // -------------------------------------------------------------------------
+    // COURSES
+    // -------------------------------------------------------------------------
+
     [HttpGet]
     public async Task<IActionResult> GetCourses()
     {
@@ -52,7 +56,7 @@ public class CoursesController : ControllerBase
         return Ok(courses);
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCourseById(Guid id)
     {
         var course = await _dbContext.Courses
@@ -99,8 +103,8 @@ public class CoursesController : ControllerBase
     public async Task<IActionResult> CreateCourse([FromBody] CreateCourseRequest request)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        var instructorId = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed) 
-            ? parsed 
+        var instructorId = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed)
+            ? parsed
             : Guid.Parse("22222222-2222-2222-2222-222222222222");
 
         var course = new Course
@@ -111,7 +115,7 @@ public class CoursesController : ControllerBase
             Category = request.Category,
             ThumbnailUrl = request.ThumbnailUrl,
             InstructorId = instructorId,
-            IsPublished = true
+            IsPublished = false   // Courses start as drafts; use /publish to make live
         };
 
         await _dbContext.Courses.AddAsync(course);
@@ -120,7 +124,7 @@ public class CoursesController : ControllerBase
         return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, course);
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateCourse(Guid id, [FromBody] CreateCourseRequest request)
     {
@@ -141,7 +145,7 @@ public class CoursesController : ControllerBase
         return Ok(course);
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteCourse(Guid id)
     {
@@ -156,7 +160,73 @@ public class CoursesController : ControllerBase
         return Ok(new { message = "Course deleted successfully." });
     }
 
-    [HttpPost("{courseId}/modules")]
+    /// <summary>
+    /// Toggles a course between published and unpublished.
+    /// Only the owning instructor or an admin may publish/unpublish.
+    /// </summary>
+    [HttpPost("{id:guid}/publish")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> PublishCourse(Guid id, [FromBody] PublishCourseRequest request)
+    {
+        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var requestingUserId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        // Only allow the owning instructor or an admin to publish
+        if (!role.Equals("Admin", StringComparison.OrdinalIgnoreCase) && course.InstructorId != requestingUserId)
+        {
+            return Forbid();
+        }
+
+        course.IsPublished = request.IsPublished;
+        course.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = course.IsPublished ? "Course published successfully." : "Course unpublished.",
+            isPublished = course.IsPublished
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // MODULES
+    // -------------------------------------------------------------------------
+
+    [HttpGet("{courseId:guid}/modules")]
+    public async Task<IActionResult> GetModules(Guid courseId)
+    {
+        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
+        if (!courseExists)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var modules = await _dbContext.Modules
+            .Where(m => m.CourseId == courseId)
+            .OrderBy(m => m.OrderIndex)
+            .Include(m => m.Lessons.OrderBy(l => l.OrderIndex))
+            .Select(m => new ModuleDto(
+                m.Id,
+                m.Title,
+                m.Description,
+                m.OrderIndex,
+                m.Lessons.Select(l => new LessonSummaryDto(
+                    l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.OrderIndex, false
+                )).ToList()
+            ))
+            .ToListAsync();
+
+        return Ok(modules);
+    }
+
+    [HttpPost("{courseId:guid}/modules")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateModule(Guid courseId, [FromBody] CreateModuleRequest request)
     {
@@ -179,7 +249,79 @@ public class CoursesController : ControllerBase
         return Ok(module);
     }
 
-    [HttpPost("modules/{moduleId}/lessons")]
+    [HttpPut("modules/{moduleId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateModule(Guid moduleId, [FromBody] UpdateModuleRequest request)
+    {
+        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        if (module == null)
+        {
+            return NotFound(new { message = "Module not found." });
+        }
+
+        module.Title = request.Title;
+        module.Description = request.Description;
+        module.OrderIndex = request.OrderIndex;
+        module.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(module);
+    }
+
+    [HttpDelete("modules/{moduleId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteModule(Guid moduleId)
+    {
+        var module = await _dbContext.Modules
+            .Include(m => m.Lessons)
+            .FirstOrDefaultAsync(m => m.Id == moduleId);
+
+        if (module == null)
+        {
+            return NotFound(new { message = "Module not found." });
+        }
+
+        _dbContext.Modules.Remove(module);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Module and its lessons deleted successfully." });
+    }
+
+    // -------------------------------------------------------------------------
+    // LESSONS
+    // -------------------------------------------------------------------------
+
+    [HttpGet("lessons/{lessonId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> GetLessonDetail(Guid lessonId)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var studentId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
+
+        var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        if (lesson == null)
+        {
+            return NotFound(new { message = "Lesson not found." });
+        }
+
+        var isCompleted = studentId != Guid.Empty && await _dbContext.LessonCompletions
+            .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
+
+        var dto = new LessonDetailDto(
+            lesson.Id,
+            lesson.ModuleId,
+            lesson.Title,
+            lesson.Content,
+            lesson.VideoUrl,
+            lesson.XpReward,
+            lesson.EstimatedMinutes,
+            lesson.OrderIndex,
+            isCompleted
+        );
+
+        return Ok(dto);
+    }
+
+    [HttpPost("modules/{moduleId:guid}/lessons")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateLesson(Guid moduleId, [FromBody] CreateLessonRequest request)
     {
@@ -205,7 +347,33 @@ public class CoursesController : ControllerBase
         return Ok(lesson);
     }
 
-    [HttpPost("{id}/enroll")]
+    [HttpPut("lessons/{lessonId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateLesson(Guid lessonId, [FromBody] UpdateLessonRequest request)
+    {
+        var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        if (lesson == null)
+        {
+            return NotFound(new { message = "Lesson not found." });
+        }
+
+        lesson.Title = request.Title;
+        lesson.Content = request.Content;
+        lesson.VideoUrl = request.VideoUrl;
+        lesson.XpReward = request.XpReward;
+        lesson.EstimatedMinutes = request.EstimatedMinutes;
+        lesson.OrderIndex = request.OrderIndex;
+        lesson.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(lesson);
+    }
+
+    // -------------------------------------------------------------------------
+    // ENROLLMENT
+    // -------------------------------------------------------------------------
+
+    [HttpPost("{id:guid}/enroll")]
     [Authorize]
     public async Task<IActionResult> EnrollInCourse(Guid id)
     {
@@ -213,6 +381,12 @@ public class CoursesController : ControllerBase
         if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
         {
             return Unauthorized();
+        }
+
+        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == id && c.IsPublished);
+        if (!courseExists)
+        {
+            return NotFound(new { message = "Course not found or is not published." });
         }
 
         var existingEnrollment = await _dbContext.Enrollments
@@ -237,7 +411,90 @@ public class CoursesController : ControllerBase
         return Ok(new { message = "Successfully enrolled in course!", enrollmentId = enrollment.Id });
     }
 
-    [HttpPost("lessons/{lessonId}/complete")]
+    /// <summary>
+    /// Unenrolls the authenticated student from a course.
+    /// Sets enrollment status to Dropped rather than hard deleting for audit purposes.
+    /// </summary>
+    [HttpDelete("{courseId:guid}/enroll")]
+    [Authorize]
+    public async Task<IActionResult> UnenrollFromCourse(Guid courseId)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
+        {
+            return Unauthorized();
+        }
+
+        var enrollment = await _dbContext.Enrollments
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == studentId);
+
+        if (enrollment == null)
+        {
+            return NotFound(new { message = "Enrollment not found." });
+        }
+
+        // Soft delete — mark as Dropped to preserve audit trail
+        enrollment.Status = EnrollmentStatus.Dropped;
+        enrollment.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Successfully unenrolled from course." });
+    }
+
+    /// <summary>
+    /// Returns all courses the authenticated student is actively enrolled in,
+    /// with per-course progress and completion stats.
+    /// </summary>
+    [HttpGet("/api/students/me/courses")]
+    [Authorize]
+    public async Task<IActionResult> GetMyCourses()
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
+        {
+            return Unauthorized();
+        }
+
+        var enrollments = await _dbContext.Enrollments
+            .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active)
+            .Include(e => e.Course)
+                .ThenInclude(c => c!.Instructor)
+            .Include(e => e.Course)
+                .ThenInclude(c => c!.Modules)
+                    .ThenInclude(m => m.Lessons)
+            .ToListAsync();
+
+        var myCourses = enrollments.Select(e =>
+        {
+            var totalLessons = e.Course?.Modules.SelectMany(m => m.Lessons).Count() ?? 0;
+            var completedLessons = _dbContext.LessonCompletions
+                .Count(lc => lc.StudentId == studentId &&
+                             (e.Course != null && e.Course.Modules.Any(m => m.Lessons.Any(l => l.Id == lc.LessonId))));
+
+            return new EnrolledCourseDto(
+                EnrollmentId: e.Id,
+                CourseId: e.CourseId,
+                CourseCode: e.Course?.Code ?? string.Empty,
+                CourseTitle: e.Course?.Title ?? string.Empty,
+                ThumbnailUrl: e.Course?.ThumbnailUrl,
+                Category: e.Course?.Category ?? string.Empty,
+                InstructorName: e.Course?.Instructor?.FullName ?? "Instructor",
+                ProgressPercentage: e.ProgressPercentage,
+                Status: e.Status.ToString(),
+                EnrolledAt: e.CreatedAt,
+                TotalLessons: totalLessons,
+                CompletedLessons: completedLessons
+            );
+        }).ToList();
+
+        return Ok(myCourses);
+    }
+
+    // -------------------------------------------------------------------------
+    // LESSON COMPLETION (with XP award)
+    // -------------------------------------------------------------------------
+
+    [HttpPost("lessons/{lessonId:guid}/complete")]
     [Authorize]
     public async Task<IActionResult> CompleteLesson(Guid lessonId)
     {
@@ -282,3 +539,4 @@ public class CoursesController : ControllerBase
         return Ok(new { message = "Lesson was already completed." });
     }
 }
+

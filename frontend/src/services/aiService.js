@@ -19,6 +19,16 @@ export const aiService = {
     }
   },
 
+  async getWorkflows(status) {
+    const response = await api.get('/aireview/workflows', { params: { status } });
+    return response.data;
+  },
+
+  async getWorkflowById(id) {
+    const response = await api.get(`/aireview/workflows/${id}`);
+    return response.data;
+  },
+
   async orchestrateStudyPlan(data) {
     const response = await api.post('/aireview/orchestrate', data);
     return response.data;
@@ -26,6 +36,16 @@ export const aiService = {
 
   async submitDecision(proposalId, decision, comments) {
     const response = await api.post(`/aireview/proposals/${proposalId}/decision`, { decision, comments });
+    return response.data;
+  },
+
+  async approveProposal(proposalId, comments) {
+    const response = await api.post(`/aireview/proposals/${proposalId}/approve`, { comments });
+    return response.data;
+  },
+
+  async rejectProposal(proposalId, comments) {
+    const response = await api.post(`/aireview/proposals/${proposalId}/reject`, { comments });
     return response.data;
   },
 

@@ -163,6 +163,64 @@ public class AuthService : IAuthService
         );
     }
 
+    public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
+    {
+        var tokenEntity = await _dbContext.RefreshTokens
+            .FirstOrDefaultAsync(r => r.Token == refreshToken && !r.IsRevoked, ct);
+
+        if (tokenEntity != null)
+        {
+            tokenEntity.IsRevoked = true;
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        // Silently succeed even if token not found (idempotent logout)
+    }
+
+    public async Task<UserProfileDto> GetUserByIdAsync(Guid userId, CancellationToken ct = default)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user == null)
+        {
+            throw new KeyNotFoundException("User not found.");
+        }
+
+        return new UserProfileDto(
+            Id: user.Id,
+            FullName: user.FullName,
+            Email: user.Email,
+            Role: user.Role.ToString(),
+            AvatarUrl: user.AvatarUrl,
+            IsActive: user.IsActive
+        );
+    }
+
+    public async Task<UserProfileDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user == null)
+        {
+            throw new KeyNotFoundException("User not found.");
+        }
+
+        user.FullName = request.FullName;
+        if (request.AvatarUrl != null)
+        {
+            user.AvatarUrl = request.AvatarUrl;
+        }
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        return new UserProfileDto(
+            Id: user.Id,
+            FullName: user.FullName,
+            Email: user.Email,
+            Role: user.Role.ToString(),
+            AvatarUrl: user.AvatarUrl,
+            IsActive: user.IsActive
+        );
+    }
+
     private (string Token, DateTime ExpiresAt) GenerateJwtToken(User user)
     {
         var jwtSecret = _configuration["JwtSettings:Secret"] ?? "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";

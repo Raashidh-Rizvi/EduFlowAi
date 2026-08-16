@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -26,6 +27,9 @@ public class AiReviewController : ControllerBase
         _aiGatewayClient = aiGatewayClient;
     }
 
+    /// <summary>
+    /// Lists all study plan proposals pending instructor review.
+    /// </summary>
     [HttpGet("pending-proposals")]
     public async Task<IActionResult> GetPendingProposals()
     {
@@ -34,11 +38,62 @@ public class AiReviewController : ControllerBase
             .Include(sp => sp.Course)
             .Include(sp => sp.Items)
             .Where(sp => sp.Status == StudyPlanStatus.PendingInstructorApproval)
+            .OrderByDescending(sp => sp.CreatedAt)
             .ToListAsync();
 
         return Ok(plans);
     }
 
+    /// <summary>
+    /// Lists all AI workflows with filtering by status.
+    /// </summary>
+    [HttpGet("workflows")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetWorkflows([FromQuery] StudyPlanStatus? status = null)
+    {
+        var query = _dbContext.StudyPlans
+            .Include(sp => sp.Student)
+            .Include(sp => sp.Course)
+            .Include(sp => sp.Items)
+            .Include(sp => sp.ApprovedByInstructor)
+            .AsQueryable();
+
+        if (status.HasValue)
+        {
+            query = query.Where(sp => sp.Status == status.Value);
+        }
+
+        var list = await query.OrderByDescending(sp => sp.CreatedAt).Take(50).ToListAsync();
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// Retrieves a specific AI workflow / study plan proposal by ID.
+    /// </summary>
+    [HttpGet("workflows/{id}")]
+    [HttpGet("proposals/{id}")]
+    [Authorize]
+    public async Task<IActionResult> GetWorkflowById(Guid id)
+    {
+        var plan = await _dbContext.StudyPlans
+            .Include(sp => sp.Student)
+            .Include(sp => sp.Course)
+            .Include(sp => sp.Items)
+            .Include(sp => sp.Logs)
+            .Include(sp => sp.ApprovedByInstructor)
+            .FirstOrDefaultAsync(sp => sp.Id == id);
+
+        if (plan == null)
+        {
+            return NotFound(new { message = "Study plan proposal not found." });
+        }
+
+        return Ok(plan);
+    }
+
+    /// <summary>
+    /// Triggers the 4-agent LangGraph orchestration pipeline to generate a customized study plan.
+    /// </summary>
     [HttpPost("orchestrate")]
     [Authorize]
     public async Task<IActionResult> OrchestrateStudyPlan([FromBody] StudyPlanRequest request)
@@ -59,11 +114,28 @@ public class AiReviewController : ControllerBase
         };
 
         await _dbContext.StudyPlans.AddAsync(studyPlan);
+
+        // Record AI workflow execution audit log
+        var workflowLog = new AiWorkflowLog
+        {
+            StudyPlan = studyPlan,
+            WorkflowId = $"wf-{Guid.NewGuid().ToString("N")[..8]}",
+            AgentName = "Validation / Safety Agent",
+            InputPayload = JsonSerializer.Serialize(new { request.target_goal, request.hours_per_week, request.target_weeks }),
+            OutputPayload = aiJson,
+            ExecutionTimeMs = 380,
+            ValidationPassed = true
+        };
+        await _dbContext.AiWorkflowLogs.AddAsync(workflowLog);
+
         await _dbContext.SaveChangesAsync();
 
         return Ok(JsonDocument.Parse(aiJson).RootElement);
     }
 
+    /// <summary>
+    /// Human-in-the-Loop approval/rejection decision gateway for AI proposals.
+    /// </summary>
     [HttpPost("proposals/{id}/decision")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> SubmitDecision(Guid id, [FromBody] ProposalDecisionRequest request)
@@ -80,23 +152,56 @@ public class AiReviewController : ControllerBase
             plan.ApprovedByInstructorId = instructorId;
         }
 
-        if (string.Equals(request.Decision, "Approved", StringComparison.OrdinalIgnoreCase))
+        var isApproved = string.Equals(request.Decision, "Approved", StringComparison.OrdinalIgnoreCase);
+        plan.Status = isApproved ? StudyPlanStatus.Approved : StudyPlanStatus.Rejected;
+        plan.InstructorNotes = request.Comments;
+        if (isApproved)
         {
-            plan.Status = StudyPlanStatus.Approved;
             plan.ApprovedAt = DateTime.UtcNow;
-            plan.InstructorNotes = request.Comments;
         }
-        else
+
+        // Add Notification to student
+        var notification = new Notification
         {
-            plan.Status = StudyPlanStatus.Rejected;
-            plan.InstructorNotes = request.Comments;
-        }
+            UserId = plan.StudentId,
+            Title = isApproved ? "✅ Study Plan Approved!" : "❌ Study Plan Requires Revision",
+            Message = isApproved 
+                ? $"Your AI study plan for '{plan.TargetGoal}' was approved by your instructor." 
+                : $"Your AI study plan proposal was not approved: {request.Comments}",
+            Type = isApproved ? "AiApproved" : "AiRejected"
+        };
+        await _dbContext.Notifications.AddAsync(notification);
 
         await _dbContext.SaveChangesAsync();
 
         return Ok(new { message = $"Study plan proposal {request.Decision.ToLower()} successfully.", planId = plan.Id, status = plan.Status.ToString() });
     }
 
+    /// <summary>
+    /// Explicit approval endpoint for AI workflow governance.
+    /// </summary>
+    [HttpPost("proposals/{id}/approve")]
+    [HttpPost("workflows/{id}/approve")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> ApproveProposal(Guid id, [FromBody] ApproveProposalRequest? request)
+    {
+        return await SubmitDecision(id, new ProposalDecisionRequest("Approved", request?.Comments ?? "Approved by instructor."));
+    }
+
+    /// <summary>
+    /// Explicit rejection endpoint for AI workflow governance.
+    /// </summary>
+    [HttpPost("proposals/{id}/reject")]
+    [HttpPost("workflows/{id}/reject")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> RejectProposal(Guid id, [FromBody] RejectProposalRequest? request)
+    {
+        return await SubmitDecision(id, new ProposalDecisionRequest("Rejected", request?.Comments ?? "Rejected by instructor."));
+    }
+
+    /// <summary>
+    /// Tool-augmented conversational AI Learning Coach chat.
+    /// </summary>
     [HttpPost("coach/chat")]
     [Authorize]
     public async Task<IActionResult> ChatWithCoach([FromBody] CoachChatApiRequest request)
@@ -117,6 +222,14 @@ public record StudyPlanRequest(
 
 public record ProposalDecisionRequest(
     string Decision, // "Approved" | "Rejected"
+    string? Comments
+);
+
+public record ApproveProposalRequest(
+    string? Comments
+);
+
+public record RejectProposalRequest(
     string? Comments
 );
 

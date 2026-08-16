@@ -53,6 +53,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
 
+    // Analytics, Reports & Audit
+    public DbSet<Report> Reports => Set<Report>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -274,6 +278,23 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(sp => sp.ApprovedByInstructor)
                   .WithMany()
                   .HasForeignKey(sp => sp.ApprovedByInstructorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // --- Analytics, Reports & Audit ---
+        modelBuilder.Entity<Report>(entity =>
+        {
+            entity.HasOne(r => r.GeneratedBy)
+                  .WithMany()
+                  .HasForeignKey(r => r.GeneratedById)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.HasOne(a => a.Actor)
+                  .WithMany()
+                  .HasForeignKey(a => a.ActorId)
                   .OnDelete(DeleteBehavior.SetNull);
         });
 

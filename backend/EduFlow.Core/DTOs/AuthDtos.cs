@@ -20,6 +20,15 @@ public record RefreshTokenRequest(
     string RefreshToken
 );
 
+public record LogoutRequest(
+    string RefreshToken
+);
+
+public record UpdateProfileRequest(
+    string FullName,
+    string? AvatarUrl
+);
+
 public record AuthResponse(
     Guid UserId,
     string FullName,
@@ -38,3 +47,4 @@ public record UserProfileDto(
     string? AvatarUrl,
     bool IsActive
 );
+

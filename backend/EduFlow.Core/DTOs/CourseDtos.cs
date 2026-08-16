@@ -72,6 +72,12 @@ public record CreateModuleRequest(
     int OrderIndex
 );
 
+public record UpdateModuleRequest(
+    string Title,
+    string Description,
+    int OrderIndex
+);
+
 public record CreateLessonRequest(
     string Title,
     string Content,
@@ -80,3 +86,32 @@ public record CreateLessonRequest(
     int EstimatedMinutes,
     int OrderIndex
 );
+
+public record UpdateLessonRequest(
+    string Title,
+    string Content,
+    string? VideoUrl,
+    int XpReward,
+    int EstimatedMinutes,
+    int OrderIndex
+);
+
+public record PublishCourseRequest(
+    bool IsPublished
+);
+
+public record EnrolledCourseDto(
+    Guid EnrollmentId,
+    Guid CourseId,
+    string CourseCode,
+    string CourseTitle,
+    string? ThumbnailUrl,
+    string Category,
+    string InstructorName,
+    double ProgressPercentage,
+    string Status,
+    DateTime EnrolledAt,
+    int TotalLessons,
+    int CompletedLessons
+);
+

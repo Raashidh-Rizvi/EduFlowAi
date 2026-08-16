@@ -40,6 +40,28 @@ public class NotificationsController : ControllerBase
         return Ok(notifications);
     }
 
+    [HttpPost("{id}/read")]
+    [Authorize]
+    public async Task<IActionResult> MarkAsRead(Guid id)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        var notification = await _dbContext.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.UserId == userId);
+        if (notification == null)
+        {
+            return NotFound(new { message = "Notification not found." });
+        }
+
+        notification.IsRead = true;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Notification marked as read.", id = notification.Id });
+    }
+
     [HttpPost("broadcast")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> BroadcastAnnouncement([FromBody] BroadcastRequest request)

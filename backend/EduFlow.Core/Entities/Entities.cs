@@ -394,3 +394,28 @@ public class Announcement : BaseEntity
     public string Content { get; set; } = string.Empty;
     public bool IsGlobal { get; set; } = false;
 }
+
+// -----------------------------------------------------------------------------
+// 8. Analytics, Reports & Audit Trail Entities
+// -----------------------------------------------------------------------------
+public class Report : BaseEntity
+{
+    public string Title { get; set; } = string.Empty;
+    public string Type { get; set; } = "StudentPerformance"; // StudentPerformance | CourseAnalytics | EngagementSummary | GamificationAudit
+    public Guid? GeneratedById { get; set; }
+    public User? GeneratedBy { get; set; }
+    public string Status { get; set; } = "Completed"; // Pending | Completed | Failed
+    public string SummaryJson { get; set; } = "{}";
+    public string? FileUrl { get; set; }
+}
+
+public class AuditLog : BaseEntity
+{
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string EntityId { get; set; } = string.Empty;
+    public string Details { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = "127.0.0.1";
+}
