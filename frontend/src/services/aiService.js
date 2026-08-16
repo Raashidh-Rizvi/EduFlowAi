@@ -49,6 +49,16 @@ export const aiService = {
     return response.data;
   },
 
+  async getToolsRegistry() {
+    const response = await api.get('/aireview/tools-registry');
+    return response.data;
+  },
+
+  async getObservabilityMetrics() {
+    const response = await api.get('/aireview/observability-metrics');
+    return response.data;
+  },
+
   async submitDecision(proposalId, decision, comments) {
     const response = await api.post(`/aireview/proposals/${proposalId}/decision`, { decision, comments });
     return response.data;
@@ -61,6 +71,11 @@ export const aiService = {
 
   async rejectProposal(proposalId, comments) {
     const response = await api.post(`/aireview/proposals/${proposalId}/reject`, { comments });
+    return response.data;
+  },
+
+  async requestRevision(proposalId, comments) {
+    const response = await api.post(`/aireview/proposals/${proposalId}/revise`, { comments });
     return response.data;
   },
 

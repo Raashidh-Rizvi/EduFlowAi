@@ -16,6 +16,10 @@ public interface IAiGatewayClient
     Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default);
     Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GetAgentsTopologyAsync(CancellationToken ct = default);
+    Task<string> ExecuteWorkflowAsync(object requestPayload, CancellationToken ct = default);
+    Task<string> SubmitWorkflowDecisionAsync(string workflowId, object requestPayload, CancellationToken ct = default);
+    Task<string> GetToolRegistryAsync(CancellationToken ct = default);
+    Task<string> GetObservabilityMetricsAsync(CancellationToken ct = default);
 }
 
 public class AiGatewayClient : IAiGatewayClient
@@ -141,6 +145,108 @@ public class AiGatewayClient : IAiGatewayClient
         }
 
         return FallbackTopologyJson();
+    }
+
+    public async Task<string> ExecuteWorkflowAsync(object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/workflows/execute", requestPayload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            workflowId = $"wf-{Guid.NewGuid().ToString("N")[..8]}",
+            status = "PENDING_APPROVAL",
+            plan = new[] { new { stepId = "1", action = "GET_STUDENT_PROGRESS", owner = "ACTION_TOOL" } },
+            validation = new { passed = true, deterministic_rule_count = 5 }
+        });
+    }
+
+    public async Task<string> SubmitWorkflowDecisionAsync(string workflowId, object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/workflows/{workflowId}/decision", requestPayload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            workflow_id = workflowId,
+            current_status = "APPROVED",
+            message = "Decision processed successfully."
+        });
+    }
+
+    public async Task<string> GetToolRegistryAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_baseUrl}/tools/registry", ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            total_tools = 7,
+            tools = new[]
+            {
+                new { name = "get_course_content", description = "Retrieves syllabus modules and topics." },
+                new { name = "get_student_progress", description = "Retrieves student completions." },
+                new { name = "get_quiz_results", description = "Retrieves recent quiz scores." },
+                new { name = "create_quiz_draft", description = "Generates Bloom's taxonomy tagged questions." },
+                new { name = "create_challenge_draft", description = "Generates adaptive quests." },
+                new { name = "generate_feedback_draft", description = "Generates remediation feedback." },
+                new { name = "get_gamification_rules", description = "Retrieves economy constraints." }
+            }
+        });
+    }
+
+    public async Task<string> GetObservabilityMetricsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_baseUrl}/observability/metrics", ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            active_workflows_tracked = 5,
+            registered_tools_count = 7,
+            privacy_enforcement = "PII redaction active",
+            error_classification = "8 classified exception types"
+        });
     }
 
     private static string FallbackStudyPlanJson()

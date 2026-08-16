@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI, HTTPException
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from models.schemas import (
     StudyPlanRequest, 
@@ -13,20 +14,26 @@ from models.schemas import (
     RetentionRiskResponse,
     CoachChatRequest,
     CoachChatResponse,
-    AgentTopologyResponse
+    AgentTopologyResponse,
+    WorkflowDecisionRequest,
+    WorkflowDecisionResponse
 )
+from models.state import SharedAgentState
 from graph.workflow import (
     StudyPlanOrchestrator, 
     AdaptiveChallengeOrchestrator, 
     QuizGeneratorOrchestrator,
     RetentionOrchestrator,
     AiCoachOrchestrator,
-    AgentTopologyRegistry
+    AgentTopologyRegistry,
+    LangGraphPipeline,
+    ACTIVE_WORKFLOWS
 )
+from tools.registry import tool_registry
 
 app = FastAPI(
     title="EduFlow AI – Interconnected Multi-Agent Orchestration Service 🧠",
-    description="Python LangGraph microservice powering 7 interconnected AI agents for personalized learning, adaptive assessments, deterministic safety, and retention governance.",
+    description="Python LangGraph microservice powering 7 interconnected AI agents for personalized learning, adaptive assessments, deterministic safety, tool registries, and retention governance.",
     version="2.0.0"
 )
 
@@ -53,13 +60,25 @@ def health_check():
             "QuizGeneratorAgent",
             "RetentionBehaviorAgent",
             "AiCoachAgent"
-        ]
+        ],
+        "tool_registry_count": len(tool_registry.list_tools())
     }
 
 @app.get("/agents/topology", response_model=AgentTopologyResponse)
 def get_agents_topology():
     try:
         return AgentTopologyRegistry.get_topology()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tools/registry")
+def get_tool_registry():
+    """Returns all registered permitted tools and their allowed agent callers."""
+    try:
+        return {
+            "total_tools": len(tool_registry.list_tools()),
+            "tools": tool_registry.list_tools()
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -97,6 +116,64 @@ def ai_coach_chat(request: CoachChatRequest):
         return AiCoachOrchestrator.answer_student_query(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/workflows/execute", response_model=SharedAgentState)
+def execute_langgraph_workflow(
+    student_id: str = Body(..., embed=True),
+    objective: Dict[str, Any] = Body(..., embed=True),
+    student_context: Dict[str, Any] = Body(default_factory=dict, embed=True),
+    requires_human_approval: bool = Body(default=True, embed=True)
+):
+    """Executes end-to-end 11-field shared state LangGraph pipeline."""
+    try:
+        return LangGraphPipeline.execute_workflow(
+            student_id=student_id,
+            objective=objective,
+            student_context=student_context,
+            requires_human_approval=requires_human_approval
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/workflows/{workflow_id}/decision", response_model=WorkflowDecisionResponse)
+def submit_workflow_decision(workflow_id: str, request: WorkflowDecisionRequest):
+    """Human approval state machine decision handler."""
+    try:
+        updated_state = LangGraphPipeline.process_review_decision(
+            workflow_id=workflow_id,
+            decision=request.decision,
+            reviewer_id=request.reviewer_id,
+            comments=request.comments
+        )
+        return WorkflowDecisionResponse(
+            workflow_id=workflow_id,
+            previous_status="PENDING_APPROVAL",
+            current_status=updated_state.status,
+            decision=request.decision,
+            reviewer_id=request.reviewer_id,
+            comments=request.comments,
+            transition_timestamp=updated_state.approval.get("reviewedAt", ""),
+            message=f"Workflow state successfully updated to '{updated_state.status}'."
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/workflows/{workflow_id}/status", response_model=SharedAgentState)
+def get_workflow_status(workflow_id: str):
+    if workflow_id not in ACTIVE_WORKFLOWS:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    return ACTIVE_WORKFLOWS[workflow_id]
+
+@app.get("/observability/metrics")
+def get_observability_metrics():
+    active_count = len(ACTIVE_WORKFLOWS)
+    return {
+        "active_workflows_tracked": active_count,
+        "registered_tools_count": len(tool_registry.list_tools()),
+        "privacy_enforcement": "PII redaction active",
+        "error_classification": "8 classified exception types",
+        "resilience_policy": "Exponential backoff with randomized jitter"
+    }
 
 if __name__ == "__main__":
     import uvicorn

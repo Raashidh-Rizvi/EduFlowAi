@@ -33,7 +33,93 @@ class AgentTopologyResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# 2. Study Plan Orchestration Schemas (Coordinator/Planner + Domain + Action + Validation)
+# 2. Planner & Tool Schemas
+# -----------------------------------------------------------------------------
+class PlanStepModel(BaseModel):
+    stepId: str
+    action: str
+    owner: str
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+class PlannerOutput(BaseModel):
+    steps: List[PlanStepModel]
+    total_estimated_hours: float = 0.0
+    rationale: str = ""
+
+
+# -----------------------------------------------------------------------------
+# 3. Domain Analysis Telemetry & Grounded Output Schemas
+# -----------------------------------------------------------------------------
+class LearningGapItem(BaseModel):
+    topic: str
+    accuracy_pct: float
+    evidence: str  # Linked to specific test scores or mistakes
+
+class StrengthItem(BaseModel):
+    topic: str
+    accuracy_pct: float
+    evidence: str
+
+class DomainFeatureInputs(BaseModel):
+    recent_quiz_scores: List[float] = Field(default_factory=lambda: [65.0, 70.0])
+    topic_level_performance: Dict[str, float] = Field(default_factory=lambda: {"PostgreSQL Composite Indexes": 45.0, "EF Core Migrations": 85.0})
+    lesson_completion: List[str] = Field(default_factory=lambda: ["MOD-01-L01", "MOD-01-L02"])
+    challenge_completion: Dict[str, Any] = Field(default_factory=lambda: {"completed": 3, "attempted": 4})
+    streak: int = 4
+    xp_trend: List[int] = Field(default_factory=lambda: [50, 60, 120, 90])
+    time_on_task: float = 185.0  # Minutes
+    recent_mistakes: List[str] = Field(default_factory=lambda: ["Missed leftmost prefix index ordering in query planner"])
+
+class DomainAnalysisOutput(BaseModel):
+    learningGaps: List[LearningGapItem]
+    strengths: List[StrengthItem]
+    recommendedDifficulty: str = "medium"  # easy | medium | hard | boss
+    engagementState: str = "healthy"       # healthy | at_risk | inactive | surging
+    nextBestAction: str = "CHALLENGE"      # LESSON | QUIZ | CHALLENGE | LAB | STREAK_PROTECT | COACH_NUDGE
+    cognitiveLoadIndex: float = 0.65
+    masteryLevel: str = "Intermediate"
+
+
+# -----------------------------------------------------------------------------
+# 4. Deterministic Validation Schemas
+# -----------------------------------------------------------------------------
+class ValidationCheck(BaseModel):
+    passed: bool
+    errors: List[str] = []
+    warnings: List[str] = []
+    deterministic_rule_count: int = 5
+    checked_at: Optional[str] = None
+    requires_human_approval: bool = True
+    validated_layers: List[str] = [
+        "1. JSON Schema Integrity",
+        "2. Course Curriculum Reference",
+        "3. Platform Business Rules (XP <= 150)",
+        "4. Safety & Grade Isolation",
+        "5. Approval Gating Decision"
+    ]
+
+
+# -----------------------------------------------------------------------------
+# 5. Human Approval & Workflow State Machine Schemas
+# -----------------------------------------------------------------------------
+class WorkflowDecisionRequest(BaseModel):
+    decision: str = Field(..., description="'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED'")
+    comments: Optional[str] = None
+    reviewer_id: Optional[str] = "Instructor-1"
+
+class WorkflowDecisionResponse(BaseModel):
+    workflow_id: str
+    previous_status: str
+    current_status: str
+    decision: str
+    reviewer_id: Optional[str]
+    comments: Optional[str]
+    transition_timestamp: str
+    message: str
+
+
+# -----------------------------------------------------------------------------
+# 6. Study Plan Orchestration Schemas
 # -----------------------------------------------------------------------------
 class StudyPlanRequest(BaseModel):
     student_id: str = Field(..., description="UUID of the requesting student")
@@ -64,13 +150,6 @@ class StudyPlanActivity(BaseModel):
     estimated_minutes: int = 45
     xp_reward: int = 40
 
-class ValidationCheck(BaseModel):
-    passed: bool
-    errors: List[str] = []
-    warnings: List[str] = []
-    deterministic_rule_count: int = 5
-    checked_at: Optional[str] = None
-
 class StudyPlanProposalResponse(BaseModel):
     workflow_id: str
     student_id: str
@@ -82,10 +161,11 @@ class StudyPlanProposalResponse(BaseModel):
     validation: ValidationCheck
     audit_trail: List[AgentExecutionLog]
     status: str = "PendingInstructorApproval"
+    shared_state: Optional[Dict[str, Any]] = None
 
 
 # -----------------------------------------------------------------------------
-# 3. Adaptive Challenge Generation Schemas (Content/Action + Validation)
+# 7. Adaptive Challenge Generation Schemas
 # -----------------------------------------------------------------------------
 class AdaptiveChallengeRequest(BaseModel):
     student_id: str
@@ -118,7 +198,7 @@ class AdaptiveChallengeResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# 4. Automated Quiz & Assessment Generation Schemas (Quiz Generator Agent)
+# 8. Automated Quiz & Assessment Schemas
 # -----------------------------------------------------------------------------
 class DiagnosticQuizRequest(BaseModel):
     course_id: str
@@ -152,7 +232,7 @@ class DiagnosticQuizResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# 5. Gamification & Retention Intervention Schemas (Retention Agent)
+# 9. Retention & Gamification Schemas
 # -----------------------------------------------------------------------------
 class RetentionAnalysisRequest(BaseModel):
     student_id: str
@@ -180,7 +260,7 @@ class RetentionRiskResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# 6. AI Coach Chat Schemas (AiCoachAgent)
+# 10. AI Coach Chat Schemas
 # -----------------------------------------------------------------------------
 class CoachChatRequest(BaseModel):
     student_id: str

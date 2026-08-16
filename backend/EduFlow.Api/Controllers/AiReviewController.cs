@@ -134,7 +134,7 @@ public class AiReviewController : ControllerBase
     }
 
     /// <summary>
-    /// Human-in-the-Loop approval/rejection decision gateway for AI proposals.
+    /// Human-in-the-Loop approval/rejection/revision decision gateway for AI proposals.
     /// </summary>
     [HttpPost("proposals/{id}/decision")]
     [Authorize(Roles = "Instructor,Admin")]
@@ -152,23 +152,40 @@ public class AiReviewController : ControllerBase
             plan.ApprovedByInstructorId = instructorId;
         }
 
-        var isApproved = string.Equals(request.Decision, "Approved", StringComparison.OrdinalIgnoreCase);
-        plan.Status = isApproved ? StudyPlanStatus.Approved : StudyPlanStatus.Rejected;
-        plan.InstructorNotes = request.Comments;
+        bool isApproved = string.Equals(request.Decision, "Approved", StringComparison.OrdinalIgnoreCase);
+        bool isRevision = string.Equals(request.Decision, "RevisionRequested", StringComparison.OrdinalIgnoreCase) || string.Equals(request.Decision, "Revise", StringComparison.OrdinalIgnoreCase);
+
         if (isApproved)
         {
+            plan.Status = StudyPlanStatus.Approved;
             plan.ApprovedAt = DateTime.UtcNow;
         }
+        else if (isRevision)
+        {
+            plan.Status = StudyPlanStatus.RevisionRequested;
+        }
+        else
+        {
+            plan.Status = StudyPlanStatus.Rejected;
+        }
+
+        plan.InstructorNotes = request.Comments;
+
+        // Forward decision to Python AI Agent microservice if active
+        _ = Task.Run(() => _aiGatewayClient.SubmitWorkflowDecisionAsync(id.ToString(), new { decision = request.Decision, comments = request.Comments }));
 
         // Add Notification to student
+        string notifTitle = isApproved ? "✅ Study Plan Approved!" : (isRevision ? "🔄 Study Plan Revision Requested" : "❌ Study Plan Requires Revision");
+        string notifMsg = isApproved 
+            ? $"Your AI study plan for '{plan.TargetGoal}' was approved by your instructor." 
+            : (isRevision ? $"Your instructor requested revisions: {request.Comments}" : $"Your AI study plan proposal was not approved: {request.Comments}");
+
         var notification = new Notification
         {
             UserId = plan.StudentId,
-            Title = isApproved ? "✅ Study Plan Approved!" : "❌ Study Plan Requires Revision",
-            Message = isApproved 
-                ? $"Your AI study plan for '{plan.TargetGoal}' was approved by your instructor." 
-                : $"Your AI study plan proposal was not approved: {request.Comments}",
-            Type = isApproved ? "AiApproved" : "AiRejected"
+            Title = notifTitle,
+            Message = notifMsg,
+            Type = isApproved ? "AiApproved" : (isRevision ? "AiRevision" : "AiRejected")
         };
         await _dbContext.Notifications.AddAsync(notification);
 
@@ -200,6 +217,17 @@ public class AiReviewController : ControllerBase
     }
 
     /// <summary>
+    /// Explicit revision requested endpoint for AI workflow governance.
+    /// </summary>
+    [HttpPost("proposals/{id}/revise")]
+    [HttpPost("workflows/{id}/revise")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> RequestRevision(Guid id, [FromBody] ReviseProposalRequest? request)
+    {
+        return await SubmitDecision(id, new ProposalDecisionRequest("RevisionRequested", request?.Comments ?? "Revisions requested by instructor."));
+    }
+
+    /// <summary>
     /// Returns the live topology, roles, and status of all 7 interconnected agents.
     /// </summary>
     [HttpGet("agents-topology")]
@@ -207,6 +235,26 @@ public class AiReviewController : ControllerBase
     {
         var topologyJson = await _aiGatewayClient.GetAgentsTopologyAsync();
         return Ok(JsonDocument.Parse(topologyJson).RootElement);
+    }
+
+    /// <summary>
+    /// Returns the registered permitted tools list.
+    /// </summary>
+    [HttpGet("tools-registry")]
+    public async Task<IActionResult> GetToolsRegistry()
+    {
+        var toolsJson = await _aiGatewayClient.GetToolRegistryAsync();
+        return Ok(JsonDocument.Parse(toolsJson).RootElement);
+    }
+
+    /// <summary>
+    /// Returns AI observability and performance metrics.
+    /// </summary>
+    [HttpGet("observability-metrics")]
+    public async Task<IActionResult> GetObservabilityMetrics()
+    {
+        var metricsJson = await _aiGatewayClient.GetObservabilityMetricsAsync();
+        return Ok(JsonDocument.Parse(metricsJson).RootElement);
     }
 
     /// <summary>
@@ -253,7 +301,7 @@ public record StudyPlanRequest(
 );
 
 public record ProposalDecisionRequest(
-    string Decision, // "Approved" | "Rejected"
+    string Decision, // "Approved" | "Rejected" | "RevisionRequested"
     string? Comments
 );
 
@@ -262,6 +310,10 @@ public record ApproveProposalRequest(
 );
 
 public record RejectProposalRequest(
+    string? Comments
+);
+
+public record ReviseProposalRequest(
     string? Comments
 );
 

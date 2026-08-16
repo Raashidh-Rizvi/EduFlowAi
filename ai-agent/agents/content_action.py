@@ -8,15 +8,16 @@ from models.schemas import (
     ChallengeQuestionItem,
     GapAnalysisResult
 )
+from tools.registry import tool_registry
 
 class ActionToolAgent(BaseAgent):
     """
     Action & Content Tool Agent (Member 2 - Assessments & Tools)
     Responsible for:
-    - Executing controlled curriculum content and assessment generation tools
+    - Executing controlled curriculum content and assessment generation tools from the permitted tool registry
     - Formulating adaptive micro-challenges targeting diagnosed weak spots
     - Constructing structured interactive quests, labs, and boss challenges
-    - Calibrating questions with distractors and explanations
+    - Calibrating questions with distractors and pedagogical explanations
     """
     def __init__(self):
         super().__init__(
@@ -24,6 +25,15 @@ class ActionToolAgent(BaseAgent):
             role_description="Executes educational tools and creates tailored adaptive challenges, labs, and quests.",
             member_owner="Member 2 (Assessments & Tools)"
         )
+
+    def execute_controlled_tool(self, tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], AgentExecutionLog]:
+        """Executes a specific tool via the verified ToolRegistry."""
+        def _execute(_):
+            result, duration_ms = tool_registry.execute_tool(tool_name, "ACTION_TOOL", params)
+            summary = f"Executed permitted tool '{tool_name}' successfully ({duration_ms}ms)."
+            return result, summary, True
+
+        return self.execute_with_trace(None, _execute)
 
     def generate_study_schedule(
         self, 
@@ -82,7 +92,7 @@ class ActionToolAgent(BaseAgent):
             workflow_id = f"wf-ch-{uuid.uuid4().hex[:8]}"
             challenge_id = str(uuid.uuid4())
 
-            # Difficulty matrices bounded strictly by economy rules
+            # Difficulty matrices bounded strictly by economy rules (Max 150 XP)
             difficulty_matrix = {
                 "Easy": {"xp": 50, "coins": 15, "time": 10},
                 "Medium": {"xp": 120, "coins": 40, "time": 15},
@@ -92,32 +102,45 @@ class ActionToolAgent(BaseAgent):
 
             config = difficulty_matrix.get(req.target_difficulty, difficulty_matrix["Medium"])
 
+            # Call tool registry create_challenge_draft for underlying question items
+            draft_res, _ = tool_registry.execute_tool(
+                "create_challenge_draft",
+                "ACTION_TOOL",
+                {
+                    "weak_topic": req.weak_topic,
+                    "difficulty": req.target_difficulty,
+                    "xp_reward": config["xp"],
+                    "coin_reward": config["coins"],
+                    "time_limit_minutes": config["time"]
+                }
+            )
+
             questions = [
                 ChallengeQuestionItem(
-                    question_text=f"When working with {req.weak_topic}, what is the primary reason to enforce explicit transaction boundaries?",
-                    options=[
-                        "To ensure atomic commits and prevent partial state corruption on failure",
-                        "To bypass database query parsing latency",
-                        "To eliminate the need for primary keys",
-                        "To convert synchronous web requests to UDP broadcasts"
-                    ],
-                    correct_index=0,
-                    explanation="Transactional ACID boundaries guarantee that multi-step state transitions succeed completely or rollback cleanly.",
-                    points=10
-                ),
-                ChallengeQuestionItem(
-                    question_text=f"Which diagnostic indicator most reliably reveals performance bottlenecks in {req.weak_topic}?",
-                    options=[
-                        "Database query execution plans showing sequential table scans instead of index seeks",
-                        "Number of comments in the source code files",
-                        "The color scheme of the client frontend",
-                        "Using uppercase letters for C# property names"
-                    ],
-                    correct_index=0,
-                    explanation="Execution plans showing full sequential scans indicate missing or suboptimal composite indexes.",
-                    points=10
+                    question_text=q["question_text"],
+                    options=q["options"],
+                    correct_index=q["correct_index"],
+                    explanation=q["explanation"],
+                    points=q.get("points", 10)
                 )
+                for q in draft_res.get("questions", [])
             ]
+
+            if not questions:
+                questions = [
+                    ChallengeQuestionItem(
+                        question_text=f"When working with {req.weak_topic}, what is the primary reason to enforce explicit transaction boundaries?",
+                        options=[
+                            "To ensure atomic commits and prevent partial state corruption on failure",
+                            "To bypass database query parsing latency",
+                            "To eliminate the need for primary keys",
+                            "To convert synchronous web requests to UDP broadcasts"
+                        ],
+                        correct_index=0,
+                        explanation="Transactional ACID boundaries guarantee that multi-step state transitions succeed completely or rollback cleanly.",
+                        points=10
+                    )
+                ]
 
             challenge = AdaptiveChallengeResponse(
                 challenge_id=challenge_id,

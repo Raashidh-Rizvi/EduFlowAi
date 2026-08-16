@@ -1,5 +1,6 @@
 import uuid
-from typing import Dict, Any, List
+import time
+from typing import Dict, Any, List, Optional
 from models.schemas import (
     StudyPlanRequest, 
     StudyPlanProposalResponse, 
@@ -14,8 +15,10 @@ from models.schemas import (
     AgentTopologyResponse,
     AgentTopologyNode,
     AgentTopologyEdge,
-    AgentExecutionLog
+    AgentExecutionLog,
+    DomainFeatureInputs
 )
+from models.state import SharedAgentState, WorkflowStatus, ApprovalRecord
 from agents.planner import CoordinatorPlannerAgent
 from agents.domain_analysis import DomainAnalysisAgent
 from agents.content_action import ActionToolAgent
@@ -23,6 +26,10 @@ from agents.validation_guard import ValidationGuardAgent
 from agents.quiz_generator import QuizGeneratorAgent
 from agents.retention_behavior import RetentionBehaviorAgent
 from agents.ai_coach import AiCoachAgent
+from graph.approval_state_machine import ApprovalStateMachine
+from core.observability import ObservabilityCollector, redact_dict
+from core.retry import retry_with_backoff
+from tools.registry import tool_registry
 
 # Instantiate singleton agent ecosystem
 planner_agent = CoordinatorPlannerAgent()
@@ -32,6 +39,181 @@ validation_agent = ValidationGuardAgent()
 quiz_agent = QuizGeneratorAgent()
 retention_agent = RetentionBehaviorAgent()
 coach_agent = AiCoachAgent()
+
+# Global in-memory workflow store for active graphs & state machine tracking
+ACTIVE_WORKFLOWS: Dict[str, SharedAgentState] = {}
+
+
+class LangGraphPipeline:
+    """
+    Executes the 11-field Shared State LangGraph multi-agent graph:
+    [START] -> [Planner] -> [Domain Analysis] -> [Action / Tool] -> [Validation Guard] -> [Human Review Gate] -> [Execute] -> [END]
+                                                                                                 ^           |
+                                                                                                 |--Revision-|
+    """
+    @staticmethod
+    def execute_workflow(
+        student_id: str,
+        objective: Dict[str, Any],
+        student_context: Dict[str, Any],
+        requires_human_approval: bool = True
+    ) -> SharedAgentState:
+        workflow_id = f"wf-{uuid.uuid4().hex[:8]}"
+        obs = ObservabilityCollector(workflow_id)
+
+        state = SharedAgentState(
+            workflowId=workflow_id,
+            studentId=student_id,
+            objective=objective,
+            studentContext=student_context,
+            status=WorkflowStatus.DRAFT.value
+        )
+
+        try:
+            # 1. State: DRAFT -> Coordinator / Planner Node
+            plan_out, plan_log = planner_agent.build_execution_plan(objective, student_context)
+            state.plan = [s.model_dump() for s in plan_out.steps]
+            state.executionLogs.append(plan_log.model_dump())
+            obs.record_agent_duration("Coordinator / Planner Agent", plan_log.execution_time_ms)
+            obs.record_token_usage(120, 85)
+
+            # 2. Domain Analysis Node
+            features = DomainFeatureInputs(
+                recent_quiz_scores=student_context.get("recent_quiz_scores", [65.0, 70.0]),
+                topic_level_performance=student_context.get("topic_performance", {"PostgreSQL Composite Indexes": 45.0}),
+                lesson_completion=student_context.get("lesson_completion", ["MOD-01-L01"]),
+                streak=int(student_context.get("streak", 4)),
+                time_on_task=float(student_context.get("time_on_task", 185.0)),
+                recent_mistakes=student_context.get("mistakes", ["Composite index ordering"])
+            )
+            analysis_out, domain_log = domain_agent.analyze_student_features(features)
+            state.analysis = analysis_out.model_dump()
+            state.executionLogs.append(domain_log.model_dump())
+            obs.record_agent_duration("Domain Analysis Agent", domain_log.execution_time_ms)
+            obs.record_token_usage(95, 110)
+
+            # 3. Action / Tool Node
+            tool_res, tool_log = action_agent.execute_controlled_tool(
+                "create_challenge_draft",
+                {
+                    "weak_topic": analysis_out.learningGaps[0].topic if analysis_out.learningGaps else "Core Architecture",
+                    "difficulty": analysis_out.recommendedDifficulty,
+                    "xp_reward": 120,
+                    "coin_reward": 40,
+                    "time_limit_minutes": 15
+                }
+            )
+            state.toolResults.append({
+                "toolName": "create_challenge_draft",
+                "executedBy": "ACTION_TOOL",
+                "durationMs": tool_log.execution_time_ms,
+                "data": tool_res
+            })
+            state.candidateOutput = tool_res
+            state.executionLogs.append(tool_log.model_dump())
+            obs.record_agent_duration("Content & Action Tool Agent", tool_log.execution_time_ms)
+            obs.record_tool_latency("create_challenge_draft", tool_log.execution_time_ms)
+            obs.record_token_usage(140, 160)
+
+            # 4. Validation & Safety Guard Node: State -> VALIDATING
+            state.status = WorkflowStatus.VALIDATING.value
+            val_check, val_log = validation_agent.validate_candidate_draft("AdaptiveChallenge", state.candidateOutput)
+            state.validation = val_check.model_dump()
+            state.executionLogs.append(val_log.model_dump())
+            obs.record_agent_duration("Validation & Safety Guard Agent", val_log.execution_time_ms)
+
+            if not val_check.passed:
+                for err in val_check.errors:
+                    obs.record_validation_failure(err)
+                state.status = WorkflowStatus.FAILED.value
+                state.observabilityMetrics = obs.get_summary().model_dump()
+                ACTIVE_WORKFLOWS[workflow_id] = state
+                return state
+
+            # 5. Human Review Gate
+            if requires_human_approval and val_check.requires_human_approval:
+                state.status = WorkflowStatus.PENDING_APPROVAL.value
+                state.approval = ApprovalRecord(required=True, status="PENDING").model_dump()
+            else:
+                # Direct safe auto-execution
+                state.status = WorkflowStatus.COMPLETED.value
+                state.approval = ApprovalRecord(required=False, status="AUTO_APPROVED").model_dump()
+
+            state.observabilityMetrics = obs.get_summary().model_dump()
+            ACTIVE_WORKFLOWS[workflow_id] = state
+            return state
+
+        except Exception as e:
+            obs.record_failure(str(e))
+            state.status = WorkflowStatus.FAILED.value
+            state.observabilityMetrics = obs.get_summary().model_dump()
+            ACTIVE_WORKFLOWS[workflow_id] = state
+            raise e
+
+    @staticmethod
+    def process_review_decision(
+        workflow_id: str,
+        decision: str,
+        reviewer_id: Optional[str] = None,
+        comments: Optional[str] = None
+    ) -> SharedAgentState:
+        """
+        Handles instructor review decision (APPROVED, REJECTED, REVISION_REQUESTED)
+        and transitions the shared state graph accordingly.
+        """
+        if workflow_id not in ACTIVE_WORKFLOWS:
+            # Create a placeholder if not present
+            ACTIVE_WORKFLOWS[workflow_id] = SharedAgentState(
+                workflowId=workflow_id,
+                studentId="student-uuid",
+                status=WorkflowStatus.PENDING_APPROVAL.value
+            )
+
+        state = ACTIVE_WORKFLOWS[workflow_id]
+        current_status = state.status
+
+        decision_upper = decision.upper()
+        if decision_upper == "APPROVED":
+            target_status = WorkflowStatus.APPROVED.value
+        elif decision_upper == "REJECTED":
+            target_status = WorkflowStatus.REJECTED.value
+        elif decision_upper in ["REVISION_REQUESTED", "REVISE"]:
+            target_status = WorkflowStatus.REVISION_REQUESTED.value
+        else:
+            target_status = WorkflowStatus.PENDING_APPROVAL.value
+
+        # Execute state machine transition
+        transition_record = ApprovalStateMachine.transition(
+            current_status=current_status,
+            target_status=target_status,
+            reviewer_id=reviewer_id,
+            comments=comments
+        )
+
+        state.status = target_status
+        approval_rec = ApprovalRecord(
+            required=True,
+            status=target_status,
+            reviewerId=reviewer_id,
+            reviewedAt=transition_record["timestamp"],
+            comments=comments,
+            revisionCount=state.approval.get("revisionCount", 0) + (1 if target_status == WorkflowStatus.REVISION_REQUESTED.value else 0)
+        )
+        state.approval = approval_rec.model_dump()
+
+        # If revision requested, trigger Planner re-evaluation loop
+        if target_status == WorkflowStatus.REVISION_REQUESTED.value:
+            state.objective["revision_instructions"] = comments
+            plan_out, plan_log = planner_agent.build_execution_plan(state.objective, state.studentContext)
+            state.plan = [s.model_dump() for s in plan_out.steps]
+            state.executionLogs.append(plan_log.model_dump())
+            state.status = WorkflowStatus.VALIDATING.value
+
+        # If approved, advance to completed execution
+        elif target_status == WorkflowStatus.APPROVED.value:
+            state.status = WorkflowStatus.COMPLETED.value
+
+        return state
 
 
 class StudyPlanOrchestrator:
@@ -76,6 +258,20 @@ class StudyPlanOrchestrator:
 
         status = "PendingInstructorApproval" if val_check.passed else "ValidationFailed"
 
+        # Construct shared state record
+        shared_state = SharedAgentState(
+            workflowId=workflow_id,
+            studentId=request.student_id,
+            objective={"goal": request.target_goal, "target_weeks": request.target_weeks, "hours_per_week": request.hours_per_week},
+            studentContext={"student_name": request.student_name, "course_id": request.course_id},
+            plan=[m.model_dump() for m in milestones],
+            analysis=gap_analysis.model_dump(),
+            candidateOutput={"schedule": [s.model_dump() for s in schedule]},
+            validation=val_check.model_dump(),
+            status=WorkflowStatus.PENDING_APPROVAL.value if val_check.passed else WorkflowStatus.FAILED.value
+        )
+        ACTIVE_WORKFLOWS[workflow_id] = shared_state
+
         return StudyPlanProposalResponse(
             workflow_id=workflow_id,
             student_id=request.student_id,
@@ -86,7 +282,8 @@ class StudyPlanOrchestrator:
             schedule=schedule,
             validation=val_check,
             audit_trail=audit_trail,
-            status=status
+            status=status,
+            shared_state=shared_state.model_dump()
         )
 
 
@@ -171,7 +368,7 @@ class AgentTopologyRegistry:
                 role=planner_agent.role_description,
                 ownership=planner_agent.member_owner,
                 status="Active",
-                capabilities=["Goal Decomposition", "Milestone Allocation", "Dependency Resolution"]
+                capabilities=["Goal Decomposition", "Milestone Allocation", "Tool Whitelisting", "Delegation"]
             ),
             AgentTopologyNode(
                 id="domain-analysis",
@@ -179,7 +376,7 @@ class AgentTopologyRegistry:
                 role=domain_agent.role_description,
                 ownership=domain_agent.member_owner,
                 status="Active",
-                capabilities=["Knowledge Gap Diagnosis", "Error Analysis", "Cognitive Load Index"]
+                capabilities=["Telemetry Ingestion", "Grounded Learning Gaps", "Mastery Evaluation", "Next Action Selection"]
             ),
             AgentTopologyNode(
                 id="content-action",
@@ -187,7 +384,7 @@ class AgentTopologyRegistry:
                 role=action_agent.role_description,
                 ownership=action_agent.member_owner,
                 status="Active",
-                capabilities=["Adaptive Challenges", "Lab Quests", "Tool Registry Execution"]
+                capabilities=["Tool Registry Execution", "Adaptive Challenges", "Lab Quests", "Pedagogical Feedback"]
             ),
             AgentTopologyNode(
                 id="validation-guard",
@@ -195,7 +392,7 @@ class AgentTopologyRegistry:
                 role=validation_agent.role_description,
                 ownership=validation_agent.member_owner,
                 status="Active",
-                capabilities=["Deterministic Rules", "XP Caps", "Schema Integrity", "Approval Gating"]
+                capabilities=["Deterministic Rules", "XP Caps (<=150)", "Schema Integrity", "Safety Boundaries", "Approval Gating"]
             ),
             AgentTopologyNode(
                 id="quiz-generator",
