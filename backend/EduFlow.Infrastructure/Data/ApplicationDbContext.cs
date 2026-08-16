@@ -22,16 +22,20 @@ public class ApplicationDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    // Curriculum & Learning
+    // Curriculum & Learning (Hierarchical)
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<Module> Modules => Set<Module>();
+    public DbSet<Topic> Topics => Set<Topic>();
+    public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<LessonCompletion> LessonCompletions => Set<LessonCompletion>();
 
-    // Assessments & Quizzes
+    // Assessments & Quizzes (Unified Scope Engine)
     public DbSet<Assessment> Assessments => Set<Assessment>();
+    public DbSet<QuizConfiguration> QuizConfigurations => Set<QuizConfiguration>();
     public DbSet<Question> Questions => Set<Question>();
+    public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
 
@@ -83,10 +87,11 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // --- Courses & Curriculum ---
+        // --- Courses & Curriculum Hierarchy ---
         modelBuilder.Entity<Course>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
+            entity.Property(c => c.Difficulty).HasConversion<string>();
             entity.HasOne(c => c.Instructor)
                   .WithMany()
                   .HasForeignKey(c => c.InstructorId)
@@ -98,6 +103,32 @@ public class ApplicationDbContext : DbContext
             entity.HasOne(m => m.Course)
                   .WithMany(c => c.Modules)
                   .HasForeignKey(m => m.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Topic>(entity =>
+        {
+            entity.HasOne(t => t.Module)
+                  .WithMany(m => m.Topics)
+                  .HasForeignKey(t => t.ModuleId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ContentItem>(entity =>
+        {
+            entity.HasOne(ci => ci.Module)
+                  .WithMany(m => m.ContentItems)
+                  .HasForeignKey(ci => ci.ModuleId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ci => ci.Topic)
+                  .WithMany(t => t.ContentItems)
+                  .HasForeignKey(ci => ci.TopicId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(ci => ci.ParentContent)
+                  .WithMany(p => p.ChildContentItems)
+                  .HasForeignKey(ci => ci.ParentContentId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -125,10 +156,13 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<LessonCompletion>(entity =>
         {
-            entity.HasIndex(lc => new { lc.LessonId, lc.StudentId }).IsUnique();
             entity.HasOne(lc => lc.Lesson)
                   .WithMany(l => l.Completions)
                   .HasForeignKey(lc => lc.LessonId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(lc => lc.ContentItem)
+                  .WithMany(ci => ci.Completions)
+                  .HasForeignKey(lc => lc.ContentItemId)
                   .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(lc => lc.Student)
                   .WithMany(u => u.LessonCompletions)
@@ -136,22 +170,50 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // --- Assessments ---
+        // --- Assessments & Quizzes ---
         modelBuilder.Entity<Assessment>(entity =>
         {
             entity.Property(a => a.Type).HasConversion<string>();
+            entity.Property(a => a.ScopeType).HasConversion<string>();
+            entity.Property(a => a.Difficulty).HasConversion<string>();
+            entity.Property(a => a.Status).HasConversion<string>();
+            entity.Property(a => a.FeedbackMode).HasConversion<string>();
+
             entity.HasOne(a => a.Course)
                   .WithMany(c => c.Assessments)
                   .HasForeignKey(a => a.CourseId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.Configuration)
+                  .WithOne(qc => qc.Quiz)
+                  .HasForeignKey<QuizConfiguration>(qc => qc.QuizId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<QuizConfiguration>(entity =>
+        {
+            entity.Property(qc => qc.FeedbackMode).HasConversion<string>();
         });
 
         modelBuilder.Entity<Question>(entity =>
         {
             entity.Property(q => q.Type).HasConversion<string>();
+            entity.Property(q => q.Difficulty).HasConversion<string>();
             entity.HasOne(q => q.Assessment)
                   .WithMany(a => a.Questions)
                   .HasForeignKey(q => q.AssessmentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(q => q.SourceContentItem)
+                  .WithMany()
+                  .HasForeignKey(q => q.SourceContentId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<QuestionOption>(entity =>
+        {
+            entity.HasOne(qo => qo.Question)
+                  .WithMany(q => q.Options)
+                  .HasForeignKey(qo => qo.QuestionId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -178,6 +240,7 @@ public class ApplicationDbContext : DbContext
                   .HasForeignKey(sa => sa.QuestionId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
+
 
         // --- Gamification ---
         modelBuilder.Entity<StudentXp>(entity =>

@@ -97,11 +97,37 @@ def generate_adaptive_challenge(request: AdaptiveChallengeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate-quiz", response_model=DiagnosticQuizResponse)
+@app.post("/api/v1/ai/quiz-generation", response_model=DiagnosticQuizResponse)
 def generate_diagnostic_quiz(request: DiagnosticQuizRequest):
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/ai/questions/{question_id}/regenerate")
+def regenerate_single_question(question_id: int, request: Dict[str, Any] = Body(...)):
+    try:
+        from models.schemas import SingleQuestionRegenerateRequest
+        req_obj = SingleQuestionRegenerateRequest(
+            question_id=question_id,
+            focus_topic=request.get("focus_topic"),
+            prompt_guidance=request.get("prompt_guidance"),
+            target_type=request.get("target_type", "MULTIPLE_CHOICE"),
+            target_difficulty=request.get("target_difficulty", "MEDIUM"),
+            learning_objective=request.get("learning_objective"),
+            source_content_id=request.get("source_content_id")
+        )
+        return quiz_agent.regenerate_single_question(req_obj)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/ai/quiz-generation/{workflow_id}/regenerate", response_model=DiagnosticQuizResponse)
+def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest):
+    try:
+        return QuizGeneratorOrchestrator.generate_quiz(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/analyze-retention", response_model=RetentionRiskResponse)
 def analyze_retention(request: RetentionAnalysisRequest):

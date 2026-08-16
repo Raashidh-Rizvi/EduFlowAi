@@ -49,7 +49,7 @@ public class RefreshToken : BaseEntity
 }
 
 // -----------------------------------------------------------------------------
-// 2. Education & Curriculum Entities
+// 2. Education & Curriculum Entities (Hierarchical: Course -> Module -> Topic -> ContentItem)
 // -----------------------------------------------------------------------------
 public class Course : BaseEntity
 {
@@ -59,6 +59,8 @@ public class Course : BaseEntity
     public string Category { get; set; } = "Computer Science";
     public string? ThumbnailUrl { get; set; }
     public bool IsPublished { get; set; } = true;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public string Status { get; set; } = "Published"; // Draft, Published, Archived
     public Guid InstructorId { get; set; }
     public User? Instructor { get; set; }
 
@@ -77,8 +79,51 @@ public class Module : BaseEntity
     public string? PdfUrl { get; set; }
     public string? AttachmentFileName { get; set; }
     public int OrderIndex { get; set; }
+    public string Status { get; set; } = "Published";
 
+    public ICollection<Topic> Topics { get; set; } = new List<Topic>();
     public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
+    public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
+}
+
+public class Topic : BaseEntity
+{
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public string ContentType { get; set; } = "Theory"; // Theory, Practical, Assessment, Workshop
+    public int EstimatedMinutes { get; set; } = 30;
+    public string Status { get; set; } = "Published";
+
+    public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
+}
+
+public class ContentItem : BaseEntity
+{
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public Guid? ParentContentId { get; set; }
+    public ContentItem? ParentContent { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "Lesson"; // Lesson, Subtopic, Video, Reading, Lab, Exercise
+    public int DisplayOrder { get; set; }
+    public int EstimatedMinutes { get; set; } = 20;
+    public int XpReward { get; set; } = 25;
+    public string? VideoUrl { get; set; }
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
+    public string Status { get; set; } = "Published";
+
+    public ICollection<ContentItem> ChildContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
+    public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
 }
 
 public class Lesson : BaseEntity
@@ -111,42 +156,97 @@ public class LessonCompletion : BaseEntity
 {
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
-    public Guid LessonId { get; set; }
+    public Guid? LessonId { get; set; }
     public Lesson? Lesson { get; set; }
+    public Guid? ContentItemId { get; set; }
+    public ContentItem? ContentItem { get; set; }
     public DateTime CompletedAt { get; set; } = DateTime.UtcNow;
 }
 
 // -----------------------------------------------------------------------------
-// 3. Assessment & Quiz Engine Entities
+// 3. Assessment & Unified Quiz Scope Engine Entities
 // -----------------------------------------------------------------------------
 public class Assessment : BaseEntity
 {
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
+    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Course;
+    public Guid? ScopeId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public AssessmentType Type { get; set; } = AssessmentType.Quiz;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public int TimeLimitSeconds { get; set; } = 900; // 15 mins default
     public int TimeLimitMinutes { get; set; } = 15;
+    public int AttemptsAllowed { get; set; } = 3;
     public int PassingScorePercent { get; set; } = 70;
+    public int QuestionCount { get; set; } = 5;
+    public bool RandomizeQuestions { get; set; } = true;
+    public bool RandomizeOptions { get; set; } = true;
+    public FeedbackMode FeedbackMode { get; set; } = FeedbackMode.Immediate;
+    public bool ShowCorrectAnswers { get; set; } = true;
     public int XpReward { get; set; } = 50;
     public int CoinReward { get; set; } = 20;
+    public QuizStatus Status { get; set; } = QuizStatus.Published;
+    public Guid? CreatedBy { get; set; }
+    public bool GeneratedByAI { get; set; } = false;
+    public string? GenerationWorkflowId { get; set; }
     public DateTime? DueDate { get; set; }
 
+    // Navigation properties for hierarchy scopes
+    public Topic? TopicScope { get; set; }
+    public ContentItem? ContentItemScope { get; set; }
+    public Module? ModuleScope { get; set; }
+    public QuizConfiguration? Configuration { get; set; }
     public ICollection<Question> Questions { get; set; } = new List<Question>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+}
+
+public class QuizConfiguration : BaseEntity
+{
+    public Guid QuizId { get; set; }
+    public Assessment? Quiz { get; set; }
+    public int QuestionCount { get; set; } = 10;
+    public string QuestionTypeDistributionJson { get; set; } = "{}"; // e.g. {"MultipleChoice":6,"MultipleSelect":2,"TrueFalse":2}
+    public string DifficultyDistributionJson { get; set; } = "{}";   // e.g. {"Easy":3,"Medium":5,"Hard":2}
+    public string SelectedTopicIdsJson { get; set; } = "[]";
+    public string SelectedContentIdsJson { get; set; } = "[]";
+    public int TimeLimitSeconds { get; set; } = 900;
+    public int PassPercentage { get; set; } = 70;
+    public int AttemptsAllowed { get; set; } = 3;
+    public bool RandomizeQuestions { get; set; } = true;
+    public bool RandomizeOptions { get; set; } = true;
+    public FeedbackMode FeedbackMode { get; set; } = FeedbackMode.Immediate;
+    public bool NegativeMarking { get; set; } = false;
 }
 
 public class Question : BaseEntity
 {
     public Guid AssessmentId { get; set; }
     public Assessment? Assessment { get; set; }
-    public string Prompt { get; set; } = string.Empty;
+    public string Prompt { get; set; } = string.Empty; // Question text
     public QuestionType Type { get; set; } = QuestionType.MultipleChoice;
-    public string OptionsJson { get; set; } = "[]"; // Serialized JSON array of options
+    public string OptionsJson { get; set; } = "[]"; // Serialized JSON array of string options (or complex option objects)
     public string CorrectAnswer { get; set; } = string.Empty;
     public string Explanation { get; set; } = string.Empty;
-    public int Points { get; set; } = 10;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public int Points { get; set; } = 10; // Marks
     public int OrderIndex { get; set; }
+    public Guid? SourceContentId { get; set; }
+    public ContentItem? SourceContentItem { get; set; }
+    public string? LearningObjective { get; set; }
+    public string MetadataJson { get; set; } = "{}"; // bloomsTaxonomy, distractorRationales, matchingPairs, sequenceOrder
+
+    public ICollection<QuestionOption> Options { get; set; } = new List<QuestionOption>();
+}
+
+public class QuestionOption : BaseEntity
+{
+    public Guid QuestionId { get; set; }
+    public Question? Question { get; set; }
+    public string OptionText { get; set; } = string.Empty;
+    public bool IsCorrect { get; set; } = false;
+    public int DisplayOrder { get; set; }
 }
 
 public class Submission : BaseEntity
@@ -176,6 +276,7 @@ public class SubmissionAnswer : BaseEntity
     public bool IsCorrect { get; set; }
     public int PointsAwarded { get; set; }
 }
+
 
 // -----------------------------------------------------------------------------
 // 4. Gamification: XP, Levels, Badges, Streaks & Challenges

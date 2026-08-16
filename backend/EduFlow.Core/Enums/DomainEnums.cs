@@ -66,15 +66,55 @@ public enum AssessmentType
     Quiz,
     Assignment,
     Exam,
-    BossBattle
+    BossBattle,
+    TopicQuiz,
+    ModuleQuiz,
+    CourseQuiz,
+    LessonQuiz
+}
+
+public enum QuizScopeType
+{
+    Topic,
+    ContentItem,
+    Module,
+    Course
+}
+
+public enum QuizStatus
+{
+    Draft,
+    AiGenerating,
+    Validating,
+    ReadyForReview,
+    Approved,
+    Published,
+    RevisionRequested,
+    Rejected,
+    Unpublished,
+    Archived,
+    Failed
+}
+
+public enum FeedbackMode
+{
+    Immediate,
+    OnSubmission,
+    Manual
 }
 
 public enum QuestionType
 {
     MultipleChoice,
+    MultipleSelect,
     TrueFalse,
-    CodeSnippet,
+    ShortAnswer,
     FillInBlank,
+    Matching,
+    Ordering,
+    ScenarioBased,
+    TimedChallenge,
+    CodeSnippet,
     OpenEnded
 }
 
@@ -90,3 +130,4 @@ public enum TeamRole
     Leader,
     Member
 }
+

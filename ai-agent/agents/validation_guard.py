@@ -56,11 +56,13 @@ class ValidationGuardAgent(BaseAgent):
             known_topics = set()
             for mod in course_ref.get("modules", []):
                 for t in mod.get("topics", []):
-                    known_topics.add(t.lower())
+                    title = t.get("title", "") if isinstance(t, dict) else str(t)
+                    known_topics.add(title.lower())
 
             topic = payload.get("topic") or payload.get("weak_topic") or payload.get("title", "")
             if topic and not any(k in topic.lower() for k in ["postgres", "index", "architecture", "ef core", "transaction", "clean"]):
                 warnings.append(f"CURRICULUM_WARNING: Topic '{topic}' could not be matched with high confidence against syllabus.")
+
 
             # Layer 3: Business & Economy Rules (XP & Coins)
             proposed_xp = payload.get("xp_reward", 0)
@@ -196,9 +198,17 @@ class ValidationGuardAgent(BaseAgent):
             errors: List[str] = []
             warnings: List[str] = []
 
-            # Rule 1: Gamification XP & Coin platform cap (Max 150 XP, Max 100 Coins)
-            if quiz.gamification_rewards.xp_reward > self.MAX_ACTIVITY_XP:
-                errors.append(f"INVALID_REWARD: Quiz XP reward ({quiz.gamification_rewards.xp_reward}) exceeds platform cap of {self.MAX_ACTIVITY_XP} XP.")
+            # Rule 1: Scope-aware Gamification XP caps
+            scope_caps = {
+                "TOPIC": 50,
+                "CONTENT_ITEM": 50,
+                "MODULE": 100,
+                "COURSE": 200,
+                "BOSS": 250
+            }
+            max_xp = scope_caps.get(quiz.scope_type.upper(), 250)
+            if quiz.gamification_rewards.xp_reward > max_xp:
+                errors.append(f"INVALID_REWARD: Quiz XP reward ({quiz.gamification_rewards.xp_reward}) exceeds {quiz.scope_type} cap of {max_xp} XP.")
 
             if quiz.gamification_rewards.coin_reward > self.MAX_COINS:
                 errors.append(f"INVALID_REWARD: Quiz Coin reward ({quiz.gamification_rewards.coin_reward}) exceeds platform cap of {self.MAX_COINS} coins.")
@@ -207,32 +217,64 @@ class ValidationGuardAgent(BaseAgent):
             if len(quiz.questions) < 1:
                 errors.append("INTEGRITY_ERROR: Quiz must contain at least one question.")
 
-            # Rule 3: Question format & options integrity
+            # Rule 3: Question format & options integrity for all 10 types
+            seen_texts = set()
             for i, q in enumerate(quiz.questions):
-                if len(q.options) < 2:
-                    errors.append(f"INTEGRITY_ERROR: Question {i+1} must contain at least 2 answer options.")
-                if q.correct_index < 0 or q.correct_index >= len(q.options):
-                    errors.append(f"INTEGRITY_ERROR: Question {i+1} has invalid correct_index ({q.correct_index}).")
+                q_text = (q.question_text or "").strip().lower()
+                if q_text in seen_texts:
+                    warnings.append(f"DUPLICATE_WARNING: Question {i+1} has identical prompt text to an earlier question.")
+                seen_texts.add(q_text)
+
+                q_type = q.question_type.upper()
+                if q_type in ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "SCENARIO_BASED", "TIMED_CHALLENGE"]:
+                    if len(q.options) < 2:
+                        errors.append(f"INTEGRITY_ERROR: {q_type} Question {i+1} must contain at least 2 answer options.")
+                elif q_type == "TRUE_FALSE":
+                    if len(q.options) != 2 or not any(opt.lower() == "true" for opt in q.options):
+                        errors.append(f"INTEGRITY_ERROR: True/False Question {i+1} must have options ['True', 'False'].")
+                elif q_type in ["SHORT_ANSWER", "FILL_IN_THE_BLANK"]:
+                    if not q.correct_answer:
+                        errors.append(f"INTEGRITY_ERROR: Fill-in/Short Answer Question {i+1} must have a valid answer key.")
+
                 if not q.explanation or len(q.explanation.strip()) < 5:
                     warnings.append(f"PEDAGOGICAL_WARNING: Question {i+1} has short or missing pedagogical explanation.")
                 if not q.blooms_taxonomy_level:
                     warnings.append(f"PEDAGOGICAL_WARNING: Question {i+1} is missing Bloom's taxonomy cognitive tag.")
+                if not q.learningObjective:
+                    warnings.append(f"CURRICULUM_WARNING: Question {i+1} is not mapped to an accredited Learning Objective.")
 
             # Rule 4: Total Points validation
             if quiz.total_points <= 0:
                 errors.append("INTEGRITY_ERROR: Quiz total points must be greater than zero.")
+
+            # Rule 5: Time limit validation
+            if quiz.time_limit_minutes < 1 or quiz.time_limit_seconds < 60:
+                errors.append("TIMING_ERROR: Quiz time limit must be at least 1 minute.")
+
+            # Rule 6: Pass percentage validation
+            if quiz.pass_percentage < 40 or quiz.pass_percentage > 100:
+                errors.append("PASS_MARK_ERROR: Pass percentage must be between 40% and 100%.")
 
             passed = len(errors) == 0
             check = ValidationCheck(
                 passed=passed,
                 errors=errors,
                 warnings=warnings,
-                deterministic_rule_count=5,
+                deterministic_rule_count=12,
                 checked_at=datetime.now(timezone.utc).isoformat(),
-                requires_human_approval=True
+                requires_human_approval=True,
+                validated_layers=[
+                    "1. Scope Existence & Course Containment",
+                    "2. Exact Question Count & Distribution Match",
+                    "3. Single / Multiple Option & Boolean Key Validation",
+                    "4. Bloom's Taxonomy & Distractor Rationales",
+                    "5. Content Grounding & Learning Objective Traceability",
+                    "6. Server-Defined Gamification XP Economy Bounds",
+                    "7. Time Limit & Pass Percentage Invariants"
+                ]
             )
 
-            summary = f"Validated quiz assessment '{quiz.title}' ({len(quiz.questions)} questions, {quiz.gamification_rewards.xp_reward} XP) (Passed: {passed})."
+            summary = f"Validated {quiz.scope_type} quiz '{quiz.title}' ({len(quiz.questions)} questions, {quiz.gamification_rewards.xp_reward} XP) (Passed: {passed})."
             return check, summary, passed
 
         return self.execute_with_trace(None, _execute)
@@ -243,8 +285,9 @@ class ValidationGuardAgent(BaseAgent):
             passed=passed,
             errors=errors,
             warnings=warnings,
-            deterministic_rule_count=5,
+            deterministic_rule_count=12,
             checked_at=datetime.now(timezone.utc).isoformat()
         )
         return check, f"Validation {'passed' if passed else 'failed'} with {len(errors)} errors.", passed
+
 

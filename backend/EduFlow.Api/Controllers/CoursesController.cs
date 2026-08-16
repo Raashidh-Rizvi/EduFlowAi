@@ -614,5 +614,237 @@ public class CoursesController : ControllerBase
 
         return Ok(new { message = "Lesson was already completed." });
     }
+
+    // -------------------------------------------------------------------------
+    // HIERARCHICAL CURRICULUM TREE & SCOPE RESOLUTION
+    // -------------------------------------------------------------------------
+
+    [HttpGet("{courseId:guid}/hierarchy")]
+    public async Task<IActionResult> GetCourseHierarchy(Guid courseId)
+    {
+        var course = await _dbContext.Courses
+            .Include(c => c.Modules.OrderBy(m => m.OrderIndex))
+                .ThenInclude(m => m.Topics.OrderBy(t => t.DisplayOrder))
+                    .ThenInclude(t => t.ContentItems.OrderBy(ci => ci.DisplayOrder))
+            .Include(c => c.Assessments)
+            .FirstOrDefaultAsync(c => c.Id == courseId);
+
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var allQuizzes = await _dbContext.Assessments
+            .Where(a => a.CourseId == courseId)
+            .Include(a => a.Questions)
+            .ToListAsync();
+
+        var hierarchicalModules = course.Modules.Select(m =>
+        {
+            var moduleQuizzes = allQuizzes
+                .Where(q => q.ScopeType == QuizScopeType.Module && q.ScopeId == m.Id)
+                .Select(q => new QuizDto(
+                    q.Id, q.CourseId, q.Title, q.Description, q.Type, q.TimeLimitMinutes,
+                    q.PassingScorePercent, q.XpReward, q.CoinReward, q.Questions.Count,
+                    q.ScopeType, q.ScopeId, m.Title, q.Status, q.Difficulty, q.TimeLimitSeconds,
+                    q.AttemptsAllowed, q.RandomizeQuestions, q.RandomizeOptions, q.FeedbackMode,
+                    q.ShowCorrectAnswers, q.GeneratedByAI, q.GenerationWorkflowId, q.CreatedAt
+                )).ToList();
+
+            var topics = m.Topics.Select(t =>
+            {
+                var topicQuizzesCount = allQuizzes.Count(q => q.ScopeType == QuizScopeType.Topic && q.ScopeId == t.Id);
+
+                // Group content items into top-level lessons and their child subtopics
+                var rootItems = t.ContentItems.Where(ci => ci.ParentContentId == null).ToList();
+                var contentItemDtos = rootItems.Select(ci =>
+                {
+                    var subtopics = t.ContentItems
+                        .Where(sub => sub.ParentContentId == ci.Id)
+                        .Select(sub => new ContentItemDto(
+                            sub.Id, sub.ModuleId, sub.TopicId, sub.ParentContentId, sub.Title,
+                            sub.Content, sub.ContentType, sub.DisplayOrder, sub.EstimatedMinutes,
+                            sub.XpReward, sub.VideoUrl, sub.PdfUrl, sub.AttachmentFileName, sub.Status,
+                            false, null, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == sub.Id)
+                        )).ToList();
+
+                    return new ContentItemDto(
+                        ci.Id, ci.ModuleId, ci.TopicId, ci.ParentContentId, ci.Title,
+                        ci.Content, ci.ContentType, ci.DisplayOrder, ci.EstimatedMinutes,
+                        ci.XpReward, ci.VideoUrl, ci.PdfUrl, ci.AttachmentFileName, ci.Status,
+                        false, subtopics, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == ci.Id)
+                    );
+                }).ToList();
+
+                return new TopicDto(
+                    t.Id, t.ModuleId, t.Title, t.Description, t.DisplayOrder,
+                    t.ContentType, t.EstimatedMinutes, t.Status, contentItemDtos, topicQuizzesCount
+                );
+            }).ToList();
+
+            var directItems = _dbContext.ContentItems
+                .Where(ci => ci.ModuleId == m.Id && ci.TopicId == null && ci.ParentContentId == null)
+                .Select(ci => new ContentItemDto(
+                    ci.Id, ci.ModuleId, null, null, ci.Title, ci.Content, ci.ContentType,
+                    ci.DisplayOrder, ci.EstimatedMinutes, ci.XpReward, ci.VideoUrl, ci.PdfUrl,
+                    ci.AttachmentFileName, ci.Status, false, null, 0
+                )).ToList();
+
+            return new HierarchicalModuleDto(
+                m.Id, m.Title, m.Description, m.OrderIndex, m.Status, topics, directItems, moduleQuizzes
+            );
+        }).ToList();
+
+        var tree = new ContentHierarchyTreeDto(
+            course.Id,
+            course.Code,
+            course.Title,
+            course.Description,
+            hierarchicalModules
+        );
+
+        return Ok(tree);
+    }
+
+    [HttpPost("modules/{moduleId:guid}/topics")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateTopic(Guid moduleId, [FromBody] CreateTopicRequest request)
+    {
+        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        if (module == null)
+        {
+            return NotFound(new { message = "Module not found." });
+        }
+
+        var topic = new Topic
+        {
+            ModuleId = moduleId,
+            Title = request.Title,
+            Description = request.Description,
+            DisplayOrder = request.DisplayOrder,
+            ContentType = request.ContentType,
+            EstimatedMinutes = request.EstimatedMinutes,
+            Status = "Published",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _dbContext.Topics.AddAsync(topic);
+        await _dbContext.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetCourseHierarchy), new { courseId = module.CourseId }, topic);
+    }
+
+    [HttpPut("topics/{topicId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateTopic(Guid topicId, [FromBody] UpdateTopicRequest request)
+    {
+        var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId);
+        if (topic == null)
+        {
+            return NotFound(new { message = "Topic not found." });
+        }
+
+        topic.Title = request.Title;
+        topic.Description = request.Description;
+        topic.DisplayOrder = request.DisplayOrder;
+        topic.ContentType = request.ContentType;
+        topic.EstimatedMinutes = request.EstimatedMinutes;
+        topic.Status = request.Status;
+        topic.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(topic);
+    }
+
+    [HttpDelete("topics/{topicId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteTopic(Guid topicId)
+    {
+        var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId);
+        if (topic == null)
+        {
+            return NotFound(new { message = "Topic not found." });
+        }
+
+        _dbContext.Topics.Remove(topic);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Topic deleted successfully." });
+    }
+
+    [HttpPost("topics/{topicId:guid}/content-items")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CreateContentItem(Guid topicId, [FromBody] CreateContentItemRequest request)
+    {
+        var topic = await _dbContext.Topics.Include(t => t.Module).FirstOrDefaultAsync(t => t.Id == topicId);
+        if (topic == null)
+        {
+            return NotFound(new { message = "Topic not found." });
+        }
+
+        var contentItem = new ContentItem
+        {
+            ModuleId = topic.ModuleId,
+            TopicId = topicId,
+            ParentContentId = request.ParentContentId,
+            Title = request.Title,
+            Content = request.Content,
+            ContentType = request.ContentType,
+            DisplayOrder = request.DisplayOrder,
+            EstimatedMinutes = request.EstimatedMinutes,
+            XpReward = request.XpReward,
+            VideoUrl = request.VideoUrl,
+            PdfUrl = request.PdfUrl,
+            AttachmentFileName = request.AttachmentFileName,
+            Status = "Published",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await _dbContext.ContentItems.AddAsync(contentItem);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(contentItem);
+    }
+
+    [HttpPut("content-items/{contentItemId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateContentItem(Guid contentItemId, [FromBody] UpdateContentItemRequest request)
+    {
+        var item = await _dbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
+        if (item == null)
+        {
+            return NotFound(new { message = "Content item not found." });
+        }
+
+        item.Title = request.Title;
+        item.Content = request.Content;
+        item.ContentType = request.ContentType;
+        item.DisplayOrder = request.DisplayOrder;
+        item.EstimatedMinutes = request.EstimatedMinutes;
+        item.XpReward = request.XpReward;
+        item.VideoUrl = request.VideoUrl;
+        item.PdfUrl = request.PdfUrl;
+        item.AttachmentFileName = request.AttachmentFileName;
+        item.Status = request.Status;
+        item.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return Ok(item);
+    }
+
+    [HttpDelete("content-items/{contentItemId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> DeleteContentItem(Guid contentItemId)
+    {
+        var item = await _dbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
+        if (item == null)
+        {
+            return NotFound(new { message = "Content item not found." });
+        }
+
+        _dbContext.ContentItems.Remove(item);
+        await _dbContext.SaveChangesAsync();
+        return Ok(new { message = "Content item deleted successfully." });
+    }
 }
+
 

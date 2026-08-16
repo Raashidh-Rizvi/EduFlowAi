@@ -207,52 +207,101 @@ class GamificationRewardConfig(BaseModel):
     badge_trigger_name: Optional[str] = "Quiz Champion"
     passing_score_percent: int = 70
 
+class QuestionOptionModel(BaseModel):
+    text: str
+    isCorrect: bool = False
+    displayOrder: int = 1
+
+class QuizQuestionModel(BaseModel):
+    question_id: int
+    question_text: str
+    question_type: str = "MULTIPLE_CHOICE"  # MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER | FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED | TIMED_CHALLENGE
+    blooms_taxonomy_level: str = "Application"  # Knowledge | Comprehension | Application | Analysis | Synthesis | Evaluation
+    options: List[str] = Field(default_factory=list)
+    option_details: List[QuestionOptionModel] = Field(default_factory=list)
+    correct_index: int = 0
+    correct_answer: Optional[str] = None
+    distractor_rationales: List[str] = Field(default_factory=list)
+    explanation: str = ""
+    points: int = 10
+    marks: int = 10
+    difficulty: str = "MEDIUM"
+    sourceContentId: Optional[str] = None
+    sourceContentVersion: Optional[str] = "v1.0"
+    learningObjective: Optional[str] = None
+    sourceReference: Optional[str] = None
+    code_snippet: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class QuestionDistributionConfig(BaseModel):
+    question_types: Dict[str, int] = Field(default_factory=lambda: {"MULTIPLE_CHOICE": 3, "TRUE_FALSE": 1, "MULTIPLE_SELECT": 1})
+    difficulty: Dict[str, int] = Field(default_factory=lambda: {"EASY": 1, "MEDIUM": 3, "HARD": 1})
+
 class DiagnosticQuizRequest(BaseModel):
     course_id: Optional[str] = "44444444-4444-4444-4444-444444444444"
     course_title: Optional[str] = "Software Engineering & Architecture"
+    scope_type: str = "TOPIC"  # "COURSE" | "MODULE" | "TOPIC" | "CONTENT_ITEM"
+    scope_id: Optional[str] = None
     module_id: Optional[str] = None
     module_title: Optional[str] = "Relational Modeling & Indexing"
     topic_id: Optional[str] = None
     topic_title: Optional[str] = None
     lesson_title: Optional[str] = None
-    scope_level: str = "Topic"  # "Course" | "Module" | "Topic" | "Lesson"
+    scope_level: str = "Topic"
     target_topics: List[str] = Field(default_factory=lambda: ["PostgreSQL Schema Design", "B-Tree Indexes"])
-    quiz_type: str = "Diagnostic"  # "Diagnostic" | "Formative" | "Summative" | "MicroQuiz" | "BossBattle" | "CodeSnippetQuiz" | "ConceptualReview"
-    question_types: List[str] = Field(default_factory=lambda: ["MultipleChoice", "CodeSnippet", "TrueFalse"])
-    difficulty: str = "Medium"  # "Easy" | "Medium" | "Hard" | "Boss"
-    blooms_taxonomy_focus: str = "Application"  # "Knowledge" | "Comprehension" | "Application" | "Analysis"
-    question_count: int = Field(default=3, ge=1, le=20)
+    learning_objectives: List[str] = Field(default_factory=lambda: ["LO-01", "LO-02"])
+    quiz_type: str = "MIXED"  # MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER | FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED | TIMED_CHALLENGE | MIXED
+    question_types: List[str] = Field(default_factory=lambda: ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"])
+    difficulty: str = "MEDIUM"  # "EASY" | "MEDIUM" | "HARD" | "BOSS"
+    blooms_taxonomy_focus: str = "Application"
+    question_count: int = Field(default=5, ge=1, le=25)
     time_limit_minutes: int = Field(default=15, ge=2, le=90)
+    time_limit_seconds: int = Field(default=900, ge=60, le=5400)
+    attempts_allowed: int = Field(default=3, ge=1, le=10)
+    pass_percentage: int = Field(default=70, ge=1, le=100)
+    randomize_questions: bool = True
+    randomize_options: bool = True
+    distribution: Optional[QuestionDistributionConfig] = None
     gamification: Optional[GamificationRewardConfig] = None
-
-class QuizQuestionModel(BaseModel):
-    question_id: int
-    question_text: str
-    question_type: str = "MultipleChoice"  # "MultipleChoice" | "TrueFalse" | "CodeSnippet" | "FillInBlank"
-    blooms_taxonomy_level: str  # Knowledge | Comprehension | Application | Analysis | Synthesis
-    options: List[str]
-    correct_index: int
-    distractor_rationales: List[str]
-    explanation: str
-    points: int = 10
-    code_snippet: Optional[str] = None
 
 class DiagnosticQuizResponse(BaseModel):
     quiz_id: str
     workflow_id: str
     title: str
+    scope_type: str = "TOPIC"
+    scope_id: Optional[str] = None
     scope_level: str = "Topic"
     target_topics: List[str]
     difficulty: str
-    quiz_type: str = "Diagnostic"
+    quiz_type: str = "MIXED"
     questions: List[QuizQuestionModel]
     total_points: int
     time_limit_minutes: int = 15
+    time_limit_seconds: int = 900
+    pass_percentage: int = 70
+    attempts_allowed: int = 3
+    randomize_questions: bool = True
+    randomize_options: bool = True
     gamification_rewards: GamificationRewardConfig
     validation_passed: bool
     validation: ValidationCheck
     audit_trail: List[AgentExecutionLog] = []
-    status: str = "PendingInstructorApproval"
+    status: str = "READY_FOR_REVIEW"  # DRAFT -> AI_GENERATING -> VALIDATING -> READY_FOR_REVIEW -> APPROVED -> PUBLISHED
+
+class SingleQuestionRegenerateRequest(BaseModel):
+    question_id: int
+    focus_topic: Optional[str] = None
+    prompt_guidance: Optional[str] = None
+    target_type: Optional[str] = "MULTIPLE_CHOICE"
+    target_difficulty: Optional[str] = "MEDIUM"
+    learning_objective: Optional[str] = None
+    source_content_id: Optional[str] = None
+
+class SingleQuestionRegenerateResponse(BaseModel):
+    question: QuizQuestionModel
+    validation_passed: bool
+    audit_log: AgentExecutionLog
+
 
 
 # -----------------------------------------------------------------------------
