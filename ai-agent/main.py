@@ -143,6 +143,17 @@ def ai_coach_chat(request: CoachChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/v1/ai/next-best-action", response_model=NextBestActionResponse)
+def get_next_best_action(request: NextBestActionRequest):
+    try:
+        from agents.next_best_action import NextBestActionAgent
+        nba_agent = NextBestActionAgent()
+        res, _ = nba_agent.evaluate_next_action(request)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/workflows/execute", response_model=SharedAgentState)
 def execute_langgraph_workflow(
     student_id: str = Body(..., embed=True),

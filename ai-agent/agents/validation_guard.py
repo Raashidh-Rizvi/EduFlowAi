@@ -200,18 +200,19 @@ class ValidationGuardAgent(BaseAgent):
 
             # Rule 1: Scope-aware Gamification XP caps
             scope_caps = {
-                "TOPIC": 50,
-                "CONTENT_ITEM": 50,
-                "MODULE": 100,
+                "TOPIC": 150,
+                "CONTENT_ITEM": 150,
+                "MODULE": 150,
                 "COURSE": 200,
                 "BOSS": 250
             }
-            max_xp = scope_caps.get(quiz.scope_type.upper(), 250)
+            max_xp = scope_caps.get(quiz.scope_type.upper(), 150)
             if quiz.gamification_rewards.xp_reward > max_xp:
                 errors.append(f"INVALID_REWARD: Quiz XP reward ({quiz.gamification_rewards.xp_reward}) exceeds {quiz.scope_type} cap of {max_xp} XP.")
 
             if quiz.gamification_rewards.coin_reward > self.MAX_COINS:
                 errors.append(f"INVALID_REWARD: Quiz Coin reward ({quiz.gamification_rewards.coin_reward}) exceeds platform cap of {self.MAX_COINS} coins.")
+
 
             # Rule 2: Non-empty questions
             if len(quiz.questions) < 1:

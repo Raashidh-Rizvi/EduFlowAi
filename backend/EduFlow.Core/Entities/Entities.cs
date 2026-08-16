@@ -378,6 +378,51 @@ public class DailyChallenge : BaseEntity
     public DateTime ExpiresAt { get; set; }
 }
 
+public class SkillMastery : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid? ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public string TopicName { get; set; } = string.Empty;
+    public string SkillName { get; set; } = string.Empty;
+    public int MasteryPercentage { get; set; } = 0; // 0 to 100
+    public int TotalAttempts { get; set; } = 0;
+    public int CorrectAttempts { get; set; } = 0;
+    public DateTime LastAssessedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PersonalBestRecord : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public Guid AssessmentId { get; set; }
+    public Assessment? Assessment { get; set; }
+    public int BestScorePercent { get; set; }
+    public int BestTimeSeconds { get; set; }
+    public DateTime AchievedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class StudentDailyMission : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public DateOnly Date { get; set; }
+    public string MissionKey { get; set; } = string.Empty; // LESSON_COMPLETE, PRACTICE_5_QUESTIONS, SCORE_70_QUIZ, AI_CHALLENGE
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int CurrentCount { get; set; } = 0;
+    public int TargetCount { get; set; } = 1;
+    public bool IsCompleted { get; set; } = false;
+    public int RewardXp { get; set; } = 20;
+    public int RewardCoins { get; set; } = 5;
+    public bool Claimed { get; set; } = false;
+}
+
 public class StudentChallenge : BaseEntity
 {
     public Guid StudentId { get; set; }

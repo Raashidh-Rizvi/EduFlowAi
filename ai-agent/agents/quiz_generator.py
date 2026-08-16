@@ -43,8 +43,20 @@ class QuizGeneratorAgent(BaseAgent):
             quiz_id = str(uuid.uuid4())
 
             # 1. Resolve Scope & Focus Topic
-            scope_type = (req.scope_type or "TOPIC").upper()
+            if req.scope_level:
+                scope_level = req.scope_level
+            elif req.module_title and not req.topic_title:
+                scope_level = "Module"
+            elif req.lesson_title:
+                scope_level = "Lesson"
+            elif req.course_title and not req.module_title and not req.topic_title:
+                scope_level = "Course"
+            else:
+                scope_level = (req.scope_type or "TOPIC").capitalize()
+
+            scope_type = scope_level.upper()
             scope_name = req.topic_title or req.lesson_title or req.module_title or (req.target_topics[0] if req.target_topics else "Software Engineering Core")
+
 
             # 2. Gamification Reward Calibration
             diff_rewards = {
@@ -66,8 +78,12 @@ class QuizGeneratorAgent(BaseAgent):
             )
 
             # 3. Calculate Question Distribution
-            q_types = req.question_types if req.question_types else ["MultipleChoice", "CodeSnippet", "TrueFalse"]
+            if req.quiz_type == "MicroQuiz" or req.scope_level == "Topic":
+                q_types = ["MultipleChoice", "CodeSnippet", "TrueFalse"]
+            else:
+                q_types = req.question_types if req.question_types else ["MultipleChoice", "CodeSnippet", "TrueFalse"]
             count = max(1, min(req.question_count, 25))
+
 
             # 4. Generate Grounded Questions
             questions: List[QuizQuestionModel] = []
@@ -148,8 +164,9 @@ class QuizGeneratorAgent(BaseAgent):
                 title=f"AI {quiz_type_tag} Assessment: {scope_name} ({req.difficulty})",
                 scope_type=scope_type,
                 scope_id=req.scope_id,
-                scope_level=scope_type.capitalize(),
+                scope_level=scope_level,
                 target_topics=req.target_topics,
+
                 difficulty=req.difficulty,
                 quiz_type=quiz_type_tag,
                 questions=questions,

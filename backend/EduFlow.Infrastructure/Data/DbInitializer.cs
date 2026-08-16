@@ -469,6 +469,80 @@ public static class DbInitializer
                 });
                 context.SaveChanges();
             }
+
+            // Gamification Profile & Streak
+            if (!context.StudentXp.Any(s => s.StudentId == student1Id))
+            {
+                context.StudentXp.Add(new StudentXp
+                {
+                    StudentId = student1Id,
+                    TotalXp = 6420,
+                    CurrentLevel = 12,
+                    Coins = 320,
+                    UpdatedAt = DateTime.UtcNow
+                });
+
+                context.StudentStreaks.Add(new StudentStreak
+                {
+                    StudentId = student1Id,
+                    CurrentStreak = 14,
+                    LongestStreak = 14,
+                    FreezeTokensAvailable = 2,
+                    LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                    UpdatedAt = DateTime.UtcNow
+                });
+
+                context.SaveChanges();
+            }
+
+            // Skill Mastery Matrix
+            if (!context.SkillMasteries.Any(m => m.StudentId == student1Id))
+            {
+                context.SkillMasteries.AddRange(
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "Functions & Scope", SkillName = "Function Parameters & Closures", MasteryPercentage = 90, TotalAttempts = 20, CorrectAttempts = 18, LastAssessedAt = DateTime.UtcNow.AddDays(-1) },
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "Loops & Iterations", SkillName = "Iterative Flow Control", MasteryPercentage = 82, TotalAttempts = 22, CorrectAttempts = 18, LastAssessedAt = DateTime.UtcNow.AddDays(-2) },
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "OOP & Encapsulation", SkillName = "Object Orientation Invariants", MasteryPercentage = 72, TotalAttempts = 18, CorrectAttempts = 13, LastAssessedAt = DateTime.UtcNow.AddDays(-3) },
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "Recursion & Trees", SkillName = "Recursive Logic & Base Cases", MasteryPercentage = 43, TotalAttempts = 14, CorrectAttempts = 6, LastAssessedAt = DateTime.UtcNow.AddHours(-12) },
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "B-Tree Indexing Fundamentals", SkillName = "Leftmost Prefix Rule", MasteryPercentage = 45, TotalAttempts = 11, CorrectAttempts = 5, LastAssessedAt = DateTime.UtcNow.AddHours(-6) },
+                    new SkillMastery { StudentId = student1Id, CourseId = courseId, TopicName = "Clean Architecture & DIP", SkillName = "Interface Decoupling", MasteryPercentage = 88, TotalAttempts = 16, CorrectAttempts = 14, LastAssessedAt = DateTime.UtcNow.AddDays(-1) }
+                );
+                context.SaveChanges();
+            }
+
+            // Today's Daily Missions
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (!context.StudentDailyMissions.Any(m => m.StudentId == student1Id && m.Date == today))
+            {
+                context.StudentDailyMissions.AddRange(
+                    new StudentDailyMission { StudentId = student1Id, Date = today, MissionKey = "LESSON_COMPLETE", Title = "Complete a Lesson", Description = "Progress through Functions lesson", CurrentCount = 1, TargetCount = 1, IsCompleted = true, RewardXp = 20, RewardCoins = 5 },
+                    new StudentDailyMission { StudentId = student1Id, Date = today, MissionKey = "PRACTICE_5_QUESTIONS", Title = "Practice 5 Questions", Description = "Solve quiz or practice questions", CurrentCount = 5, TargetCount = 5, IsCompleted = true, RewardXp = 15, RewardCoins = 5 },
+                    new StudentDailyMission { StudentId = student1Id, Date = today, MissionKey = "SCORE_70_QUIZ", Title = "Score 70%+ in a Quiz", Description = "Demonstrate solid academic mastery", CurrentCount = 0, TargetCount = 1, IsCompleted = false, RewardXp = 30, RewardCoins = 10 },
+                    new StudentDailyMission { StudentId = student1Id, Date = today, MissionKey = "AI_CHALLENGE", Title = "Complete AI Challenge", Description = "Conquer an adaptive quest", CurrentCount = 0, TargetCount = 1, IsCompleted = false, RewardXp = 50, RewardCoins = 10 }
+                );
+                context.SaveChanges();
+            }
+
+            // Badges
+            if (!context.Badges.Any())
+            {
+                context.Badges.AddRange(
+                    new Badge { Id = "FIRST_LESSON", Title = "First Lesson", Description = "Completed your inaugural learning session", IconUrl = "🏅", Category = BadgeCategory.Learning, XpBonus = 50 },
+                    new Badge { Id = "QUIZ_MASTER", Title = "Quiz Master", Description = "Achieved 90%+ in 5 assessments", IconUrl = "🏆", Category = BadgeCategory.Assessment, XpBonus = 100 },
+                    new Badge { Id = "SEVEN_DAY_STREAK", Title = "7 Day Streak", Description = "Learned consistently for 7 days", IconUrl = "🔥", Category = BadgeCategory.Consistency, XpBonus = 75 },
+                    new Badge { Id = "FOURTEEN_DAY_STREAK", Title = "14 Day Streak", Description = "Learned consistently for 14 days", IconUrl = "🔥", Category = BadgeCategory.Consistency, XpBonus = 150 },
+                    new Badge { Id = "BOSS_SLAYER", Title = "Boss Slayer", Description = "Conquered a module boss challenge", IconUrl = "⚔️", Category = BadgeCategory.Challenge, XpBonus = 200 },
+                    new Badge { Id = "COMEBACK_KID", Title = "Comeback Kid", Description = "Improved topic score by +30%", IconUrl = "📈", Category = BadgeCategory.Improvement, XpBonus = 80 },
+                    new Badge { Id = "PERFECT_SCORE", Title = "Perfect Score", Description = "Scored 100% on an assessment", IconUrl = "✨", Category = BadgeCategory.Assessment, XpBonus = 120 }
+                );
+                context.SaveChanges();
+
+                context.StudentBadges.AddRange(
+                    new StudentBadge { StudentId = student1Id, BadgeId = "QUIZ_MASTER", UnlockedAt = DateTime.UtcNow.AddDays(-2) },
+                    new StudentBadge { StudentId = student1Id, BadgeId = "FOURTEEN_DAY_STREAK", UnlockedAt = DateTime.UtcNow.AddDays(-1) },
+                    new StudentBadge { StudentId = student1Id, BadgeId = "BOSS_SLAYER", UnlockedAt = DateTime.UtcNow.AddDays(-4) }
+                );
+                context.SaveChanges();
+            }
         }
         catch
         {

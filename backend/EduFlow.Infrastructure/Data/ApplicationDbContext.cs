@@ -47,6 +47,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<StudentBadge> StudentBadges => Set<StudentBadge>();
     public DbSet<StudentStreak> StudentStreaks => Set<StudentStreak>();
     public DbSet<StreakHistory> StreakHistories => Set<StreakHistory>();
+    public DbSet<SkillMastery> SkillMasteries => Set<SkillMastery>();
+    public DbSet<PersonalBestRecord> PersonalBestRecords => Set<PersonalBestRecord>();
+    public DbSet<StudentDailyMission> StudentDailyMissions => Set<StudentDailyMission>();
     public DbSet<Challenge> Challenges => Set<Challenge>();
     public DbSet<StudentChallenge> StudentChallenges => Set<StudentChallenge>();
 

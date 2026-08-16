@@ -347,3 +347,35 @@ class CoachChatResponse(BaseModel):
     identified_weak_topic: Optional[str] = None
     confidence_score: float = 0.95
     audit_log: Optional[AgentExecutionLog] = None
+
+
+# -----------------------------------------------------------------------------
+# 11. Next Best Action (Game Loop Learning Orchestration)
+# -----------------------------------------------------------------------------
+class SkillMasteryTelemetryItem(BaseModel):
+    topic_name: str
+    skill_name: Optional[str] = None
+    mastery_percentage: int
+    total_attempts: int = 0
+    correct_attempts: int = 0
+
+class NextBestActionRequest(BaseModel):
+    student_id: str
+    student_name: str = "Alex Rivera"
+    level: int = 12
+    total_xp: int = 6420
+    streak: int = 14
+    course_name: str = "Python Programming & Architecture"
+    skills: List[SkillMasteryTelemetryItem] = Field(default_factory=list)
+
+class NextBestActionResponse(BaseModel):
+    action_type: str  # TAKE_REMEDIATION_QUIZ | TAKE_BOSS_CHALLENGE | WATCH_LESSON | REVIEW_TOPIC | DO_CHALLENGE | REST
+    title: str
+    description: str
+    target_topic: str
+    reason: str
+    estimated_time_minutes: int = 10
+    reward_xp: int = 75
+    edubuddy_message: str
+    audit_log: AgentExecutionLog
+
