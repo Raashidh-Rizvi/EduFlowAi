@@ -29,6 +29,7 @@ import {
   HelpCircle,
   Sparkles
 } from 'lucide-react';
+import ThemeToggle from '../../components/common/ThemeToggle';
 
 // ─── Seed Data for Student Portal ─────────────────────────────────────────────
 const STUDENT_DATA = {
@@ -551,7 +552,7 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
                 background: i === selected ? 'var(--primary)' : 'var(--bg-surface)',
                 border: '1px solid var(--border-subtle)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '11.5px', fontWeight: '700', color: '#FFFFFF', flexShrink: 0
+                fontSize: '11.5px', fontWeight: '700', color: i === selected ? '#FFFFFF' : 'var(--text-main)', flexShrink: 0
               }}>
                 {String.fromCharCode(65 + i)}
               </div>
@@ -629,7 +630,7 @@ function CoachTab() {
               maxWidth: '80%', padding: '10px 14px', borderRadius: 'var(--radius-sm)',
               background: msg.sender === 'user' ? 'var(--primary)' : 'var(--bg-surface)',
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
-              color: '#FFFFFF', fontSize: '12.5px', lineHeight: '1.5'
+              color: msg.sender === 'user' ? '#FFFFFF' : 'var(--text-main)', fontSize: '12.5px', lineHeight: '1.5'
             }}>
               {msg.text}
             </div>
@@ -742,6 +743,21 @@ function ProfileTab({ profile, onLogout }) {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Appearance / Theme Toggle */}
+      <div className="card-premium" style={{
+        padding: '12px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'var(--bg-surface)'
+      }}>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>Interface Theme</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Toggle between high-contrast Dark and Light modes</div>
+        </div>
+        <ThemeToggle showLabel />
       </div>
 
       <button
@@ -891,7 +907,7 @@ export default function StudentPortal({ user, onLogout }) {
           </div>
         </div>
 
-        {/* Stat Pills */}
+        {/* Stat Pills & Theme Toggle */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span className="badge-pill badge-warning" style={{ fontSize: '11px' }}>
             <Zap size={11} /> {profile.totalXp.toLocaleString()} XP
@@ -899,6 +915,7 @@ export default function StudentPortal({ user, onLogout }) {
           <span className="badge-pill badge-danger" style={{ fontSize: '11px' }}>
             <Flame size={11} /> {profile.streak}d streak
           </span>
+          <ThemeToggle compact />
         </div>
       </div>
 

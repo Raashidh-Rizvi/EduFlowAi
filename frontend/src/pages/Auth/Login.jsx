@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, Shield, UserCheck, GraduationCap, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import ThemeToggle from '../../components/common/ThemeToggle';
 import { authService } from '../../services/authService';
 
 export default function Login({ onLoginSuccess }) {
@@ -92,6 +93,11 @@ export default function Login({ onLoginSuccess }) {
       padding: '24px',
       position: 'relative'
     }}>
+      {/* Theme Toggle Button */}
+      <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50 }}>
+        <ThemeToggle showLabel />
+      </div>
+
       <div style={{
         width: '100%',
         maxWidth: '960px',

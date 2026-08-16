@@ -122,7 +122,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
               padding: '1px 5px',
               borderRadius: '4px',
               backgroundColor: 'var(--primary-soft)',
-              color: '#818CF8',
+              color: 'var(--primary-text)',
               border: '1px solid var(--primary-border)'
             }}>
               AI
@@ -183,7 +183,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
                       fontSize: '13px'
                     }}
                   >
-                    <Icon size={16} color={isActive ? '#818CF8' : 'var(--text-muted)'} />
+                    <Icon size={16} color={isActive ? 'var(--primary-text)' : 'var(--text-muted)'} />
                     <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {tab.label}
                     </span>

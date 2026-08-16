@@ -748,7 +748,7 @@ export default function Courses({ currentUser }) {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          color: '#FFFFFF',
+                          color: (isCompleted || isActive) ? '#FFFFFF' : 'var(--text-main)',
                           fontWeight: '700',
                           fontSize: '12.5px'
                         }}>

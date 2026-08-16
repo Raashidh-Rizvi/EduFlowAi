@@ -17,7 +17,18 @@ import { ShieldAlert } from 'lucide-react';
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [unreadNotifications] = useState(3);
-  const [pendingAiProposals] = useState(2);
+  const [pendingAiProposals, setPendingAiProposals] = useState(() => {
+    try {
+      const saved = localStorage.getItem('eduflow_ai_proposals_dynamic');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed.filter(p => p.status === 'PendingInstructorApproval').length;
+      }
+    } catch {
+      return 0;
+    }
+    return 0;
+  });
 
   const [currentUser, setCurrentUser] = useState(() => {
     try {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search, Bell, Sparkles, Activity, ShieldCheck, LogOut, Shield } from 'lucide-react';
+import ThemeToggle from '../common/ThemeToggle';
 
 export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
   const titles = {
@@ -117,6 +118,9 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
           <span className="status-dot-active"></span>
           <span>API 8.0: 18ms</span>
         </div>
+
+        {/* Theme Toggle Button */}
+        <ThemeToggle compact />
 
         {/* Notification Icon */}
         <div 
