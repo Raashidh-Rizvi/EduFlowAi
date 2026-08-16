@@ -14,10 +14,13 @@ from models.schemas import (
     RetentionRiskResponse,
     CoachChatRequest,
     CoachChatResponse,
+    NextBestActionRequest,
+    NextBestActionResponse,
     AgentTopologyResponse,
     WorkflowDecisionRequest,
     WorkflowDecisionResponse
 )
+
 from models.state import SharedAgentState
 from graph.workflow import (
     StudyPlanOrchestrator, 

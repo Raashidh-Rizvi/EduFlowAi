@@ -91,12 +91,14 @@ The backend serves the REST API, JWT authentication, gamification engine, databa
    cd d:\Project\EduHub\backend\EduFlow.Api
    ```
 
-2. Restore and run the application:
+2. Restore and run the application with **Auto-Reload / Hot Reload**:
    ```powershell
-   dotnet run
+   dotnet watch run
    ```
-   - **Swagger UI**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
-   - **API Base URL**: `http://localhost:5000/api`
+   *(Or standard `dotnet run` if you don't need active file watching)*
+   - **Swagger UI**: [http://localhost:5204/swagger](http://localhost:5204/swagger) or [http://localhost:5000/swagger](http://localhost:5000/swagger)
+   - **API Base URL**: `http://localhost:5204/api`
+
 
 ---
 

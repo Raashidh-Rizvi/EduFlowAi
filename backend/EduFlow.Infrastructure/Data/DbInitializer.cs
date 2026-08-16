@@ -16,15 +16,22 @@ public static class DbInitializer
         try
         {
             var script = context.Database.GenerateCreateScript();
-            script = script.Replace("CREATE TABLE \"", "CREATE TABLE IF NOT EXISTS \"");
-            script = script.Replace("CREATE UNIQUE INDEX \"", "CREATE UNIQUE INDEX IF NOT EXISTS \"");
-            script = script.Replace("CREATE INDEX \"", "CREATE INDEX IF NOT EXISTS \"");
-            context.Database.ExecuteSqlRaw(script);
+            var statements = script.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var stmt in statements)
+            {
+                if (string.IsNullOrWhiteSpace(stmt)) continue;
+                try
+                {
+                    var safeStmt = stmt.Replace("CREATE TABLE \"", "CREATE TABLE IF NOT EXISTS \"")
+                                       .Replace("CREATE UNIQUE INDEX \"", "CREATE UNIQUE INDEX IF NOT EXISTS \"")
+                                       .Replace("CREATE INDEX \"", "CREATE INDEX IF NOT EXISTS \"");
+                    context.Database.ExecuteSqlRaw(safeStmt);
+                }
+                catch { }
+            }
         }
-        catch
-        {
-            try { context.Database.EnsureCreated(); } catch { }
-        }
+        catch { }
+
 
         var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
