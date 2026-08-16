@@ -30,6 +30,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
+import { BrandLogo } from '../../components/common/BrandLogo';
 
 // ─── Seed Data for Student Portal ─────────────────────────────────────────────
 const STUDENT_DATA = {
@@ -944,19 +945,7 @@ export default function StudentPortal({ user, onLogout }) {
         borderBottom: '1px solid var(--border-subtle)',
         flexShrink: 0
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '32px', height: '32px', borderRadius: 'var(--radius-xs)',
-            background: 'var(--primary)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
-          }}>
-            <Zap size={16} color="#FFFFFF" />
-          </div>
-          <div>
-            <div style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--text-main)', lineHeight: 1 }}>EduFlow AI</div>
-            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Student Workspace</div>
-          </div>
-        </div>
+        <BrandLogo size="sm" subtitle="Student Workspace" />
 
         {/* Stat Pills & Theme Toggle */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

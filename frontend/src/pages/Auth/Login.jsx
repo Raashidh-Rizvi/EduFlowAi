@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Shield, UserCheck, GraduationCap, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
+import { BrandLogo } from '../../components/common/BrandLogo';
 import { authService } from '../../services/authService';
 
 export default function Login({ onLoginSuccess }) {
@@ -116,38 +117,8 @@ export default function Login({ onLoginSuccess }) {
         }}>
           <div>
             {/* Logo */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(79, 70, 229, 0.35)'
-              }}>
-                <Sparkles size={22} color="#FFFFFF" />
-              </div>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <h1 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.025em' }}>
-                    EduFlow
-                  </h1>
-                  <span style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    backgroundColor: 'var(--primary-soft)',
-                    color: '#818CF8',
-                    border: '1px solid var(--primary-border)'
-                  }}>
-                    AI
-                  </span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Adaptive Enterprise Learning Platform</p>
-              </div>
+            <div style={{ marginBottom: '24px' }}>
+              <BrandLogo size="lg" subtitle="Adaptive Enterprise Learning Platform" />
             </div>
 
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '24px' }}>

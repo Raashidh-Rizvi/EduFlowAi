@@ -16,6 +16,7 @@ import {
   Settings,
   Layers
 } from 'lucide-react';
+import { BrandLogo } from '../common/BrandLogo';
 
 export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -98,40 +99,11 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
       position: 'relative'
     }}>
       {/* Brand Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px', paddingLeft: '8px' }}>
-        <div style={{
-          width: '34px',
-          height: '34px',
-          borderRadius: 'var(--radius-sm)',
-          backgroundColor: 'var(--primary)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(79, 70, 229, 0.4)'
-        }}>
-          <Sparkles size={18} color="#FFFFFF" />
-        </div>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-              EduFlow
-            </span>
-            <span style={{
-              fontSize: '10px',
-              fontWeight: '700',
-              padding: '1px 5px',
-              borderRadius: '4px',
-              backgroundColor: 'var(--primary-soft)',
-              color: 'var(--primary-text)',
-              border: '1px solid var(--primary-border)'
-            }}>
-              AI
-            </span>
-          </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '500' }}>
-            {isAdmin ? 'System Admin Portal' : isInstructor ? 'Instructor Console' : 'Student Portal'}
-          </p>
-        </div>
+      <div style={{ marginBottom: '24px', paddingLeft: '6px' }}>
+        <BrandLogo 
+          size="md" 
+          subtitle={isAdmin ? 'System Admin Portal' : isInstructor ? 'Instructor Console' : 'Student Portal'} 
+        />
       </div>
 
       {/* Categorized Nav List */}
