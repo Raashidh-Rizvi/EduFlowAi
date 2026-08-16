@@ -194,4 +194,82 @@ public class AssessmentQuizTests
         Assert.True(passedSubmission.Passed);
         Assert.Equal(100.0, passedSubmission.PercentageScore);
     }
+
+    [Fact]
+    public async Task CreateQuiz_MultiQuestionWithParsedOptions_PersistsAndRetrievesCorrectly()
+    {
+        await using var db = CreateDb();
+        var courseId = Guid.NewGuid();
+
+        var quiz = new Assessment
+        {
+            CourseId = courseId,
+            Title = "Full Stack Architecture Mastery",
+            Description = "Comprehensive test on ASP.NET Core and React",
+            Type = AssessmentType.Quiz,
+            TimeLimitMinutes = 25,
+            PassingScorePercent = 75,
+            XpReward = 100,
+            CoinReward = 40
+        };
+
+        var questions = new List<Question>
+        {
+            new Question
+            {
+                Prompt = "What is the primary function of DbContext.SaveChangesAsync()?",
+                Type = QuestionType.MultipleChoice,
+                OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string>
+                {
+                    "Wraps all tracked modifications in an atomic transaction",
+                    "Drops the target database table",
+                    "Disables SQL connection pooling",
+                    "Flushes memory cache only"
+                }),
+                CorrectAnswer = "Wraps all tracked modifications in an atomic transaction",
+                Explanation = "SaveChangesAsync guarantees all modifications commit or rollback atomically.",
+                Points = 10,
+                OrderIndex = 1
+            },
+            new Question
+            {
+                Prompt = "Which React hook manages local component lifecycle and state synchronization?",
+                Type = QuestionType.MultipleChoice,
+                OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string>
+                {
+                    "useEffect",
+                    "usePostgreSQL",
+                    "useDatabaseConnection",
+                    "useAtomicLedger"
+                }),
+                CorrectAnswer = "useEffect",
+                Explanation = "useEffect synchronizes component side-effects with state changes.",
+                Points = 10,
+                OrderIndex = 2
+            }
+        };
+
+        foreach (var q in questions)
+        {
+            quiz.Questions.Add(q);
+        }
+
+        await db.Assessments.AddAsync(quiz);
+        await db.SaveChangesAsync();
+
+        var retrieved = await db.Assessments
+            .Include(a => a.Questions)
+            .FirstOrDefaultAsync(a => a.Id == quiz.Id);
+
+        Assert.NotNull(retrieved);
+        Assert.Equal(2, retrieved!.Questions.Count);
+        Assert.Equal(100, retrieved.XpReward);
+        Assert.Equal(40, retrieved.CoinReward);
+
+        var firstQ = retrieved.Questions.First(q => q.OrderIndex == 1);
+        var options = System.Text.Json.JsonSerializer.Deserialize<List<string>>(firstQ.OptionsJson);
+        Assert.NotNull(options);
+        Assert.Equal(4, options!.Count);
+        Assert.Contains("Wraps all tracked modifications in an atomic transaction", options);
+    }
 }

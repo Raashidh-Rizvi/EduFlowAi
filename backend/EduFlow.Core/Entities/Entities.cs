@@ -74,6 +74,8 @@ public class Module : BaseEntity
     public Course? Course { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
     public int OrderIndex { get; set; }
 
     public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
@@ -86,6 +88,8 @@ public class Lesson : BaseEntity
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? VideoUrl { get; set; }
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
     public int XpReward { get; set; } = 25;
     public int EstimatedMinutes { get; set; } = 20;
     public int OrderIndex { get; set; }

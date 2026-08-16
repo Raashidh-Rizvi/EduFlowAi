@@ -406,4 +406,71 @@ public class UserCourseManagementTests
         Assert.Equal("https://cdn.example.com/old.png", fromDb!.AvatarUrl); // preserved
         Assert.Equal("New Name", fromDb.FullName);
     }
+
+    // =========================================================================
+    // MODULE & LESSON PDF ATTACHMENTS
+    // =========================================================================
+
+    [Fact]
+    public async Task CreateModule_WithPdfAttachment_PersistsAndRetrievesPdfDetails()
+    {
+        await using var db = CreateDb();
+        var instructor = SeedUser(db, UserRole.Instructor);
+        var course = SeedCourse(db, instructor.Id);
+
+        var module = new Module
+        {
+            CourseId = course.Id,
+            Title = "Module 1: Advanced Relational Systems",
+            Description = "Includes curriculum reading material",
+            OrderIndex = 1,
+            PdfUrl = "/uploads/pdfs/sample_module_syllabus.pdf",
+            AttachmentFileName = "sample_module_syllabus.pdf"
+        };
+
+        db.Modules.Add(module);
+        await db.SaveChangesAsync();
+
+        var retrieved = await db.Modules.FirstOrDefaultAsync(m => m.Id == module.Id);
+        Assert.NotNull(retrieved);
+        Assert.Equal("/uploads/pdfs/sample_module_syllabus.pdf", retrieved!.PdfUrl);
+        Assert.Equal("sample_module_syllabus.pdf", retrieved.AttachmentFileName);
+    }
+
+    [Fact]
+    public async Task CreateLesson_WithPdfAttachment_PersistsAndRetrievesPdfDetails()
+    {
+        await using var db = CreateDb();
+        var instructor = SeedUser(db, UserRole.Instructor);
+        var course = SeedCourse(db, instructor.Id);
+
+        var module = new Module
+        {
+            CourseId = course.Id,
+            Title = "Module 2: Scalable Indexing",
+            OrderIndex = 1
+        };
+        db.Modules.Add(module);
+        await db.SaveChangesAsync();
+
+        var lesson = new Lesson
+        {
+            ModuleId = module.Id,
+            Title = "Lesson 2.1: B-Tree Indexes",
+            Content = "Comprehensive lecture on Postgres indexing.",
+            PdfUrl = "/uploads/pdfs/btree_indexes_lecture_notes.pdf",
+            AttachmentFileName = "btree_indexes_lecture_notes.pdf",
+            XpReward = 30,
+            EstimatedMinutes = 25,
+            OrderIndex = 1
+        };
+        db.Lessons.Add(lesson);
+        await db.SaveChangesAsync();
+
+        var retrieved = await db.Lessons.FirstOrDefaultAsync(l => l.Id == lesson.Id);
+        Assert.NotNull(retrieved);
+        Assert.Equal("/uploads/pdfs/btree_indexes_lecture_notes.pdf", retrieved!.PdfUrl);
+        Assert.Equal("btree_indexes_lecture_notes.pdf", retrieved.AttachmentFileName);
+        Assert.Equal(30, retrieved.XpReward);
+    }
 }

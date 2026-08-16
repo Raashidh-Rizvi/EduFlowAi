@@ -34,6 +34,8 @@ public record ModuleDto(
     string Title,
     string Description,
     int OrderIndex,
+    string? PdfUrl,
+    string? AttachmentFileName,
     List<LessonSummaryDto> Lessons
 );
 
@@ -43,7 +45,9 @@ public record LessonSummaryDto(
     int XpReward,
     int EstimatedMinutes,
     int OrderIndex,
-    bool IsCompleted
+    bool IsCompleted,
+    string? PdfUrl = null,
+    string? AttachmentFileName = null
 );
 
 public record LessonDetailDto(
@@ -52,6 +56,8 @@ public record LessonDetailDto(
     string Title,
     string Content,
     string? VideoUrl,
+    string? PdfUrl,
+    string? AttachmentFileName,
     int XpReward,
     int EstimatedMinutes,
     int OrderIndex,
@@ -69,13 +75,17 @@ public record CreateCourseRequest(
 public record CreateModuleRequest(
     string Title,
     string Description,
-    int OrderIndex
+    int OrderIndex,
+    string? PdfUrl = null,
+    string? AttachmentFileName = null
 );
 
 public record UpdateModuleRequest(
     string Title,
     string Description,
-    int OrderIndex
+    int OrderIndex,
+    string? PdfUrl = null,
+    string? AttachmentFileName = null
 );
 
 public record CreateLessonRequest(
@@ -84,7 +94,9 @@ public record CreateLessonRequest(
     string? VideoUrl,
     int XpReward,
     int EstimatedMinutes,
-    int OrderIndex
+    int OrderIndex,
+    string? PdfUrl = null,
+    string? AttachmentFileName = null
 );
 
 public record UpdateLessonRequest(
@@ -93,7 +105,16 @@ public record UpdateLessonRequest(
     string? VideoUrl,
     int XpReward,
     int EstimatedMinutes,
-    int OrderIndex
+    int OrderIndex,
+    string? PdfUrl = null,
+    string? AttachmentFileName = null
+);
+
+public record PdfUploadResultDto(
+    string FileUrl,
+    string FileName,
+    long FileSizeBytes,
+    string Message
 );
 
 public record PublishCourseRequest(

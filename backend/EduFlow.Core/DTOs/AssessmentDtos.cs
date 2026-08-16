@@ -99,3 +99,26 @@ public record CreateQuestionRequest(
     int Points,
     int OrderIndex
 );
+
+public record GenerateAiQuizRequest(
+    Guid CourseId,
+    string Topic,
+    string Difficulty,
+    int QuestionCount,
+    int TimeLimitMinutes = 15,
+    int PassingScorePercent = 70,
+    int XpReward = 60,
+    int CoinReward = 25
+);
+
+public record UploadQuizRequest(
+    Guid CourseId,
+    string Title,
+    string Description,
+    int TimeLimitMinutes,
+    int PassingScorePercent,
+    int XpReward,
+    int CoinReward,
+    string? SourceFileName,
+    List<CreateQuestionRequest> Questions
+);

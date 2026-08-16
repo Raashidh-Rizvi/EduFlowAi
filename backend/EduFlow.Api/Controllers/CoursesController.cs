@@ -11,6 +11,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using System.IO;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+
 namespace EduFlow.Api.Controllers;
 
 [ApiController]
@@ -19,11 +23,16 @@ public class CoursesController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IGamificationService _gamificationService;
+    private readonly IWebHostEnvironment? _environment;
 
-    public CoursesController(ApplicationDbContext dbContext, IGamificationService gamificationService)
+    public CoursesController(
+        ApplicationDbContext dbContext,
+        IGamificationService gamificationService,
+        IWebHostEnvironment? environment = null)
     {
         _dbContext = dbContext;
         _gamificationService = gamificationService;
+        _environment = environment;
     }
 
     // -------------------------------------------------------------------------
@@ -84,13 +93,17 @@ public class CoursesController : ControllerBase
                 m.Title,
                 m.Description,
                 m.OrderIndex,
+                m.PdfUrl,
+                m.AttachmentFileName,
                 m.Lessons.Select(l => new LessonSummaryDto(
                     l.Id,
                     l.Title,
                     l.XpReward,
                     l.EstimatedMinutes,
                     l.OrderIndex,
-                    false
+                    false,
+                    l.PdfUrl,
+                    l.AttachmentFileName
                 )).ToList()
             )).ToList()
         );
@@ -217,8 +230,10 @@ public class CoursesController : ControllerBase
                 m.Title,
                 m.Description,
                 m.OrderIndex,
+                m.PdfUrl,
+                m.AttachmentFileName,
                 m.Lessons.Select(l => new LessonSummaryDto(
-                    l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.OrderIndex, false
+                    l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.OrderIndex, false, l.PdfUrl, l.AttachmentFileName
                 )).ToList()
             ))
             .ToListAsync();
@@ -241,7 +256,9 @@ public class CoursesController : ControllerBase
             CourseId = courseId,
             Title = request.Title,
             Description = request.Description,
-            OrderIndex = request.OrderIndex
+            OrderIndex = request.OrderIndex,
+            PdfUrl = request.PdfUrl,
+            AttachmentFileName = request.AttachmentFileName
         };
 
         await _dbContext.Modules.AddAsync(module);
@@ -262,6 +279,8 @@ public class CoursesController : ControllerBase
         module.Title = request.Title;
         module.Description = request.Description;
         module.OrderIndex = request.OrderIndex;
+        if (request.PdfUrl != null) module.PdfUrl = request.PdfUrl;
+        if (request.AttachmentFileName != null) module.AttachmentFileName = request.AttachmentFileName;
         module.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync();
@@ -312,6 +331,8 @@ public class CoursesController : ControllerBase
             lesson.Title,
             lesson.Content,
             lesson.VideoUrl,
+            lesson.PdfUrl,
+            lesson.AttachmentFileName,
             lesson.XpReward,
             lesson.EstimatedMinutes,
             lesson.OrderIndex,
@@ -337,6 +358,8 @@ public class CoursesController : ControllerBase
             Title = request.Title,
             Content = request.Content,
             VideoUrl = request.VideoUrl,
+            PdfUrl = request.PdfUrl,
+            AttachmentFileName = request.AttachmentFileName,
             XpReward = request.XpReward,
             EstimatedMinutes = request.EstimatedMinutes,
             OrderIndex = request.OrderIndex
@@ -360,6 +383,8 @@ public class CoursesController : ControllerBase
         lesson.Title = request.Title;
         lesson.Content = request.Content;
         lesson.VideoUrl = request.VideoUrl;
+        if (request.PdfUrl != null) lesson.PdfUrl = request.PdfUrl;
+        if (request.AttachmentFileName != null) lesson.AttachmentFileName = request.AttachmentFileName;
         lesson.XpReward = request.XpReward;
         lesson.EstimatedMinutes = request.EstimatedMinutes;
         lesson.OrderIndex = request.OrderIndex;
@@ -367,6 +392,57 @@ public class CoursesController : ControllerBase
 
         await _dbContext.SaveChangesAsync();
         return Ok(lesson);
+    }
+
+    // -------------------------------------------------------------------------
+    // FILE UPLOAD (PDF Document Storage)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Uploads and stores a PDF document for modules/lessons, returning the accessible URL.
+    /// </summary>
+    [HttpPost("upload-pdf")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UploadPdf(IFormFile? file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            return BadRequest(new { message = "No file uploaded or file is empty." });
+        }
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (ext != ".pdf")
+        {
+            return BadRequest(new { message = "Only PDF documents (.pdf) are allowed." });
+        }
+
+        if (file.Length > 25 * 1024 * 1024) // 25MB limit
+        {
+            return BadRequest(new { message = "File size exceeds 25MB limit." });
+        }
+
+        var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var uploadDir = Path.Combine(webRoot, "uploads", "pdfs");
+        if (!Directory.Exists(uploadDir))
+        {
+            Directory.CreateDirectory(uploadDir);
+        }
+
+        var safeFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
+        var filePath = Path.Combine(uploadDir, safeFileName);
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var fileUrl = $"/uploads/pdfs/{safeFileName}";
+        return Ok(new PdfUploadResultDto(
+            FileUrl: fileUrl,
+            FileName: file.FileName,
+            FileSizeBytes: file.Length,
+            Message: "PDF uploaded and stored successfully."
+        ));
     }
 
     // -------------------------------------------------------------------------

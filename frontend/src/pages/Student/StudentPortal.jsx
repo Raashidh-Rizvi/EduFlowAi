@@ -15,14 +15,22 @@ import {
   Award,
   LogOut,
   ChevronRight,
+  ChevronDown,
   Send,
   MessageCircle,
   ShieldCheck,
   Coins,
-  Target
+  Target,
+  FileText,
+  Eye,
+  Download,
+  X,
+  Play,
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 
-// ─── Static seed data for student portal ──────────────────────────────────────
+// ─── Seed Data for Student Portal ─────────────────────────────────────────────
 const STUDENT_DATA = {
   'student@eduflow.ai': {
     fullName: 'Alex Rivera',
@@ -35,12 +43,12 @@ const STUDENT_DATA = {
     streak: 5,
     freezeTokens: 2,
     badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day streak' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
+      { id: 'FIRST_STEP', name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
+      { id: 'QUIZ_ACE', name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
+      { id: 'UNSTOPPABLE', name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day study streak' },
+      { id: 'BOSS_SLAYER', name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
+      { id: 'TEAM_PLAYER', name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
+      { id: 'AI_MASTER', name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
     ]
   },
   'maya@eduflow.ai': {
@@ -54,95 +62,183 @@ const STUDENT_DATA = {
     streak: 18,
     freezeTokens: 3,
     badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: true, desc: '7-day streak achieved' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: true, desc: 'Defeated 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: true, desc: 'Completed 10 AI study plans' },
-    ]
-  },
-  'chen@eduflow.ai': {
-    fullName: 'Chen Wei',
-    level: 4,
-    levelName: 'Code Scholar',
-    totalXp: 4650,
-    xpInLevel: 150,
-    xpToNext: 1200,
-    coins: 520,
-    streak: 9,
-    freezeTokens: 1,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: true, desc: '7-day streak achieved' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
-    ]
-  },
-  'elena@eduflow.ai': {
-    fullName: 'Elena Rostova',
-    level: 3,
-    levelName: 'Logic Learner',
-    totalXp: 2940,
-    xpInLevel: 440,
-    xpToNext: 1100,
-    coins: 310,
-    streak: 6,
-    freezeTokens: 2,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: false, desc: 'Score 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day streak' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
+      { id: 'FIRST_STEP', name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
+      { id: 'QUIZ_ACE', name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
+      { id: 'UNSTOPPABLE', name: 'Unstoppable', icon: '🔥', unlocked: true, desc: '7-day streak achieved' },
+      { id: 'BOSS_SLAYER', name: 'Boss Slayer', icon: '👹', unlocked: true, desc: 'Defeated 5 boss encounters' },
+      { id: 'TEAM_PLAYER', name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
+      { id: 'AI_MASTER', name: 'AI Master', icon: '🤖', unlocked: true, desc: 'Completed 10 AI study plans' },
     ]
   }
 };
 
-const LEADERBOARD = [
-  { rank: 1, name: 'Maya Patel', email: 'maya@eduflow.ai', level: 6, xp: 8420, streak: 18 },
-  { rank: 2, name: 'Chen Wei', email: 'chen@eduflow.ai', level: 4, xp: 4650, streak: 9 },
-  { rank: 3, name: 'Alex Rivera', email: 'student@eduflow.ai', level: 2, xp: 1250, streak: 5 },
-  { rank: 4, name: 'Elena Rostova', email: 'elena@eduflow.ai', level: 3, xp: 2940, streak: 6 },
-  { rank: 5, name: 'Tariq Mansoor', email: 'tariq@eduflow.ai', level: 3, xp: 2810, streak: 5 },
+const INITIAL_COURSES = [
+  {
+    id: '44444444-4444-4444-4444-444444444444',
+    code: 'SE3090',
+    title: 'Software Engineering Frameworks & Adaptive Systems',
+    description: 'Enterprise architecture with ASP.NET Core, PostgreSQL, React, Flutter & LangGraph multi-agent systems.',
+    modules: [
+      {
+        id: 'm1',
+        title: 'Module 1: Clean Architecture & Gamification Mechanics',
+        description: 'Core concepts of domain modeling, repository abstraction, and deterministic reward ledgers.',
+        pdfUrl: '/uploads/pdfs/module1_clean_architecture_guide.pdf',
+        attachmentFileName: 'module1_clean_architecture_guide.pdf',
+        lessons: [
+          {
+            id: 'l1',
+            title: '1.1 Clean Architecture & Repository Pattern',
+            type: 'video',
+            duration: '35m',
+            xp: 30,
+            completed: true,
+            content: 'Understanding inner domain layers and abstract repository interfaces in .NET 8.',
+            pdfUrl: '/uploads/pdfs/lesson1_1_clean_arch_slides.pdf',
+            attachmentFileName: 'lesson1_1_clean_arch_slides.pdf'
+          },
+          {
+            id: 'l2',
+            title: '1.2 PostgreSQL Relational Schemas & Indexes',
+            type: 'doc',
+            duration: '25m',
+            xp: 40,
+            completed: true,
+            content: 'Deep dive into composite B-Tree indexes and query execution planning.',
+            pdfUrl: '/uploads/pdfs/lesson1_2_postgresql_indexing_handbook.pdf',
+            attachmentFileName: 'lesson1_2_postgresql_indexing_handbook.pdf'
+          },
+          {
+            id: 'l3',
+            title: '1.3 Hands-on: EF Core Migrations & Foreign Keys',
+            type: 'lab',
+            duration: '45m',
+            xp: 50,
+            completed: false,
+            content: 'Step-by-step lab configuring DbContext and applying relational migrations.',
+            pdfUrl: null,
+            attachmentFileName: null
+          }
+        ]
+      },
+      {
+        id: 'm2',
+        title: 'Module 2: Agentic AI Orchestration (LangGraph)',
+        description: 'Multi-agent state machines, deterministic schema guards, and human-in-the-loop oversight.',
+        pdfUrl: '/uploads/pdfs/module2_agentic_ai_orchestration.pdf',
+        attachmentFileName: 'module2_agentic_ai_orchestration.pdf',
+        lessons: [
+          {
+            id: 'l4',
+            title: '2.1 Multi-Agent StateGraph Architecture',
+            type: 'video',
+            duration: '40m',
+            xp: 60,
+            completed: false,
+            content: 'Orchestrating Planner, Tool, Analysis, and Safety agents.',
+            pdfUrl: '/uploads/pdfs/lesson2_1_stategraph_spec.pdf',
+            attachmentFileName: 'lesson2_1_stategraph_spec.pdf'
+          },
+          {
+            id: 'l5',
+            title: '2.2 Midterm Boss Encounter: Concurrency Dungeon',
+            type: 'boss',
+            duration: '30m',
+            xp: 500,
+            isBoss: true,
+            completed: false,
+            content: '15-question deadlock raid testing optimistic locking and distributed transactions.',
+            pdfUrl: null,
+            attachmentFileName: null
+          }
+        ]
+      }
+    ]
+  }
 ];
 
-const JOURNEY_NODES = [
-  { id: 1, title: 'Clean Architecture Domain Isolation', icon: '🌱', status: 'completed', xp: 150, duration: '25m', type: 'lesson', desc: 'Core entities, domain rules, dependency inversion in .NET 8.' },
-  { id: 2, title: 'PostgreSQL Relational Schemas & Indexes', icon: '🧩', status: 'completed', xp: 200, duration: '35m', type: 'lab', desc: 'Composite indexing, EXPLAIN ANALYZE, and table partitions.' },
-  { id: 3, title: 'EF Core Migrations & Transactions', icon: '⚔️', status: 'active', xp: 350, duration: '40m', type: 'challenge', desc: 'ACID boundaries, concurrency tokens, and optimistic locking.' },
-  { id: 4, title: 'Multi-Agent LangGraph Swarm Node', icon: '🤖', status: 'locked', xp: 400, duration: '45m', type: 'ai', desc: 'State machine graphs, deterministic schema guards, and audit trails.' },
-  { id: 5, title: 'Dungeon Boss: PostgreSQL Concurrency Raid', icon: '👹', status: 'locked', xp: 500, duration: '20m', type: 'boss', desc: 'Defeat the 15-scenario deadlock raid to unlock the Boss Slayer Trophy!' },
-];
-
-const QUIZ_QUESTIONS = [
+const QUIZZES = [
   {
-    prompt: 'In PostgreSQL, which index type best optimizes a multi-column WHERE clause?',
-    options: ['Composite B-Tree index ordered by column selectivity', 'Single unindexed text scan', 'No index at all', 'Random hash table'],
-    correct: 0,
-    explanation: 'Composite B-Tree indexes match filters efficiently when ordered from highest to lowest selectivity.'
+    id: 'q-indexing',
+    title: 'Diagnostic Quiz: PostgreSQL Indexing & Query Plans',
+    timeLimit: 15,
+    xpReward: 80,
+    coinReward: 30,
+    passingScore: 70,
+    questions: [
+      {
+        prompt: 'In PostgreSQL, which index type best optimizes a multi-column WHERE clause?',
+        options: [
+          'Composite B-Tree index ordered by column selectivity',
+          'Single unindexed sequential text scan',
+          'No index at all with parallel workers',
+          'Random hash table distribution'
+        ],
+        correct: 0,
+        explanation: 'Composite B-Tree indexes match filters efficiently when ordered from highest to lowest selectivity.'
+      },
+      {
+        prompt: 'What does EF Core SaveChangesAsync() guarantee about multiple entity modifications?',
+        options: [
+          'All modifications are wrapped atomically in a single ACID transaction',
+          'Each entity is saved in completely separate database connections',
+          'It never rolls back on failure',
+          'It bypasses foreign key constraints'
+        ],
+        correct: 0,
+        explanation: 'SaveChangesAsync wraps all pending changes in a single ACID transaction boundary.'
+      },
+      {
+        prompt: 'Why is an Immutable XP Transaction Ledger required in EduFlow?',
+        options: [
+          'To prevent duplicate reward exploits and guarantee mathematical auditability',
+          'Because PostgreSQL cannot update integers',
+          'To let LLMs modify business rules',
+          'To slow down student progress'
+        ],
+        correct: 0,
+        explanation: 'An append-only ledger records every XP change atomically and is audit-safe.'
+      }
+    ]
   },
   {
-    prompt: 'What does EF Core SaveChangesAsync() guarantee about multiple entity modifications?',
-    options: ['All modifications are wrapped atomically — if any fails, all roll back', 'Each entity is saved in separate database connections', 'It never rolls back', 'It bypasses foreign key constraints'],
-    correct: 0,
-    explanation: 'SaveChangesAsync wraps all pending changes in a single ACID transaction boundary.'
-  },
-  {
-    prompt: 'Why is an Immutable XP Transaction Ledger required in EduFlow?',
-    options: ['To prevent duplicate reward exploits and guarantee mathematical auditability', 'Because PostgreSQL cannot update integers', 'To let LLMs modify business rules', 'To slow down student progress'], 
-    correct: 0,
-    explanation: 'An append-only ledger records every XP change atomically and is audit-safe.'
+    id: 'q-clean-arch',
+    title: 'Clean Architecture Domain Boundaries',
+    timeLimit: 20,
+    xpReward: 70,
+    coinReward: 25,
+    passingScore: 70,
+    questions: [
+      {
+        prompt: 'What is the fundamental dependency rule of Clean Architecture?',
+        options: [
+          'Dependencies point inward exclusively toward Domain core',
+          'Domain layers depend directly on UI Frameworks and DB Drivers',
+          'All database models inherit directly from Controller classes',
+          'Circular references between domain and presentation layers'
+        ],
+        correct: 0,
+        explanation: 'Clean architecture dictates that inner layers know nothing of outer layers or third-party frameworks.'
+      },
+      {
+        prompt: 'Where should Core Domain Entities and Interfaces reside in the project hierarchy?',
+        options: [
+          'EduFlow.Core',
+          'EduFlow.Api',
+          'EduFlow.Infrastructure',
+          'EduFlow.Tests'
+        ],
+        correct: 0,
+        explanation: 'EduFlow.Core defines pure business entities and contracts without external dependencies.'
+      }
+    ]
   }
 ];
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
 
-function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
-  const pct = Math.round((profile.xpInLevel / profile.xpToNext) * 100);
+function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz }) {
+  const pct = Math.min(100, Math.round((profile.xpInLevel / profile.xpToNext) * 100));
   const [claimed, setClaimed] = useState(false);
 
   const handleClaim = () => {
@@ -180,7 +276,7 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
           <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #6366F1, #06B6D4)', borderRadius: '8px', transition: 'width 0.6s ease' }} />
         </div>
         <div style={{ fontSize: '11px', color: '#94A3B8' }}>
-          {profile.xpInLevel.toLocaleString()} / {profile.xpToNext.toLocaleString()} XP to Level {profile.level + 1}
+          {profile.xpInLevel.toLocaleString()} / {profile.xpToNext.toLocaleString()} XP to Level {profile.level + 1} ({pct}%)
         </div>
       </div>
 
@@ -239,29 +335,45 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
             <span style={{ color: '#F59E0B', fontWeight: '800', fontSize: '13px' }}>+100 XP • +40 🪙</span>
           </div>
           <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)', marginBottom: '6px' }}>
-            Clean Architecture Deep Dive
+            Clean Architecture & Postgres Master Quest
           </div>
           <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '16px' }}>
-            Complete 1 lesson on Dependency Inversion and score ≥ 75% on the adaptive quiz to claim your reward.
+            Read the attached module syllabus PDF, review indexing rules, and pass the diagnostic quiz to earn full XP!
           </div>
-          <button
-            disabled={claimed}
-            onClick={handleClaim}
-            style={{
-              width: '100%',
-              padding: '11px',
-              borderRadius: '10px',
-              background: claimed ? 'rgba(16,185,129,0.25)' : 'linear-gradient(135deg, #6366F1, #06B6D4)',
-              color: claimed ? '#10B981' : '#FFFFFF',
-              border: claimed ? '1px solid rgba(16,185,129,0.4)' : 'none',
-              fontWeight: '800',
-              fontSize: '13.5px',
-              cursor: claimed ? 'default' : 'pointer',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            {claimed ? '✓ Completed & Claimed' : 'Complete & Claim (+100 XP)'}
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => onStartQuiz(QUIZZES[0])}
+              style={{
+                flex: 1,
+                padding: '11px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #6366F1, #06B6D4)',
+                color: '#FFFFFF',
+                border: 'none',
+                fontWeight: '800',
+                fontSize: '13.5px',
+                cursor: 'pointer'
+              }}
+            >
+              Start Mission Quiz ⚔️
+            </button>
+            <button
+              disabled={claimed}
+              onClick={handleClaim}
+              style={{
+                padding: '11px 16px',
+                borderRadius: '10px',
+                background: claimed ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.06)',
+                color: claimed ? '#10B981' : '#FFFFFF',
+                border: claimed ? '1px solid rgba(16,185,129,0.4)' : '1px solid var(--border-subtle)',
+                fontWeight: '800',
+                fontSize: '12px',
+                cursor: claimed ? 'default' : 'pointer'
+              }}
+            >
+              {claimed ? '✓ Claimed' : 'Quick Claim'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -284,7 +396,7 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
         <span style={{ fontSize: '32px' }}>🤖</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: '800', color: '#FFFFFF', fontSize: '14px', marginBottom: '3px' }}>Ask AI Learning Coach</div>
-          <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Get personalized help or generate a 5-min practice quest.</div>
+          <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Get personalized tutoring or generate a 5-min practice challenge.</div>
         </div>
         <ChevronRight size={18} color="#06B6D4" />
       </button>
@@ -292,163 +404,342 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
   );
 }
 
-function JourneyTab({ onStartQuiz }) {
+function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
+  const [expandedMods, setExpandedMods] = useState({ 'm1': true, 'm2': true });
+
+  const toggleMod = (id) => {
+    setExpandedMods(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>World Journey Map 🗺️</div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>Your personalized learning path — complete nodes to unlock boss encounters.</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <div>
+        <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--text-main)' }}>Course Modules & Materials 📚</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>
+          Click any module to inspect syllabus PDFs, view lecture notes, and complete lessons for XP.
+        </div>
       </div>
 
-      {JOURNEY_NODES.map((node, index) => {
-        const isCompleted = node.status === 'completed';
-        const isActive = node.status === 'active';
-        const isBoss = node.type === 'boss';
-
-        return (
-          <div key={node.id}>
-            <div
-              onClick={() => isActive && onStartQuiz(node)}
-              style={{
-                padding: '16px',
-                borderRadius: '14px',
-                background: isCompleted ? 'rgba(16,185,129,0.08)' : isActive ? 'rgba(99,102,241,0.12)' : 'var(--bg-surface)',
-                border: `1px solid ${isBoss ? 'rgba(244,63,94,0.45)' : isCompleted ? 'rgba(16,185,129,0.3)' : isActive ? 'rgba(99,102,241,0.5)' : 'var(--border-subtle)'}`,
-                cursor: isActive ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                transition: 'transform 0.2s ease',
-              }}
-            >
-              <div style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '50%',
-                background: isCompleted ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(99,102,241,0.22)' : 'rgba(255,255,255,0.04)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: isCompleted ? '20px' : '22px',
-                flexShrink: 0,
-                color: isCompleted ? '#10B981' : undefined
-              }}>
-                {isCompleted ? '✓' : node.icon}
-              </div>
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' }}>
-                  <div style={{
-                    fontWeight: '800',
-                    fontSize: '13.5px',
-                    color: isCompleted || isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '320px'
-                  }}>{node.title}</div>
-                  <span style={{ fontWeight: '800', fontSize: '12px', color: isBoss ? '#F43F5E' : '#F59E0B', flexShrink: 0 }}>
-                    +{node.xp} XP
-                  </span>
-                </div>
-                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{node.desc}</div>
-                {isActive && (
-                  <div style={{ marginTop: '8px' }}>
-                    <button style={{
-                      padding: '5px 14px',
-                      borderRadius: '8px',
-                      background: 'var(--primary)',
-                      color: '#FFFFFF',
-                      fontSize: '11.5px',
-                      fontWeight: '700',
-                      border: 'none',
-                      cursor: 'pointer'
-                    }}>
-                      Start Challenge ⚔️
-                    </button>
-                  </div>
-                )}
-                {node.status === 'locked' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                    <Lock size={11} /> Complete previous node to unlock
-                  </div>
-                )}
-              </div>
-            </div>
-            {index < JOURNEY_NODES.length - 1 && (
-              <div style={{
-                width: '3px',
-                height: '20px',
-                background: isCompleted ? 'rgba(16,185,129,0.35)' : 'var(--border-subtle)',
-                margin: '0 auto',
-                borderRadius: '2px'
-              }} />
-            )}
+      {courses.map(course => (
+        <div key={course.id} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', background: 'rgba(99,102,241,0.25)', color: '#818CF8', fontWeight: '800' }}>
+              {course.code}
+            </span>
+            <span style={{ fontSize: '14px', fontWeight: '800', color: '#FFFFFF' }}>{course.title}</span>
           </div>
-        );
-      })}
+
+          {course.modules.map((mod, modIdx) => {
+            const isExpanded = !!expandedMods[mod.id];
+            return (
+              <div
+                key={mod.id}
+                style={{
+                  borderRadius: '14px',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Module Header (Clickable & Expandable) */}
+                <div
+                  onClick={() => toggleMod(mod.id)}
+                  style={{
+                    padding: '16px 20px',
+                    background: isExpanded ? 'rgba(99,102,241,0.1)' : 'rgba(0,0,0,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ color: '#818CF8' }}>
+                      {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#06B6D4', fontWeight: '800' }}>MODULE {modIdx + 1}</div>
+                      <div style={{ fontSize: '14.5px', fontWeight: '800', color: '#FFFFFF' }}>{mod.title}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {mod.pdfUrl && (
+                      <span style={{
+                        fontSize: '11px', padding: '3px 8px', borderRadius: '4px',
+                        background: 'rgba(6,182,212,0.15)', color: '#06B6D4',
+                        display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700'
+                      }}>
+                        <FileText size={12} /> PDF
+                      </span>
+                    )}
+                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                      {mod.lessons.length} Lessons
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {isExpanded && (
+                  <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* Attached Module PDF Material */}
+                    {mod.pdfUrl && (
+                      <div style={{
+                        padding: '12px 16px',
+                        borderRadius: '10px',
+                        background: 'rgba(6,182,212,0.08)',
+                        border: '1px solid rgba(6,182,212,0.25)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '10px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <FileText size={20} color="#06B6D4" />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '800', color: '#FFFFFF' }}>
+                              {mod.attachmentFileName || 'Module Reading Material.pdf'}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              Official curriculum guide for this module
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => onOpenPdf({
+                              title: `${mod.title} – PDF Material`,
+                              url: mod.pdfUrl,
+                              fileName: mod.attachmentFileName || 'module_syllabus.pdf'
+                            })}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              background: '#06B6D4',
+                              color: '#000',
+                              fontSize: '11.5px',
+                              fontWeight: '800',
+                              border: 'none',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Eye size={13} /> Read PDF
+                          </button>
+                          <a
+                            href={mod.pdfUrl}
+                            download={mod.attachmentFileName || 'material.pdf'}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              background: 'rgba(255,255,255,0.06)',
+                              border: '1px solid var(--border-subtle)',
+                              color: '#FFF',
+                              fontSize: '11.5px',
+                              fontWeight: '700',
+                              textDecoration: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Download size={13} /> Download
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lessons List */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-subtle)' }}>
+                        LESSONS & ACTIVITIES
+                      </div>
+                      {mod.lessons.map(les => (
+                        <div
+                          key={les.id}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: '10px',
+                            background: les.completed ? 'rgba(16,185,129,0.06)' : 'rgba(0,0,0,0.2)',
+                            border: `1px solid ${les.completed ? 'rgba(16,185,129,0.3)' : 'var(--border-subtle)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{
+                              width: '28px', height: '28px', borderRadius: '50%',
+                              background: les.completed ? 'rgba(16,185,129,0.2)' : 'rgba(99,102,241,0.15)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: les.completed ? '#10B981' : '#818CF8'
+                            }}>
+                              {les.completed ? <CheckCircle2 size={16} /> : <BookOpen size={14} />}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#FFF' }}>{les.title}</div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{les.content}</div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {les.pdfUrl && (
+                              <button
+                                onClick={() => onOpenPdf({
+                                  title: les.title,
+                                  url: les.pdfUrl,
+                                  fileName: les.attachmentFileName || 'lesson_attachment.pdf'
+                                })}
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: '5px',
+                                  background: 'rgba(6,182,212,0.15)',
+                                  border: '1px solid rgba(6,182,212,0.3)',
+                                  color: '#06B6D4',
+                                  fontSize: '10.5px',
+                                  fontWeight: '700',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                📄 PDF
+                              </button>
+                            )}
+
+                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#F59E0B' }}>
+                              +{les.xp} XP
+                            </span>
+
+                            {!les.completed ? (
+                              <button
+                                onClick={() => onCompleteLesson(les.id, les.xp, course.id, mod.id)}
+                                style={{
+                                  padding: '5px 12px',
+                                  borderRadius: '6px',
+                                  background: 'var(--primary)',
+                                  color: '#FFF',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  border: 'none',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Mark Complete ✓
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#10B981', fontWeight: '800' }}>
+                                ✓ Done
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Module End Assessment Trigger */}
+                    <div style={{ paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        Ready for knowledge check?
+                      </span>
+                      <button
+                        onClick={() => onStartQuiz(QUIZZES[modIdx % QUIZZES.length])}
+                        style={{
+                          padding: '7px 16px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, #6366F1, #06B6D4)',
+                          color: '#FFF',
+                          fontWeight: '800',
+                          fontSize: '12px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <HelpCircle size={14} /> Take Module Quiz (+80 XP)
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
 
-function QuizRunner({ node, onComplete }) {
+function QuizRunner({ quiz, onComplete, onCancel }) {
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
-  const [correct, setCorrect] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
   const [done, setDone] = useState(false);
 
-  const q = QUIZ_QUESTIONS[qIdx];
+  const q = quiz.questions[qIdx];
 
   const handleSubmit = () => {
     const isCorrect = selected === q.correct;
-    if (isCorrect) setCorrect(c => c + 1);
+    if (isCorrect) setCorrectCount(c => c + 1);
     setSubmitted(true);
   };
 
   const handleNext = () => {
-    if (qIdx < QUIZ_QUESTIONS.length - 1) {
+    if (qIdx < quiz.questions.length - 1) {
       setQIdx(i => i + 1);
       setSelected(null);
       setSubmitted(false);
     } else {
       setDone(true);
-      const score = ((correct + (selected === q.correct ? 1 : 0)) / QUIZ_QUESTIONS.length) * 100;
-      onComplete(score >= 70 ? 80 : 20, score >= 70 ? 30 : 5);
+      const totalCorrect = correctCount + (selected === q.correct ? 1 : 0);
+      const score = Math.round((totalCorrect / quiz.questions.length) * 100);
+      const passed = score >= (quiz.passingScore || 70);
+      const xpEarned = passed ? (score === 100 ? quiz.xpReward + 30 : quiz.xpReward) : 20;
+      const coinsEarned = passed ? quiz.coinReward || 25 : 5;
+      onComplete(xpEarned, coinsEarned, passed, score);
     }
   };
 
   if (done) {
-    const score = Math.round(((correct) / QUIZ_QUESTIONS.length) * 100);
-    const passed = score >= 70;
+    const totalCorrect = correctCount;
+    const score = Math.round((totalCorrect / quiz.questions.length) * 100);
+    const passed = score >= (quiz.passingScore || 70);
     return (
       <div style={{ textAlign: 'center', padding: '40px 20px' }}>
         <div style={{ fontSize: '64px', marginBottom: '16px' }}>{passed ? '🎉' : '📚'}</div>
         <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--text-main)', marginBottom: '8px' }}>
-          {passed ? 'Challenge Conquered!' : 'Keep Practicing!'}
+          {passed ? 'Assessment Conquered!' : 'Keep Practicing!'}
         </div>
         <div style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
-          You scored {score}% ({correct}/{QUIZ_QUESTIONS.length} correct)
+          You scored {score}% ({totalCorrect}/{quiz.questions.length} correct) • Threshold: {quiz.passingScore || 70}%
         </div>
         <div style={{
           display: 'inline-block',
-          padding: '12px 24px',
+          padding: '14px 28px',
           borderRadius: '14px',
           background: passed ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)',
           border: `1px solid ${passed ? 'rgba(16,185,129,0.4)' : 'rgba(99,102,241,0.4)'}`,
           color: passed ? '#10B981' : '#818CF8',
-          fontWeight: '800',
+          fontWeight: '900',
           fontSize: '16px',
           marginBottom: '28px'
         }}>
-          {passed ? `🏆 Earned +80 XP • +30 Coins` : '+20 Effort XP'}
+          {passed ? `🏆 Earned +${quiz.xpReward} XP • +${quiz.coinReward || 25} Coins` : '+20 Effort XP'}
         </div>
         <div>
           <button
-            onClick={() => setDone(false)}
+            onClick={onCancel}
             style={{ padding: '10px 28px', borderRadius: '10px', background: 'var(--primary)', color: '#FFF', fontWeight: '800', cursor: 'pointer', border: 'none' }}
           >
-            Return to Journey
+            Return to Curriculum
           </button>
         </div>
       </div>
@@ -457,13 +748,18 @@ function QuizRunner({ node, onComplete }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-        <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>Knowledge Check</div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Q{qIdx + 1} of {QUIZ_QUESTIONS.length}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>{quiz.title}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Question {qIdx + 1} of {quiz.questions.length}</div>
+        </div>
+        <button onClick={onCancel} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+          <X size={18} />
+        </button>
       </div>
 
       <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '8px', height: '6px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${((qIdx + 1) / QUIZ_QUESTIONS.length) * 100}%`, background: '#06B6D4', borderRadius: '8px', transition: 'width 0.4s ease' }} />
+        <div style={{ height: '100%', width: `${((qIdx + 1) / quiz.questions.length) * 100}%`, background: '#06B6D4', borderRadius: '8px', transition: 'width 0.4s ease' }} />
       </div>
 
       <div style={{ padding: '18px', borderRadius: '14px', background: 'var(--bg-card)', border: '1px solid rgba(99,102,241,0.4)' }}>
@@ -498,17 +794,10 @@ function QuizRunner({ node, onComplete }) {
               }}
             >
               <div style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
+                width: '28px', height: '28px', borderRadius: '50%',
                 background: i === selected ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '12px',
-                fontWeight: '800',
-                color: '#FFFFFF',
-                flexShrink: 0
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '12px', fontWeight: '800', color: '#FFFFFF', flexShrink: 0
               }}>
                 {String.fromCharCode(65 + i)}
               </div>
@@ -528,20 +817,15 @@ function QuizRunner({ node, onComplete }) {
         disabled={selected === null}
         onClick={submitted ? handleNext : handleSubmit}
         style={{
-          width: '100%',
-          padding: '14px',
-          borderRadius: '12px',
+          width: '100%', padding: '14px', borderRadius: '12px',
           background: selected === null ? 'rgba(255,255,255,0.05)' : 'var(--primary)',
           color: selected === null ? 'var(--text-subtle)' : '#FFFFFF',
-          fontWeight: '800',
-          fontSize: '14px',
-          border: 'none',
-          cursor: selected === null ? 'default' : 'pointer',
-          transition: 'all 0.2s ease'
+          fontWeight: '800', fontSize: '14px', border: 'none',
+          cursor: selected === null ? 'default' : 'pointer'
         }}
       >
         {submitted
-          ? (qIdx === QUIZ_QUESTIONS.length - 1 ? 'Finish & Claim XP 🏆' : 'Next Question →')
+          ? (qIdx === quiz.questions.length - 1 ? 'Finish & Record XP 🏆' : 'Next Question →')
           : 'Submit Answer'}
       </button>
     </div>
@@ -557,7 +841,7 @@ function CoachTab() {
   const PROMPTS = [
     'Explain PostgreSQL Composite Indexes 🧩',
     'How do ACID transactions work in EF Core? ⚡',
-    'Generate a 5-min practice challenge for me 🎯',
+    'What is Clean Architecture domain isolation? 🏛️'
   ];
 
   const sendMessage = (text) => {
@@ -569,13 +853,12 @@ function CoachTab() {
     const t = text.toLowerCase();
     if (t.includes('index')) reply = 'In PostgreSQL, a composite index (col1, col2) only optimizes queries when col1 is present in the WHERE clause. Always order index columns from highest to lowest selectivity!';
     else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) reply = 'In EF Core, DbContext.SaveChangesAsync() wraps all entity changes in a single atomic transaction. If any constraint fails, all modifications roll back safely — this is the "A" in ACID!';
-    else if (t.includes('challenge') || t.includes('practice') || t.includes('quest')) reply = "I have calibrated a 5-minute EF Core Transactions quest targeting your detected weaknesses. Head to Journey tab \u2014 it's unlocked and ready with +80 XP bonus!";
     else if (t.includes('clean') || t.includes('architecture')) reply = 'Clean Architecture isolates your domain entities from frameworks. The golden rule: dependencies point inward only. Your EduFlow.Core project should reference nothing external.';
-    else reply = 'I recommend revisiting Module 1.2: Deterministic Ledgers. It directly addresses this pattern and has a diagnostic quiz ready for you.';
+    else reply = 'I recommend reading the attached Module 1 PDF material and attempting the diagnostic quiz to test your comprehension.';
 
     setTimeout(() => {
       setMessages(m => [...m, { sender: 'ai', text: reply }]);
-    }, 700);
+    }, 600);
   };
 
   return (
@@ -589,14 +872,10 @@ function CoachTab() {
         {messages.map((msg, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{
-              maxWidth: '75%',
-              padding: '12px 16px',
-              borderRadius: '16px',
+              maxWidth: '75%', padding: '12px 16px', borderRadius: '16px',
               background: msg.sender === 'user' ? 'var(--primary)' : 'var(--bg-surface)',
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
-              color: '#FFFFFF',
-              fontSize: '13px',
-              lineHeight: '1.5'
+              color: '#FFFFFF', fontSize: '13px', lineHeight: '1.5'
             }}>
               {msg.text}
             </div>
@@ -609,28 +888,12 @@ function CoachTab() {
           <button
             key={i}
             onClick={() => sendMessage(p)}
-            style={{
-              padding: '5px 12px',
-              borderRadius: '20px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: '#06B6D4',
-              fontSize: '11px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
+            style={{ padding: '5px 12px', borderRadius: '20px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', color: '#06B6D4', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
           >{p}</button>
         ))}
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: '10px',
-        padding: '10px 14px',
-        background: 'var(--bg-surface)',
-        borderRadius: '14px',
-        border: '1px solid var(--border-subtle)'
-      }}>
+      <div style={{ display: 'flex', gap: '10px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--border-subtle)' }}>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -646,7 +909,15 @@ function CoachTab() {
   );
 }
 
-function LeaderboardTab({ email }) {
+function LeaderboardTab({ profile }) {
+  const LEADERBOARD = [
+    { rank: 1, name: 'Maya Patel', level: 6, xp: 8420, streak: 18 },
+    { rank: 2, name: profile.fullName || 'Alex Rivera', level: profile.level, xp: profile.totalXp, streak: profile.streak, isMe: true },
+    { rank: 3, name: 'Chen Wei', level: 4, xp: 4650, streak: 9 },
+    { rank: 4, name: 'Elena Rostova', level: 3, xp: 2940, streak: 6 },
+    { rank: 5, name: 'Tariq Mansoor', level: 3, xp: 2810, streak: 5 },
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
       <div>
@@ -654,86 +925,60 @@ function LeaderboardTab({ email }) {
         <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>Compete with your cohort — top 3 earn bonus XP multipliers every Monday.</div>
       </div>
 
-      {/* Top 3 Podium */}
       <div style={{
-        padding: '24px 16px',
-        borderRadius: '18px',
-        background: 'linear-gradient(180deg, #1E1B4B 0%, #0F172A 100%)',
-        border: '1px solid rgba(99,102,241,0.35)',
-        display: 'flex',
-        justifyContent: 'space-evenly',
-        alignItems: 'flex-end'
+        padding: '24px 16px', borderRadius: '18px', background: 'linear-gradient(180deg, #1E1B4B 0%, #0F172A 100%)',
+        border: '1px solid rgba(99,102,241,0.35)', display: 'flex', justifyContent: 'space-evenly', alignItems: 'flex-end'
       }}>
         {[LEADERBOARD[1], LEADERBOARD[0], LEADERBOARD[2]].map((s, i) => {
           const positions = ['🥈', '👑', '🥉'];
           const heights = [80, 110, 70];
           const colors = ['#06B6D4', '#F59E0B', '#D97706'];
           return (
-            <div key={s.rank} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <div style={{ fontSize: '22px' }}>{positions[i]}</div>
               <div style={{ fontSize: '12px', fontWeight: '800', color: '#FFFFFF' }}>{s.name.split(' ')[0]}</div>
               <div style={{ fontSize: '11px', fontWeight: '700', color: colors[i] }}>{s.xp.toLocaleString()} XP</div>
               <div style={{
-                width: '72px',
-                height: `${heights[i]}px`,
-                borderRadius: '10px 10px 0 0',
-                background: `${colors[i]}22`,
-                border: `1px solid ${colors[i]}55`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: '900',
-                fontSize: '18px',
-                color: colors[i]
+                width: '72px', height: `${heights[i]}px`, borderRadius: '10px 10px 0 0',
+                background: `${colors[i]}22`, border: `1px solid ${colors[i]}55`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: '900', fontSize: '18px', color: colors[i]
               }}>#{s.rank}</div>
             </div>
           );
         })}
       </div>
 
-      {/* Full Table */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {LEADERBOARD.map(s => {
-          const isMe = s.email === email;
-          return (
-            <div key={s.rank} style={{
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: isMe ? 'rgba(99,102,241,0.12)' : 'var(--bg-surface)',
-              border: `1px solid ${isMe ? 'rgba(99,102,241,0.5)' : 'var(--border-subtle)'}`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '14px'
-            }}>
-              <div style={{ fontWeight: '900', fontSize: '14px', color: s.rank <= 3 ? '#F59E0B' : 'var(--text-muted)', width: '28px', flexShrink: 0 }}>
-                #{s.rank}
-              </div>
-              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', color: '#FFFFFF', flexShrink: 0 }}>
-                {s.name[0]}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: '700', fontSize: '13px', color: isMe ? '#818CF8' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {s.name} {isMe && <span style={{ fontSize: '10px', background: 'rgba(99,102,241,0.2)', padding: '2px 6px', borderRadius: '10px', color: '#818CF8' }}>YOU</span>}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level} • {s.streak}d streak 🔥</div>
-              </div>
-              <div style={{ fontWeight: '800', fontSize: '13px', color: '#F59E0B', flexShrink: 0 }}>
-                {s.xp.toLocaleString()} XP
-              </div>
+        {LEADERBOARD.map(s => (
+          <div key={s.rank} style={{
+            padding: '12px 16px', borderRadius: '12px',
+            background: s.isMe ? 'rgba(99,102,241,0.15)' : 'var(--bg-surface)',
+            border: `1px solid ${s.isMe ? 'rgba(99,102,241,0.5)' : 'var(--border-subtle)'}`,
+            display: 'flex', alignItems: 'center', gap: '14px'
+          }}>
+            <div style={{ fontWeight: '900', fontSize: '14px', color: s.rank <= 3 ? '#F59E0B' : 'var(--text-muted)', width: '28px', flexShrink: 0 }}>
+              #{s.rank}
             </div>
-          );
-        })}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: '700', fontSize: '13px', color: s.isMe ? '#818CF8' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {s.name} {s.isMe && <span style={{ fontSize: '10px', background: 'rgba(99,102,241,0.2)', padding: '2px 6px', borderRadius: '10px', color: '#818CF8' }}>YOU</span>}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level} • {s.streak}d streak 🔥</div>
+            </div>
+            <div style={{ fontWeight: '800', fontSize: '13px', color: '#F59E0B', flexShrink: 0 }}>
+              {s.xp.toLocaleString()} XP
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function ProfileTab({ profile, email, onLogout }) {
-  const [confirmLogout, setConfirmLogout] = useState(false);
-
+function ProfileTab({ profile, onLogout }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* User Card */}
       <div style={{ padding: '20px', borderRadius: '18px', background: 'var(--bg-surface)', border: '1px solid rgba(99,102,241,0.4)', display: 'flex', gap: '16px', alignItems: 'center' }}>
         <div style={{
           width: '56px', height: '56px', borderRadius: '50%',
@@ -755,20 +1000,17 @@ function ProfileTab({ profile, email, onLogout }) {
         </div>
       </div>
 
-      {/* Badges */}
       <div>
         <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-subtle)', letterSpacing: '0.07em', marginBottom: '12px' }}>
-          BADGES & TROPHIES
+          UNLOCKED BADGES & ACHIEVEMENTS
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
           {profile.badges.map(b => (
-            <div key={b.name} style={{
-              padding: '16px',
-              borderRadius: '14px',
+            <div key={b.id || b.name} style={{
+              padding: '16px', borderRadius: '14px',
               background: b.unlocked ? 'var(--bg-card)' : 'rgba(255,255,255,0.02)',
               border: `1px solid ${b.unlocked ? 'rgba(99,102,241,0.35)' : 'var(--border-subtle)'}`,
-              textAlign: 'center',
-              opacity: b.unlocked ? 1 : 0.5
+              textAlign: 'center', opacity: b.unlocked ? 1 : 0.5
             }}>
               <div style={{ fontSize: '28px', marginBottom: '6px' }}>{b.unlocked ? b.icon : '🔒'}</div>
               <div style={{ fontSize: '12.5px', fontWeight: '800', color: b.unlocked ? 'var(--text-main)' : 'var(--text-subtle)', marginBottom: '3px' }}>{b.name}</div>
@@ -778,62 +1020,43 @@ function ProfileTab({ profile, email, onLogout }) {
         </div>
       </div>
 
-      {/* Logout */}
-      {!confirmLogout ? (
-        <button
-          onClick={() => setConfirmLogout(true)}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: '12px',
-            background: 'rgba(244,63,94,0.12)',
-            border: '1px solid rgba(244,63,94,0.35)',
-            color: '#F43F5E',
-            fontWeight: '800',
-            fontSize: '14px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
-        >
-          <LogOut size={16} /> Sign Out / Logout
-        </button>
-      ) : (
-        <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.4)', textAlign: 'center' }}>
-          <div style={{ fontWeight: '800', color: '#FFFFFF', marginBottom: '12px', fontSize: '14px' }}>
-            Confirm sign out from EduFlow AI?
-          </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button onClick={() => setConfirmLogout(false)} style={{ padding: '8px 20px', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontWeight: '700', cursor: 'pointer' }}>
-              Cancel
-            </button>
-            <button onClick={onLogout} style={{ padding: '8px 20px', borderRadius: '8px', background: '#F43F5E', border: 'none', color: '#FFFFFF', fontWeight: '700', cursor: 'pointer' }}>
-              Yes, Logout
-            </button>
-          </div>
-        </div>
-      )}
+      <button
+        onClick={onLogout}
+        style={{
+          width: '100%', padding: '12px', borderRadius: '12px',
+          background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.35)',
+          color: '#F43F5E', fontWeight: '800', fontSize: '14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+        }}
+      >
+        <LogOut size={16} /> Sign Out / Logout
+      </button>
     </div>
   );
 }
 
 // ─── Main StudentPortal Component ─────────────────────────────────────────────
 export default function StudentPortal({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('home');
-  const [quizNode, setQuizNode] = useState(null);
+  const [activeTab, setActiveTab] = useState('curriculum'); // 'home' | 'curriculum' | 'coach' | 'ranks' | 'profile'
+  const [activeQuiz, setActiveQuiz] = useState(null);
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [courses, setCourses] = useState(INITIAL_COURSES);
 
   const profileData = STUDENT_DATA[user?.email] || STUDENT_DATA['student@eduflow.ai'];
   const [profile, setProfile] = useState({ ...profileData });
 
   const handleMissionClaim = (xp, coins) => {
-    setProfile(p => ({
-      ...p,
-      totalXp: p.totalXp + xp,
-      xpInLevel: p.xpInLevel + xp,
-      coins: p.coins + coins
-    }));
+    setProfile(p => {
+      const newTotal = p.totalXp + xp;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + coins
+      };
+    });
   };
 
   const handleFreezeUse = () => {
@@ -842,22 +1065,72 @@ export default function StudentPortal({ user, onLogout }) {
     alert(`🛡️ Streak Freeze Shield activated for today! ${profile.freezeTokens - 1} remaining.`);
   };
 
-  const handleQuizComplete = (xp, coins) => {
-    setProfile(p => ({
-      ...p,
-      totalXp: p.totalXp + xp,
-      xpInLevel: p.xpInLevel + xp,
-      coins: p.coins + coins
-    }));
-    setTimeout(() => {
-      setQuizNode(null);
-      setActiveTab('journey');
-    }, 2000);
+  const handleCompleteLesson = (lessonId, xpReward, courseId, modId) => {
+    setCourses(prevCourses => {
+      return prevCourses.map(c => {
+        if (c.id === courseId) {
+          return {
+            ...c,
+            modules: c.modules.map(m => {
+              if (m.id === modId) {
+                return {
+                  ...m,
+                  lessons: m.lessons.map(l => {
+                    if (l.id === lessonId) {
+                      return { ...l, completed: true };
+                    }
+                    return l;
+                  })
+                };
+              }
+              return m;
+            })
+          };
+        }
+        return c;
+      });
+    });
+
+    setProfile(p => {
+      const newTotal = p.totalXp + xpReward;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + 15
+      };
+    });
+
+    alert(`🎉 Lesson completed! +${xpReward} XP and +15 Coins awarded to your profile.`);
+  };
+
+  const handleQuizComplete = (xpEarned, coinsEarned, passed, score) => {
+    setProfile(p => {
+      const newTotal = p.totalXp + xpEarned;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      const updatedBadges = p.badges.map(b => {
+        if (b.id === 'QUIZ_ACE' && score === 100) return { ...b, unlocked: true };
+        if (b.id === 'FIRST_STEP') return { ...b, unlocked: true };
+        return b;
+      });
+
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + coinsEarned,
+        streak: passed ? p.streak + 1 : p.streak,
+        badges: updatedBadges
+      };
+    });
   };
 
   const TABS = [
+    { id: 'curriculum', label: 'Curriculum', icon: BookOpen },
     { id: 'home', label: 'Home', icon: Home },
-    { id: 'journey', label: 'Journey', icon: Map },
     { id: 'coach', label: 'AI Coach', icon: Bot },
     { id: 'ranks', label: 'Ranks', icon: Trophy },
     { id: 'profile', label: 'Profile', icon: User },
@@ -869,7 +1142,7 @@ export default function StudentPortal({ user, onLogout }) {
       flexDirection: 'column',
       minHeight: '100vh',
       backgroundColor: 'var(--bg-main)',
-      maxWidth: '680px',
+      maxWidth: '720px',
       margin: '0 auto',
       position: 'relative'
     }}>
@@ -897,7 +1170,7 @@ export default function StudentPortal({ user, onLogout }) {
           </div>
         </div>
 
-        {/* Quick stat pills */}
+        {/* Stat Pills */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '20px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}>
             <Zap size={12} color="#F59E0B" />
@@ -912,33 +1185,116 @@ export default function StudentPortal({ user, onLogout }) {
 
       {/* Page Content */}
       <div style={{ flex: 1, padding: '20px', overflowY: 'auto', paddingBottom: '90px' }}>
-        {quizNode ? (
-          <QuizRunner node={quizNode} onComplete={handleQuizComplete} />
+        {activeQuiz ? (
+          <QuizRunner
+            quiz={activeQuiz}
+            onComplete={handleQuizComplete}
+            onCancel={() => setActiveQuiz(null)}
+          />
         ) : (
           <>
+            {activeTab === 'curriculum' && (
+              <CurriculumTab
+                courses={courses}
+                onOpenPdf={(doc) => setPdfDoc(doc)}
+                onCompleteLesson={handleCompleteLesson}
+                onStartQuiz={(quiz) => setActiveQuiz(quiz)}
+              />
+            )}
             {activeTab === 'home' && (
               <HomeTab
                 profile={profile}
                 onMissionClaim={handleMissionClaim}
                 onFreezeUse={handleFreezeUse}
                 onNavigate={(tab) => setActiveTab(tab)}
+                onStartQuiz={(quiz) => setActiveQuiz(quiz)}
               />
             )}
-            {activeTab === 'journey' && (
-              <JourneyTab onStartQuiz={(node) => setQuizNode(node)} />
-            )}
             {activeTab === 'coach' && <CoachTab />}
-            {activeTab === 'ranks' && <LeaderboardTab email={user?.email} />}
+            {activeTab === 'ranks' && <LeaderboardTab profile={profile} />}
             {activeTab === 'profile' && (
               <ProfileTab
                 profile={profile}
-                email={user?.email}
                 onLogout={onLogout}
               />
             )}
           </>
         )}
       </div>
+
+      {/* In-App PDF Reader Modal */}
+      {pdfDoc && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)', backdropFilter: 'blur(10px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100,
+          padding: '20px'
+        }}>
+          <div style={{
+            width: '100%', maxWidth: '780px', height: '80vh',
+            backgroundColor: '#0F172A', border: '1px solid rgba(99, 102, 241, 0.4)',
+            borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '16px 20px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileText size={20} color="#06B6D4" />
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: '#FFF' }}>{pdfDoc.title}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{pdfDoc.fileName} • In-App Document Viewer</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <a
+                  href={pdfDoc.url}
+                  download={pdfDoc.fileName}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    padding: '6px 12px', borderRadius: '6px', background: 'var(--primary)',
+                    color: '#FFF', fontSize: '11.5px', fontWeight: '700', textDecoration: 'none',
+                    display: 'flex', alignItems: 'center', gap: '4px'
+                  }}
+                >
+                  <Download size={13} /> Download
+                </a>
+                <button
+                  onClick={() => setPdfDoc(null)}
+                  style={{ padding: '6px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.08)', border: 'none', color: '#FFF', cursor: 'pointer' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, backgroundColor: '#0B0F19', padding: '24px', overflowY: 'auto' }}>
+              <div style={{
+                maxWidth: '620px', margin: '0 auto', background: '#1E293B',
+                borderRadius: '12px', padding: '28px', border: '1px solid rgba(255, 255, 255, 0.08)'
+              }}>
+                <span style={{ fontSize: '11px', color: '#06B6D4', fontWeight: '800' }}>EDULOW AI CURRICULUM MATERIAL</span>
+                <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#FFF', marginTop: '4px', marginBottom: '16px' }}>{pdfDoc.title}</h3>
+                <div style={{ color: '#CBD5E1', fontSize: '13px', lineHeight: '1.7', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <p>
+                    <strong>Key Architecture Guidelines:</strong> Isolate domain entities from third-party frameworks. Enforce clean dependency inversion rules.
+                  </p>
+                  <p>
+                    <strong>PostgreSQL Relational Design:</strong> Utilize composite B-Tree indexes for multi-column WHERE clauses. Verify execution plans with EXPLAIN ANALYZE.
+                  </p>
+                  <p>
+                    <strong>Deterministic Gamification Ledger:</strong> Record every XP award in an append-only ledger transaction to prevent duplicate exploits.
+                  </p>
+                  <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(99,102,241,0.15)', color: '#C7D2FE', fontSize: '12px' }}>
+                    💡 Once you finish reading, head back to take the module knowledge check quiz!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Navigation */}
       <div style={{
@@ -947,7 +1303,7 @@ export default function StudentPortal({ user, onLogout }) {
         left: '50%',
         transform: 'translateX(-50%)',
         width: '100%',
-        maxWidth: '680px',
+        maxWidth: '720px',
         background: 'var(--bg-surface)',
         borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
@@ -957,24 +1313,24 @@ export default function StudentPortal({ user, onLogout }) {
       }}>
         {TABS.map(tab => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id && !quizNode;
+          const isActive = activeTab === tab.id && !activeQuiz;
           return (
             <button
               key={tab.id}
-              onClick={() => { setQuizNode(null); setActiveTab(tab.id); }}
+              onClick={() => { setActiveQuiz(null); setActiveTab(tab.id); }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: '4px',
-                padding: '0 16px',
+                padding: '0 14px',
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
                 color: isActive ? '#06B6D4' : '#64748B'
               }}
             >
-              <Icon size={22} />
+              <Icon size={20} />
               <span style={{ fontSize: '10.5px', fontWeight: isActive ? '800' : '500' }}>{tab.label}</span>
             </button>
           );

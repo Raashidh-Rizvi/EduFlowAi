@@ -3011,3 +3011,83 @@ Every owner is responsible for its local tests.
 The team jointly owns cross-component tests.
 
 The final submission should demonstrate the system as **one integrated product**, not four unrelated modules.
+
+---
+
+# EduFlow AI – Full Integration & Feature Implementation Specification
+
+## 1. Course & Module PDF Upload, Storage & In-App Retrieval
+
+### 1.1 Architecture & Storage Pipeline
+- **Upload Flow:** Instructors can attach PDF documents (curriculum syllabi, lecture slides, study guides) during Module and Lesson creation/editing.
+- **Backend Storage:** Uploaded files are validated for MIME type (`application/pdf`) and size (max 25MB), uniquely hashed (`{Guid}_{OriginalFilename}`), and persisted to `wwwroot/uploads/pdfs/`.
+- **Static File Serving:** Enabled in `Program.cs` via `app.UseStaticFiles()`, allowing direct access and streaming over HTTP.
+- **Relational Schema Integration:**
+  - `Module`: `PdfUrl` (`string?`), `AttachmentFileName` (`string?`)
+  - `Lesson`: `PdfUrl` (`string?`), `AttachmentFileName` (`string?`)
+- **Student In-App Retrieval:** Enrolled students can click into any module, view attached PDF badges, read documents in an embedded in-app reader modal, and download files directly.
+
+```mermaid
+flowchart LR
+    A[Instructor PDF Upload] -->|POST /api/courses/upload-pdf| B[ASP.NET Core API]
+    B -->|Persist File| C[wwwroot/uploads/pdfs/]
+    B -->|Save Metadata| D[(PostgreSQL)]
+    D -->|Query Modules & Lessons| E[Student Portal / Web App]
+    E -->|Embedded Preview & Download| F[In-App PDF Viewer]
+```
+
+---
+
+## 2. Multi-Mode Quiz Authoring & Release Engine
+
+### 2.1 Three Authoring Pathways
+1. **Mode 1: Typed / Manual Question Builder:**
+   - Instructor defines title, time limit, passing threshold, XP/Coin bounty.
+   - Interactive question authoring: prompt, multiple choice options (A, B, C, D), radio selector for correct answer, points, and explanation.
+2. **Mode 2: File Upload (PDF / JSON Question Sheet):**
+   - Import question banks from structured JSON or curriculum PDF documents.
+   - Automated parser populates the question editor for instructor review prior to release.
+3. **Mode 3: AI-Generated Adaptive Quiz:**
+   - Multi-Agent synthesis calibrated on topic, target difficulty (Easy, Medium, Hard, Boss Raid), and question count.
+   - Deterministic schema validation guarantees valid options, correct answers, and rich explanations.
+
+```mermaid
+flowchart TD
+    subgraph Authoring["3 Quiz Authoring Modes"]
+        M1[1. Manual Typed Builder]
+        M2[2. Upload JSON / PDF]
+        M3[3. AI Adaptive Generator]
+    end
+
+    subgraph Core["Assessment Engine"]
+        M1 --> P[Validate Question Schema]
+        M2 --> P
+        M3 --> P
+        P --> DB[(PostgreSQL Assessment & Questions)]
+    end
+
+    subgraph Client["Student Experience"]
+        DB --> QR[Interactive Quiz Runner]
+        QR --> SUB[Submit Answers]
+        SUB --> GRD[Auto-Grading & Gamification Engine]
+    end
+```
+
+---
+
+## 3. End-to-End Gamification Interconnection Engine
+
+### 3.1 Mathematical Determinism & Reward Triggers
+- **Immutable Ledger:** Every earned reward creates an immutable `XpTransaction` record with source type (`QuizCompleted`, `PerfectScore`, `LessonCompleted`, `DailyMission`).
+- **Level Recalculation:** `CurrentLevel = floor(TotalXp / 1000) + 1` calculated deterministically.
+- **Streak & Freeze Shield:** Daily active submissions increment streak count; freeze shields prevent streak resets.
+- **Badges Unlocked:** Automatic unlocks for milestones (*First Step*, *Quiz Ace* on 100% score, *Unstoppable* on 7-day streak, *Boss Slayer*).
+- **Weekly Sprint Leaderboard:** Ranks dynamically updated and displayed with top-3 podium and real-time student position reflection.
+
+---
+
+## 4. Verification Suite & Quality Assurance
+
+- **48 Automated Backend Tests:** Covering User & Course Management, Assessment Quiz Engine, Gamification XP Ledgers, and Analytics AI Review.
+- **End-to-End Interconnection:** Verified across React Web console, Student Learning Arena, and ASP.NET Core API Gateway.
+
