@@ -198,33 +198,57 @@ class AdaptiveChallengeResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# 8. Automated Quiz & Assessment Schemas
+# 8. Automated Quiz & Assessment Schemas (Hierarchical & Customizable)
 # -----------------------------------------------------------------------------
+class GamificationRewardConfig(BaseModel):
+    xp_reward: int = 60
+    coin_reward: int = 25
+    streak_bonus_eligible: bool = True
+    badge_trigger_name: Optional[str] = "Quiz Champion"
+    passing_score_percent: int = 70
+
 class DiagnosticQuizRequest(BaseModel):
-    course_id: str
-    module_title: str
-    target_topics: List[str] = ["ASP.NET Core", "Entity Framework Core", "PostgreSQL"]
-    difficulty: str = "Medium"
-    question_count: int = Field(default=3, ge=1, le=10)
+    course_id: Optional[str] = "44444444-4444-4444-4444-444444444444"
+    course_title: Optional[str] = "Software Engineering & Architecture"
+    module_id: Optional[str] = None
+    module_title: Optional[str] = "Relational Modeling & Indexing"
+    topic_id: Optional[str] = None
+    topic_title: Optional[str] = None
+    lesson_title: Optional[str] = None
+    scope_level: str = "Topic"  # "Course" | "Module" | "Topic" | "Lesson"
+    target_topics: List[str] = Field(default_factory=lambda: ["PostgreSQL Schema Design", "B-Tree Indexes"])
+    quiz_type: str = "Diagnostic"  # "Diagnostic" | "Formative" | "Summative" | "MicroQuiz" | "BossBattle" | "CodeSnippetQuiz" | "ConceptualReview"
+    question_types: List[str] = Field(default_factory=lambda: ["MultipleChoice", "CodeSnippet", "TrueFalse"])
+    difficulty: str = "Medium"  # "Easy" | "Medium" | "Hard" | "Boss"
+    blooms_taxonomy_focus: str = "Application"  # "Knowledge" | "Comprehension" | "Application" | "Analysis"
+    question_count: int = Field(default=3, ge=1, le=20)
+    time_limit_minutes: int = Field(default=15, ge=2, le=90)
+    gamification: Optional[GamificationRewardConfig] = None
 
 class QuizQuestionModel(BaseModel):
     question_id: int
     question_text: str
-    blooms_taxonomy_level: str  # Knowledge | Comprehension | Application | Analysis
+    question_type: str = "MultipleChoice"  # "MultipleChoice" | "TrueFalse" | "CodeSnippet" | "FillInBlank"
+    blooms_taxonomy_level: str  # Knowledge | Comprehension | Application | Analysis | Synthesis
     options: List[str]
     correct_index: int
     distractor_rationales: List[str]
     explanation: str
     points: int = 10
+    code_snippet: Optional[str] = None
 
 class DiagnosticQuizResponse(BaseModel):
     quiz_id: str
     workflow_id: str
     title: str
+    scope_level: str = "Topic"
     target_topics: List[str]
     difficulty: str
+    quiz_type: str = "Diagnostic"
     questions: List[QuizQuestionModel]
     total_points: int
+    time_limit_minutes: int = 15
+    gamification_rewards: GamificationRewardConfig
     validation_passed: bool
     validation: ValidationCheck
     audit_trail: List[AgentExecutionLog] = []

@@ -54,6 +54,8 @@ export default function Assessments({ currentUser }) {
   // AI Generation Form State
   const [aiTopic, setAiTopic] = useState('Clean Architecture');
   const [aiDifficulty, setAiDifficulty] = useState('Medium'); // 'Easy' | 'Medium' | 'Hard' | 'Boss'
+  const [aiQuizType, setAiQuizType] = useState('Diagnostic'); // 'Diagnostic' | 'Formative' | 'Summative' | 'MicroQuiz' | 'BossBattle' | 'CodeSnippetQuiz'
+  const [aiBlooms, setAiBlooms] = useState('Application');
   const [aiCount, setAiCount] = useState(3);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
@@ -118,16 +120,23 @@ export default function Assessments({ currentUser }) {
   // AI Quiz Generation Trigger
   const handleGenerateAiQuestions = async () => {
     setIsAiGenerating(true);
+    const targetXp = aiDifficulty === 'Easy' ? 50 : aiDifficulty === 'Medium' ? 100 : aiDifficulty === 'Hard' ? 140 : 150;
+    const targetCoins = aiDifficulty === 'Easy' ? 15 : aiDifficulty === 'Medium' ? 30 : aiDifficulty === 'Hard' ? 50 : 80;
+    setQuizXp(targetXp);
+    setQuizCoins(targetCoins);
+
     try {
       const res = await quizService.generateAiQuiz({
         courseId: quizCourseId,
         topic: aiTopic,
         difficulty: aiDifficulty,
+        quizType: aiQuizType,
+        bloomsFocus: aiBlooms,
         questionCount: Number(aiCount),
         timeLimitMinutes: quizTime,
         passingScorePercent: quizPass,
-        xpReward: quizXp,
-        coinReward: quizCoins
+        xpReward: targetXp,
+        coinReward: targetCoins
       });
 
       if (res && res.questions && res.questions.length > 0) {
@@ -139,7 +148,7 @@ export default function Assessments({ currentUser }) {
           explanation: 'Synthesized with deterministic schema validation by EduFlow AI.',
           points: q.points || 10
         })));
-        setQuizTitle(res.title || `AI Quest: ${aiTopic}`);
+        setQuizTitle(res.title || `${aiQuizType} Quiz: ${aiTopic} (${aiDifficulty})`);
       }
     } catch {
       // Offline fallback heuristic generation
@@ -161,7 +170,7 @@ export default function Assessments({ currentUser }) {
         });
       }
       setQuestions(generated);
-      setQuizTitle(`AI Quest: ${aiTopic} (${aiDifficulty})`);
+      setQuizTitle(`${aiQuizType} Quiz: ${aiTopic} (${aiDifficulty})`);
     } finally {
       setIsAiGenerating(false);
       setCreationMode('typed'); // switch to question review
@@ -889,16 +898,49 @@ export default function Assessments({ currentUser }) {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div>
+                      <label className="form-label">Assessment Type</label>
+                      <select
+                        value={aiQuizType}
+                        onChange={(e) => setAiQuizType(e.target.value)}
+                        className="form-select"
+                      >
+                        <option value="Diagnostic">Diagnostic (Knowledge Baseline)</option>
+                        <option value="Formative">Formative (Module Review)</option>
+                        <option value="Summative">Summative (Comprehensive Check)</option>
+                        <option value="MicroQuiz">Micro-Quiz (Targeted Concept)</option>
+                        <option value="BossBattle">Boss Battle Raid</option>
+                        <option value="CodeSnippetQuiz">Code Review Quiz</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Bloom's Taxonomy Focus</label>
+                      <select
+                        value={aiBlooms}
+                        onChange={(e) => setAiBlooms(e.target.value)}
+                        className="form-select"
+                      >
+                        <option value="Knowledge">Knowledge (Recall)</option>
+                        <option value="Comprehension">Comprehension (Understanding)</option>
+                        <option value="Application">Application (Problem Solving)</option>
+                        <option value="Analysis">Analysis (Investigation)</option>
+                        <option value="Synthesis">Synthesis (System Design)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
                       <label className="form-label">Target Difficulty Level</label>
                       <select
                         value={aiDifficulty}
                         onChange={(e) => setAiDifficulty(e.target.value)}
                         className="form-select"
                       >
-                        <option value="Easy">Easy (Foundations)</option>
-                        <option value="Medium">Medium (Applied Engineering)</option>
-                        <option value="Hard">Hard (Concurrency & Distributed State)</option>
-                        <option value="Boss">Boss Raid (Scenario Assessment)</option>
+                        <option value="Easy">Easy (Foundations - 50 XP, 15 Coins)</option>
+                        <option value="Medium">Medium (Applied Engineering - 100 XP, 30 Coins)</option>
+                        <option value="Hard">Hard (Concurrency & Distributed - 140 XP, 50 Coins)</option>
+                        <option value="Boss">Boss Raid (Scenario - 150 XP, 80 Coins)</option>
                       </select>
                     </div>
 
@@ -922,7 +964,7 @@ export default function Assessments({ currentUser }) {
                     style={{ padding: '10px', width: '100%', fontSize: '13px' }}
                   >
                     <Sparkles size={15} /> 
-                    <span>{isAiGenerating ? 'Synthesizing with AI Agent...' : 'Generate Questions & Populate Form'}</span>
+                    <span>{isAiGenerating ? 'Synthesizing with AI Agent...' : '⚡ Generate Questions & Populate Form'}</span>
                   </button>
                 </div>
               )}

@@ -314,18 +314,27 @@ class AdaptiveChallengeOrchestrator:
 
 class QuizGeneratorOrchestrator:
     """
-    Orchestrates Quiz Generator Agent and Validation Guard Agent for curriculum assessments.
+    Orchestrates Quiz Generator Agent and Validation Guard Agent for curriculum assessments
+    across Course, Module, and Topic/Lesson scopes with gamification economy validation.
     """
     @staticmethod
     def generate_quiz(request: DiagnosticQuizRequest) -> DiagnosticQuizResponse:
         audit_trail: List[AgentExecutionLog] = []
 
-        # Step 1: Quiz Generator Agent
+        # Step 1: Quiz Generator Agent (Curriculum assessment synthesis)
         quiz, gen_log = quiz_agent.generate_quiz(request)
         audit_trail.append(gen_log)
 
+        # Step 2: Validation Guard Agent (Deterministic rules & gamification caps)
+        val_check, val_log = validation_agent.validate_quiz_assessment(quiz)
+        audit_trail.append(val_log)
+
+        quiz.validation_passed = val_check.passed
+        quiz.validation = val_check
         quiz.audit_trail = audit_trail
+        quiz.status = "PendingInstructorApproval" if val_check.passed else "ValidationFailed"
         return quiz
+
 
 
 class RetentionOrchestrator:

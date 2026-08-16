@@ -23,6 +23,7 @@ from agents.planner import CoordinatorPlannerAgent
 from agents.domain_analysis import DomainAnalysisAgent
 from agents.content_action import ActionToolAgent
 from agents.validation_guard import ValidationGuardAgent
+from agents.quiz_generator import QuizGeneratorAgent
 from tools.registry import tool_registry, ToolRegistry
 from graph.approval_state_machine import ApprovalStateMachine
 from core.errors import (
@@ -402,6 +403,68 @@ def test_quiz_generator_agent():
     assert len(result.questions) == 2
     assert result.total_points == 20
     assert result.validation_passed is True
+    assert result.gamification_rewards.xp_reward == 100
+    assert result.gamification_rewards.coin_reward == 30
+
+
+def test_hierarchical_topic_and_module_quiz_generation():
+    # 1. Topic-level micro-quiz
+    topic_req = DiagnosticQuizRequest(
+        topic_title="PostgreSQL B-Tree Indexes",
+        scope_level="Topic",
+        quiz_type="MicroQuiz",
+        difficulty="Easy",
+        question_count=3
+    )
+    topic_res = QuizGeneratorOrchestrator.generate_quiz(topic_req)
+    assert topic_res.scope_level == "Topic"
+    assert "MicroQuiz" in topic_res.title
+    assert "PostgreSQL B-Tree Indexes" in topic_res.title
+    assert len(topic_res.questions) == 3
+    assert topic_res.gamification_rewards.xp_reward <= 150
+    assert any(q.question_type == "CodeSnippet" for q in topic_res.questions)
+    assert any(q.question_type == "TrueFalse" for q in topic_res.questions)
+
+    # 2. Module-level formative assessment
+    mod_req = DiagnosticQuizRequest(
+        module_title="Transaction Isolation & Concurrency",
+        scope_level="Module",
+        quiz_type="Formative",
+        difficulty="Hard",
+        question_count=4
+    )
+    mod_res = QuizGeneratorOrchestrator.generate_quiz(mod_req)
+    assert mod_res.scope_level == "Module"
+    assert "Transaction Isolation & Concurrency" in mod_res.title
+    assert len(mod_res.questions) == 4
+    assert mod_res.gamification_rewards.xp_reward == 140
+    assert mod_res.validation_passed is True
+
+
+def test_quiz_validation_enforces_gamification_xp_cap():
+    from models.schemas import GamificationRewardConfig
+    val_agent = ValidationGuardAgent()
+    quiz_agent = QuizGeneratorAgent()
+
+    req = DiagnosticQuizRequest(
+        topic_title="Clean Architecture Invariants",
+        difficulty="Boss",
+        question_count=2,
+        gamification=GamificationRewardConfig(
+            xp_reward=500, # Intentionally violates 150 cap
+            coin_reward=200
+        )
+    )
+
+    # Generate quiz with generator
+    quiz_res, _ = quiz_agent.generate_quiz(req)
+    # Force excessive reward to test validator
+    quiz_res.gamification_rewards.xp_reward = 500
+    val_check, _ = val_agent.validate_quiz_assessment(quiz_res)
+
+    assert val_check.passed is False
+    assert any("INVALID_REWARD" in err for err in val_check.errors)
+
 
 
 def test_retention_agent_risk_interventions():

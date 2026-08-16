@@ -188,6 +188,55 @@ class ValidationGuardAgent(BaseAgent):
 
         return self.execute_with_trace(None, _execute)
 
+    def validate_quiz_assessment(
+        self,
+        quiz: DiagnosticQuizResponse
+    ) -> Tuple[ValidationCheck, AgentExecutionLog]:
+        def _execute(_):
+            errors: List[str] = []
+            warnings: List[str] = []
+
+            # Rule 1: Gamification XP & Coin platform cap (Max 150 XP, Max 100 Coins)
+            if quiz.gamification_rewards.xp_reward > self.MAX_ACTIVITY_XP:
+                errors.append(f"INVALID_REWARD: Quiz XP reward ({quiz.gamification_rewards.xp_reward}) exceeds platform cap of {self.MAX_ACTIVITY_XP} XP.")
+
+            if quiz.gamification_rewards.coin_reward > self.MAX_COINS:
+                errors.append(f"INVALID_REWARD: Quiz Coin reward ({quiz.gamification_rewards.coin_reward}) exceeds platform cap of {self.MAX_COINS} coins.")
+
+            # Rule 2: Non-empty questions
+            if len(quiz.questions) < 1:
+                errors.append("INTEGRITY_ERROR: Quiz must contain at least one question.")
+
+            # Rule 3: Question format & options integrity
+            for i, q in enumerate(quiz.questions):
+                if len(q.options) < 2:
+                    errors.append(f"INTEGRITY_ERROR: Question {i+1} must contain at least 2 answer options.")
+                if q.correct_index < 0 or q.correct_index >= len(q.options):
+                    errors.append(f"INTEGRITY_ERROR: Question {i+1} has invalid correct_index ({q.correct_index}).")
+                if not q.explanation or len(q.explanation.strip()) < 5:
+                    warnings.append(f"PEDAGOGICAL_WARNING: Question {i+1} has short or missing pedagogical explanation.")
+                if not q.blooms_taxonomy_level:
+                    warnings.append(f"PEDAGOGICAL_WARNING: Question {i+1} is missing Bloom's taxonomy cognitive tag.")
+
+            # Rule 4: Total Points validation
+            if quiz.total_points <= 0:
+                errors.append("INTEGRITY_ERROR: Quiz total points must be greater than zero.")
+
+            passed = len(errors) == 0
+            check = ValidationCheck(
+                passed=passed,
+                errors=errors,
+                warnings=warnings,
+                deterministic_rule_count=5,
+                checked_at=datetime.now(timezone.utc).isoformat(),
+                requires_human_approval=True
+            )
+
+            summary = f"Validated quiz assessment '{quiz.title}' ({len(quiz.questions)} questions, {quiz.gamification_rewards.xp_reward} XP) (Passed: {passed})."
+            return check, summary, passed
+
+        return self.execute_with_trace(None, _execute)
+
     def _build_result(self, errors: List[str], warnings: List[str]) -> Tuple[ValidationCheck, str, bool]:
         passed = len(errors) == 0
         check = ValidationCheck(
@@ -198,3 +247,4 @@ class ValidationGuardAgent(BaseAgent):
             checked_at=datetime.now(timezone.utc).isoformat()
         )
         return check, f"Validation {'passed' if passed else 'failed'} with {len(errors)} errors.", passed
+

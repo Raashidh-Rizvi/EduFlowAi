@@ -75,16 +75,27 @@ def tool_get_quiz_results(params: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 def tool_create_quiz_draft(params: Dict[str, Any]) -> Dict[str, Any]:
-    target_topic = params.get("topic", "PostgreSQL Composite Indexes")
+    target_topic = params.get("topic") or params.get("topic_title") or params.get("module_title") or "PostgreSQL Composite Indexes"
     difficulty = params.get("difficulty", "Medium")
+    quiz_type = params.get("quiz_type", "Diagnostic")
+    xp = min(params.get("xp_reward", 100), 150)
+    coins = min(params.get("coin_reward", 30), 100)
+
     return {
         "draft_type": "Quiz",
+        "quiz_type": quiz_type,
         "topic": target_topic,
         "difficulty": difficulty,
+        "gamification_rewards": {
+            "xp_reward": xp,
+            "coin_reward": coins,
+            "streak_bonus_eligible": True
+        },
         "questions": [
             {
                 "question_id": 1,
-                "question_text": f"Which column ordering is required for a composite index on (A, B) to accelerate a query filtered only on B?",
+                "question_text": f"Which column ordering is required for a composite index on (A, B) to accelerate a query filtered only on B in {target_topic}?",
+                "question_type": "MultipleChoice",
                 "blooms_taxonomy": "Analysis",
                 "options": [
                     "A composite index on (A, B) cannot optimize queries filtered only on B without A",
@@ -105,6 +116,7 @@ def tool_create_quiz_draft(params: Dict[str, Any]) -> Dict[str, Any]:
         ],
         "total_points": 10
     }
+
 
 def tool_create_challenge_draft(params: Dict[str, Any]) -> Dict[str, Any]:
     weak_topic = params.get("weak_topic", "PostgreSQL Composite Indexes")
