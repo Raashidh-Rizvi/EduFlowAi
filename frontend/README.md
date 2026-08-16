@@ -86,5 +86,5 @@ npm install
 
 # Start Vite development server
 npm run dev
-# Dashboard available at http://localhost:5173
+# Dashboard available at http://localhost:2174
 ```

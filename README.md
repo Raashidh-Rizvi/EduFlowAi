@@ -207,7 +207,7 @@ EduHub/
 │   ├── EduFlow.Infrastructure/# EF Core, PostgreSQL DbContext, Redis, AI Gateway Client
 │   ├── EduFlow.Tests/        # 15 xUnit Unit Tests (100% Passing)
 │   └── README.md             # Backend architecture & API documentation
-├── frontend/                 # React 18 + Vite + Zustand Instructor Web App (Port 5173)
+├── frontend/                 # React 18 + Vite + Zustand Instructor Web App (Port 2174)
 │   ├── src/                  # Components, Pages (Dashboard, AI Review, Curriculum, Assessments)
 │   └── README.md             # Frontend portal guide & workflows
 ├── mobile/                   # Flutter 3.x Student Mobile App
@@ -276,7 +276,7 @@ python main.py
 cd frontend
 npm install
 npm run dev
-# Dashboard running at http://localhost:5173
+# Dashboard running at http://localhost:2174
 ```
 
 ### 4. Run Student Mobile App (Flutter)

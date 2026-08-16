@@ -10,7 +10,7 @@ This guide provides end-to-end instructions for running the complete **EduFlow A
 |---|---|---|---|
 | **Backend API** | ASP.NET Core (.NET 10), EF Core, PostgreSQL | `http://localhost:5000`<br>`https://localhost:5001` | `http://localhost:5000/swagger` |
 | **Agentic AI Microservice** | Python 3.11+, FastAPI, LangGraph | `http://localhost:8000` | `http://localhost:8000/docs` |
-| **Web Application** | React 18, Vite, Lucide Icons | `http://localhost:5173` | Web Dashboard & Portals |
+| **Web Application** | React 18, Vite, Lucide Icons | `http://localhost:2174` | Web Dashboard & Portals |
 | **Mobile App (Optional)** | Flutter 3.x, Dart | Device / Emulator | Student Mobile Interface |
 
 ---
@@ -37,7 +37,7 @@ To run the complete system locally, open **3 separate terminal windows** (one fo
 flowchart LR
     T1["Terminal 1: Python AI Service\n(Port 8000)"]
     T2["Terminal 2: .NET Backend API\n(Port 5000)"]
-    T3["Terminal 3: React Frontend\n(Port 5173)"]
+    T3["Terminal 3: React Frontend\n(Port 2174)"]
 
     T1 <--> T2
     T2 <--> T3
@@ -120,7 +120,7 @@ The frontend provides the interactive **Instructor AI Review & Governance Worksp
    ```powershell
    npm run dev
    ```
-   - **Web Application URL**: [http://localhost:5173](http://localhost:5173)
+   - **Web Application URL**: [http://localhost:2174](http://localhost:2174)
 
 ---
 
@@ -154,13 +154,13 @@ The database comes pre-seeded with 3 authorized role-based user accounts:
 ## 5. Key Workflows to Explore
 
 ### 1. Human-in-the-Loop (HITL) AI Review Console
-- Navigate to: **[http://localhost:5173](http://localhost:5173)** $\to$ Click **"AI Review"** in the sidebar.
+- Navigate to: **[http://localhost:2174](http://localhost:2174)** $\to$ Click **"AI Review"** in the sidebar.
 - Click **"+ Orchestrate AI Proposal"** to trigger the 4-agent LangGraph workflow.
 - Inspect the **Multi-Agent Audit Trail**, deterministic validation results, and milestone schedule.
 - Click **"Approve & Dispatch"** to sign and publish the study plan to the student.
 
 ### 2. Live Student Learning Portal & AI Coach
-- Navigate to: **[http://localhost:5173](http://localhost:5173)** $\to$ Click **"Student Portal"** in the navigation bar.
+- Navigate to: **[http://localhost:2174](http://localhost:2174)** $\to$ Click **"Student Portal"** in the navigation bar.
 - Review your current level, active streak, and daily mission quests.
 - Open the **"AI Coach"** tab and ask conceptual questions (e.g., *"How do composite B-Tree indexes work in PostgreSQL?"*).
 - Complete interactive lessons and quizzes to earn XP, level up, and unlock achievements.
