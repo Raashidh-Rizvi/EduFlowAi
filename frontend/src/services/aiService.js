@@ -2,21 +2,8 @@ import api from './api';
 
 export const aiService = {
   async getPendingProposals() {
-    try {
-      const response = await api.get('/aireview/pending-proposals');
-      return response.data;
-    } catch {
-      return [
-        {
-          id: 'wf-78a9c2',
-          studentName: 'Alex Rivera',
-          targetGoal: 'Master Entity Framework Core indexing, transactions, and prepare for Midterm Quiz in 2 weeks.',
-          targetWeeks: 2,
-          hoursPerWeek: 8.0,
-          status: 'PendingInstructorApproval'
-        }
-      ];
-    }
+    const response = await api.get('/aireview/pending-proposals');
+    return response.data;
   },
 
   async getWorkflows(status) {

@@ -75,6 +75,22 @@ export default function Assessments({ currentUser }) {
 
   const [quizzesList, setQuizzesList] = useState([]);
   const [bossEncounters, setBossEncounters] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadAssessments() {
+      setIsLoading(true);
+      try {
+        const data = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444');
+        setQuizzesList(data || []);
+      } catch (err) {
+        console.error('Failed to load assessments:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadAssessments();
+  }, []);
 
   // Question editing helpers
   const handleAddQuestion = () => {

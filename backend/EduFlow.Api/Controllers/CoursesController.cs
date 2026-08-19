@@ -43,7 +43,6 @@ public class CoursesController : ControllerBase
     public async Task<IActionResult> GetCourses()
     {
         var courses = await _dbContext.Courses
-            .Where(c => c.IsPublished)
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
                 .ThenInclude(m => m.Lessons)

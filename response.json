@@ -1,0 +1,171 @@
+{
+  "quiz_id": "f43cb192-9490-4591-84d9-86abca42cb19",
+  "workflow_id": "wf-qz-06d5884d",
+  "title": "AI MIXED Assessment: Test (Medium)",
+  "scope_type": "TOPIC",
+  "scope_id": null,
+  "scope_level": "Topic",
+  "target_topics": [
+    "PostgreSQL Schema Design",
+    "B-Tree Indexes"
+  ],
+  "difficulty": "Medium",
+  "quiz_type": "MIXED",
+  "questions": [
+    {
+      "question_id": 1,
+      "question_text": "In Test, which design principle best guarantees that domain policies remain completely decoupled from database schema mutations?",
+      "question_type": "MultipleChoice",
+      "blooms_taxonomy_level": "Application",
+      "options": [
+        "Dependency Inversion Principle using repository interface abstractions",
+        "Direct inheritance from Entity Framework DbContext base classes",
+        "Writing raw SQL queries directly inside React UI components",
+        "Consolidating all business logic into unindexed database stored procedures"
+      ],
+      "option_details": [
+        {
+          "text": "Dependency Inversion Principle using repository interface abstractions",
+          "isCorrect": true,
+          "displayOrder": 1
+        },
+        {
+          "text": "Direct inheritance from Entity Framework DbContext base classes",
+          "isCorrect": false,
+          "displayOrder": 2
+        },
+        {
+          "text": "Writing raw SQL queries directly inside React UI components",
+          "isCorrect": false,
+          "displayOrder": 3
+        },
+        {
+          "text": "Consolidating all business logic into unindexed database stored procedures",
+          "isCorrect": false,
+          "displayOrder": 4
+        }
+      ],
+      "correct_index": 0,
+      "correct_answer": "Dependency Inversion Principle using repository interface abstractions",
+      "distractor_rationales": [
+        "Correct: Strictly complies with verified domain principles and architecture rules.",
+        "Incorrect: Violates isolation boundaries and creates tight coupling.",
+        "Incorrect: Introduces severe performance and maintainability liabilities.",
+        "Incorrect: Bypasses domain invariant validation."
+      ],
+      "explanation": "Dependency Inversion Principle (DIP) decouples high-level policy from low-level data access mechanisms.",
+      "points": 10,
+      "marks": 10,
+      "difficulty": "MEDIUM",
+      "sourceContentId": "66666666-6666-6666-6666-666666666661",
+      "sourceContentVersion": "v1.0",
+      "learningObjective": "LO-01",
+      "sourceReference": "Curriculum grounded in Test",
+      "code_snippet": null,
+      "metadata": {}
+    },
+    {
+      "question_id": 2,
+      "question_text": "In Test, which design principle best guarantees that domain policies remain completely decoupled from database schema mutations?",
+      "question_type": "CodeSnippet",
+      "blooms_taxonomy_level": "Application",
+      "options": [
+        "Dependency Inversion Principle using repository interface abstractions",
+        "Direct inheritance from Entity Framework DbContext base classes",
+        "Writing raw SQL queries directly inside React UI components",
+        "Consolidating all business logic into unindexed database stored procedures"
+      ],
+      "option_details": [
+        {
+          "text": "Dependency Inversion Principle using repository interface abstractions",
+          "isCorrect": true,
+          "displayOrder": 1
+        },
+        {
+          "text": "Direct inheritance from Entity Framework DbContext base classes",
+          "isCorrect": false,
+          "displayOrder": 2
+        },
+        {
+          "text": "Writing raw SQL queries directly inside React UI components",
+          "isCorrect": false,
+          "displayOrder": 3
+        },
+        {
+          "text": "Consolidating all business logic into unindexed database stored procedures",
+          "isCorrect": false,
+          "displayOrder": 4
+        }
+      ],
+      "correct_index": 0,
+      "correct_answer": "Dependency Inversion Principle using repository interface abstractions",
+      "distractor_rationales": [
+        "Correct: Strictly complies with verified domain principles and architecture rules.",
+        "Incorrect: Violates isolation boundaries and creates tight coupling.",
+        "Incorrect: Introduces severe performance and maintainability liabilities.",
+        "Incorrect: Bypasses domain invariant validation."
+      ],
+      "explanation": "Dependency Inversion Principle (DIP) decouples high-level policy from low-level data access mechanisms.",
+      "points": 10,
+      "marks": 10,
+      "difficulty": "MEDIUM",
+      "sourceContentId": "66666666-6666-6666-6666-666666666661",
+      "sourceContentVersion": "v1.0",
+      "learningObjective": "LO-02",
+      "sourceReference": "Curriculum grounded in Test",
+      "code_snippet": "-- Test query inspection\nSELECT * FROM Entities WHERE Status = 'Active' ORDER BY CreatedAt DESC;",
+      "metadata": {}
+    }
+  ],
+  "total_points": 20,
+  "time_limit_minutes": 15,
+  "time_limit_seconds": 900,
+  "pass_percentage": 70,
+  "attempts_allowed": 3,
+  "randomize_questions": true,
+  "randomize_options": true,
+  "gamification_rewards": {
+    "xp_reward": 100,
+    "coin_reward": 30,
+    "streak_bonus_eligible": true,
+    "badge_trigger_name": "Architecture Practitioner",
+    "passing_score_percent": 70
+  },
+  "validation_passed": true,
+  "validation": {
+    "passed": true,
+    "errors": [],
+    "warnings": [
+      "DUPLICATE_WARNING: Question 2 has identical prompt text to an earlier question."
+    ],
+    "deterministic_rule_count": 12,
+    "checked_at": "2026-08-19T19:40:43.728519+05:30",
+    "requires_human_approval": true,
+    "validated_layers": [
+      "1. Scope Existence & Course Containment",
+      "2. Exact Question Count & Distribution Match",
+      "3. Single / Multiple Option & Boolean Key Validation",
+      "4. Bloom's Taxonomy & Distractor Rationales",
+      "5. Content Grounding & Learning Objective Traceability",
+      "6. Server-Defined Gamification XP Economy Bounds",
+      "7. Time Limit & Pass Percentage Invariants"
+    ]
+  },
+  "audit_trail": [
+    {
+      "agent_name": "Automated Quiz Generator Agent",
+      "execution_time_ms": 1,
+      "summary": "Synthesized 2 grounded questions.",
+      "passed": true,
+      "details": null
+    },
+    {
+      "agent_name": "Validation & Safety Guard Agent",
+      "execution_time_ms": 1,
+      "summary": "Validated TOPIC quiz 'AI MIXED Assessment: Test (Medium)' (2 questions, 100 XP) (Passed: True).",
+      "passed": true,
+      "details": null
+    }
+  ],
+  "status": "PendingInstructorApproval"
+}

@@ -2,22 +2,13 @@ import api from './api';
 
 export const quizService = {
   async getQuizzes(courseId) {
-    try {
-      const response = await api.get(`/quizzes/course/${courseId}`);
-      return response.data;
-    } catch {
-      return [];
-    }
+    const response = await api.get(`/quizzes/course/${courseId}`);
+    return response.data;
   },
 
   async getQuizById(quizId) {
-    try {
-      const response = await api.get(`/quizzes/${quizId}`);
-      return response.data;
-    } catch (err) {
-      console.warn('Falling back to local quiz detail', err);
-      return null;
-    }
+    const response = await api.get(`/quizzes/${quizId}`);
+    return response.data;
   },
 
   async createQuiz(data) {

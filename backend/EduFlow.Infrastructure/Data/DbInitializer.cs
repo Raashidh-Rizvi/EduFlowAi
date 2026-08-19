@@ -32,6 +32,20 @@ public static class DbInitializer
         }
         catch { }
 
+        // Patch schema updates for existing tables
+        try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""AttemptsAllowed"" integer NOT NULL DEFAULT 3;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""RandomizeQuestions"" boolean NOT NULL DEFAULT false;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""RandomizeOptions"" boolean NOT NULL DEFAULT false;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""FeedbackMode"" integer NOT NULL DEFAULT 0;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""ShowCorrectAnswers"" boolean NOT NULL DEFAULT false;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""GeneratedByAI"" boolean NOT NULL DEFAULT false;
+                ALTER TABLE ""Assessments"" ADD COLUMN IF NOT EXISTS ""GenerationWorkflowId"" text;
+            ");
+        }
+        catch { }
 
         var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
@@ -455,9 +469,46 @@ public static class DbInitializer
                     OrderIndex = 2
                 });
 
+                // --- 7 New Seeded Quizzes to meet the 10-record requirement ---
+
+                // 4. Topic Quiz: EXPLAIN ANALYZE
+                var quiz4 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777774"), CourseId = courseId, ScopeType = QuizScopeType.Topic, ScopeId = top12Id, Title = "Topic Quiz: EXPLAIN ANALYZE", Description = "Test knowledge of query execution plans.", Type = AssessmentType.TopicQuiz, Difficulty = DifficultyLevel.Medium, TimeLimitSeconds = 600, TimeLimitMinutes = 10, PassingScorePercent = 70, XpReward = 30, CoinReward = 15, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz4.Questions.Add(new Question { Prompt = "What does EXPLAIN ANALYZE do that EXPLAIN does not?", Type = QuestionType.TrueFalse, OptionsJson = "[\"Actually executes the query\",\"Formats output as JSON\"]", CorrectAnswer = "Actually executes the query", Explanation = "ANALYZE forces execution to get real timings.", Points = 10, OrderIndex = 1 });
+
+                // 5. Lesson Quiz: B-Tree Index Structure
+                var quiz5 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777775"), CourseId = courseId, ScopeType = QuizScopeType.ContentItem, ScopeId = lesson111Id, Title = "Micro-Quiz: B-Tree Fundamentals", Description = "Quick check on B-Tree logic.", Type = AssessmentType.TopicQuiz, Difficulty = DifficultyLevel.Easy, TimeLimitSeconds = 300, TimeLimitMinutes = 5, PassingScorePercent = 60, XpReward = 15, CoinReward = 5, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz5.Questions.Add(new Question { Prompt = "B-Trees are balanced trees.", Type = QuestionType.TrueFalse, OptionsJson = "[\"True\",\"False\"]", CorrectAnswer = "True", Explanation = "They self-balance.", Points = 10, OrderIndex = 1 });
+
+                // 6. Module 2 Assessment
+                var quiz6 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777776"), CourseId = courseId, ScopeType = QuizScopeType.Module, ScopeId = mod2Id, Title = "Module 2: Clean Architecture", Description = "Verify Clean Architecture principles.", Type = AssessmentType.ModuleQuiz, Difficulty = DifficultyLevel.Hard, TimeLimitSeconds = 1200, TimeLimitMinutes = 20, PassingScorePercent = 75, XpReward = 75, CoinReward = 30, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz6.Questions.Add(new Question { Prompt = "Where should business logic reside?", Type = QuestionType.MultipleChoice, OptionsJson = "[\"Domain Layer\",\"Infrastructure Layer\",\"Presentation Layer\"]", CorrectAnswer = "Domain Layer", Explanation = "Domain holds the enterprise logic.", Points = 10, OrderIndex = 1 });
+
+                // 7. Topic Quiz: DIP
+                var quiz7 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777778"), CourseId = courseId, ScopeType = QuizScopeType.Topic, ScopeId = top21Id, Title = "Topic Quiz: Dependency Inversion", Description = "Check DIP understanding.", Type = AssessmentType.TopicQuiz, Difficulty = DifficultyLevel.Medium, TimeLimitSeconds = 600, TimeLimitMinutes = 10, PassingScorePercent = 70, XpReward = 30, CoinReward = 15, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz7.Questions.Add(new Question { Prompt = "What does the 'D' in SOLID stand for?", Type = QuestionType.MultipleChoice, OptionsJson = "[\"Dependency Inversion\",\"Data Independence\",\"Domain Integration\"]", CorrectAnswer = "Dependency Inversion", Explanation = "It decouples high-level modules.", Points = 10, OrderIndex = 1 });
+
+                // 8. Topic Quiz: Agent Safety
+                var quiz8 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777779"), CourseId = courseId, ScopeType = QuizScopeType.Topic, ScopeId = top22Id, Title = "Topic Quiz: Agent Safety", Description = "Multi-agent safety rules.", Type = AssessmentType.TopicQuiz, Difficulty = DifficultyLevel.Medium, TimeLimitSeconds = 600, TimeLimitMinutes = 10, PassingScorePercent = 70, XpReward = 30, CoinReward = 15, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz8.Questions.Add(new Question { Prompt = "Why use a Validation Guard Agent?", Type = QuestionType.TrueFalse, OptionsJson = "[\"To prevent hallucinatory data mutations\",\"To make API calls faster\"]", CorrectAnswer = "To prevent hallucinatory data mutations", Explanation = "Guards ensure deterministic safety.", Points = 10, OrderIndex = 1 });
+
+                // 9. Diagnostic Assessment
+                var quiz9 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777710"), CourseId = courseId, ScopeType = QuizScopeType.Course, ScopeId = courseId, Title = "Initial Diagnostic Quiz", Description = "Pre-assessment for the course.", Type = AssessmentType.CourseQuiz, Difficulty = DifficultyLevel.Medium, TimeLimitSeconds = 1200, TimeLimitMinutes = 20, PassingScorePercent = 50, XpReward = 100, CoinReward = 40, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz9.Questions.Add(new Question { Prompt = "What is a primary key?", Type = QuestionType.MultipleChoice, OptionsJson = "[\"A unique identifier for a row\",\"A foreign key\",\"An index\"]", CorrectAnswer = "A unique identifier for a row", Explanation = "PK uniquely identifies records.", Points = 10, OrderIndex = 1 });
+
+                // 10. Boss Battle
+                var quiz10 = new Assessment { Id = Guid.Parse("77777777-7777-7777-7777-777777777711"), CourseId = courseId, ScopeType = QuizScopeType.Course, ScopeId = courseId, Title = "Boss Battle: The DBA Architect", Description = "Survive the gauntlet.", Type = AssessmentType.BossBattle, Difficulty = DifficultyLevel.Boss, TimeLimitSeconds = 300, TimeLimitMinutes = 5, PassingScorePercent = 100, XpReward = 500, CoinReward = 200, Status = QuizStatus.Published, CreatedAt = DateTime.UtcNow };
+                quiz10.Questions.Add(new Question { Prompt = "Solve the N+1 query problem.", Type = QuestionType.MultipleChoice, OptionsJson = "[\"Use eager loading / JOINs\",\"Use more loops\",\"Disable caching\"]", CorrectAnswer = "Use eager loading / JOINs", Explanation = "JOINs prevent multiple round trips.", Points = 10, OrderIndex = 1 });
+
                 defaultCourse.Assessments.Add(topicQuiz);
                 defaultCourse.Assessments.Add(moduleQuiz);
                 defaultCourse.Assessments.Add(defaultQuiz);
+                defaultCourse.Assessments.Add(quiz4);
+                defaultCourse.Assessments.Add(quiz5);
+                defaultCourse.Assessments.Add(quiz6);
+                defaultCourse.Assessments.Add(quiz7);
+                defaultCourse.Assessments.Add(quiz8);
+                defaultCourse.Assessments.Add(quiz9);
+                defaultCourse.Assessments.Add(quiz10);
 
                 context.Courses.Add(defaultCourse);
                 context.SaveChanges();

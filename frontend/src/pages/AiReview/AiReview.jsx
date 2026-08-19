@@ -43,21 +43,24 @@ import { aiService } from '../../services/aiService';
 
 export default function AiReview() {
   // Dynamic proposals list (starts empty without hardcoded sample data)
-  const [proposals, setProposals] = useState(() => {
-    try {
-      const saved = localStorage.getItem('eduflow_ai_proposals_dynamic');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.warn('Failed to load saved proposals', e);
-    }
-    return [];
-  });
-
+  const [proposals, setProposals] = useState([]);
   const [selectedProposalId, setSelectedProposalId] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchProposals() {
+      setLoading(true);
+      try {
+        const data = await aiService.getPendingProposals();
+        setProposals(data || []);
+      } catch (err) {
+        console.error('Failed to load pending proposals:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProposals();
+  }, []);
 
   // Filter & Search states
   const [statusTab, setStatusTab] = useState('pending'); // 'pending' | 'all' | 'approved' | 'rejected'

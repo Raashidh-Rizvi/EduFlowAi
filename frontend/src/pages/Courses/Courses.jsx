@@ -315,17 +315,25 @@ export default function Courses({ currentUser }) {
     setLoading(true);
     try {
       const data = await courseService.getCourses();
-      if (data && data.length > 0) {
+      if (data) {
         // Merge backend with seed data
         const merged = SEED_COURSES.map(sc => {
           const match = data.find(d => d.id === sc.id || d.code === sc.code);
           return match ? { ...sc, ...match, id: match.id } : sc;
         });
-        setCoursesList(merged);
-        setSelectedCourseId(merged[0].id);
-        // Expand first module by default
-        if (merged[0].modules?.[0]?.id) {
-          setExpandedModules({ [merged[0].modules[0].id]: true });
+        
+        // Add any new courses from backend that aren't in SEED_COURSES
+        const newCourses = data.filter(d => !SEED_COURSES.some(sc => sc.id === d.id || sc.code === d.code));
+        const finalCoursesList = [...merged, ...newCourses];
+        
+        if (finalCoursesList.length > 0) {
+          setCoursesList(finalCoursesList);
+          setSelectedCourseId(finalCoursesList[0].id);
+          if (finalCoursesList[0].modules?.[0]?.id) {
+            setExpandedModules({ [finalCoursesList[0].modules[0].id]: true });
+          }
+        } else {
+          setCoursesList([]);
         }
       } else {
         setCoursesList(SEED_COURSES);
