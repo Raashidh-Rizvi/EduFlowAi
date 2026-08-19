@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { aiService } from '../../services/aiService';
 
 // ─── Seed Data for Student Portal ─────────────────────────────────────────────
 const STUDENT_DATA = {

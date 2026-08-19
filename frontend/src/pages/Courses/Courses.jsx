@@ -46,267 +46,6 @@ export default function Courses({ currentUser }) {
   const [expandedModules, setExpandedModules] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // Initial Rich Seed Data reflecting Dr. Sarah's course architecture
-  const SEED_COURSES = [
-    {
-      id: 'c-python-101',
-      code: 'PY101',
-      title: 'Python Programming & Algorithms',
-      category: 'Software Engineering',
-      description: 'Foundations of computational thinking, procedural composition, functional paradigms, recursion, and object-oriented architecture.',
-      studentsCount: 72,
-      completionRate: 78,
-      avgScore: 81,
-      engagementRate: 74,
-      finalAssessment: {
-        id: 'fa-py101',
-        title: '🏆 Final Course Comprehensive Assessment',
-        questionsCount: 40,
-        timeLimitMinutes: 60,
-        passPercentage: 75,
-        xpReward: 300,
-        coinReward: 80,
-        status: 'Published',
-        difficulty: 'Mixed'
-      },
-      modules: [
-        {
-          id: 'm-py-1',
-          title: 'Module 1: Python Basics & Variables',
-          description: 'Variable declaration, memory reference semantics, basic primitive types, and arithmetic operations.',
-          orderIndex: 1,
-          pdfUrl: '/uploads/pdfs/python_basics.pdf',
-          attachmentFileName: 'Python_Basics_Core_Notes.pdf',
-          masteryRate: 88,
-          moduleAssessment: {
-            id: 'ma-py-1',
-            title: '🧠 Module 1 Assessment: Primitive Foundations',
-            questionsCount: 15,
-            timeLimitMinutes: 20,
-            passPercentage: 70,
-            xpReward: 100,
-            coinReward: 30,
-            status: 'Published',
-            isBossBattle: false
-          },
-          topics: [
-            {
-              id: 't-py-1-1',
-              title: 'Variables & Memory Pointers',
-              masteryPercent: 92,
-              lessons: [
-                { id: 'l-1', title: 'Dynamic Typing and Memory Referencing in CPython', type: 'doc', duration: '25m', xp: 40, completed: true },
-                { id: 'l-2', title: 'Scope Resolution (LEGB Rule)', type: 'video', duration: '20m', xp: 35, completed: true }
-              ],
-              quiz: { id: 'q-1-1', title: 'Variables & Scope Quiz', questionsCount: 5, difficulty: 'Easy', xpReward: 40, avgScore: 92 }
-            },
-            {
-              id: 't-py-1-2',
-              title: 'Data Types & Collections (Lists, Tuples, Dicts)',
-              masteryPercent: 84,
-              lessons: [
-                { id: 'l-3', title: 'Mutable vs Immutable Data Structures', type: 'doc', duration: '30m', xp: 45, completed: true }
-              ],
-              quiz: { id: 'q-1-2', title: 'Collections & Hash Maps Quiz', questionsCount: 6, difficulty: 'Medium', xpReward: 50, avgScore: 84 }
-            }
-          ]
-        },
-        {
-          id: 'm-py-2',
-          title: 'Module 2: Functions, Scope & Recursion',
-          description: 'First-class function composition, lambda closures, recursion mechanics, and call-stack frame analysis.',
-          orderIndex: 2,
-          pdfUrl: '/uploads/pdfs/functions_recursion.pdf',
-          attachmentFileName: 'Functions_and_CallStack_Syllabus.pdf',
-          masteryRate: 72,
-          moduleAssessment: {
-            id: 'ma-py-2',
-            title: '👹 MODULE 2 BOSS: Recursive Mastery & Function Architecture',
-            questionsCount: 20,
-            timeLimitMinutes: 25,
-            passPercentage: 80,
-            xpReward: 200,
-            coinReward: 60,
-            status: 'Published',
-            isBossBattle: true
-          },
-          topics: [
-            {
-              id: 't-py-2-1',
-              title: 'Functions & First-Class Citizens',
-              masteryPercent: 88,
-              lessons: [
-                { id: 'l-4', title: 'Higher-Order Functions and Decorators', type: 'video', duration: '35m', xp: 50, completed: true }
-              ],
-              quiz: { id: 'q-2-1', title: 'Function Composition Quiz', questionsCount: 5, difficulty: 'Medium', xpReward: 50, avgScore: 88 }
-            },
-            {
-              id: 't-py-2-2',
-              title: 'Parameters, *args & **kwargs',
-              masteryPercent: 81,
-              lessons: [
-                { id: 'l-5', title: 'Variadic Argument Unpacking and Keyword Binding', type: 'doc', duration: '20m', xp: 35, completed: true }
-              ],
-              quiz: { id: 'q-2-2', title: 'Parameter Binding Quiz', questionsCount: 5, difficulty: 'Medium', xpReward: 45, avgScore: 81 }
-            },
-            {
-              id: 't-py-2-3',
-              title: 'Recursion & Base Cases',
-              masteryPercent: 54, // Weak topic alert!
-              hasWarning: true,
-              lessons: [
-                { id: 'l-6', title: 'Recursive Call Stack Frame Unwinding', type: 'doc', duration: '40m', xp: 60, completed: false }
-              ],
-              quiz: { id: 'q-2-3', title: 'Recursion Diagnostic Quiz', questionsCount: 6, difficulty: 'Hard', xpReward: 70, avgScore: 54 }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'c-database-201',
-      code: 'DB201',
-      title: 'Database Systems & Relational Engineering',
-      category: 'Data Engineering',
-      description: 'Relational data modeling, PostgreSQL indexing algorithms, transaction isolation levels, and query execution plans.',
-      studentsCount: 58,
-      completionRate: 64,
-      avgScore: 74,
-      engagementRate: 68,
-      finalAssessment: {
-        id: 'fa-db201',
-        title: '🏆 Final Database Systems Comprehensive Exam',
-        questionsCount: 35,
-        timeLimitMinutes: 50,
-        passPercentage: 75,
-        xpReward: 250,
-        coinReward: 70,
-        status: 'Published',
-        difficulty: 'Mixed'
-      },
-      modules: [
-        {
-          id: 'm-db-1',
-          title: 'Module 1: Relational Modeling & Normalization',
-          description: 'Entity-relationship diagrams, 1NF to BCNF decomposition, and referential integrity constraints.',
-          orderIndex: 1,
-          pdfUrl: '/uploads/pdfs/db_normalization.pdf',
-          attachmentFileName: 'Database_Normalization_Guide.pdf',
-          masteryRate: 79,
-          moduleAssessment: {
-            id: 'ma-db-1',
-            title: '🧠 Module 1 Assessment: Schema Architecture',
-            questionsCount: 15,
-            timeLimitMinutes: 20,
-            passPercentage: 70,
-            xpReward: 100,
-            coinReward: 30,
-            status: 'Published',
-            isBossBattle: false
-          },
-          topics: [
-            {
-              id: 't-db-1-1',
-              title: '3NF & Boyce-Codd Normal Form',
-              masteryPercent: 79,
-              lessons: [
-                { id: 'l-db-1', title: 'Functional Dependencies and Lossless Joins', type: 'doc', duration: '30m', xp: 40, completed: true }
-              ],
-              quiz: { id: 'q-db-1-1', title: 'Normalization Principles Quiz', questionsCount: 5, difficulty: 'Medium', xpReward: 50, avgScore: 79 }
-            }
-          ]
-        },
-        {
-          id: 'm-db-2',
-          title: 'Module 2: Indexing & Query Optimization',
-          description: 'B-Tree vs Hash index structures, composite index selectivity, and EXPLAIN ANALYZE execution plan debugging.',
-          orderIndex: 2,
-          pdfUrl: '/uploads/pdfs/postgres_indexing.pdf',
-          attachmentFileName: 'Postgres_Index_Optimization.pdf',
-          masteryRate: 61,
-          moduleAssessment: {
-            id: 'ma-db-2',
-            title: '👹 MODULE 2 BOSS: Database Indexing & Deadlock Arena',
-            questionsCount: 20,
-            timeLimitMinutes: 25,
-            passPercentage: 80,
-            xpReward: 200,
-            coinReward: 60,
-            status: 'Published',
-            isBossBattle: true
-          },
-          topics: [
-            {
-              id: 't-db-2-1',
-              title: 'B-Tree Index Slicing & Covering Indexes',
-              masteryPercent: 61,
-              hasWarning: true,
-              lessons: [
-                { id: 'l-db-2', title: 'Composite Index Column Cardinality Ordering', type: 'doc', duration: '35m', xp: 50, completed: true }
-              ],
-              quiz: { id: 'q-db-2-1', title: 'Index Execution Plans Quiz', questionsCount: 6, difficulty: 'Hard', xpReward: 65, avgScore: 61 }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      id: '44444444-4444-4444-4444-444444444444',
-      code: 'SE3090',
-      title: 'Software Engineering & Clean Architecture',
-      category: 'Enterprise Systems',
-      description: 'Domain-driven design, Clean Architecture boundaries, distributed transactions, and deterministic multi-agent systems.',
-      studentsCount: 54,
-      completionRate: 71,
-      avgScore: 79,
-      engagementRate: 80,
-      finalAssessment: {
-        id: 'fa-se3090',
-        title: '🏆 Clean Architecture & Distributed Systems Grand Exam',
-        questionsCount: 40,
-        timeLimitMinutes: 60,
-        passPercentage: 75,
-        xpReward: 300,
-        coinReward: 90,
-        status: 'Published',
-        difficulty: 'Hard'
-      },
-      modules: [
-        {
-          id: 'm-se-1',
-          title: 'Module 1: Domain-Driven Design & Core Entities',
-          description: 'Aggregate roots, value objects, domain events, and pure repository contracts.',
-          orderIndex: 1,
-          pdfUrl: '/uploads/pdfs/clean_arch.pdf',
-          attachmentFileName: 'Clean_Architecture_Specification.pdf',
-          masteryRate: 83,
-          moduleAssessment: {
-            id: 'ma-se-1',
-            title: '🧠 Module 1 Assessment: DDD Aggregate Invariants',
-            questionsCount: 15,
-            timeLimitMinutes: 20,
-            passPercentage: 70,
-            xpReward: 100,
-            coinReward: 30,
-            status: 'Published',
-            isBossBattle: false
-          },
-          topics: [
-            {
-              id: 't-se-1-1',
-              title: 'Aggregate Roots & Domain Invariants',
-              masteryPercent: 83,
-              lessons: [
-                { id: 'l-se-1', title: 'Encapsulating Business Logic inside Domain Entities', type: 'doc', duration: '30m', xp: 45, completed: true }
-              ],
-              quiz: { id: 'q-se-1-1', title: 'Domain Invariants Quiz', questionsCount: 5, difficulty: 'Medium', xpReward: 50, avgScore: 83 }
-            }
-          ]
-        }
-      ]
-    }
-  ];
-
   useEffect(() => {
     loadCourses();
   }, []);
@@ -315,41 +54,23 @@ export default function Courses({ currentUser }) {
     setLoading(true);
     try {
       const data = await courseService.getCourses();
-      if (data) {
-        // Merge backend with seed data
-        const merged = SEED_COURSES.map(sc => {
-          const match = data.find(d => d.id === sc.id || d.code === sc.code);
-          return match ? { ...sc, ...match, id: match.id } : sc;
-        });
-        
-        // Add any new courses from backend that aren't in SEED_COURSES
-        const newCourses = data.filter(d => !SEED_COURSES.some(sc => sc.id === d.id || sc.code === d.code));
-        const finalCoursesList = [...merged, ...newCourses];
-        
-        if (finalCoursesList.length > 0) {
-          setCoursesList(finalCoursesList);
-          setSelectedCourseId(finalCoursesList[0].id);
-          if (finalCoursesList[0].modules?.[0]?.id) {
-            setExpandedModules({ [finalCoursesList[0].modules[0].id]: true });
-          }
-        } else {
-          setCoursesList([]);
+      if (data && data.length > 0) {
+        setCoursesList(data);
+        setSelectedCourseId(data[0].id);
+        if (data[0].modules?.[0]?.id) {
+          setExpandedModules({ [data[0].modules[0].id]: true });
         }
       } else {
-        setCoursesList(SEED_COURSES);
-        setSelectedCourseId(SEED_COURSES[0].id);
-        setExpandedModules({ [SEED_COURSES[0].modules[0].id]: true });
+        setCoursesList([]);
       }
     } catch {
-      setCoursesList(SEED_COURSES);
-      setSelectedCourseId(SEED_COURSES[0].id);
-      setExpandedModules({ [SEED_COURSES[0].modules[0].id]: true });
+      setCoursesList([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const currentCourse = coursesList.find(c => c.id === selectedCourseId) || coursesList[0] || SEED_COURSES[0];
+  const currentCourse = coursesList.find(c => c.id === selectedCourseId) || coursesList[0];
 
   // ── Modal States ──────────────────────────────────────────────────────────
   const [showCourseModal, setShowCourseModal] = useState(false);
@@ -917,6 +638,71 @@ export default function Courses({ currentUser }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '60px 20px', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
         <RefreshCw size={32} className="spin" color="var(--primary)" />
         <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>Loading Curriculum & Assessment Hierarchy...</span>
+      </div>
+    );
+  }
+
+  if (!currentCourse) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1360px', margin: '0 auto', width: '100%' }}>
+        <div style={{ padding: '60px 20px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', marginTop: '20px' }}>
+          <BookOpen size={48} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
+          <h3 style={{ marginBottom: '8px', color: 'var(--text-main)' }}>No Courses Found</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>Get started by creating your first course.</p>
+          <button onClick={() => setShowCourseModal(true)} className="btn-primary" style={{ margin: '0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Plus size={16} /> Create Course
+          </button>
+        </div>
+
+        {/* Create Course Modal */}
+        {showCourseModal && (
+          <div className="modal-overlay" onClick={() => setShowCourseModal(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Plus size={20} color="var(--primary)" />
+                  Create New Course
+                </h3>
+                <button onClick={() => setShowCourseModal(false)} className="btn-icon">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div style={{ flex: '1' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Code</label>
+                    <input placeholder="e.g. CS101" value={newCourseCode} onChange={e => setNewCourseCode(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+                  </div>
+                  <div style={{ flex: '2' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Category</label>
+                    <select value={newCourseCategory} onChange={e => setNewCourseCategory(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
+                      <option value="Software Engineering">Software Engineering</option>
+                      <option value="Data Science">Data Science</option>
+                      <option value="Design">Design</option>
+                      <option value="Business">Business</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Title</label>
+                  <input placeholder="e.g. Distributed Systems" value={newCourseTitle} onChange={e => setNewCourseTitle(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Description</label>
+                  <textarea rows={3} placeholder="Course overview and syllabus..." value={newCourseDesc} onChange={e => setNewCourseDesc(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+                <button onClick={() => setShowCourseModal(false)} className="btn-secondary">Cancel</button>
+                <button onClick={handleCreateCourse} className="btn-primary">Create Course</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

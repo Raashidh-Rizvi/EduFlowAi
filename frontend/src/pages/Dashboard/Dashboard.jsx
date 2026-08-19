@@ -32,95 +32,16 @@ export default function Dashboard({ onNavigateTo }) {
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState([]);
   const [summaryKpis, setSummaryKpis] = useState({
-    totalCourses: 6,
-    activeStudents: 184,
-    totalModules: 31,
-    totalQuizzes: 68,
-    pendingReviews: 5,
-    aiDraftsCount: 3
+    totalCourses: 0,
+    activeStudents: 0,
+    totalModules: 0,
+    totalQuizzes: 0,
+    pendingReviews: 0,
+    aiDraftsCount: 0
   });
-  const [atRiskAlerts, setAtRiskAlerts] = useState([
-    {
-      id: 'alert-1',
-      type: 'low_mastery',
-      title: 'Topic Mastery Alert: Recursion',
-      courseCode: 'PY101',
-      courseTitle: 'Python Programming',
-      moduleTitle: 'Functions & Control Flow',
-      topicTitle: 'Recursion',
-      metricText: 'Average score: 54% (Target: 75%)',
-      severity: 'high',
-      affectedStudents: 28,
-      suggestedAction: 'Generate Remediation Quiz'
-    },
-    {
-      id: 'alert-2',
-      type: 'low_completion',
-      title: 'Module 3 Quiz Completion Below Target',
-      courseCode: 'DB201',
-      courseTitle: 'Database Systems & Architecture',
-      moduleTitle: 'Relational Indexing & Optimization',
-      metricText: '61% completion rate (18 students pending)',
-      severity: 'medium',
-      affectedStudents: 18,
-      suggestedAction: 'Send Reminder Announcement'
-    },
-    {
-      id: 'alert-3',
-      type: 'disengaged_students',
-      title: '4 Students Inactive > 7 Days',
-      courseCode: 'SE3090',
-      courseTitle: 'Software Engineering & Architecture',
-      moduleTitle: 'Clean Architecture Patterns',
-      metricText: 'No quiz submissions or lesson progress recorded',
-      severity: 'warning',
-      affectedStudents: 4,
-      suggestedAction: 'Review Student Telemetry'
-    }
-  ]);
+  const [atRiskAlerts, setAtRiskAlerts] = useState([]);
 
-  const [recentActivities, setRecentActivities] = useState([
-    {
-      id: 1,
-      type: 'published',
-      icon: CheckCircle2,
-      color: 'var(--success)',
-      title: 'Module 2 Quiz Published',
-      course: 'Python Programming',
-      time: '18 mins ago',
-      desc: 'Formative Assessment with 15 questions is now live for 72 students.'
-    },
-    {
-      id: 2,
-      type: 'submission',
-      icon: Activity,
-      color: 'var(--primary)',
-      title: '42 Students Completed Functions Quiz',
-      course: 'Python Programming',
-      time: '1 hour ago',
-      desc: 'Average cohort score: 81.4% • 6 students achieved 100% mastery.'
-    },
-    {
-      id: 3,
-      type: 'ai_draft',
-      icon: Sparkles,
-      color: 'var(--accent)',
-      title: 'AI Remediation Quiz Draft Awaiting Review',
-      course: 'Database Systems',
-      time: '3 hours ago',
-      desc: 'Calibrated for weak topic: Composite Indexes & Query Plans.'
-    },
-    {
-      id: 4,
-      type: 'enrollment',
-      icon: Users,
-      color: 'var(--secondary)',
-      title: '12 New Students Enrolled',
-      course: 'Software Engineering & Architecture',
-      time: 'Yesterday',
-      desc: 'Total cohort enrollment reached 54 active learners.'
-    }
-  ]);
+  const [recentActivities, setRecentActivities] = useState([]);
 
   // Remediation Modal state
   const [showRemediationModal, setShowRemediationModal] = useState(false);
@@ -144,67 +65,10 @@ export default function Dashboard({ onNavigateTo }) {
       // 1. Fetch real courses from backend
       const fetchedCourses = await courseService.getCourses();
       
-      // Default / fallback rich courses for Dr. Sarah's overview
-      const defaultCourses = [
-        {
-          id: 'c-python-101',
-          code: 'PY101',
-          title: 'Python Programming & Algorithms',
-          category: 'Software Engineering',
-          description: 'Comprehensive core programming covering variables, control flow, functional composition, recursion, and object models.',
-          studentsCount: 72,
-          modulesCount: 6,
-          topicsCount: 32,
-          lessonsCount: 48,
-          quizzesCount: 14,
-          completionRate: 78,
-          avgScore: 81,
-          engagementRate: 74,
-          status: 'Published'
-        },
-        {
-          id: 'c-database-201',
-          code: 'DB201',
-          title: 'Database Systems & Relational Engineering',
-          category: 'Data Engineering',
-          description: 'Relational data modeling, PostgreSQL indexing algorithms, transaction isolation levels, and query execution plans.',
-          studentsCount: 58,
-          modulesCount: 5,
-          topicsCount: 27,
-          lessonsCount: 36,
-          quizzesCount: 11,
-          completionRate: 64,
-          avgScore: 74,
-          engagementRate: 68,
-          status: 'Published'
-        },
-        {
-          id: '44444444-4444-4444-4444-444444444444',
-          code: 'SE3090',
-          title: 'Software Engineering & Clean Architecture',
-          category: 'Enterprise Systems',
-          description: 'Domain-driven design, Clean Architecture boundaries, distributed transactions, and deterministic multi-agent systems.',
-          studentsCount: 54,
-          modulesCount: 4,
-          topicsCount: 22,
-          lessonsCount: 30,
-          quizzesCount: 9,
-          completionRate: 71,
-          avgScore: 79,
-          engagementRate: 80,
-          status: 'Published'
-        }
-      ];
-
       if (fetchedCourses && fetchedCourses.length > 0) {
-        // Merge backend courses with rich metadata
-        const merged = defaultCourses.map(dc => {
-          const matched = fetchedCourses.find(fc => fc.code === dc.code || fc.id === dc.id);
-          return matched ? { ...dc, ...matched, id: matched.id } : dc;
-        });
-        setCourses(merged);
+        setCourses(fetchedCourses);
       } else {
-        setCourses(defaultCourses);
+        setCourses([]);
       }
 
       // 2. Fetch platform summary
@@ -212,12 +76,12 @@ export default function Dashboard({ onNavigateTo }) {
         const platformSummary = await insightsService.getDashboardSummary();
         if (platformSummary) {
           setSummaryKpis({
-            totalCourses: platformSummary.totalCourses || 6,
-            activeStudents: platformSummary.totalStudents || 184,
-            totalModules: 31,
-            totalQuizzes: 68,
-            pendingReviews: 5,
-            aiDraftsCount: platformSummary.pendingAiApprovals || 3
+            totalCourses: platformSummary.totalCourses || 0,
+            activeStudents: platformSummary.totalStudents || 0,
+            totalModules: 0,
+            totalQuizzes: 0,
+            pendingReviews: 0,
+            aiDraftsCount: platformSummary.pendingAiApprovals || 0
           });
         }
       } catch {
