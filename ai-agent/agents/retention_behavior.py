@@ -1,20 +1,45 @@
+"""
+===============================================================================
+EduFlow AI - Gamification, Engagement & Retention Agent
+===============================================================================
+This module implements the `RetentionBehaviorAgent` (Member 3 ownership).
+
+Why we use the Retention Behavior Agent:
+1. Dropout & Churn Prediction:
+   - Evaluates inactivity duration, streak degradation, and learning velocity (7-day XP velocity).
+   - Computes a normalized churn risk score (0.0 to 1.0) and streak health state
+     (Healthy, AtRisk, Broken, Recovered).
+2. Behavioral Habit Loop Protection:
+   - Prescribes motivational interventions:
+     * Streak Shields (for learners 1 day away from losing active streaks)
+     * Refresher Micro-Challenges (for learners struggling with accuracy < 70%)
+     * XP Surge Quests (double XP rewards to re-ignite inactive learners)
+     * Tutor Nudges (positive momentum reinforcement for healthy learners)
+"""
+
+# Import uuid for unique workflow tracking identifiers
 import uuid
+# Import typing annotations for lists and tuples
 from typing import List, Tuple
+# Import BaseAgent base class and execution log model
 from .base import BaseAgent, AgentExecutionLog
+# Import Pydantic models for retention requests, responses, and interventions
 from models.schemas import (
     RetentionAnalysisRequest, 
     RetentionRiskResponse, 
     RetentionIntervention
 )
 
+
 class RetentionBehaviorAgent(BaseAgent):
     """
     Gamification, Engagement & Retention Agent (Member 3 - Gamification Engine)
-    Responsible for:
-    - Analyzing student inactivity duration, streak vulnerability, and XP velocity
-    - Predicting drop-off and churn risks using behavioral patterns
-    - Formulating targeted motivational interventions (Streak Shields, XP Boosters, Micro-Quests)
-    - Protecting student habit loops through positive reinforcement
+    
+    Responsibilities:
+    - Analyze student inactivity duration, streak vulnerability, and XP velocity.
+    - Predict drop-off and churn risks using behavioral patterns.
+    - Formulate targeted motivational interventions (Streak Shields, XP Boosters, Micro-Quests).
+    - Protect student habit loops through positive reinforcement.
     """
     def __init__(self):
         super().__init__(
@@ -24,27 +49,45 @@ class RetentionBehaviorAgent(BaseAgent):
         )
 
     def analyze_retention(self, request: RetentionAnalysisRequest) -> Tuple[RetentionRiskResponse, AgentExecutionLog]:
+        """
+        Calculates churn risk score and generates personalized motivational interventions.
+        
+        Args:
+            request: RetentionAnalysisRequest with streak count, days inactive, quiz accuracy, and 7-day XP velocity.
+            
+        Returns:
+            Tuple of (RetentionRiskResponse, AgentExecutionLog).
+        """
         def _execute(req: RetentionAnalysisRequest):
             workflow_id = f"wf-ret-{uuid.uuid4().hex[:8]}"
 
-            # Churn risk heuristic calculation
+            # -----------------------------------------------------------------
+            # 1. Churn Risk Heuristic Calculation
+            # -----------------------------------------------------------------
             risk_score = 0.0
+            
+            # Penalize inactivity duration
             if req.days_inactive >= 3:
                 risk_score += 0.45
             elif req.days_inactive >= 1:
                 risk_score += 0.20
 
+            # Penalize low academic accuracy (frustration / disengagement factor)
             if req.recent_quiz_accuracy < 60.0:
                 risk_score += 0.35
             elif req.recent_quiz_accuracy < 75.0:
                 risk_score += 0.15
 
+            # Penalize low XP velocity (learning pace slowdown)
             if req.xp_velocity_7d < 50:
                 risk_score += 0.20
 
+            # Cap risk score between 0.0 and 1.0
             risk_score = min(1.0, round(risk_score, 2))
 
-            # Streak health state
+            # -----------------------------------------------------------------
+            # 2. Evaluate Streak Health State
+            # -----------------------------------------------------------------
             if req.current_streak >= 5 and req.days_inactive == 0:
                 streak_health = "Healthy"
             elif req.current_streak > 0 and req.days_inactive >= 1:
@@ -54,8 +97,12 @@ class RetentionBehaviorAgent(BaseAgent):
             else:
                 streak_health = "Healthy"
 
+            # -----------------------------------------------------------------
+            # 3. Formulate Behavioral Interventions
+            # -----------------------------------------------------------------
             interventions: List[RetentionIntervention] = []
 
+            # Condition 1: Streak is at risk of expiring
             if streak_health == "AtRisk":
                 interventions.append(RetentionIntervention(
                     action_type="StreakShield",
@@ -66,6 +113,7 @@ class RetentionBehaviorAgent(BaseAgent):
                     urgency_level="High"
                 ))
 
+            # Condition 2: Accuracy drop detected
             if req.recent_quiz_accuracy < 70.0:
                 interventions.append(RetentionIntervention(
                     action_type="RefresherMicroChallenge",
@@ -76,6 +124,7 @@ class RetentionBehaviorAgent(BaseAgent):
                     urgency_level="Medium"
                 ))
 
+            # Condition 3: Elevated churn risk
             if risk_score > 0.5:
                 interventions.append(RetentionIntervention(
                     action_type="XpBoosterQuest",
@@ -86,6 +135,7 @@ class RetentionBehaviorAgent(BaseAgent):
                     urgency_level="High"
                 ))
 
+            # Default positive reinforcement if healthy
             if not interventions:
                 interventions.append(RetentionIntervention(
                     action_type="TutorNudge",
@@ -96,6 +146,7 @@ class RetentionBehaviorAgent(BaseAgent):
                     urgency_level="Low"
                 ))
 
+            # Assemble finalized response
             response = RetentionRiskResponse(
                 workflow_id=workflow_id,
                 student_id=req.student_id,

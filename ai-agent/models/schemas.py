@@ -1,95 +1,278 @@
+"""
+===============================================================================
+EduFlow AI - Pydantic Request, Response & Telemetry Data Transfer Objects (DTOs)
+===============================================================================
+This module contains all data validation models, request payloads, response schemas,
+and internal telemetry structures used across the EduFlow AI multi-agent service.
+
+Why we use Pydantic models:
+1. Strict Schema Enforcement:
+   - Rejects invalid or corrupt incoming JSON payloads automatically before execution.
+2. Anti-Hallucination & Grounding:
+   - Grounded models require evidence strings, source references, and learning objectives.
+3. Contract Safety with Frontend / Backend:
+   - Guarantees type consistency between the .NET backend, React/Next frontend, and AI microservice.
+"""
+
+# Import standard type annotations for collections, optionals, and key-value mappings
 from typing import List, Optional, Dict, Any, Literal
+# Import Pydantic's BaseModel for declarative data modeling and Field for metadata/validation rules
 from pydantic import BaseModel, Field
 
-# -----------------------------------------------------------------------------
+
+# =============================================================================
 # 1. Base Logs & Agent Topology Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class AgentExecutionLog(BaseModel):
+    """
+    Standardized execution audit log generated whenever an agent runs a task.
+    
+    Why we use this model:
+    - Tracks latency, pass/fail status, and a human-readable summary for full auditability.
+    - Attached to workflow responses to give instructors and developers visibility into agent actions.
+    """
+    # Name of the agent that performed the execution (e.g. "Coordinator / Planner Agent")
     agent_name: str
+    
+    # Duration of the agent's execution in milliseconds (for latency monitoring & SLA enforcement)
     execution_time_ms: int
+    
+    # Concise narrative summary of what the agent achieved or why it failed
     summary: str
+    
+    # Boolean flag indicating whether the agent task succeeded (True) or encountered an issue (False)
     passed: bool
+    
+    # Optional dictionary containing extra debugging details, stack traces, or step metrics
     details: Optional[Dict[str, Any]] = None
 
+
 class AgentTopologyNode(BaseModel):
+    """
+    Represents a single agent node in the multi-agent system architecture graph.
+    
+    Why we use this model:
+    - Enables the frontend / admin dashboard to render an interactive architecture diagram of all 7 agents.
+    """
+    # Unique identifier of the agent node (e.g., 'coordinator-planner', 'domain-analysis')
     id: str
+    
+    # Display name of the agent
     name: str
+    
+    # High-level description of the agent's primary responsibility
     role: str
+    
+    # Development team member or domain owner responsible for this agent
     ownership: str
+    
+    # Operational status of the agent (e.g., "Active", "Degraded", "Offline")
     status: str = "Active"
+    
+    # List of key functional capabilities provided by this agent
     capabilities: List[str]
 
+
 class AgentTopologyEdge(BaseModel):
+    """
+    Represents a directional communication channel or data flow between two agents.
+    
+    Why we use this model:
+    - Visualizes the interconnections and delegation paths in the multi-agent topology.
+    """
+    # Source node ID initiating the communication (e.g., 'coordinator-planner')
     source: str
+    
+    # Target node ID receiving the data or delegated task (e.g., 'domain-analysis')
     target: str
+    
+    # Descriptive label explaining the data payload passed along this edge
     label: str
 
+
 class AgentTopologyResponse(BaseModel):
+    """
+    Response schema returning the full interactive multi-agent network topology.
+    """
+    # Name of the service providing the multi-agent system (e.g., "EduFlow Multi-Agent System")
     service_name: str
+    
+    # Overall operational health of the multi-agent system ("Healthy", "Degraded")
     status: str
+    
+    # Current version number of the multi-agent service
     version: str
+    
+    # List of all 7 interconnected agent nodes
     nodes: List[AgentTopologyNode]
+    
+    # List of all directional communication edges connecting the agent nodes
     edges: List[AgentTopologyEdge]
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 2. Planner & Tool Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class PlanStepModel(BaseModel):
+    """
+    Individual step in a multi-agent execution plan generated by the Coordinator / Planner Agent.
+    
+    Why we use this model:
+    - Ensures planner plans are structured, typed, and checked against the tool whitelist.
+    """
+    # Step sequence identifier (e.g., "1", "2")
     stepId: str
+    
+    # The action verb or registered tool name to execute
     action: str
+    
+    # The specific agent role authorized to execute this step
     owner: str
+    
+    # Input parameters required for executing the step
     params: Dict[str, Any] = Field(default_factory=dict)
 
+
 class PlannerOutput(BaseModel):
+    """
+    Output model produced by the Coordinator / Planner Agent containing the decomposed plan.
+    """
+    # Ordered list of discrete execution steps
     steps: List[PlanStepModel]
+    
+    # Total estimated study / execution hours allocated for this plan
     total_estimated_hours: float = 0.0
+    
+    # Architectural rationale explaining why the planner structured the steps in this manner
     rationale: str = ""
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 3. Domain Analysis Telemetry & Grounded Output Schemas
-# -----------------------------------------------------------------------------
-class LearningGapItem(BaseModel):
-    topic: str
-    accuracy_pct: float
-    evidence: str  # Linked to specific test scores or mistakes
+# =============================================================================
 
-class StrengthItem(BaseModel):
+class LearningGapItem(BaseModel):
+    """
+    Represents an identified student knowledge gap, strictly backed by empirical evidence.
+    
+    Why we use this model:
+    - Anti-hallucination requirement: Every gap MUST include verifiable evidence from quizzes/mistakes.
+    """
+    # Topic or concept where the student is struggling (e.g., "PostgreSQL Composite Indexes")
     topic: str
+    
+    # Measured accuracy percentage on this topic (e.g., 45.0%)
     accuracy_pct: float
+    
+    # Verifiable evidence string linked to specific test scores, misconceptions, or error logs
     evidence: str
 
+
+class StrengthItem(BaseModel):
+    """
+    Represents an area of mastery where the student demonstrates strong competency.
+    """
+    # Topic or concept where the student excels (e.g., "Clean Architecture Domain Boundaries")
+    topic: str
+    
+    # Measured accuracy percentage on this topic (e.g., 90.0%)
+    accuracy_pct: float
+    
+    # Verifiable evidence supporting the high mastery assessment
+    evidence: str
+
+
 class DomainFeatureInputs(BaseModel):
+    """
+    The 8 core student telemetry feature inputs ingested by the Domain Analysis Agent.
+    
+    Why we use this model:
+    - Encapsulates student behavioral, academic, and temporal data for multi-dimensional diagnostic evaluation.
+    """
+    # 1. Historical scores on recent diagnostic quizzes (e.g., [65.0, 70.0])
     recent_quiz_scores: List[float] = Field(default_factory=lambda: [65.0, 70.0])
+    
+    # 2. Topic-level accuracy mappings (e.g., {"PostgreSQL Composite Indexes": 45.0})
     topic_level_performance: Dict[str, float] = Field(default_factory=lambda: {"PostgreSQL Composite Indexes": 45.0, "EF Core Migrations": 85.0})
+    
+    # 3. List of completed lesson IDs in the current module
     lesson_completion: List[str] = Field(default_factory=lambda: ["MOD-01-L01", "MOD-01-L02"])
+    
+    # 4. Challenge attempt vs completion statistics
     challenge_completion: Dict[str, Any] = Field(default_factory=lambda: {"completed": 3, "attempted": 4})
+    
+    # 5. Current consecutive daily study streak count
     streak: int = 4
+    
+    # 6. XP earned over recent days / sessions to evaluate learning velocity
     xp_trend: List[int] = Field(default_factory=lambda: [50, 60, 120, 90])
-    time_on_task: float = 185.0  # Minutes
+    
+    # 7. Total active learning time on task in minutes
+    time_on_task: float = 185.0
+    
+    # 8. Specific error messages or misconceptions logged during recent exercises
     recent_mistakes: List[str] = Field(default_factory=lambda: ["Missed leftmost prefix index ordering in query planner"])
 
+
 class DomainAnalysisOutput(BaseModel):
+    """
+    Structured output produced by the Domain Analysis Agent after processing student telemetry.
+    """
+    # Grounded list of diagnosed learning gaps requiring remediation
     learningGaps: List[LearningGapItem]
+    
+    # Grounded list of verified topic strengths
     strengths: List[StrengthItem]
-    recommendedDifficulty: str = "medium"  # easy | medium | hard | boss
-    engagementState: str = "healthy"       # healthy | at_risk | inactive | surging
-    nextBestAction: str = "CHALLENGE"      # LESSON | QUIZ | CHALLENGE | LAB | STREAK_PROTECT | COACH_NUDGE
+    
+    # Calibrated challenge difficulty recommendation: "easy" | "medium" | "hard" | "boss"
+    recommendedDifficulty: str = "medium"
+    
+    # Evaluated student engagement state: "healthy" | "at_risk" | "inactive" | "surging"
+    engagementState: str = "healthy"
+    
+    # Deterministic next best learning action: "LESSON" | "QUIZ" | "CHALLENGE" | "LAB" | "STREAK_PROTECT" | "COACH_NUDGE"
+    nextBestAction: str = "CHALLENGE"
+    
+    # Cognitive load metric (0.0 to 1.0) indicating perceived learner fatigue or difficulty
     cognitiveLoadIndex: float = 0.65
+    
+    # Overall evaluated mastery level: "Novice" | "Intermediate" | "Advanced"
     masteryLevel: str = "Intermediate"
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 4. Deterministic Validation Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class ValidationCheck(BaseModel):
+    """
+    Output model produced by the Validation & Safety Guard Agent.
+    
+    Why we use this model:
+    - Provides a multi-layer verification summary before any AI output can be presented or persisted.
+    - Implements deterministic-first guardrails (XP caps, schema checks, isolation boundaries).
+    """
+    # True if all deterministic validation layers passed without hard errors; False otherwise
     passed: bool
+    
+    # List of critical error messages that block workflow execution
     errors: List[str] = []
+    
+    # List of non-fatal pedagogical warnings or recommendations
     warnings: List[str] = []
+    
+    # Count of deterministic validation rules evaluated
     deterministic_rule_count: int = 5
+    
+    # ISO-8601 timestamp recording when validation was performed
     checked_at: Optional[str] = None
+    
+    # Flag indicating whether human instructor approval is required before execution
     requires_human_approval: bool = True
+    
+    # Named validation layers verified during this evaluation pass
     validated_layers: List[str] = [
         "1. JSON Schema Integrity",
         "2. Course Curriculum Reference",
@@ -99,283 +282,766 @@ class ValidationCheck(BaseModel):
     ]
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 5. Human Approval & Workflow State Machine Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class WorkflowDecisionRequest(BaseModel):
+    """
+    Incoming request payload when a human instructor reviews a pending AI proposal.
+    """
+    # The instructor's decision: 'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED'
     decision: str = Field(..., description="'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED'")
+    
+    # Optional feedback or specific revision guidance provided by the instructor
     comments: Optional[str] = None
+    
+    # Identifier of the instructor performing the review
     reviewer_id: Optional[str] = "Instructor-1"
 
+
 class WorkflowDecisionResponse(BaseModel):
+    """
+    Response returned after the state machine successfully processes an instructor's review decision.
+    """
+    # The unique ID of the workflow that was reviewed
     workflow_id: str
+    
+    # Previous state prior to this transition (e.g., "PENDING_APPROVAL")
     previous_status: str
+    
+    # New state resulting from the decision (e.g., "APPROVED", "REVISION_REQUESTED")
     current_status: str
+    
+    # The decision recorded ('APPROVED' | 'REJECTED' | 'REVISION_REQUESTED')
     decision: str
+    
+    # Identifier of the instructor who submitted the decision
     reviewer_id: Optional[str]
+    
+    # Feedback comments recorded during the transition
     comments: Optional[str]
+    
+    # ISO-8601 timestamp of the transition
     transition_timestamp: str
+    
+    # Human-readable confirmation message
     message: str
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 6. Study Plan Orchestration Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class StudyPlanRequest(BaseModel):
+    """
+    Incoming request payload to generate a personalized multi-week study plan.
+    """
+    # Unique UUID of the requesting student
     student_id: str = Field(..., description="UUID of the requesting student")
+    
+    # Unique UUID of the course syllabus
     course_id: str = Field(..., description="UUID of the course")
+    
+    # Student's display name
     student_name: str = "Student"
+    
+    # Student's self-stated learning goal (e.g., "Prepare for Midterm on PostgreSQL Indexing")
     target_goal: str = Field(..., min_length=1, description="Student's stated learning goal")
+    
+    # Target hours per week the student can commit (bounded between 1.0 and 40.0 hours)
     hours_per_week: float = Field(default=8.0, ge=1.0, le=40.0)
+    
+    # Total duration of the study plan in weeks (bounded between 1 and 16 weeks)
     target_weeks: int = Field(default=2, ge=1, le=16)
 
+
 class PlanMilestone(BaseModel):
+    """
+    High-level milestone phase within a generated study plan.
+    """
+    # Sequential milestone number (e.g., 1, 2)
     milestone_id: int
+    
+    # Descriptive title for the milestone phase
     title: str
+    
+    # Key curriculum topics targeted in this milestone
     target_topics: List[str]
+    
+    # Total estimated study hours allocated for this milestone
     estimated_hours: float
 
+
 class GapAnalysisResult(BaseModel):
+    """
+    Intermediate gap analysis result generated during study plan formulation.
+    """
+    # List of diagnosed weak topics
     weak_areas: List[str]
+    
+    # Current estimated progress percentage through prerequisite topics
     current_progress_pct: float
+    
+    # Recommended pedagogical focal point
     recommended_focus: str
+    
+    # Evaluated mastery level ("Novice", "Intermediate", "Advanced")
     mastery_level: str = "Intermediate"
+    
+    # Estimated cognitive load index
     cognitive_load_index: float = 0.65
 
+
 class StudyPlanActivity(BaseModel):
+    """
+    Specific learning activity scheduled on a specific day of the study plan.
+    """
+    # Day index within the study plan (e.g., 1, 3, 5, 7)
     day_number: int
+    
+    # Title of the activity
     activity_title: str
+    
+    # Detailed instructions or pedagogical objective
     description: str
-    activity_type: str  # Lesson | Quiz | Lab | Self-Test | Boss
+    
+    # Type of learning activity: "Lesson" | "Quiz" | "Lab" | "Self-Test" | "Boss"
+    activity_type: str
+    
+    # Estimated time to complete the activity in minutes
     estimated_minutes: int = 45
+    
+    # Gamification XP reward granted upon completion (strictly capped by platform rules <= 150)
     xp_reward: int = 40
 
+
 class StudyPlanProposalResponse(BaseModel):
+    """
+    Final proposal response for a generated study plan, awaiting instructor approval.
+    """
+    # Unique workflow tracking identifier
     workflow_id: str
+    
+    # Student ID associated with the plan
     student_id: str
+    
+    # Course ID associated with the plan
     course_id: str
+    
+    # Target learning goal
     target_goal: str
+    
+    # List of progressive milestone phases
     milestones: List[PlanMilestone]
+    
+    # Detailed diagnostic gap analysis
     gap_analysis: GapAnalysisResult
+    
+    # Daily schedule of learning activities
     schedule: List[StudyPlanActivity]
+    
+    # Results of the deterministic safety and validation checks
     validation: ValidationCheck
+    
+    # Full multi-agent execution audit trail
     audit_trail: List[AgentExecutionLog]
+    
+    # Initial status (defaults to "PendingInstructorApproval")
     status: str = "PendingInstructorApproval"
+    
+    # Optional snapshot of the LangGraph shared blackboard state
     shared_state: Optional[Dict[str, Any]] = None
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 7. Adaptive Challenge Generation Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class AdaptiveChallengeRequest(BaseModel):
+    """
+    Incoming request to generate a calibrated adaptive micro-challenge.
+    """
+    # UUID of the student taking the challenge
     student_id: str
+    
+    # UUID of the course
     course_id: str
+    
+    # Current gamification level of the student
     student_level: int = 1
+    
+    # Target topic where remediation is needed
     weak_topic: str = "Clean Architecture"
-    target_difficulty: str = "Medium"  # Easy | Medium | Hard | Boss
+    
+    # Desired difficulty level: "Easy" | "Medium" | "Hard" | "Boss"
+    target_difficulty: str = "Medium"
+
 
 class ChallengeQuestionItem(BaseModel):
+    """
+    Single assessment question item within an adaptive challenge.
+    """
+    # The question prompt text
     question_text: str
+    
+    # List of available answer options
     options: List[str]
+    
+    # Zero-based index indicating the correct option
     correct_index: int
+    
+    # Pedagogical explanation of why the correct answer is right
     explanation: str
+    
+    # Points awarded for answering correctly
     points: int = 10
 
+
 class AdaptiveChallengeResponse(BaseModel):
+    """
+    Response containing a fully assembled adaptive micro-challenge.
+    """
+    # Unique challenge identifier
     challenge_id: str
+    
+    # Unique workflow identifier
     workflow_id: str
+    
+    # Title of the challenge quest
     title: str
+    
+    # Engaging description of the challenge task
     description: str
+    
+    # Difficulty setting ("Easy", "Medium", "Hard", "Boss")
     difficulty: str
+    
+    # XP reward for completing the challenge (strictly <= 150)
     xp_reward: int
+    
+    # In-game coin reward for completing the challenge (strictly <= 100)
     coin_reward: int
+    
+    # Time limit to complete the challenge in minutes
     time_limit_minutes: int
+    
+    # List of calibrated question items
     questions: List[ChallengeQuestionItem]
+    
+    # Flag indicating whether deterministic validation passed
     validation_passed: bool
+    
+    # Detailed validation results
     validation: Optional[ValidationCheck] = None
+    
+    # Multi-agent audit trail
     audit_trail: List[AgentExecutionLog] = []
+    
+    # Review status ("PendingInstructorApproval")
     status: str = "PendingInstructorApproval"
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 8. Automated Quiz & Assessment Schemas (Hierarchical & Customizable)
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class GamificationRewardConfig(BaseModel):
+    """
+    Configuration for gamification rewards tied to a quiz or assessment.
+    
+    Why we use this model:
+    - Enforces server-defined economy bounds (Topic: 30-50XP, Module: 75-100XP, Course: 150XP, Boss: 200XP).
+    """
+    # XP rewarded for passing the quiz
     xp_reward: int = 60
+    
+    # Coins rewarded for passing the quiz
     coin_reward: int = 25
+    
+    # Whether passing this quiz counts towards maintaining the daily streak
     streak_bonus_eligible: bool = True
+    
+    # Optional unlockable achievement badge name
     badge_trigger_name: Optional[str] = "Quiz Champion"
+    
+    # Minimum percentage score required to earn rewards (e.g., 70%)
     passing_score_percent: int = 70
 
+
 class QuestionOptionModel(BaseModel):
+    """
+    Detailed model for an individual question option, supporting multiple select and rich ordering.
+    """
+    # Option text content
     text: str
+    
+    # True if this option is part of the correct answer set
     isCorrect: bool = False
+    
+    # Display position index (1-based)
     displayOrder: int = 1
 
+
 class QuizQuestionModel(BaseModel):
+    """
+    Comprehensive quiz question model supporting 10 customizable question formats and Bloom's taxonomy.
+    """
+    # Unique question sequence identifier
     question_id: int
+    
+    # Question stem or prompt text
     question_text: str
-    question_type: str = "MULTIPLE_CHOICE"  # MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER | FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED | TIMED_CHALLENGE
-    blooms_taxonomy_level: str = "Application"  # Knowledge | Comprehension | Application | Analysis | Synthesis | Evaluation
+    
+    # Question format type: MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER |
+    # FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED | TIMED_CHALLENGE | MIXED
+    question_type: str = "MULTIPLE_CHOICE"
+    
+    # Bloom's Taxonomy cognitive dimension: Knowledge | Comprehension | Application | Analysis | Synthesis | Evaluation
+    blooms_taxonomy_level: str = "Application"
+    
+    # Simple list of option strings (for straightforward rendering)
     options: List[str] = Field(default_factory=list)
+    
+    # Detailed option models with correctness flags and display order
     option_details: List[QuestionOptionModel] = Field(default_factory=list)
+    
+    # Zero-based index of correct option (for single-choice questions)
     correct_index: int = 0
+    
+    # String representation of the correct answer (for fill-in-the-blank / matching)
     correct_answer: Optional[str] = None
+    
+    # Diagnostic rationales explaining why incorrect distractor options are wrong
     distractor_rationales: List[str] = Field(default_factory=list)
+    
+    # Pedagogical explanation of the solution
     explanation: str = ""
+    
+    # Points awarded for this question
     points: int = 10
+    
+    # Marks assigned for grading
     marks: int = 10
+    
+    # Difficulty rating ("EASY", "MEDIUM", "HARD", "BOSS")
     difficulty: str = "MEDIUM"
+    
+    # Content item UUID from which this question was grounded (anti-hallucination)
     sourceContentId: Optional[str] = None
+    
+    # Version tag of the curriculum content source
     sourceContentVersion: Optional[str] = "v1.0"
+    
+    # Specific accredited learning objective ID (e.g., "LO-01", "LO-02")
     learningObjective: Optional[str] = None
+    
+    # Textual curriculum citation
     sourceReference: Optional[str] = None
+    
+    # Optional code snippet for programming / SQL inspection questions
     code_snippet: Optional[str] = None
+    
+    # Additional key-value metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
+
 class QuestionDistributionConfig(BaseModel):
+    """
+    Configuration specifying the desired distribution of question types and difficulties in a quiz.
+    """
+    # Map of question format names to desired question counts
     question_types: Dict[str, int] = Field(default_factory=lambda: {"MULTIPLE_CHOICE": 3, "TRUE_FALSE": 1, "MULTIPLE_SELECT": 1})
+    
+    # Map of difficulty levels to desired question counts
     difficulty: Dict[str, int] = Field(default_factory=lambda: {"EASY": 1, "MEDIUM": 3, "HARD": 1})
 
+
 class DiagnosticQuizRequest(BaseModel):
+    """
+    Incoming request payload for generating hierarchical diagnostic / summative quizzes.
+    """
+    # Course UUID
     course_id: Optional[str] = "44444444-4444-4444-4444-444444444444"
+    
+    # Path to uploaded PDF for extraction
+    pdf_path: Optional[str] = None
+    
+    # Course title
     course_title: Optional[str] = "Software Engineering & Architecture"
-    scope_type: str = "TOPIC"  # "COURSE" | "MODULE" | "TOPIC" | "CONTENT_ITEM"
+    
+    # Scope granularity: "COURSE" | "MODULE" | "TOPIC" | "CONTENT_ITEM"
+    scope_type: str = "TOPIC"
+    
+    # Scope UUID identifier
     scope_id: Optional[str] = None
+    
+    # Module UUID
     module_id: Optional[str] = None
+    
+    # Module display title
     module_title: Optional[str] = "Relational Modeling & Indexing"
+    
+    # Topic UUID
     topic_id: Optional[str] = None
+    
+    # Topic display title
     topic_title: Optional[str] = None
+    
+    # Lesson display title
     lesson_title: Optional[str] = None
+    
+    # Scope level name ("Course", "Module", "Topic", "Lesson")
     scope_level: str = "Topic"
+    
+    # List of target curriculum topics to assess
     target_topics: List[str] = Field(default_factory=lambda: ["PostgreSQL Schema Design", "B-Tree Indexes"])
+    
+    # List of learning objectives to target
     learning_objectives: List[str] = Field(default_factory=lambda: ["LO-01", "LO-02"])
-    quiz_type: str = "MIXED"  # MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER | FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED | TIMED_CHALLENGE | MIXED
+    
+    # Overall quiz format type ("Diagnostic", "Summative", "Formative", "MicroQuiz", "MIXED")
+    quiz_type: str = "MIXED"
+    
+    # Specific question formats allowed in this quiz
     question_types: List[str] = Field(default_factory=lambda: ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"])
-    difficulty: str = "MEDIUM"  # "EASY" | "MEDIUM" | "HARD" | "BOSS"
+    
+    # Target difficulty: "EASY" | "MEDIUM" | "HARD" | "BOSS"
+    difficulty: str = "MEDIUM"
+    
+    # Target Bloom's taxonomy focus (e.g., "Application", "Analysis")
     blooms_taxonomy_focus: str = "Application"
+    
+    # Total number of questions to synthesize (1 to 25)
     question_count: int = Field(default=5, ge=1, le=25)
+    
+    # Time limit in minutes (2 to 90 minutes)
     time_limit_minutes: int = Field(default=15, ge=2, le=90)
+    
+    # Time limit in seconds (60 to 5400 seconds)
     time_limit_seconds: int = Field(default=900, ge=60, le=5400)
+    
+    # Number of quiz attempts permitted
     attempts_allowed: int = Field(default=3, ge=1, le=10)
+    
+    # Minimum percentage score required to pass (1 to 100%)
     pass_percentage: int = Field(default=70, ge=1, le=100)
+    
+    # Whether to shuffle question order for students
     randomize_questions: bool = True
+    
+    # Whether to shuffle option order for students
     randomize_options: bool = True
+    
+    # Optional distribution matrix
     distribution: Optional[QuestionDistributionConfig] = None
+    
+    # Optional custom gamification reward configuration
     gamification: Optional[GamificationRewardConfig] = None
 
+
 class DiagnosticQuizResponse(BaseModel):
+    """
+    Response schema returning a synthesized, validated quiz assessment ready for review.
+    """
+    # Unique quiz identifier
     quiz_id: str
+    
+    # Unique workflow tracking identifier
     workflow_id: str
+    
+    # Title of the generated quiz
     title: str
+    
+    # Granularity scope type ("COURSE", "MODULE", "TOPIC", "CONTENT_ITEM")
     scope_type: str = "TOPIC"
+    
+    # Scope UUID identifier
     scope_id: Optional[str] = None
+    
+    # Scope level display name
     scope_level: str = "Topic"
+    
+    # Target topics covered by the quiz
     target_topics: List[str]
+    
+    # Difficulty setting
     difficulty: str
+    
+    # Quiz type classification
     quiz_type: str = "MIXED"
+    
+    # List of synthesized question models
     questions: List[QuizQuestionModel]
+    
+    # Total marks available
     total_points: int
+    
+    # Time limit in minutes
     time_limit_minutes: int = 15
+    
+    # Time limit in seconds
     time_limit_seconds: int = 900
+    
+    # Passing percentage required
     pass_percentage: int = 70
+    
+    # Number of attempts allowed
     attempts_allowed: int = 3
+    
+    # Question randomization flag
     randomize_questions: bool = True
+    
+    # Option randomization flag
     randomize_options: bool = True
+    
+    # Gamification rewards granted upon passing
     gamification_rewards: GamificationRewardConfig
+    
+    # True if deterministic validation passed
     validation_passed: bool
+    
+    # Detailed validation summary
     validation: ValidationCheck
+    
+    # Agent execution audit log
     audit_trail: List[AgentExecutionLog] = []
-    status: str = "READY_FOR_REVIEW"  # DRAFT -> AI_GENERATING -> VALIDATING -> READY_FOR_REVIEW -> APPROVED -> PUBLISHED
+    
+    # Lifecycle status (e.g. "READY_FOR_REVIEW" or "PendingInstructorApproval")
+    status: str = "READY_FOR_REVIEW"
+
 
 class SingleQuestionRegenerateRequest(BaseModel):
+    """
+    Request payload when an instructor wishes to regenerate a single question using custom prompt guidance.
+    """
+    # The ID of the question to replace
     question_id: int
+    
+    # Specific concept to focus on during regeneration
     focus_topic: Optional[str] = None
+    
+    # Natural language instructions from the instructor (e.g. "Make it more scenario-based")
     prompt_guidance: Optional[str] = None
+    
+    # Desired question format
     target_type: Optional[str] = "MULTIPLE_CHOICE"
+    
+    # Desired difficulty level
     target_difficulty: Optional[str] = "MEDIUM"
+    
+    # Learning objective to align with
     learning_objective: Optional[str] = None
+    
+    # Curriculum source content ID
     source_content_id: Optional[str] = None
 
+
 class SingleQuestionRegenerateResponse(BaseModel):
+    """
+    Response containing the newly regenerated question and its execution trace.
+    """
+    # The newly generated replacement question
     question: QuizQuestionModel
+    
+    # Whether validation passed for the new question
     validation_passed: bool
+    
+    # Audit log of the regeneration execution
     audit_log: AgentExecutionLog
 
 
-
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 9. Retention & Gamification Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class RetentionAnalysisRequest(BaseModel):
+    """
+    Incoming request to analyze student dropout risk and habit retention.
+    """
+    # UUID of the student to analyze
     student_id: str
+    
+    # Current active daily streak count
     current_streak: int = 0
+    
+    # Number of consecutive days since last active session
     days_inactive: int = 0
+    
+    # Average accuracy percentage on recent quizzes
     recent_quiz_accuracy: float = 80.0
+    
+    # Total XP earned in the last 7 days (XP velocity)
     xp_velocity_7d: int = 120
 
+
 class RetentionIntervention(BaseModel):
-    action_type: str  # "StreakShield" | "XpBoosterQuest" | "RefresherMicroChallenge" | "TutorNudge"
+    """
+    Personalized motivational intervention prescribed to re-engage the learner.
+    """
+    # Intervention type: "StreakShield" | "XpBoosterQuest" | "RefresherMicroChallenge" | "TutorNudge"
+    action_type: str
+    
+    # Engaging title of the intervention prompt
     title: str
+    
+    # Motivational message delivered to the student
     message: str
+    
+    # XP reward for completing the retention action
     reward_xp: int = 50
+    
+    # Coin reward for completing the retention action
     reward_coins: int = 20
-    urgency_level: str = "Medium"  # Low | Medium | High | Critical
+    
+    # Urgency rating: "Low" | "Medium" | "High" | "Critical"
+    urgency_level: str = "Medium"
+
 
 class RetentionRiskResponse(BaseModel):
+    """
+    Response schema summarizing retention analysis and recommended interventions.
+    """
+    # Unique workflow identifier
     workflow_id: str
+    
+    # Student UUID
     student_id: str
-    churn_risk_score: float  # 0.0 to 1.0
-    streak_health: str  # "Healthy" | "AtRisk" | "Broken" | "Recovered"
+    
+    # Evaluated dropout risk score (0.0 to 1.0, where 1.0 indicates severe churn risk)
+    churn_risk_score: float
+    
+    # Evaluated streak health state: "Healthy" | "AtRisk" | "Broken" | "Recovered"
+    streak_health: str
+    
+    # List of tailored retention interventions
     recommended_interventions: List[RetentionIntervention]
+    
+    # Validation status
     validation_passed: bool
+    
+    # Execution audit trail
     audit_trail: List[AgentExecutionLog] = []
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 10. AI Coach Chat Schemas
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class CoachChatRequest(BaseModel):
+    """
+    Incoming request when a student messages the interactive AI Coach (EduBuddy).
+    """
+    # UUID of the student sending the message
     student_id: str
+    
+    # UUID of the current course context
     course_id: str
+    
+    # Natural language question or message from the student
     message: str
 
+
 class CoachChatResponse(BaseModel):
+    """
+    Response returned by the AI Coach containing conversational guidance and next actions.
+    """
+    # Natural language pedagogical reply to the student
     reply: str
+    
+    # Concrete next study action suggested by the coach
     suggested_action: Optional[str] = None
+    
+    # Optional challenge ID recommended for immediate practice
     recommended_challenge_id: Optional[str] = None
+    
+    # Knowledge gap topic detected from the student's question
     identified_weak_topic: Optional[str] = None
+    
+    # Coach confidence score in the provided explanation (0.0 to 1.0)
     confidence_score: float = 0.95
+    
+    # Audit log of the coach execution
     audit_log: Optional[AgentExecutionLog] = None
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 11. Next Best Action (Game Loop Learning Orchestration)
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 class SkillMasteryTelemetryItem(BaseModel):
+    """
+    Telemetry tracking student competency percentage across individual curriculum skills.
+    """
+    # Topic or skill title (e.g. "Recursion & Trees")
     topic_name: str
+    
+    # Optional fine-grained sub-skill name
     skill_name: Optional[str] = None
+    
+    # Competency percentage (0 to 100%)
     mastery_percentage: int
+    
+    # Total historical question attempts on this skill
     total_attempts: int = 0
+    
+    # Total correct attempts on this skill
     correct_attempts: int = 0
 
+
 class NextBestActionRequest(BaseModel):
+    """
+    Incoming request to compute the optimal next action in the learning game loop.
+    """
+    # Student UUID
     student_id: str
+    
+    # Student display name
     student_name: str = "Alex Rivera"
+    
+    # Current gamification level
     level: int = 12
+    
+    # Cumulative XP points
     total_xp: int = 6420
+    
+    # Current daily streak count
     streak: int = 14
+    
+    # Active course name
     course_name: str = "Python Programming & Architecture"
+    
+    # List of skill telemetry items representing the student's mastery matrix
     skills: List[SkillMasteryTelemetryItem] = Field(default_factory=list)
 
-class NextBestActionResponse(BaseModel):
-    action_type: str  # TAKE_REMEDIATION_QUIZ | TAKE_BOSS_CHALLENGE | WATCH_LESSON | REVIEW_TOPIC | DO_CHALLENGE | REST
-    title: str
-    description: str
-    target_topic: str
-    reason: str
-    estimated_time_minutes: int = 10
-    reward_xp: int = 75
-    edubuddy_message: str
-    audit_log: AgentExecutionLog
 
+class NextBestActionResponse(BaseModel):
+    """
+    Deterministic next best action recommended by the AI Next Best Action Engine.
+    """
+    # Action type verb: TAKE_REMEDIATION_QUIZ | TAKE_BOSS_CHALLENGE | WATCH_LESSON | REVIEW_TOPIC | DO_CHALLENGE | REST
+    action_type: str
+    
+    # Display title for the action card in the UI
+    title: str
+    
+    # Description of what the student will do
+    description: str
+    
+    # Specific curriculum topic targeted by this action
+    target_topic: str
+    
+    # Clear rationale explaining why this action was selected
+    reason: str
+    
+    # Estimated completion duration in minutes
+    estimated_time_minutes: int = 10
+    
+    # XP points awarded upon completion
+    reward_xp: int = 75
+    
+    # Personalized companion dialogue from EduBuddy AI Coach
+    edubuddy_message: str
+    
+    # Audit log of the Next Best Action evaluation
+    audit_log: AgentExecutionLog

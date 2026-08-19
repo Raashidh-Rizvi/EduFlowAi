@@ -1,4 +1,25 @@
+"""
+===============================================================================
+EduFlow AI - Automated Test Suite & Multi-Agent Verification
+===============================================================================
+This module contains 24 automated unit and integration tests verifying:
+1. Agent Roles & Topology (`AgentTopologyRegistry`)
+2. Shared Agent State (11 Core Blackboard Fields)
+3. LangGraph Pipeline End-to-End Execution
+4. Planner Agent & Tool Whitelisting Enforcement
+5. Tool Registry Execution & RBAC Permission Denial
+6. Domain Analysis Grounded Telemetry & Anti-Hallucination Evidence
+7. Deterministic Validation & Platform Economy Limits (Max XP = 150)
+8. Human Approval State Machine Transitions & Feedback Loops
+9. Error Classification & Resilience (Exponential Backoff with Jitter)
+10. Observability Collector & PII Redaction
+11. Study Plan, Adaptive Challenge, Quiz, Retention & AI Coach Orchestration
+"""
+
+# Import pytest testing framework
 import pytest
+
+# Import all Pydantic schemas under test
 from models.schemas import (
     StudyPlanRequest, 
     AdaptiveChallengeRequest, 
@@ -8,7 +29,10 @@ from models.schemas import (
     DomainFeatureInputs,
     WorkflowDecisionRequest
 )
+# Import state models
 from models.state import SharedAgentState, WorkflowStatus
+
+# Import workflow orchestrators and active workflows store
 from graph.workflow import (
     StudyPlanOrchestrator, 
     AdaptiveChallengeOrchestrator, 
@@ -19,13 +43,21 @@ from graph.workflow import (
     LangGraphPipeline,
     ACTIVE_WORKFLOWS
 )
+
+# Import individual agent classes
 from agents.planner import CoordinatorPlannerAgent
 from agents.domain_analysis import DomainAnalysisAgent
 from agents.content_action import ActionToolAgent
 from agents.validation_guard import ValidationGuardAgent
 from agents.quiz_generator import QuizGeneratorAgent
+
+# Import tool registry
 from tools.registry import tool_registry, ToolRegistry
+
+# Import human approval state machine
 from graph.approval_state_machine import ApprovalStateMachine
+
+# Import classified error hierarchy
 from core.errors import (
     AIError,
     ValidationError,
@@ -36,20 +68,34 @@ from core.errors import (
     InvalidOutput,
     ApprovalTimeout
 )
+
+# Import resilience decorator
 from core.retry import retry_with_backoff
+
+# Import observability and privacy redaction functions
 from core.observability import redact_sensitive_info, redact_dict, ObservabilityCollector
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 1. Agent Roles & Topology Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_agent_topology_registry():
+    """
+    Verifies that the AgentTopologyRegistry correctly reports all 7 agents,
+    their capabilities, ownerships, and interconnected communication edges.
+    """
+    # Fetch topology response
     topology = AgentTopologyRegistry.get_topology()
 
+    # Assert service status is Healthy
     assert topology.status == "Healthy"
+    # Assert exactly 7 agent nodes exist in the architecture
     assert len(topology.nodes) == 7
+    # Assert at least 8 directional communication edges connect the agents
     assert len(topology.edges) >= 8
 
+    # Verify all expected agent names are present
     node_names = [n.name for n in topology.nodes]
     assert "Coordinator / Planner Agent" in node_names
     assert "Domain Analysis Agent" in node_names
@@ -57,10 +103,16 @@ def test_agent_topology_registry():
     assert "Validation & Safety Guard Agent" in node_names
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 2. Shared Agent State (11 Core Fields) Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_shared_agent_state_schema():
+    """
+    Verifies that the SharedAgentState encapsulates all 11 core blackboard fields
+    and serializes cleanly to a LangGraph-compatible dictionary.
+    """
+    # Initialize state with all 11 fields populated
     state = SharedAgentState(
         workflowId="wf-test-01",
         studentId="student-uuid-1",
@@ -75,7 +127,10 @@ def test_shared_agent_state_schema():
         status=WorkflowStatus.DRAFT.value
     )
 
+    # Convert to LangGraph dictionary
     state_dict = state.to_graph_dict()
+    
+    # Assert key fields are intact
     assert state_dict["workflowId"] == "wf-test-01"
     assert state_dict["status"] == "DRAFT"
     assert "objective" in state_dict
@@ -84,10 +139,14 @@ def test_shared_agent_state_schema():
     assert "approval" in state_dict
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 3. LangGraph Pipeline End-to-End Test
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_langgraph_pipeline_execution():
+    """
+    Verifies full execution of the LangGraph multi-agent pipeline from DRAFT to PENDING_APPROVAL.
+    """
     result_state = LangGraphPipeline.execute_workflow(
         student_id="student-uuid-123",
         objective={"goal": "Master EF Core transactions and PostgreSQL Indexes"},
@@ -100,20 +159,32 @@ def test_langgraph_pipeline_execution():
         requires_human_approval=True
     )
 
+    # Assert workflow ID was generated
     assert result_state.workflowId.startswith("wf-")
+    # Assert state reached PENDING_APPROVAL awaiting instructor review
     assert result_state.status == WorkflowStatus.PENDING_APPROVAL.value
+    # Assert planner created 4 steps
     assert len(result_state.plan) == 4
+    # Assert domain analysis diagnosed learning gaps
     assert "learningGaps" in result_state.analysis
+    # Assert candidate output contains generated challenge questions
     assert "questions" in result_state.candidateOutput
+    # Assert deterministic validation passed
     assert result_state.validation["passed"] is True
+    # Assert approval is required
     assert result_state.approval["required"] is True
+    # Assert observability metrics were attached
     assert "observabilityMetrics" in result_state.model_dump()
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 4. Planner Agent & Tool Whitelisting Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_planner_tool_whitelisting_success():
+    """
+    Verifies that the Planner Agent constructs plans where all steps are authorized.
+    """
     planner = CoordinatorPlannerAgent()
     plan_output, log = planner.build_execution_plan(
         objective={"goal": "Prepare for SQL Midterm"},
@@ -122,13 +193,18 @@ def test_planner_tool_whitelisting_success():
 
     assert len(plan_output.steps) == 4
     assert log.passed is True
+    # Assert every step owner is a recognized agent role
     assert all(step.owner in ["ACTION_TOOL", "DOMAIN_ANALYSIS", "VALIDATION_SAFETY", "COORDINATOR_PLANNER"] for step in plan_output.steps)
 
 
 def test_planner_rejects_invented_tools():
+    """
+    Verifies that the Planner Agent blocks invented or unauthorized tools.
+    """
     planner = CoordinatorPlannerAgent()
     from models.schemas import PlanStepModel
 
+    # Construct an illegal plan step with an unwhitelisted action
     invalid_steps = [
         PlanStepModel(stepId="1", action="HACK_DATABASE_ACCESS", owner="ACTION_TOOL")
     ]
@@ -137,10 +213,14 @@ def test_planner_rejects_invented_tools():
     assert "unauthorized/invented action" in str(exc.value)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 5. Tool Agent & Registry Permissions Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_tool_registry_execution():
+    """
+    Verifies that registered tools can be executed by authorized roles.
+    """
     tools = tool_registry.list_tools()
     tool_names = [t["name"] for t in tools]
     assert "get_course_content" in tool_names
@@ -151,7 +231,7 @@ def test_tool_registry_execution():
     assert "generate_feedback_draft" in tool_names
     assert "get_gamification_rules" in tool_names
 
-    # Test execution
+    # Test authorized execution of get_gamification_rules
     res, duration_ms = tool_registry.execute_tool(
         "get_gamification_rules",
         "VALIDATION_SAFETY",
@@ -162,16 +242,23 @@ def test_tool_registry_execution():
 
 
 def test_tool_registry_permission_denial():
-    # Attempting to call create_quiz_draft from an unauthorized role
+    """
+    Verifies that attempting to execute a tool from an unauthorized role is blocked with ValidationError.
+    """
+    # Attempting to call create_quiz_draft from an unauthorized student role
     with pytest.raises(ValidationError) as exc:
         tool_registry.execute_tool("create_quiz_draft", "UNAUTHORIZED_STUDENT_ROLE", {})
     assert "not authorized" in str(exc.value)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 6. Domain Analysis Telemetry & Grounded Evidence Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_domain_analysis_with_grounded_evidence():
+    """
+    Verifies that Domain Analysis Agent diagnoses gaps with verified data evidence (anti-hallucination).
+    """
     agent = DomainAnalysisAgent()
     features = DomainFeatureInputs(
         recent_quiz_scores=[45.0, 50.0],
@@ -180,7 +267,7 @@ def test_domain_analysis_with_grounded_evidence():
         challenge_completion={"completed": 1, "attempted": 3},
         streak=1,
         xp_trend=[20, 30],
-        time_on_task=20.0,  # Low time-on-task
+        time_on_task=20.0,
         recent_mistakes=["Missed index leftmost prefix rule"]
     )
 
@@ -189,24 +276,28 @@ def test_domain_analysis_with_grounded_evidence():
     assert log.passed is True
     assert len(output.learningGaps) >= 1
     assert "PostgreSQL Composite Indexes" in output.learningGaps[0].topic
-    assert "40.0%" in output.learningGaps[0].evidence  # Grounded in data
+    assert "40.0%" in output.learningGaps[0].evidence  # Grounded in empirical data
     assert len(output.strengths) >= 1
     assert "Clean Architecture" in output.strengths[0].topic
     assert output.engagementState == "at_risk"
     assert output.nextBestAction in ["STREAK_PROTECT", "CHALLENGE"]
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 7. Deterministic Validation & Economy Limits (Max XP = 150) Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_validation_rejects_excessive_xp_reward():
+    """
+    Verifies that Validation Guard blocks AI proposals exceeding the 150 XP economy cap.
+    """
     val_agent = ValidationGuardAgent()
 
     # AI proposes XP = 500 (Platform max = 150)
     draft_with_excess_xp = {
         "title": "Super Quest",
         "topic": "PostgreSQL Composite Indexes",
-        "xp_reward": 500,  # Violates platform rule
+        "xp_reward": 500,
         "coin_reward": 40
     }
 
@@ -218,9 +309,12 @@ def test_validation_rejects_excessive_xp_reward():
 
 
 def test_validation_rejects_safety_boundary_mutations():
+    """
+    Verifies that Validation Guard blocks unauthorized permission/grade mutation keys.
+    """
     val_agent = ValidationGuardAgent()
 
-    # AI attempts to mutate user permissions or alter final grade
+    # AI attempts to mutate user permissions or assign final grade directly
     illegal_mutation_draft = {
         "title": "Grade Bypass",
         "assign_grade": "A+",
@@ -232,10 +326,14 @@ def test_validation_rejects_safety_boundary_mutations():
     assert any("SAFETY_VIOLATION" in err for err in check.errors)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 8. Human Approval State Machine Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_approval_state_machine_happy_path():
+    """
+    Verifies standard valid lifecycle state transitions.
+    """
     # DRAFT -> VALIDATING -> PENDING_APPROVAL -> APPROVED -> EXECUTING -> COMPLETED
     t1 = ApprovalStateMachine.transition("DRAFT", "VALIDATING")
     assert t1["success"] is True
@@ -254,6 +352,9 @@ def test_approval_state_machine_happy_path():
 
 
 def test_approval_state_machine_rejection_and_revision():
+    """
+    Verifies rejection and revision feedback loop transitions.
+    """
     # PENDING_APPROVAL -> REJECTED
     t_rej = ApprovalStateMachine.transition("PENDING_APPROVAL", "REJECTED", reviewer_id="Inst-1", comments="Unsuitable topic")
     assert t_rej["success"] is True
@@ -267,15 +368,22 @@ def test_approval_state_machine_rejection_and_revision():
 
 
 def test_approval_state_machine_illegal_transition_blocked():
+    """
+    Verifies that attempting an illegal lifecycle transition raises ValidationError.
+    """
     with pytest.raises(ValidationError) as exc:
         ApprovalStateMachine.transition("DRAFT", "COMPLETED")
     assert "Illegal state transition" in str(exc.value)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 9. Error Classification & Resilience (Retry with Backoff) Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_error_classification_hierarchy():
+    """
+    Verifies retry eligibility flags across classified exception types.
+    """
     val_err = ValidationError("Bad format")
     assert val_err.is_retryable is False
 
@@ -290,6 +398,9 @@ def test_error_classification_hierarchy():
 
 
 def test_retry_with_backoff_decorator():
+    """
+    Verifies that retry_with_backoff retries transient errors and succeeds upon subsequent attempt.
+    """
     attempts = 0
 
     @retry_with_backoff(max_retries=2, initial_delay=0.01, multiplier=1.5, jitter=False)
@@ -306,6 +417,9 @@ def test_retry_with_backoff_decorator():
 
 
 def test_retry_with_backoff_fails_fast_on_non_retryable():
+    """
+    Verifies that retry_with_backoff fails immediately on deterministic, non-retryable errors.
+    """
     attempts = 0
 
     @retry_with_backoff(max_retries=3, initial_delay=0.01)
@@ -320,10 +434,14 @@ def test_retry_with_backoff_fails_fast_on_non_retryable():
     assert attempts == 1  # Should not retry non-retryable errors
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 10. AI Observability & PII Redaction Tests
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_observability_collector_and_redaction():
+    """
+    Verifies observability metrics collection and regex-based PII sanitization.
+    """
     collector = ObservabilityCollector("wf-obs-100")
     collector.record_agent_duration("Planner", 120)
     collector.record_tool_latency("get_course_content", 45)
@@ -346,10 +464,14 @@ def test_observability_collector_and_redaction():
     assert "[REDACTED_SECRET]" in sanitized
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
 # 11. Study Plan, Adaptive Challenge, Quiz, Retention End-to-End Orchestration
-# -----------------------------------------------------------------------------
+# =============================================================================
+
 def test_study_plan_pipeline_end_to_end():
+    """
+    Verifies complete end-to-end study plan proposal generation across 4 agents.
+    """
     request = StudyPlanRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
@@ -370,6 +492,9 @@ def test_study_plan_pipeline_end_to_end():
 
 
 def test_adaptive_challenge_generation():
+    """
+    Verifies adaptive challenge generation, question calibration, and XP reward limits.
+    """
     request = AdaptiveChallengeRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",
@@ -389,6 +514,9 @@ def test_adaptive_challenge_generation():
 
 
 def test_quiz_generator_agent():
+    """
+    Verifies hierarchical quiz assessment synthesis.
+    """
     request = DiagnosticQuizRequest(
         course_id="44444444-4444-4444-4444-444444444444",
         module_title="PostgreSQL Indexing & Optimization",
@@ -408,6 +536,9 @@ def test_quiz_generator_agent():
 
 
 def test_hierarchical_topic_and_module_quiz_generation():
+    """
+    Verifies topic-level micro-quizzes and module-level formative assessments.
+    """
     # 1. Topic-level micro-quiz
     topic_req = DiagnosticQuizRequest(
         topic_title="PostgreSQL B-Tree Indexes",
@@ -442,6 +573,9 @@ def test_hierarchical_topic_and_module_quiz_generation():
 
 
 def test_quiz_validation_enforces_gamification_xp_cap():
+    """
+    Verifies that excessive XP rewards in quizzes trigger validation failures.
+    """
     from models.schemas import GamificationRewardConfig
     val_agent = ValidationGuardAgent()
     quiz_agent = QuizGeneratorAgent()
@@ -466,8 +600,10 @@ def test_quiz_validation_enforces_gamification_xp_cap():
     assert any("INVALID_REWARD" in err for err in val_check.errors)
 
 
-
 def test_retention_agent_risk_interventions():
+    """
+    Verifies churn risk scoring and intervention generation in Retention Behavior Agent.
+    """
     request = RetentionAnalysisRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         current_streak=6,
@@ -485,6 +621,9 @@ def test_retention_agent_risk_interventions():
 
 
 def test_ai_coach_agent():
+    """
+    Verifies conversational tutoring and suggested study actions in AI Coach Agent.
+    """
     request = CoachChatRequest(
         student_id="33333333-3333-3333-3333-333333333333",
         course_id="44444444-4444-4444-4444-444444444444",

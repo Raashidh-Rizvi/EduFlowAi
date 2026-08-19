@@ -1,6 +1,29 @@
+"""
+===============================================================================
+EduFlow AI - LangGraph Multi-Agent Orchestration & Workflow Pipelines
+===============================================================================
+This module serves as the central orchestration engine connecting all 7 AI agents:
+1. `LangGraphPipeline`:
+   - Executes the 11-field `SharedAgentState` LangGraph graph pipeline:
+     [START] -> [Planner] -> [Domain Analysis] -> [Action Tool] -> [Validation Guard] -> [Human Gate] -> [END]
+2. Specific Domain Orchestrators:
+   - `StudyPlanOrchestrator`: Multi-week milestone and daily activity generation.
+   - `AdaptiveChallengeOrchestrator`: Targeted remediation micro-quests.
+   - `QuizGeneratorOrchestrator`: Hierarchical Bloom's taxonomy assessments.
+   - `RetentionOrchestrator`: Habit chain protection & churn risk interventions.
+   - `AiCoachOrchestrator`: Conversational tutoring with sub-agent delegation.
+3. `AgentTopologyRegistry`:
+   - Produces the complete visual and functional topology graph for dashboard rendering.
+"""
+
+# Import uuid for workflow identifier generation
 import uuid
+# Import time for timestamping and duration calculations
 import time
+# Import typing annotations for flexible dictionaries, lists, and optional fields
 from typing import Dict, Any, List, Optional
+
+# Import all Pydantic schemas for requests, responses, execution logs, and topology models
 from models.schemas import (
     StudyPlanRequest, 
     StudyPlanProposalResponse, 
@@ -18,7 +41,10 @@ from models.schemas import (
     AgentExecutionLog,
     DomainFeatureInputs
 )
+# Import state models: SharedAgentState, WorkflowStatus enum, and ApprovalRecord
 from models.state import SharedAgentState, WorkflowStatus, ApprovalRecord
+
+# Import all 7 concrete agent classes
 from agents.planner import CoordinatorPlannerAgent
 from agents.domain_analysis import DomainAnalysisAgent
 from agents.content_action import ActionToolAgent
@@ -26,12 +52,19 @@ from agents.validation_guard import ValidationGuardAgent
 from agents.quiz_generator import QuizGeneratorAgent
 from agents.retention_behavior import RetentionBehaviorAgent
 from agents.ai_coach import AiCoachAgent
+
+# Import Human Approval State Machine
 from graph.approval_state_machine import ApprovalStateMachine
+
+# Import core observability and resilience utilities
 from core.observability import ObservabilityCollector, redact_dict
 from core.retry import retry_with_backoff
 from tools.registry import tool_registry
 
-# Instantiate singleton agent ecosystem
+
+# -----------------------------------------------------------------------------
+# Global Singleton Agent Instances
+# -----------------------------------------------------------------------------
 planner_agent = CoordinatorPlannerAgent()
 domain_agent = DomainAnalysisAgent()
 action_agent = ActionToolAgent()
@@ -43,6 +76,10 @@ coach_agent = AiCoachAgent()
 # Global in-memory workflow store for active graphs & state machine tracking
 ACTIVE_WORKFLOWS: Dict[str, SharedAgentState] = {}
 
+
+# =============================================================================
+# 1. LangGraph Pipeline (Shared Blackboard State Graph)
+# =============================================================================
 
 class LangGraphPipeline:
     """
@@ -58,9 +95,22 @@ class LangGraphPipeline:
         student_context: Dict[str, Any],
         requires_human_approval: bool = True
     ) -> SharedAgentState:
+        """
+        Runs the end-to-end multi-agent pipeline using the 11-field SharedAgentState blackboard.
+        
+        Args:
+            student_id: UUID of the student.
+            objective: High-level goal specification dictionary.
+            student_context: Historical performance context dictionary.
+            requires_human_approval: Flag indicating if instructor gating is enforced (default True).
+            
+        Returns:
+            Updated SharedAgentState object.
+        """
         workflow_id = f"wf-{uuid.uuid4().hex[:8]}"
         obs = ObservabilityCollector(workflow_id)
 
+        # Initialize the 11-field SharedAgentState
         state = SharedAgentState(
             workflowId=workflow_id,
             studentId=student_id,
@@ -70,14 +120,18 @@ class LangGraphPipeline:
         )
 
         try:
-            # 1. State: DRAFT -> Coordinator / Planner Node
+            # -----------------------------------------------------------------
+            # Node 1: Coordinator / Planner Agent (Goal Decomposition & Whitelist)
+            # -----------------------------------------------------------------
             plan_out, plan_log = planner_agent.build_execution_plan(objective, student_context)
             state.plan = [s.model_dump() for s in plan_out.steps]
             state.executionLogs.append(plan_log.model_dump())
             obs.record_agent_duration("Coordinator / Planner Agent", plan_log.execution_time_ms)
             obs.record_token_usage(120, 85)
 
-            # 2. Domain Analysis Node
+            # -----------------------------------------------------------------
+            # Node 2: Domain Analysis Agent (Telemetry Diagnostic Ingestion)
+            # -----------------------------------------------------------------
             features = DomainFeatureInputs(
                 recent_quiz_scores=student_context.get("recent_quiz_scores", [65.0, 70.0]),
                 topic_level_performance=student_context.get("topic_performance", {"PostgreSQL Composite Indexes": 45.0}),
@@ -92,7 +146,9 @@ class LangGraphPipeline:
             obs.record_agent_duration("Domain Analysis Agent", domain_log.execution_time_ms)
             obs.record_token_usage(95, 110)
 
-            # 3. Action / Tool Node
+            # -----------------------------------------------------------------
+            # Node 3: Content & Action Tool Agent (Controlled Tool Execution)
+            # -----------------------------------------------------------------
             tool_res, tool_log = action_agent.execute_controlled_tool(
                 "create_challenge_draft",
                 {
@@ -115,13 +171,16 @@ class LangGraphPipeline:
             obs.record_tool_latency("create_challenge_draft", tool_log.execution_time_ms)
             obs.record_token_usage(140, 160)
 
-            # 4. Validation & Safety Guard Node: State -> VALIDATING
+            # -----------------------------------------------------------------
+            # Node 4: Validation & Safety Guard Agent (Deterministic Rules)
+            # -----------------------------------------------------------------
             state.status = WorkflowStatus.VALIDATING.value
             val_check, val_log = validation_agent.validate_candidate_draft("AdaptiveChallenge", state.candidateOutput)
             state.validation = val_check.model_dump()
             state.executionLogs.append(val_log.model_dump())
             obs.record_agent_duration("Validation & Safety Guard Agent", val_log.execution_time_ms)
 
+            # Check if validation failed
             if not val_check.passed:
                 for err in val_check.errors:
                     obs.record_validation_failure(err)
@@ -130,20 +189,24 @@ class LangGraphPipeline:
                 ACTIVE_WORKFLOWS[workflow_id] = state
                 return state
 
-            # 5. Human Review Gate
+            # -----------------------------------------------------------------
+            # Node 5: Human Review Gate (HITL Governance)
+            # -----------------------------------------------------------------
             if requires_human_approval and val_check.requires_human_approval:
                 state.status = WorkflowStatus.PENDING_APPROVAL.value
                 state.approval = ApprovalRecord(required=True, status="PENDING").model_dump()
             else:
-                # Direct safe auto-execution
+                # Direct safe auto-execution if human approval is not mandated
                 state.status = WorkflowStatus.COMPLETED.value
                 state.approval = ApprovalRecord(required=False, status="AUTO_APPROVED").model_dump()
 
+            # Record final metrics summary
             state.observabilityMetrics = obs.get_summary().model_dump()
             ACTIVE_WORKFLOWS[workflow_id] = state
             return state
 
         except Exception as e:
+            # Capture failure and update state
             obs.record_failure(str(e))
             state.status = WorkflowStatus.FAILED.value
             state.observabilityMetrics = obs.get_summary().model_dump()
@@ -158,11 +221,20 @@ class LangGraphPipeline:
         comments: Optional[str] = None
     ) -> SharedAgentState:
         """
-        Handles instructor review decision (APPROVED, REJECTED, REVISION_REQUESTED)
+        Handles human instructor review decisions (APPROVED, REJECTED, REVISION_REQUESTED)
         and transitions the shared state graph accordingly.
+        
+        Args:
+            workflow_id: Unique identifier of the active workflow.
+            decision: Instructor's decision ('APPROVED' | 'REJECTED' | 'REVISION_REQUESTED').
+            reviewer_id: Identifier of the reviewer.
+            comments: Feedback or revision guidance.
+            
+        Returns:
+            Updated SharedAgentState reflecting the decision and new lifecycle status.
         """
         if workflow_id not in ACTIVE_WORKFLOWS:
-            # Create a placeholder if not present
+            # Create a placeholder state if not present
             ACTIVE_WORKFLOWS[workflow_id] = SharedAgentState(
                 workflowId=workflow_id,
                 studentId="student-uuid",
@@ -216,6 +288,10 @@ class LangGraphPipeline:
         return state
 
 
+# =============================================================================
+# 2. Study Plan Orchestrator (4-Agent Collaboration)
+# =============================================================================
+
 class StudyPlanOrchestrator:
     """
     LangGraph State Machine orchestrating 4 interconnected agents:
@@ -229,7 +305,7 @@ class StudyPlanOrchestrator:
         workflow_id = f"wf-{uuid.uuid4().hex[:8]}"
         audit_trail: List[AgentExecutionLog] = []
 
-        # Step 1: Coordinator / Planner Agent
+        # Step 1: Coordinator / Planner Agent (Milestone decomposition)
         milestones, plan_log = planner_agent.plan_milestones(request)
         audit_trail.append(plan_log)
 
@@ -258,7 +334,7 @@ class StudyPlanOrchestrator:
 
         status = "PendingInstructorApproval" if val_check.passed else "ValidationFailed"
 
-        # Construct shared state record
+        # Construct shared blackboard state record
         shared_state = SharedAgentState(
             workflowId=workflow_id,
             studentId=request.student_id,
@@ -287,6 +363,10 @@ class StudyPlanOrchestrator:
         )
 
 
+# =============================================================================
+# 3. Adaptive Challenge Orchestrator
+# =============================================================================
+
 class AdaptiveChallengeOrchestrator:
     """
     Orchestrates Domain Analysis, Content Generation, and Validation Guard agents
@@ -312,6 +392,10 @@ class AdaptiveChallengeOrchestrator:
         return challenge
 
 
+# =============================================================================
+# 4. Quiz Generator Orchestrator
+# =============================================================================
+
 class QuizGeneratorOrchestrator:
     """
     Orchestrates Quiz Generator Agent and Validation Guard Agent for curriculum assessments
@@ -336,6 +420,9 @@ class QuizGeneratorOrchestrator:
         return quiz
 
 
+# =============================================================================
+# 5. Retention Orchestrator
+# =============================================================================
 
 class RetentionOrchestrator:
     """
@@ -353,6 +440,10 @@ class RetentionOrchestrator:
         return res
 
 
+# =============================================================================
+# 6. AI Coach Orchestrator
+# =============================================================================
+
 class AiCoachOrchestrator:
     """
     Orchestrates AI Coach with sub-agent calls to Domain Analysis and Content Tool agents.
@@ -363,6 +454,10 @@ class AiCoachOrchestrator:
         response.audit_log = coach_log
         return response
 
+
+# =============================================================================
+# 7. Agent Topology Registry
+# =============================================================================
 
 class AgentTopologyRegistry:
     """

@@ -189,6 +189,7 @@ public record GenerateAiQuizRequest(
     int CoinReward = 25,
     QuizScopeType ScopeType = QuizScopeType.Course,
     Guid? ScopeId = null,
+    string? PdfUrl = null,
     List<string>? QuestionTypes = null,
     Dictionary<string, int>? QuestionTypeDistribution = null,
     Dictionary<string, int>? DifficultyDistribution = null,

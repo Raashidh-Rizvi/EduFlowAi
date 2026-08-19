@@ -510,6 +510,9 @@ export default function Courses({ currentUser }) {
   const handleGenerateAiQuizDraft = async () => {
     setIsGeneratingQuiz(true);
     try {
+      // Find the module to extract its pdfUrl
+      const module = currentCourse?.modules?.find(m => m.id === aiQuizScope.moduleId || m.title === aiQuizScope.moduleTitle);
+      
       const payload = {
         courseId: aiQuizScope.courseId || '44444444-4444-4444-4444-444444444444',
         topic: aiQuizScope.topicTitle,
@@ -518,7 +521,8 @@ export default function Courses({ currentUser }) {
         questionCount: Number(aiQuestionCount),
         timeLimitMinutes: Number(aiTimeLimit),
         xpReward: Math.min(Number(aiXpReward), 300),
-        coinReward: Math.min(Number(aiCoinReward), 100)
+        coinReward: Math.min(Number(aiCoinReward), 100),
+        pdfUrl: module?.pdfUrl || null
       };
 
       const res = await quizService.generateAiQuiz(payload);

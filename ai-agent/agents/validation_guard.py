@@ -1,6 +1,28 @@
+"""
+===============================================================================
+EduFlow AI - Validation & Safety Guard Agent (Safety & Governance)
+===============================================================================
+This module implements the `ValidationGuardAgent` (Member 4 ownership).
+
+Why we use the Validation & Safety Guard Agent:
+1. Deterministic-First Safety Architecture:
+   - LLMs can make arithmetic errors, invent non-existent rules, or grant excessive XP.
+   - The Validation Guard Agent uses strict, non-LLM Python code rules to verify candidate drafts.
+2. 5-Layer Deterministic Validation Pipeline:
+   - Layer 1: JSON Schema Integrity (non-empty fields, required types, non-null values).
+   - Layer 2: Course Curriculum Reference (checks that topics exist in accredited syllabus).
+   - Layer 3: Platform Business & Economy Rules (enforces Max 150 XP, Max 100 Coins, 2h-20h/week caps).
+   - Layer 4: Platform Safety & Permission Isolation (strictly blocks mutations of user roles, grades, or deletion keys).
+   - Layer 5: Human Approval Gating Decision (determines whether human instructor review is required).
+"""
+
+# Import datetime and timezone for timestamping validation checks
 from datetime import datetime, timezone
+# Import typing hints for collections, tuples, and dictionaries
 from typing import List, Tuple, Any, Dict, Optional
+# Import BaseAgent and execution log schema
 from .base import BaseAgent, AgentExecutionLog
+# Import Pydantic schemas for requests, milestones, activities, validation checks, and responses
 from models.schemas import (
     StudyPlanRequest, 
     PlanMilestone, 
@@ -9,18 +31,21 @@ from models.schemas import (
     AdaptiveChallengeResponse,
     DiagnosticQuizResponse
 )
+# Import tool registry singleton
 from tools.registry import tool_registry
+
 
 class ValidationGuardAgent(BaseAgent):
     """
     Validation & Safety Guard Agent (Member 4 - Safety & Governance)
-    Responsible for:
-    - 5-Layer Deterministic-First Validation:
-      1. JSON Schema & data integrity
-      2. Curriculum data references verification (anti-hallucination)
-      3. Business & Economy rule enforcement (Max 150 XP, 100 Coins, 20h/wk cap)
-      4. Platform Safety Boundaries (zero direct grade/permission/data mutation)
-      5. Instructor Approval Decision gating
+    
+    Responsibilities:
+    - 5-Layer Deterministic-First Validation pipeline.
+    - JSON Schema & data integrity verification.
+    - Curriculum data references check (anti-hallucination).
+    - Business & Economy rule enforcement (Max 150 XP, Max 100 Coins, 2h-20h/wk study cap).
+    - Platform Safety Boundaries (zero direct grade/permission/data mutation).
+    - Instructor Approval Decision gating.
     """
     def __init__(self):
         super().__init__(
@@ -28,11 +53,12 @@ class ValidationGuardAgent(BaseAgent):
             role_description="Executes deterministic safety checks, schema verification, and economy policy enforcement.",
             member_owner="Member 4 (Safety & Governance)"
         )
-        self.MAX_CHALLENGE_XP = 150
-        self.MAX_ACTIVITY_XP = 150
-        self.MAX_COINS = 100
-        self.MIN_STUDY_HOURS = 2.0
-        self.MAX_STUDY_HOURS = 20.0
+        # Platform business rule limits & caps
+        self.MAX_CHALLENGE_XP = 150      # Maximum XP awarded for any micro-challenge
+        self.MAX_ACTIVITY_XP = 150       # Maximum XP awarded for any single daily study activity
+        self.MAX_COINS = 100             # Maximum in-game coins awarded per challenge/quiz
+        self.MIN_STUDY_HOURS = 2.0       # Minimum weekly study commitment in hours
+        self.MAX_STUDY_HOURS = 20.0      # Maximum safe weekly study cap in hours to prevent burnout
 
     def validate_candidate_draft(
         self,
@@ -41,17 +67,28 @@ class ValidationGuardAgent(BaseAgent):
     ) -> Tuple[ValidationCheck, AgentExecutionLog]:
         """
         Generic deterministic-first multi-layer validation pipeline for candidate AI drafts.
+        
+        Args:
+            draft_type: Type of draft being validated (e.g. "AdaptiveChallenge", "StudyPlan").
+            payload: Dictionary payload representing the candidate output.
+            
+        Returns:
+            Tuple of (ValidationCheck, AgentExecutionLog).
         """
         def _execute(_):
             errors: List[str] = []
             warnings: List[str] = []
 
-            # Layer 1: JSON Schema
+            # -----------------------------------------------------------------
+            # Layer 1: JSON Schema Integrity
+            # -----------------------------------------------------------------
             if not payload or not isinstance(payload, dict):
                 errors.append("SCHEMA_ERROR: Payload must be a non-empty JSON object.")
                 return self._build_result(errors, warnings)
 
-            # Layer 2: Curriculum Reference Check
+            # -----------------------------------------------------------------
+            # Layer 2: Curriculum Reference Check (Anti-Hallucination)
+            # -----------------------------------------------------------------
             course_ref = tool_registry.get_tool("get_course_content").handler({})
             known_topics = set()
             for mod in course_ref.get("modules", []):
@@ -63,8 +100,9 @@ class ValidationGuardAgent(BaseAgent):
             if topic and not any(k in topic.lower() for k in ["postgres", "index", "architecture", "ef core", "transaction", "clean"]):
                 warnings.append(f"CURRICULUM_WARNING: Topic '{topic}' could not be matched with high confidence against syllabus.")
 
-
+            # -----------------------------------------------------------------
             # Layer 3: Business & Economy Rules (XP & Coins)
+            # -----------------------------------------------------------------
             proposed_xp = payload.get("xp_reward", 0)
             if proposed_xp > self.MAX_CHALLENGE_XP:
                 errors.append(f"INVALID_REWARD: AI proposed XP={proposed_xp}. Maximum allowed challenge XP is {self.MAX_CHALLENGE_XP}.")
@@ -73,13 +111,17 @@ class ValidationGuardAgent(BaseAgent):
             if proposed_coins > self.MAX_COINS:
                 errors.append(f"INVALID_REWARD: AI proposed Coins={proposed_coins}. Maximum allowed is {self.MAX_COINS}.")
 
+            # -----------------------------------------------------------------
             # Layer 4: AI Safety Boundaries (Unauthorized mutations)
+            # -----------------------------------------------------------------
             forbidden_keys = ["assign_grade", "final_score", "user_role", "delete_record", "bypass_approval"]
             for f_key in forbidden_keys:
                 if f_key in payload:
                     errors.append(f"SAFETY_VIOLATION: AI is strictly prohibited from mutating '{f_key}'.")
 
-            # Layer 5: Approval Gating
+            # -----------------------------------------------------------------
+            # Layer 5: Approval Gating Decision
+            # -----------------------------------------------------------------
             requires_human_approval = True  # Instructor governance always enforced for curriculum alterations
 
             passed = len(errors) == 0
@@ -103,11 +145,22 @@ class ValidationGuardAgent(BaseAgent):
         milestones: List[PlanMilestone],
         schedule: List[StudyPlanActivity]
     ) -> Tuple[ValidationCheck, AgentExecutionLog]:
+        """
+        Validates generated study plan workload boundaries and activity rewards.
+        
+        Args:
+            request: The original StudyPlanRequest.
+            milestones: The decomposed PlanMilestones.
+            schedule: The list of StudyPlanActivity items.
+            
+        Returns:
+            Tuple of (ValidationCheck, AgentExecutionLog).
+        """
         def _execute(_):
             errors: List[str] = []
             warnings: List[str] = []
 
-            # Layer 1 & 2: Goal clarity & curriculum bounds
+            # Layer 1 & 2: Goal clarity check
             if len(request.target_goal.strip()) < 5:
                 errors.append("SCHEMA_ERROR: Target goal description is too brief (minimum 5 characters required).")
 
@@ -117,7 +170,7 @@ class ValidationGuardAgent(BaseAgent):
             elif request.hours_per_week < self.MIN_STUDY_HOURS:
                 errors.append(f"WORKLOAD_VIOLATION: Minimum study commitment must be at least {self.MIN_STUDY_HOURS} hours/week.")
 
-            # Milestone workload distribution
+            # Milestone workload distribution sanity check
             total_milestone_hours = sum(m.estimated_hours for m in milestones)
             expected_max_hours = request.hours_per_week * request.target_weeks * 1.25
             if total_milestone_hours > expected_max_hours:
@@ -151,6 +204,15 @@ class ValidationGuardAgent(BaseAgent):
         self,
         challenge: AdaptiveChallengeResponse
     ) -> Tuple[ValidationCheck, AgentExecutionLog]:
+        """
+        Validates adaptive challenge rewards, options counts, and correct index ranges.
+        
+        Args:
+            challenge: AdaptiveChallengeResponse to validate.
+            
+        Returns:
+            Tuple of (ValidationCheck, AgentExecutionLog).
+        """
         def _execute(_):
             errors: List[str] = []
             warnings: List[str] = []
@@ -194,6 +256,15 @@ class ValidationGuardAgent(BaseAgent):
         self,
         quiz: DiagnosticQuizResponse
     ) -> Tuple[ValidationCheck, AgentExecutionLog]:
+        """
+        Validates full quiz assessment for scope-aware XP caps, question formats, and Bloom's tagging.
+        
+        Args:
+            quiz: DiagnosticQuizResponse to validate.
+            
+        Returns:
+            Tuple of (ValidationCheck, AgentExecutionLog).
+        """
         def _execute(_):
             errors: List[str] = []
             warnings: List[str] = []
@@ -213,8 +284,7 @@ class ValidationGuardAgent(BaseAgent):
             if quiz.gamification_rewards.coin_reward > self.MAX_COINS:
                 errors.append(f"INVALID_REWARD: Quiz Coin reward ({quiz.gamification_rewards.coin_reward}) exceeds platform cap of {self.MAX_COINS} coins.")
 
-
-            # Rule 2: Non-empty questions
+            # Rule 2: Non-empty questions check
             if len(quiz.questions) < 1:
                 errors.append("INTEGRITY_ERROR: Quiz must contain at least one question.")
 
@@ -244,7 +314,7 @@ class ValidationGuardAgent(BaseAgent):
                 if not q.learningObjective:
                     warnings.append(f"CURRICULUM_WARNING: Question {i+1} is not mapped to an accredited Learning Objective.")
 
-            # Rule 4: Total Points validation
+            # Rule 4: Total points validation
             if quiz.total_points <= 0:
                 errors.append("INTEGRITY_ERROR: Quiz total points must be greater than zero.")
 
@@ -281,6 +351,7 @@ class ValidationGuardAgent(BaseAgent):
         return self.execute_with_trace(None, _execute)
 
     def _build_result(self, errors: List[str], warnings: List[str]) -> Tuple[ValidationCheck, str, bool]:
+        """Helper to construct standard ValidationCheck result tuples."""
         passed = len(errors) == 0
         check = ValidationCheck(
             passed=passed,
@@ -290,5 +361,3 @@ class ValidationGuardAgent(BaseAgent):
             checked_at=datetime.now(timezone.utc).isoformat()
         )
         return check, f"Validation {'passed' if passed else 'failed'} with {len(errors)} errors.", passed
-
-

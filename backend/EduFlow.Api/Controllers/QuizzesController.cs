@@ -728,112 +728,136 @@ public class QuizzesController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        // Determine question type distribution
-        var questionTypes = request.QuestionTypes ?? new List<string> { "MultipleChoice", "TrueFalse", "MultipleSelect" };
-        var topic = (request.Topic ?? "System Architecture").ToLowerInvariant();
+        // -------------------------------------------------------------------------
+        // CALL PYTHON AI AGENT MICROSERVICE
+        // -------------------------------------------------------------------------
+        var pythonApiUrl = "http://localhost:8000/api/v1/ai/quiz-generation"; // Fallback to direct route if this fails
+        var pythonFallbackUrl = "http://localhost:8000/generate-quiz";
 
-        for (int i = 0; i < count; i++)
+        // Map relative PdfUrl to physical path for the python service
+        string? physicalPdfPath = null;
+        if (!string.IsNullOrEmpty(request.PdfUrl))
         {
-            var qTypeStr = questionTypes[i % questionTypes.Count];
-            var qType = QuestionType.MultipleChoice;
-            if (Enum.TryParse<QuestionType>(qTypeStr, true, out var parsedType))
+            // E.g., /uploads/pdfs/file.pdf -> d:/Project/EduHub/backend/EduFlow.Api/wwwroot/uploads/pdfs/file.pdf
+            physicalPdfPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", request.PdfUrl.TrimStart('/'));
+            if (!System.IO.File.Exists(physicalPdfPath))
             {
-                qType = parsedType;
+                physicalPdfPath = null; // Don't send invalid paths
             }
+        }
 
-            string prompt;
-            List<string> options;
-            string correct;
-            string explanation;
-            string bloom = i % 2 == 0 ? "Application" : "Analysis";
-            string lo = $"LO-0{(i % 3) + 1}";
+        var pythonPayload = new
+        {
+            course_id = request.CourseId.ToString(),
+            topic_title = request.Topic ?? "System Architecture",
+            difficulty = request.Difficulty,
+            question_count = count,
+            pdf_path = physicalPdfPath
+        };
 
-            if (qType == QuestionType.TrueFalse)
+        bool usedPython = false;
+        using var httpClient = new System.Net.Http.HttpClient();
+        try
+        {
+            var content = new System.Net.Http.StringContent(JsonSerializer.Serialize(pythonPayload), System.Text.Encoding.UTF8, "application/json");
+            var response = await httpClient.PostAsync(pythonFallbackUrl, content);
+            if (response.IsSuccessStatusCode)
             {
-                prompt = $"True or False: In {request.Topic}, indexing all columns indiscriminately eliminates all query execution plan overhead.";
-                options = new List<string> { "True", "False" };
-                correct = "False";
-                explanation = "Unnecessary indexes create significant write amplification and buffer contention during INSERT/UPDATE operations.";
-            }
-            else if (qType == QuestionType.MultipleSelect)
-            {
-                prompt = $"Which of the following are valid architectural characteristics of {request.Topic}? (Select all that apply)";
-                options = new List<string>
+                var responseString = await response.Content.ReadAsStringAsync();
+                var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
+                
+                if (aiResult.TryGetProperty("questions", out var questionsArray))
                 {
-                    "Decoupled domain business logic via abstract interfaces",
-                    "Deterministic input/output validation pipelines",
-                    "Direct client connections to raw unindexed tables",
-                    "Immutable audit logs and transactional event capture"
-                };
-                correct = "Decoupled domain business logic via abstract interfaces, Deterministic input/output validation pipelines, Immutable audit logs and transactional event capture";
-                explanation = "Clean architectural standards require domain decoupling, validation boundaries, and audit logging.";
-            }
-            else if (qType == QuestionType.ShortAnswer || qType == QuestionType.FillInBlank)
-            {
-                prompt = $"In PostgreSQL composite B-Trees, queries must filter on the ________ prefix column to avoid sequential heap scans.";
-                options = new List<string> { "leftmost", "leading" };
-                correct = "leftmost";
-                explanation = "The leftmost prefix rule governs composite B-Tree traversal in relational query planning.";
-            }
-            else
-            {
-                // Multiple Choice / Scenario Based
-                prompt = i switch
-                {
-                    0 => $"In {request.Topic}, which architectural design pattern best enforces strict domain isolation?",
-                    1 => $"How does PostgreSQL query optimization evaluate column selectivity in {request.Topic}?",
-                    2 => $"What invariant must be preserved during concurrent multi-agent executions in {request.Topic}?",
-                    _ => $"What is the recommended recovery procedure for {request.Topic} checkpoint {i + 1}?"
-                };
-                options = new List<string>
-                {
-                    "Enforce Dependency Inversion by depending strictly on repository interfaces",
-                    "Instantiate database DbContext instances directly inside React client views",
-                    "Consolidate all business logic into single unindexed stored procedures",
-                    "Disable database transaction logs and foreign key validations"
-                };
-                correct = "Enforce Dependency Inversion by depending strictly on repository interfaces";
-                explanation = "Repository interfaces decouple core domain logic from data access technology specifics.";
-            }
-
-            var question = new Question
-            {
-                Prompt = prompt,
-                Type = qType,
-                OptionsJson = JsonSerializer.Serialize(options),
-                CorrectAnswer = correct,
-                Explanation = explanation,
-                Difficulty = quiz.Difficulty,
-                Points = 10,
-                OrderIndex = i + 1,
-                LearningObjective = lo,
-                MetadataJson = JsonSerializer.Serialize(new
-                {
-                    bloomsTaxonomy = bloom,
-                    sourceExcerpt = $"Curriculum content grounded in {request.Topic}",
-                    distractorRationales = new List<string>
+                    int i = 0;
+                    foreach (var qToken in questionsArray.EnumerateArray())
                     {
-                        "Correct: Strictly aligns with domain boundaries and verified best practices.",
-                        "Incorrect: Violates architectural isolation and increases monolithic coupling.",
-                        "Incorrect: Introduces significant performance and security vulnerabilities.",
-                        "Incorrect: Compromises data consistency without addressing requirements."
+                        var prompt = qToken.GetProperty("question_text").GetString() ?? "Generated Question";
+                        var qTypeStr = qToken.GetProperty("question_type").GetString() ?? "MULTIPLE_CHOICE";
+                        var correct = qToken.GetProperty("correct_answer").GetString() ?? "A";
+                        var explanation = qToken.GetProperty("explanation").GetString() ?? "AI Explanation";
+                        
+                        var qType = QuestionType.MultipleChoice;
+                        if (qTypeStr == "TRUE_FALSE") qType = QuestionType.TrueFalse;
+                        if (qTypeStr == "MULTIPLE_SELECT") qType = QuestionType.MultipleSelect;
+
+                        var options = new List<string>();
+                        if (qToken.TryGetProperty("options", out var optionsArray))
+                        {
+                            foreach (var opt in optionsArray.EnumerateArray())
+                            {
+                                options.Add(opt.GetString() ?? "");
+                            }
+                        }
+
+                        var question = new Question
+                        {
+                            Prompt = prompt,
+                            Type = qType,
+                            OptionsJson = JsonSerializer.Serialize(options),
+                            CorrectAnswer = correct,
+                            Explanation = explanation,
+                            Difficulty = quiz.Difficulty,
+                            Points = 10,
+                            OrderIndex = i + 1,
+                            LearningObjective = $"LO-0{(i % 3) + 1}",
+                            MetadataJson = "{}"
+                        };
+
+                        int optIdx = 1;
+                        foreach (var opt in options)
+                        {
+                            bool isCorrect = correct.Contains(opt, StringComparison.OrdinalIgnoreCase);
+                            question.Options.Add(new QuestionOption
+                            {
+                                OptionText = opt,
+                                IsCorrect = isCorrect,
+                                DisplayOrder = optIdx++
+                            });
+                        }
+                        quiz.Questions.Add(question);
+                        i++;
                     }
-                })
-            };
-
-            int optIdx = 1;
-            foreach (var opt in options)
-            {
-                bool isCorrect = correct.Contains(opt, StringComparison.OrdinalIgnoreCase);
-                question.Options.Add(new QuestionOption
-                {
-                    OptionText = opt,
-                    IsCorrect = isCorrect,
-                    DisplayOrder = optIdx++
-                });
+                    usedPython = true;
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AI Agent] Python service error: {ex.Message}");
+        }
 
-            quiz.Questions.Add(question);
+        // -------------------------------------------------------------------------
+        // FALLBACK: If Python fails, use C# hardcoded fallback
+        // -------------------------------------------------------------------------
+        if (!usedPython)
+        {
+            var questionTypes = request.QuestionTypes ?? new List<string> { "MultipleChoice", "TrueFalse", "MultipleSelect" };
+            for (int i = 0; i < count; i++)
+            {
+                var prompt = $"Generated fallback question {i + 1} for {request.Topic}";
+                var options = new List<string> { "A", "B", "C", "D" };
+                var correct = "A";
+
+                var question = new Question
+                {
+                    Prompt = prompt,
+                    Type = QuestionType.MultipleChoice,
+                    OptionsJson = JsonSerializer.Serialize(options),
+                    CorrectAnswer = correct,
+                    Explanation = "Fallback generated.",
+                    Difficulty = quiz.Difficulty,
+                    Points = 10,
+                    OrderIndex = i + 1,
+                    MetadataJson = "{}"
+                };
+
+                int optIdx = 1;
+                foreach (var opt in options)
+                {
+                    question.Options.Add(new QuestionOption { OptionText = opt, IsCorrect = opt == correct, DisplayOrder = optIdx++ });
+                }
+                quiz.Questions.Add(question);
+            }
         }
 
         quiz.QuestionCount = quiz.Questions.Count;

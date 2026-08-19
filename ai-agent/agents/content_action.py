@@ -1,6 +1,30 @@
+"""
+===============================================================================
+EduFlow AI - Content & Action Tool Agent (Assessments & Tools)
+===============================================================================
+This module implements the `ActionToolAgent` (Member 2 ownership).
+
+Why we use the Content & Action Tool Agent:
+1. Controlled Tool Execution:
+   - Serves as the primary operational agent executing curriculum and content tools
+     through the verified `ToolRegistry`.
+2. Pedagogical Activity & Schedule Formulation:
+   - Translates diagnosed learning gaps into balanced daily study activities:
+     * Conceptual Lessons (Foundations & Architecture)
+     * Hands-on Coding Labs (Implementation & Verification)
+     * Timed Quizzes (Edge Cases & Knowledge Checks)
+     * Boss Battles (Simulated Outages & Multi-Topic Integration)
+3. Adaptive Challenge Formulation:
+   - Constructs interactive micro-quests strictly bounded by gamification XP caps (<= 150 XP).
+"""
+
+# Import uuid for generating unique challenge and workflow identifiers
 import uuid
+# Import typing annotations for collections, tuples, and dictionaries
 from typing import List, Tuple, Dict, Any
+# Import BaseAgent base class and execution log model
 from .base import BaseAgent, AgentExecutionLog
+# Import Pydantic models for activities, challenges, and gap analysis results
 from models.schemas import (
     StudyPlanActivity, 
     AdaptiveChallengeRequest, 
@@ -8,16 +32,19 @@ from models.schemas import (
     ChallengeQuestionItem,
     GapAnalysisResult
 )
+# Import tool registry singleton
 from tools.registry import tool_registry
+
 
 class ActionToolAgent(BaseAgent):
     """
-    Action & Content Tool Agent (Member 2 - Assessments & Tools)
-    Responsible for:
-    - Executing controlled curriculum content and assessment generation tools from the permitted tool registry
-    - Formulating adaptive micro-challenges targeting diagnosed weak spots
-    - Constructing structured interactive quests, labs, and boss challenges
-    - Calibrating questions with distractors and pedagogical explanations
+    Content & Action Tool Agent (Member 2 - Assessments & Tools)
+    
+    Responsibilities:
+    - Executing controlled curriculum content and assessment generation tools from the permitted registry.
+    - Formulating adaptive micro-challenges targeting diagnosed weak spots.
+    - Constructing structured interactive quests, labs, and boss challenges.
+    - Calibrating questions with distractors and pedagogical explanations.
     """
     def __init__(self):
         super().__init__(
@@ -27,7 +54,16 @@ class ActionToolAgent(BaseAgent):
         )
 
     def execute_controlled_tool(self, tool_name: str, params: Dict[str, Any]) -> Tuple[Dict[str, Any], AgentExecutionLog]:
-        """Executes a specific tool via the verified ToolRegistry."""
+        """
+        Executes a specific registered tool via the ToolRegistry under the ACTION_TOOL role.
+        
+        Args:
+            tool_name: The name of the tool to execute (e.g., 'create_challenge_draft').
+            params: Parameters dictionary passed into the tool.
+            
+        Returns:
+            Tuple of (tool_result_dict, AgentExecutionLog).
+        """
         def _execute(_):
             result, duration_ms = tool_registry.execute_tool(tool_name, "ACTION_TOOL", params)
             summary = f"Executed permitted tool '{tool_name}' successfully ({duration_ms}ms)."
@@ -40,10 +76,21 @@ class ActionToolAgent(BaseAgent):
         target_goal: str, 
         gap_analysis: GapAnalysisResult
     ) -> Tuple[List[StudyPlanActivity], AgentExecutionLog]:
+        """
+        Generates a balanced 7-day schedule of learning activities tailored to diagnosed weak areas.
+        
+        Args:
+            target_goal: The student's learning objective.
+            gap_analysis: The diagnostic GapAnalysisResult identifying weak topics.
+            
+        Returns:
+            Tuple of (List[StudyPlanActivity], AgentExecutionLog).
+        """
         def _execute(_):
             primary_topic = gap_analysis.weak_areas[0] if gap_analysis.weak_areas else "Core Architecture"
             secondary_topic = gap_analysis.weak_areas[1] if len(gap_analysis.weak_areas) > 1 else "Database Optimization"
 
+            # Build balanced 4-activity progression (Lesson -> Lab -> Quiz -> Boss Battle)
             schedule = [
                 StudyPlanActivity(
                     day_number=1,
@@ -88,11 +135,20 @@ class ActionToolAgent(BaseAgent):
         self, 
         request: AdaptiveChallengeRequest
     ) -> Tuple[AdaptiveChallengeResponse, AgentExecutionLog]:
+        """
+        Synthesizes an adaptive micro-challenge tailored to a student's weak topic and target difficulty.
+        
+        Args:
+            request: AdaptiveChallengeRequest specifying student_id, weak_topic, and target_difficulty.
+            
+        Returns:
+            Tuple of (AdaptiveChallengeResponse, AgentExecutionLog).
+        """
         def _execute(req: AdaptiveChallengeRequest):
             workflow_id = f"wf-ch-{uuid.uuid4().hex[:8]}"
             challenge_id = str(uuid.uuid4())
 
-            # Difficulty matrices bounded strictly by economy rules (Max 150 XP)
+            # Difficulty matrices bounded strictly by economy rules (Max 150 XP, Max 100 Coins)
             difficulty_matrix = {
                 "Easy": {"xp": 50, "coins": 15, "time": 10},
                 "Medium": {"xp": 120, "coins": 40, "time": 15},
@@ -115,6 +171,7 @@ class ActionToolAgent(BaseAgent):
                 }
             )
 
+            # Map raw questions to ChallengeQuestionItem models
             questions = [
                 ChallengeQuestionItem(
                     question_text=q["question_text"],
@@ -126,6 +183,7 @@ class ActionToolAgent(BaseAgent):
                 for q in draft_res.get("questions", [])
             ]
 
+            # Fallback default question if none returned by draft
             if not questions:
                 questions = [
                     ChallengeQuestionItem(
@@ -142,6 +200,7 @@ class ActionToolAgent(BaseAgent):
                     )
                 ]
 
+            # Assemble finalized AdaptiveChallengeResponse
             challenge = AdaptiveChallengeResponse(
                 challenge_id=challenge_id,
                 workflow_id=workflow_id,
