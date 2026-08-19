@@ -43,10 +43,12 @@ from tools.registry import tool_registry
 
 import os
 import json
-from langchain_openai import ChatOpenAI
-from langchain.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-import PyPDF2
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
 class QuizGeneratorAgent(BaseAgent):
     """
     Automated Quiz & Assessment Generator Agent (Member 2 - Assessments & Quizzes)
@@ -133,49 +135,78 @@ class QuizGeneratorAgent(BaseAgent):
             # -----------------------------------------------------------------
             questions: List[QuizQuestionModel] = []
             
-            # PDF Extraction Logic
+            # PDF Extraction & RAG Logic
             extracted_questions_raw = []
             if req.pdf_path and os.path.exists(req.pdf_path):
                 try:
-                    pdf_text = ""
-                    with open(req.pdf_path, 'rb') as f:
-                        reader = PyPDF2.PdfReader(f)
-                        for page in reader.pages:
-                            pdf_text += page.extract_text() + "\n"
-                    
-                    # Trim text to fit in prompt (e.g. 15k chars roughly 3-4k tokens)
-                    pdf_text = pdf_text[:15000]
-                    
+                    # 1. Load Document
+                    loader = PyPDFLoader(req.pdf_path)
+                    docs = loader.load()
+
+                    # 2. Chunking
+                    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+                    chunks = text_splitter.split_documents(docs)
+
+                    # 3. Embeddings & Vector Store
+                    embeddings = OpenAIEmbeddings()
+                    vectorstore = FAISS.from_documents(chunks, embeddings)
+                    retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
+
+                    # 4. Generate Questions one by one using relevant chunks
                     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
                     prompt = PromptTemplate(
-                        template="""You are an expert AI educator. Your task is to generate EXACTLY {count} quiz questions based STRICTLY and ONLY on the provided document text. 
+                        template="""You are an expert AI educator. Your task is to generate EXACTLY ONE quiz question based STRICTLY and ONLY on the provided document text. 
 Do not hallucinate any information outside the text.
 
-Document Text:
+Context Document Text:
 {text}
 
-Output a JSON array of {count} objects, each with the following schema:
+Question Requirements:
+- Topic/Focus: {topic}
+- Question Type: {question_type}
+- Difficulty: {difficulty}
+
+Output a JSON object with the following schema:
 - question_text (string)
-- question_type (string, e.g. "MULTIPLE_CHOICE", "TRUE_FALSE")
+- question_type (string, exactly "{question_type}")
 - blooms_taxonomy_level (string, e.g. "Knowledge", "Application")
 - options (list of strings, strictly 2 to 4 options)
 - correct_answer (string, MUST exactly match one of the options)
-- explanation (string, pedagogical rationale)
+- explanation (string, pedagogical rationale, MUST cite the text)
 
-JSON Array:""",
-                        input_variables=["count", "text"]
+JSON Object:""",
+                        input_variables=["text", "topic", "question_type", "difficulty"]
                     )
                     parser = JsonOutputParser()
                     chain = prompt | llm | parser
                     
-                    print("Trying OpenAI extraction...")
-                    result = chain.invoke({"count": count, "text": pdf_text})
-                    if isinstance(result, list):
-                        extracted_questions_raw = result
+                    print(f"Trying OpenAI extraction with RAG for {count} questions...")
+                    for i in range(count):
+                        q_type = q_types[i % len(q_types)]
+                        diff = req.difficulty.upper()
+                        # Use learning objectives or topics for search
+                        search_topic = req.learning_objectives[i % len(req.learning_objectives)] if req.learning_objectives else (req.target_topics[i % len(req.target_topics)] if req.target_topics else scope_name)
+                        
+                        # Retrieve relevant chunks
+                        relevant_docs = retriever.invoke(search_topic)
+                        context_text = "\n\n".join([doc.page_content for doc in relevant_docs])
+                        
+                        result = chain.invoke({
+                            "text": context_text,
+                            "topic": search_topic,
+                            "question_type": q_type,
+                            "difficulty": diff
+                        })
+                        if isinstance(result, dict):
+                            extracted_questions_raw.append(result)
                 except Exception as e:
-                    print(f"Error extracting from PDF with LLM: {e}")
-                    # Local fallback to prove extraction
+                    print(f"Error extracting from PDF with RAG: {e}")
+                    # Local fallback
                     try:
+                        # Fallback uses basic loading
+                        loader = PyPDFLoader(req.pdf_path)
+                        docs = loader.load()
+                        pdf_text = "\n".join([d.page_content for d in docs])
                         sentences = [s.strip() for s in pdf_text.split('.') if len(s.strip()) > 20]
                         for i in range(count):
                             if i < len(sentences):
