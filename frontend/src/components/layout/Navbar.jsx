@@ -1,8 +1,24 @@
-import React from 'react';
-import { Search, Bell, Sparkles, Activity, ShieldCheck, LogOut, Shield } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Bell, Sparkles, Activity, ShieldCheck, LogOut, Shield, ChevronDown } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
 
 export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  const user = currentUser || {
+    fullName: 'Dr. Sarah Jenkins',
+    email: 'instructor@eduflow.ai',
+    role: 'Instructor'
+  };
+
+  const isAdmin = user.role === 'Admin';
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.split(' ');
+    return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2).toUpperCase();
+  };
+
   const titles = {
     'dashboard': { 
       title: 'Executive Overview', 
@@ -44,15 +60,17 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
   };
 
   return (
-    <header style={{
+    <header className="liquid-glass" style={{
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: '28px',
+      padding: '16px 24px',
+      margin: '24px 0',
+      borderRadius: 'var(--radius-xl)',
       gap: '24px',
       flexWrap: 'wrap',
-      paddingBottom: '20px',
-      borderBottom: '1px solid var(--border-subtle)'
+      position: 'relative',
+      zIndex: 100
     }}>
       <div>
         <h1 className="text-gradient" style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.025em', margin: 0 }}>
@@ -160,23 +178,126 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
           )}
         </div>
 
-        {/* Quick Logout Button */}
-        {onLogout && (
-          <button
-            onClick={onLogout}
-            title="Sign Out of Session"
-            className="btn-ghost"
-            style={{
-              padding: '6px 10px',
-              fontSize: '12px',
-              gap: '6px',
-              color: 'var(--text-muted)'
-            }}
-          >
-            <LogOut size={14} />
-            <span>Sign Out</span>
-          </button>
+        {/* User Profile Pill */}
+        <div 
+          onClick={() => setShowProfileMenu(!showProfileMenu)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '4px',
+            paddingRight: '14px',
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: 'var(--radius-full)',
+            background: isAdmin ? 'var(--accent)' : 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
+            color: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontWeight: '700',
+            fontSize: '12px',
+            boxShadow: 'var(--shadow-sm)'
+          }}>
+            {getInitials(user.fullName)}
+          </div>
+          <span style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-main)' }}>
+            {user.fullName}
+          </span>
+          <ChevronDown size={14} color="var(--text-muted)" style={{ transform: showProfileMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+        </div>
+
+        {/* Profile Popover Menu */}
+        {showProfileMenu && (
+          <div style={{
+            position: 'absolute',
+            top: 'calc(100% + 12px)',
+            right: '24px',
+            width: '260px',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-card)',
+            padding: '16px',
+            boxShadow: 'var(--shadow-popover)',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: '700',
+                fontSize: '12.5px'
+              }}>
+                {getInitials(user.fullName)}
+              </div>
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user.fullName}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user.email}
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 8px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: 'var(--bg-canvas)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '11.5px'
+            }}>
+              <span style={{ color: 'var(--text-muted)' }}>Role:</span>
+              <span style={{
+                fontWeight: '600',
+                color: user.role === 'Admin' ? 'var(--accent)' : 'var(--primary)'
+              }}>
+                {user.role}
+              </span>
+            </div>
+
+            {onLogout && (
+              <button
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  onLogout();
+                }}
+                className="btn-danger"
+                style={{
+                  width: '100%',
+                  padding: '7px',
+                  fontSize: '12px',
+                  gap: '6px'
+                }}
+              >
+                <LogOut size={13} /> Sign Out
+              </button>
+            )}
+          </div>
         )}
+
       </div>
     </header>
   );

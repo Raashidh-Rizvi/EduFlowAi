@@ -92,8 +92,8 @@ export default function App() {
 
   // ── Instructor / Admin Console ─────────────────────────────────────────────
   return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
-      {/* Top Menu (previously Sidebar) */}
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
+      {/* Smart Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
