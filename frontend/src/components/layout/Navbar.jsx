@@ -55,28 +55,27 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
       borderBottom: '1px solid var(--border-subtle)'
     }}>
       <div>
-        <h1 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.025em' }}>
+        <h1 className="text-gradient" style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.025em', margin: 0 }}>
           {current.title}
         </h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '3px', fontWeight: '400' }}>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', fontWeight: '500' }}>
           {current.subtitle}
         </p>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         {/* Search Bar with Keyboard Hint */}
-        <div style={{
+        <div className="glass-badge" style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          padding: '7px 12px',
-          borderRadius: 'var(--radius-sm)',
+          padding: '8px 14px',
           backgroundColor: 'var(--bg-input)',
-          border: '1px solid var(--border-card)',
-          width: '240px',
+          border: '1px solid var(--border-subtle)',
+          width: '260px',
           transition: 'all 0.15s ease'
         }}>
-          <Search size={14} color="var(--text-muted)" />
+          <Search size={14} color="var(--primary)" />
           <input 
             type="text" 
             placeholder="Search resources, students..." 
@@ -103,16 +102,15 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
         </div>
 
         {/* Live Backend Telemetry Indicator */}
-        <div style={{
+        <div className="glass-badge" style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: '7px',
-          padding: '6px 12px',
-          borderRadius: 'var(--radius-sm)',
+          padding: '8px 14px',
           backgroundColor: 'var(--success-soft)',
           color: 'var(--success)',
           fontSize: '12px',
-          fontWeight: '600',
+          fontWeight: '700',
           border: '1px solid var(--success-border)'
         }}>
           <span className="status-dot-active"></span>

@@ -416,17 +416,15 @@ export default function Dashboard({ onNavigateTo }) {
       )}
 
       {/* ── 0. HERO INSTRUCTOR WELCOME ────────────────────────────────────────── */}
-      <div className="card-premium" style={{
-        padding: '24px 28px',
-        backgroundColor: 'var(--bg-surface)',
-        border: '1px solid var(--border-card)',
-        borderRadius: 'var(--radius-lg)',
+      <div className="card-premium dashboard-hero glass-card-hover" style={{
+        padding: '32px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '20px',
-        background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.05) 0%, rgba(14, 165, 233, 0.03) 100%)'
+        border: '1px solid var(--border-accent)',
+        boxShadow: 'var(--shadow-primary-sm)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{
@@ -446,10 +444,10 @@ export default function Dashboard({ onNavigateTo }) {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', margin: 0 }}>
-                Good morning, Dr. Sarah
+              <h1 style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', margin: 0 }}>
+                Good morning, <span className="text-gradient">Dr. Sarah</span>
               </h1>
-              <span className="badge-pill badge-primary" style={{ fontSize: '11px', fontWeight: '700' }}>
+              <span className="glass-badge" style={{ fontSize: '11px', fontWeight: '700', padding: '4px 8px', color: 'var(--primary)' }}>
                 INSTRUCTOR CONSOLE
               </span>
             </div>
@@ -460,21 +458,21 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* Quick Top Actions */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             onClick={() => onNavigateTo('courses')}
-            className="btn-secondary"
-            style={{ padding: '9px 16px', fontSize: '13px', gap: '8px' }}
+            className="glass-badge hover-scale"
+            style={{ padding: '10px 20px', fontSize: '13.5px', gap: '8px', display: 'flex', alignItems: 'center', fontWeight: '600', color: 'var(--text-main)' }}
           >
-            <BookOpen size={15} />
+            <BookOpen size={16} color="var(--primary)" />
             <span>Manage Curriculum</span>
           </button>
           <button
             onClick={() => onNavigateTo('ai-review')}
-            className="btn-primary"
-            style={{ padding: '9px 18px', fontSize: '13px', gap: '8px', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)' }}
+            className="btn-primary hover-scale"
+            style={{ padding: '10px 24px', fontSize: '13.5px', gap: '8px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)', border: 'none', boxShadow: 'var(--shadow-primary-sm)' }}
           >
-            <Sparkles size={15} />
+            <Sparkles size={16} />
             <span>Review AI Drafts ({summaryKpis.aiDraftsCount})</span>
           </button>
         </div>
@@ -484,12 +482,12 @@ export default function Dashboard({ onNavigateTo }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
         
         {/* My Courses */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(79, 70, 229, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(14,165,233,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
             <BookOpen size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.1' }}>
+            <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
               {summaryKpis.totalCourses}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -499,12 +497,12 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* Active Students */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(14, 165, 233, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(14,165,233,0.15) 0%, rgba(16,185,129,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)', border: '1px solid var(--secondary-border)' }}>
             <Users size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.1' }}>
+            <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
               {summaryKpis.activeStudents}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -514,12 +512,12 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* Total Modules */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10B981' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(245,158,11,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10B981', border: '1px solid var(--success-border)' }}>
             <Layers size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.1' }}>
+            <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
               {summaryKpis.totalModules}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -529,12 +527,12 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* Total Quizzes */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245, 158, 11, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F59E0B' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(245,158,11,0.15) 0%, rgba(239,68,68,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F59E0B', border: '1px solid var(--warning-border)' }}>
             <CheckCircle2 size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.1' }}>
+            <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
               {summaryKpis.totalQuizzes}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -544,12 +542,12 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* Pending Reviews */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(239, 68, 68, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#EF4444' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(239,68,68,0.15) 0%, rgba(245,158,11,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
             <Clock size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: '#EF4444', lineHeight: '1.1' }}>
+            <div style={{ fontSize: '28px', fontWeight: '800', color: '#EF4444', lineHeight: '1.1' }}>
               {summaryKpis.pendingReviews}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -559,12 +557,12 @@ export default function Dashboard({ onNavigateTo }) {
         </div>
 
         {/* AI Drafts */}
-        <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(168, 85, 247, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#A855F7' }}>
+        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(99,102,241,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#A855F7', border: '1px solid var(--border-accent)' }}>
             <Sparkles size={22} />
           </div>
           <div>
-            <div style={{ fontSize: '24px', fontWeight: '800', color: '#A855F7', lineHeight: '1.1' }}>
+            <div style={{ fontSize: '28px', fontWeight: '800', color: '#A855F7', lineHeight: '1.1' }}>
               {summaryKpis.aiDraftsCount}
             </div>
             <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -588,8 +586,8 @@ export default function Dashboard({ onNavigateTo }) {
           </div>
           <button
             onClick={() => onNavigateTo('courses')}
-            className="btn-secondary"
-            style={{ padding: '6px 14px', fontSize: '12.5px', gap: '6px' }}
+            className="glass-badge hover-scale"
+            style={{ padding: '8px 16px', fontSize: '12.5px', gap: '6px', display: 'flex', alignItems: 'center', color: 'var(--text-main)', fontWeight: '600' }}
           >
             <span>View All Courses</span>
             <ChevronRight size={14} />
@@ -600,16 +598,12 @@ export default function Dashboard({ onNavigateTo }) {
           {courses.map(course => (
             <div 
               key={course.id} 
-              className="card-premium"
+              className="card-premium glass-card-hover"
               style={{
-                padding: '22px 24px',
+                padding: '28px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '16px',
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-card)',
-                borderRadius: 'var(--radius-lg)',
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                gap: '18px'
               }}
             >
               {/* Card Header: Code, Title, Students count */}
@@ -709,14 +703,17 @@ export default function Dashboard({ onNavigateTo }) {
                 {/* Open Course Action Button */}
                 <button
                   onClick={() => onNavigateTo('courses')}
-                  className="btn-primary"
+                  className="btn-primary hover-scale"
                   style={{
-                    padding: '6px 14px',
-                    fontSize: '12px',
+                    padding: '8px 16px',
+                    fontSize: '12.5px',
                     fontWeight: '700',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px'
+                    gap: '6px',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
+                    border: 'none'
                   }}
                 >
                   <span>Open Course</span>
@@ -740,12 +737,12 @@ export default function Dashboard({ onNavigateTo }) {
                 Students Needing Attention
               </h3>
             </div>
-            <span className="badge-pill badge-danger" style={{ fontSize: '11px', fontWeight: '700' }}>
+            <span className="glass-badge" style={{ fontSize: '11px', fontWeight: '700', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
               {atRiskAlerts.length} Active Alerts
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {atRiskAlerts.map(alert => (
               <div 
                 key={alert.id}

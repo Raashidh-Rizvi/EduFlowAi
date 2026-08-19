@@ -70,19 +70,19 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Level Progress Card */}
-      <div className="card-premium" style={{
-        padding: '20px 24px',
+      <div className="card-premium glass-card-hover" style={{
+        padding: '28px',
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
           <div>
-            <div style={{ fontSize: '11px', color: 'var(--secondary)', fontWeight: '700', letterSpacing: '0.04em', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--secondary)', fontWeight: '800', letterSpacing: '0.04em', marginBottom: '4px' }}>
               LEVEL {profile.level} — {profile.levelName.toUpperCase()}
             </div>
-            <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)' }}>
-              {profile.totalXp.toLocaleString()} <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: '500' }}>Total XP</span>
+            <div className="metric-gradient" style={{ fontSize: '32px', fontWeight: '800', lineHeight: '1.1' }}>
+              {profile.totalXp.toLocaleString()} <span style={{ fontSize: '14px', color: 'var(--text-muted)', fontWeight: '600' }}>Total XP</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
@@ -93,20 +93,20 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
           </div>
         </div>
 
-        <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', height: '8px', overflow: 'hidden', marginBottom: '8px', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: 'var(--primary)', borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease' }} />
+        <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', height: '10px', overflow: 'hidden', marginBottom: '12px', border: '1px solid var(--border-subtle)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)', borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease', boxShadow: '0 0 10px rgba(139, 92, 246, 0.5)' }} />
         </div>
-        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', fontWeight: '500' }}>
           {profile.xpInLevel.toLocaleString()} / {profile.xpToNext.toLocaleString()} XP to Level {profile.level + 1} ({pct}%)
         </div>
       </div>
 
       {/* Streak & Freeze Card */}
-      <div className="card-premium" style={{
-        padding: '14px 18px',
+      <div className="card-premium glass-card-hover" style={{
+        padding: '20px',
         display: 'flex',
         alignItems: 'center',
-        gap: '14px'
+        gap: '16px'
       }}>
         <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
           <Flame size={20} />
@@ -130,9 +130,10 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
         <div style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '0.04em', marginBottom: '8px' }}>
           RECOMMENDED STUDY MISSION
         </div>
-        <div className="card-premium" style={{
-          padding: '18px 20px',
-          borderColor: claimed ? 'var(--success-border)' : 'var(--border-card)'
+        <div className="card-premium glass-card-hover" style={{
+          padding: '24px',
+          borderColor: claimed ? 'var(--success-border)' : 'var(--primary-border)',
+          background: claimed ? 'rgba(16, 185, 129, 0.05)' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%)'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
             <span className="badge-pill badge-primary">
@@ -149,16 +150,16 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
               onClick={() => onStartQuiz(QUIZZES[0])}
-              className="btn-primary"
-              style={{ flex: 1, padding: '9px', fontSize: '12.5px' }}
+              className="btn-primary hover-scale"
+              style={{ flex: 1, padding: '9px', fontSize: '12.5px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)', border: 'none' }}
             >
               Start Mission Assessment
             </button>
             <button
-              disabled={claimed}
               onClick={handleClaim}
-              className={claimed ? 'btn-ghost' : 'btn-secondary'}
-              style={{ padding: '9px 14px', fontSize: '12px', color: claimed ? 'var(--success)' : undefined }}
+              disabled={claimed}
+              className={claimed ? "glass-badge" : "btn-secondary hover-scale"}
+              style={claimed ? { padding: '8px 16px', color: 'var(--success)' } : { padding: '8px 16px', borderRadius: 'var(--radius-full)' }}
             >
               {claimed ? '✓ Completed' : 'Claim Reward'}
             </button>

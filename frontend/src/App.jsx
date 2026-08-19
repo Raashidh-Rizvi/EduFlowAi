@@ -10,12 +10,15 @@ import Gamification from './pages/Gamification/Gamification';
 import Insights from './pages/Insights/Insights';
 import Communications from './pages/Communications/Communications';
 import Login from './pages/Auth/Login';
+import LandingPage from './pages/Landing/LandingPage';
 import StudentPortal from './pages/Student/StudentPortal';
 import { authService } from './services/authService';
 import { ShieldAlert } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showLogin, setShowLogin] = useState(false);
+  const [forceLanding, setForceLanding] = useState(false);
   const [unreadNotifications] = useState(3);
   const [pendingAiProposals, setPendingAiProposals] = useState(() => {
     try {
@@ -53,31 +56,51 @@ export default function App() {
     }
   };
 
-  // ── Not logged in ──────────────────────────────────────────────────────────
-  if (!currentUser) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+  // ── Not logged in or Force Landing ─────────────────────────────────────────
+  if (forceLanding || !currentUser) {
+    if (!currentUser && showLogin) {
+      return (
+        <div className="fade-in">
+          <Login onLoginSuccess={handleLoginSuccess} />
+        </div>
+      );
+    }
+    return (
+      <div className="fade-in">
+        <LandingPage 
+          currentUser={currentUser}
+          onLoginClick={() => {
+            if (currentUser) {
+              setForceLanding(false);
+            } else {
+              setShowLogin(true);
+            }
+          }} 
+        />
+      </div>
+    );
   }
 
   // ── Student Portal ─────────────────────────────────────────────────────────
   if (currentUser.role === 'Student') {
     return (
-      <StudentPortal
-        user={currentUser}
-        onLogout={handleLogout}
-      />
+      <div className="fade-in">
+        <StudentPortal user={currentUser} onLogout={handleLogout} />
+      </div>
     );
   }
 
   // ── Instructor / Admin Console ─────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
-      {/* Sidebar */}
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
+      {/* Top Menu (previously Sidebar) */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         pendingCount={pendingAiProposals}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onLogoClick={() => setForceLanding(true)}
       />
 
       {/* Main Content Area with max-width containment */}

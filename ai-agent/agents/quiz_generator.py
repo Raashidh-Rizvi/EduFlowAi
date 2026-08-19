@@ -43,7 +43,8 @@ from tools.registry import tool_registry
 
 import os
 import json
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_community.document_loaders import PyPDFLoader
@@ -148,12 +149,12 @@ class QuizGeneratorAgent(BaseAgent):
                     chunks = text_splitter.split_documents(docs)
 
                     # 3. Embeddings & Vector Store
-                    embeddings = OpenAIEmbeddings()
+                    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                     vectorstore = FAISS.from_documents(chunks, embeddings)
                     retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
                     # 4. Generate Questions one by one using relevant chunks
-                    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+                    llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=0.1)
                     prompt = PromptTemplate(
                         template="""You are an expert AI educator. Your task is to generate EXACTLY ONE quiz question based STRICTLY and ONLY on the provided document text. 
 Do not hallucinate any information outside the text.

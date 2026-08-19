@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 
-export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout }) {
+export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout, onLogoClick }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const user = currentUser || {
@@ -87,88 +87,75 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
   };
 
   return (
-    <aside style={{
-      width: '260px',
-      backgroundColor: 'var(--bg-surface)',
-      borderRight: '1px solid var(--border-card)',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '20px 14px',
-      flexShrink: 0,
-      userSelect: 'none',
-      position: 'relative'
-    }}>
+    <div style={{ position: 'sticky', top: 0, zIndex: 100, padding: '16px 24px 0 24px', width: '100%' }}>
+      <nav className="liquid-glass" style={{
+        width: '100%',
+        borderRadius: 'var(--radius-xl)',
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 24px',
+        userSelect: 'none',
+        position: 'relative'
+      }}>
       {/* Brand Header */}
-      <div style={{ marginBottom: '24px', paddingLeft: '6px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <BrandLogo 
-          size="md" 
-          subtitle={isAdmin ? 'System Admin Portal' : isInstructor ? 'Instructor Console' : 'Student Portal'} 
+          size="sm" 
+          subtitle={isAdmin ? 'Admin' : isInstructor ? 'Instructor' : 'Student'} 
+          onClick={onLogoClick}
+          style={{ cursor: 'pointer' }}
         />
       </div>
 
-      {/* Categorized Nav List */}
+      {/* Horizontal Nav List */}
       <div style={{ 
         flex: 1, 
-        overflowY: 'auto', 
+        overflowX: 'auto', 
         display: 'flex', 
-        flexDirection: 'column', 
-        gap: '16px',
-        paddingRight: '2px'
+        flexDirection: 'row', 
+        alignItems: 'center',
+        gap: '8px',
+        padding: '0 24px',
+        scrollbarWidth: 'none', // hide scrollbar for firefox
+        msOverflowStyle: 'none' // hide scrollbar for IE
       }}>
-        {navSections.map((section, sIdx) => {
+        {navSections.map((section) => {
           if (!section.items || section.items.length === 0) return null;
-          return (
-            <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-              <div style={{
-                fontSize: '10.5px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--text-subtle)',
-                fontWeight: '700',
-                paddingLeft: '10px',
-                marginBottom: '4px'
-              }}>
-                {section.label}
-              </div>
-
-              {section.items.map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '8px 10px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: isActive ? 'var(--primary-soft)' : 'transparent',
-                      color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                      fontWeight: isActive ? '600' : '500',
-                      border: isActive ? '1px solid var(--primary-border)' : '1px solid transparent',
-                      textAlign: 'left',
-                      transition: 'all 0.15s ease',
-                      position: 'relative',
-                      cursor: 'pointer',
-                      fontSize: '13px'
-                    }}
-                  >
-                    <Icon size={16} color={isActive ? 'var(--primary-text)' : 'var(--text-muted)'} />
-                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {tab.label}
-                    </span>
-                    {tab.badge && (
-                      <span className={`badge-pill ${tab.badgeType === 'danger' ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: '10px', padding: '1px 6px' }}>
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          );
+          return section.items.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: isActive ? 'var(--primary-soft)' : 'transparent',
+                  color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
+                  fontWeight: isActive ? '600' : '500',
+                  border: isActive ? '1px solid var(--primary-border)' : '1px solid transparent',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease',
+                  cursor: 'pointer',
+                  fontSize: '13px'
+                }}
+              >
+                <Icon size={15} color={isActive ? 'var(--primary-text)' : 'var(--text-muted)'} />
+                <span>{tab.label}</span>
+                {tab.badge && (
+                  <span className={`badge-pill ${tab.badgeType === 'danger' ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: '10px', padding: '1px 6px', marginLeft: '4px' }}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          });
         })}
       </div>
 
@@ -176,18 +163,20 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
       {showProfileMenu && (
         <div style={{
           position: 'absolute',
-          bottom: '75px',
-          left: '12px',
-          right: '12px',
+          top: '80px',
+          right: '24px',
+          width: '260px',
           backgroundColor: 'var(--bg-card)',
           borderRadius: 'var(--radius-md)',
           border: '1px solid var(--border-card)',
-          padding: '14px',
+          padding: '16px',
           boxShadow: 'var(--shadow-popover)',
           zIndex: 100,
           display: 'flex',
           flexDirection: 'column',
-          gap: '10px'
+          gap: '12px',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
@@ -253,48 +242,43 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
 
       {/* Footer Profile Pill */}
       <div 
-        onClick={() => setShowProfileMenu(!showProfileMenu)}
         style={{
-          marginTop: 'auto',
-          padding: '10px 12px',
-          borderRadius: 'var(--radius-sm)',
-          backgroundColor: showProfileMenu ? 'var(--bg-card-hover)' : 'var(--bg-card)',
-          border: '1px solid var(--border-card)',
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
+          gap: '12px',
+          paddingLeft: '16px',
+          borderLeft: '1px solid var(--border-subtle)',
           cursor: 'pointer',
-          transition: 'all 0.15s ease'
+          position: 'relative'
         }}
+        onClick={() => setShowProfileMenu(!showProfileMenu)}
       >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', lineHeight: '1.2' }}>
+            {user.fullName}
+          </span>
+          <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+            {user.role}
+          </span>
+        </div>
         <div style={{
-          width: '32px',
-          height: '32px',
-          borderRadius: 'var(--radius-sm)',
-          backgroundColor: isAdmin ? 'var(--accent)' : 'var(--primary)',
+          width: '36px',
+          height: '36px',
+          borderRadius: 'var(--radius-full)',
+          background: isAdmin ? 'var(--accent)' : 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
           color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           fontWeight: '700',
-          fontSize: '12px'
+          fontSize: '13px',
+          boxShadow: 'var(--shadow-sm)'
         }}>
           {getInitials(user.fullName)}
         </div>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-main)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-            {user.fullName}
-          </div>
-          <div style={{
-            fontSize: '10.5px',
-            color: user.role === 'Admin' ? 'var(--accent)' : 'var(--text-muted)',
-            fontWeight: '500'
-          }}>
-            {user.role}
-          </div>
-        </div>
-        <ChevronUp size={14} color="var(--text-muted)" style={{ transform: showProfileMenu ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
       </div>
-    </aside>
+
+    </nav>
+    </div>
   );
 }
