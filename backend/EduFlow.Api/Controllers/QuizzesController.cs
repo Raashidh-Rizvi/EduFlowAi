@@ -9,6 +9,7 @@ using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,11 +23,13 @@ public class QuizzesController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IGamificationService _gamificationService;
+    private readonly IAiGatewayClient _aiGatewayClient;
 
-    public QuizzesController(ApplicationDbContext dbContext, IGamificationService gamificationService)
+    public QuizzesController(ApplicationDbContext dbContext, IGamificationService gamificationService, IAiGatewayClient aiGatewayClient)
     {
         _dbContext = dbContext;
         _gamificationService = gamificationService;
+        _aiGatewayClient = aiGatewayClient;
     }
 
     // -------------------------------------------------------------------------
@@ -729,10 +732,8 @@ public class QuizzesController : ControllerBase
         };
 
         // -------------------------------------------------------------------------
-        // CALL PYTHON AI AGENT MICROSERVICE
+        // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
         // -------------------------------------------------------------------------
-        var pythonApiUrl = "http://localhost:8000/api/v1/ai/quiz-generation"; // Fallback to direct route if this fails
-        var pythonFallbackUrl = "http://localhost:8000/generate-quiz";
 
         // Map relative PdfUrl to physical path for the python service
         string? physicalPdfPath = null;
@@ -756,69 +757,70 @@ public class QuizzesController : ControllerBase
         };
 
         bool usedPython = false;
-        using var httpClient = new System.Net.Http.HttpClient();
         try
         {
-            var content = new System.Net.Http.StringContent(JsonSerializer.Serialize(pythonPayload), System.Text.Encoding.UTF8, "application/json");
-            var response = await httpClient.PostAsync(pythonFallbackUrl, content);
-            if (response.IsSuccessStatusCode)
+            var responseString = await _aiGatewayClient.GenerateQuizAsync(pythonPayload);
+            var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
+
+            // The gateway client transparently returns its own degraded/offline fallback
+            // JSON (tagged "source": "fallback") when the real AI microservice is unreachable.
+            // Treat that the same as a failed call so the local hardcoded fallback below runs,
+            // preserving prior behavior.
+            bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
+                && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
+
+            if (!isGatewayFallback && aiResult.TryGetProperty("questions", out var questionsArray))
             {
-                var responseString = await response.Content.ReadAsStringAsync();
-                var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
-                
-                if (aiResult.TryGetProperty("questions", out var questionsArray))
+                int i = 0;
+                foreach (var qToken in questionsArray.EnumerateArray())
                 {
-                    int i = 0;
-                    foreach (var qToken in questionsArray.EnumerateArray())
+                    var prompt = qToken.GetProperty("question_text").GetString() ?? "Generated Question";
+                    var qTypeStr = qToken.GetProperty("question_type").GetString() ?? "MULTIPLE_CHOICE";
+                    var correct = qToken.GetProperty("correct_answer").GetString() ?? "A";
+                    var explanation = qToken.GetProperty("explanation").GetString() ?? "AI Explanation";
+
+                    var qType = QuestionType.MultipleChoice;
+                    if (qTypeStr == "TRUE_FALSE") qType = QuestionType.TrueFalse;
+                    if (qTypeStr == "MULTIPLE_SELECT") qType = QuestionType.MultipleSelect;
+
+                    var options = new List<string>();
+                    if (qToken.TryGetProperty("options", out var optionsArray))
                     {
-                        var prompt = qToken.GetProperty("question_text").GetString() ?? "Generated Question";
-                        var qTypeStr = qToken.GetProperty("question_type").GetString() ?? "MULTIPLE_CHOICE";
-                        var correct = qToken.GetProperty("correct_answer").GetString() ?? "A";
-                        var explanation = qToken.GetProperty("explanation").GetString() ?? "AI Explanation";
-                        
-                        var qType = QuestionType.MultipleChoice;
-                        if (qTypeStr == "TRUE_FALSE") qType = QuestionType.TrueFalse;
-                        if (qTypeStr == "MULTIPLE_SELECT") qType = QuestionType.MultipleSelect;
-
-                        var options = new List<string>();
-                        if (qToken.TryGetProperty("options", out var optionsArray))
+                        foreach (var opt in optionsArray.EnumerateArray())
                         {
-                            foreach (var opt in optionsArray.EnumerateArray())
-                            {
-                                options.Add(opt.GetString() ?? "");
-                            }
+                            options.Add(opt.GetString() ?? "");
                         }
-
-                        var question = new Question
-                        {
-                            Prompt = prompt,
-                            Type = qType,
-                            OptionsJson = JsonSerializer.Serialize(options),
-                            CorrectAnswer = correct,
-                            Explanation = explanation,
-                            Difficulty = quiz.Difficulty,
-                            Points = 10,
-                            OrderIndex = i + 1,
-                            LearningObjective = $"LO-0{(i % 3) + 1}",
-                            MetadataJson = "{}"
-                        };
-
-                        int optIdx = 1;
-                        foreach (var opt in options)
-                        {
-                            bool isCorrect = correct.Contains(opt, StringComparison.OrdinalIgnoreCase);
-                            question.Options.Add(new QuestionOption
-                            {
-                                OptionText = opt,
-                                IsCorrect = isCorrect,
-                                DisplayOrder = optIdx++
-                            });
-                        }
-                        quiz.Questions.Add(question);
-                        i++;
                     }
-                    usedPython = true;
+
+                    var question = new Question
+                    {
+                        Prompt = prompt,
+                        Type = qType,
+                        OptionsJson = JsonSerializer.Serialize(options),
+                        CorrectAnswer = correct,
+                        Explanation = explanation,
+                        Difficulty = quiz.Difficulty,
+                        Points = 10,
+                        OrderIndex = i + 1,
+                        LearningObjective = $"LO-0{(i % 3) + 1}",
+                        MetadataJson = "{}"
+                    };
+
+                    int optIdx = 1;
+                    foreach (var opt in options)
+                    {
+                        bool isCorrect = correct.Contains(opt, StringComparison.OrdinalIgnoreCase);
+                        question.Options.Add(new QuestionOption
+                        {
+                            OptionText = opt,
+                            IsCorrect = isCorrect,
+                            DisplayOrder = optIdx++
+                        });
+                    }
+                    quiz.Questions.Add(question);
+                    i++;
                 }
+                usedPython = true;
             }
         }
         catch (Exception ex)

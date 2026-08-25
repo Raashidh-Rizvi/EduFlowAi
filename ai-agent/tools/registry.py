@@ -21,10 +21,68 @@ Why we use a Permitted Tool Registry:
 import time
 # Import uuid module for generating unique identifiers for quizzes and hashes
 import uuid
+# Import logging module to report degraded/fallback mode when the .NET backend is unreachable
+import logging
 # Import typing annotations for flexible dictionary types, callables, and lists
 from typing import Dict, Any, Callable, List, Optional, Tuple
 # Import custom classified errors for unavailable tools and permission validation failures
 from core.errors import ToolUnavailable, ValidationError
+# Import the thin .NET backend HTTP client -- tool handlers try this first and
+# fall back to deterministic hardcoded data if the backend call fails.
+from core import backend_client
+
+# Module-level logger for this registry (fallback/degraded-mode warnings)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# 0. Backend Response Reshaping Helpers
+# =============================================================================
+
+def _pick(source: Dict[str, Any], *keys: str, default: Any = None) -> Any:
+    """
+    Reads the first present key out of a dict, trying multiple casing variants.
+
+    Why we need this:
+    - The .NET backend's exact JSON casing (camelCase vs PascalCase) for the
+      `/internal/ai-tools/*` endpoints is being built concurrently. Trying
+      several common casings keeps the tool handlers robust to either.
+
+    Args:
+        source: The raw dict returned by the backend client (or a nested item).
+        *keys: Candidate key names to try, in priority order.
+        default: Value returned if none of the keys are present.
+
+    Returns:
+        The first matching value, or `default` if none of the keys exist.
+    """
+    if not isinstance(source, dict):
+        return default
+    for key in keys:
+        if key in source and source[key] is not None:
+            return source[key]
+    return default
+
+
+def _normalize_question_text_list(raw_items: Any) -> List[str]:
+    """
+    Normalizes a list of existing-question entries into plain strings.
+
+    The backend may return existing questions as plain strings or as objects
+    (e.g. `{"questionText": "..."}` / `{"text": "..."}`). Duplicate-detection
+    (`tool_check_question_duplicate`) expects a flat list of strings.
+    """
+    if not isinstance(raw_items, list):
+        return []
+    normalized: List[str] = []
+    for item in raw_items:
+        if isinstance(item, str):
+            normalized.append(item)
+        elif isinstance(item, dict):
+            text = _pick(item, "questionText", "question_text", "QuestionText", "text", "Text")
+            if text:
+                normalized.append(text)
+    return normalized
 
 
 # =============================================================================
@@ -94,20 +152,8 @@ def tool_resolve_scope(params: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def tool_get_content_hierarchy(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Retrieves full 4-tier course hierarchy: Course -> Modules -> Topics -> Content Items.
-    
-    Why we use this tool:
-    - Provides structural context so agents understand prerequisites, module groupings, and lesson items.
-    
-    Args:
-        params: Dictionary containing 'course_id'.
-        
-    Returns:
-        Structured JSON representing modules, topics, and lesson items for the course.
-    """
-    course_id = params.get("course_id", "44444444-4444-4444-4444-444444444444")
+def _fallback_content_hierarchy(course_id: str) -> Dict[str, Any]:
+    """Deterministic hardcoded curriculum hierarchy -- safety-net fallback data."""
     return {
         "course_id": course_id,
         "course_code": "SE3090",
@@ -157,6 +203,58 @@ def tool_get_content_hierarchy(params: Dict[str, Any]) -> Dict[str, Any]:
             }
         ]
     }
+
+
+def tool_get_content_hierarchy(params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Retrieves full 4-tier course hierarchy: Course -> Modules -> Topics -> Content Items.
+
+    Why we use this tool:
+    - Provides structural context so agents understand prerequisites, module groupings, and lesson items.
+
+    Args:
+        params: Dictionary containing 'course_id'.
+
+    Returns:
+        Structured JSON representing modules, topics, and lesson items for the course.
+    """
+    course_id = params.get("course_id", "44444444-4444-4444-4444-444444444444")
+
+    try:
+        raw = backend_client.get_curriculum_hierarchy(course_id)
+        return {
+            "course_id": _pick(raw, "courseId", "course_id", "CourseId", default=course_id),
+            "course_code": _pick(raw, "courseCode", "course_code", "CourseCode", default="SE3090"),
+            "title": _pick(raw, "title", "Title", default="Software Engineering & Architecture"),
+            "modules": [
+                {
+                    "module_id": _pick(module, "moduleId", "module_id", "ModuleId"),
+                    "title": _pick(module, "title", "Title"),
+                    "topics": [
+                        {
+                            "topic_id": _pick(topic, "topicId", "topic_id", "TopicId"),
+                            "title": _pick(topic, "title", "Title"),
+                            "content_items": [
+                                {
+                                    "id": _pick(item, "id", "Id"),
+                                    "title": _pick(item, "title", "Title"),
+                                    "type": _pick(item, "type", "Type")
+                                }
+                                for item in (_pick(topic, "contentItems", "content_items", "ContentItems", default=[]) or [])
+                            ]
+                        }
+                        for topic in (_pick(module, "topics", "Topics", default=[]) or [])
+                    ]
+                }
+                for module in (_pick(raw, "modules", "Modules", default=[]) or [])
+            ]
+        }
+    except Exception as e:
+        logger.warning(
+            "tool_get_content_hierarchy running in degraded/fallback mode (backend call failed for course_id=%s): %s",
+            course_id, e
+        )
+        return _fallback_content_hierarchy(course_id)
 
 
 def tool_get_content_by_scope(params: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using EduFlow.Core.Constants;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -377,15 +379,18 @@ public class ApplicationDbContext : DbContext
     private static void SeedData(ModelBuilder modelBuilder)
     {
         // 1. Levels Seed (Levels 1 to 8 with progressive mathematical curves)
+        // Sourced from LevelCurve, the single source of truth shared with GamificationService,
+        // so the seeded table can never drift from the runtime level calculations again.
         modelBuilder.Entity<Level>().HasData(
-            new Level { Id = 1, Name = "Novice Explorer", MinimumXp = 0, MaximumXp = 499, RewardCoins = 50, BadgeIcon = "🌱" },
-            new Level { Id = 2, Name = "Code Apprentice", MinimumXp = 500, MaximumXp = 1499, RewardCoins = 100, BadgeIcon = "⚡" },
-            new Level { Id = 3, Name = "Logic Adept", MinimumXp = 1500, MaximumXp = 2999, RewardCoins = 150, BadgeIcon = "🧩" },
-            new Level { Id = 4, Name = "Data Scholar", MinimumXp = 3000, MaximumXp = 4999, RewardCoins = 200, BadgeIcon = "📚" },
-            new Level { Id = 5, Name = "Algorithm Knight", MinimumXp = 5000, MaximumXp = 7999, RewardCoins = 300, BadgeIcon = "⚔️" },
-            new Level { Id = 6, Name = "Architecture Master", MinimumXp = 8000, MaximumXp = 11999, RewardCoins = 400, BadgeIcon = "🏰" },
-            new Level { Id = 7, Name = "AI Grandmaster", MinimumXp = 12000, MaximumXp = 19999, RewardCoins = 500, BadgeIcon = "👑" },
-            new Level { Id = 8, Name = "EduFlow Legend", MinimumXp = 20000, MaximumXp = 999999, RewardCoins = 1000, BadgeIcon = "🌟" }
+            LevelCurve.Tiers.Select(t => new Level
+            {
+                Id = t.Level,
+                Name = t.Name,
+                MinimumXp = t.MinXp,
+                MaximumXp = t.MaxXp,
+                RewardCoins = t.RewardCoins,
+                BadgeIcon = t.BadgeIcon
+            }).ToArray()
         );
 
         // 2. Badges Seed
@@ -403,8 +408,8 @@ public class ApplicationDbContext : DbContext
         var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var student1Id = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Alex Rivera
 
-        // Hash for "Password123!"
-        var defaultPasswordHash = "$2a$11$e8.Z/qUj5k.P5jRzY9E4ee46h2Q9D7G5m3D6Q9a5Z8r.X6m8Z4K8S";
+        // Real bcrypt hash of "Password123!" (verified against BCrypt.Net)
+        var defaultPasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK";
 
         modelBuilder.Entity<User>().HasData(
             new User

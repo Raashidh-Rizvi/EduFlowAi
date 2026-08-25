@@ -46,6 +46,49 @@ export default function Courses({ currentUser }) {
   const [expandedModules, setExpandedModules] = useState({});
   const [loading, setLoading] = useState(true);
 
+  const mapBackendCourseToFrontend = (backendCourse) => {
+    return {
+      ...backendCourse,
+      fullDetailsLoaded: true,
+      modules: (backendCourse.modules || []).map(m => ({
+        ...m,
+        topics: [
+          {
+            id: `topic-${m.id}`,
+            title: `${m.title} Core Concepts`,
+            masteryPercent: 0,
+            lessons: (m.lessons || []).map(l => ({
+              id: l.id,
+              title: l.title,
+              type: 'doc',
+              duration: `${l.estimatedMinutes}m`,
+              xp: l.xpReward,
+              completed: l.isCompleted || false,
+              content: l.content || 'Lecture material'
+            }))
+          }
+        ],
+        moduleAssessment: {
+          id: `assm-${m.id}`,
+          title: `${m.title} Assessment`,
+          questionsCount: 5,
+          timeLimitMinutes: 15,
+          passPercentage: 70,
+          xpReward: 100,
+          isBossBattle: false
+        }
+      })),
+      finalAssessment: {
+        id: `final-${backendCourse.id}`,
+        title: `${backendCourse.title} Final Assessment`,
+        questionsCount: 20,
+        timeLimitMinutes: 60,
+        passPercentage: 70,
+        xpReward: 500
+      }
+    };
+  };
+
   useEffect(() => {
     loadCourses();
   }, []);
@@ -55,10 +98,12 @@ export default function Courses({ currentUser }) {
     try {
       const data = await courseService.getCourses();
       if (data && data.length > 0) {
-        setCoursesList(data);
+        const fullCourse = await courseService.getCourseById(data[0].id);
+        const mappedData = data.map(c => (c.id === data[0].id && fullCourse) ? mapBackendCourseToFrontend(fullCourse) : c);
+        setCoursesList(mappedData);
         setSelectedCourseId(data[0].id);
-        if (data[0].modules?.[0]?.id) {
-          setExpandedModules({ [data[0].modules[0].id]: true });
+        if (fullCourse?.modules?.[0]?.id) {
+          setExpandedModules({ [fullCourse.modules[0].id]: true });
         }
       } else {
         setCoursesList([]);
@@ -68,6 +113,21 @@ export default function Courses({ currentUser }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSelectCourse = async (id) => {
+    setSelectedCourseId(id);
+    setCoursesList(prev => {
+      const course = prev.find(c => c.id === id);
+      if (course && !course.fullDetailsLoaded) {
+        courseService.getCourseById(id).then(fullCourse => {
+          if (fullCourse) {
+            setCoursesList(current => current.map(c => c.id === id ? mapBackendCourseToFrontend(fullCourse) : c));
+          }
+        });
+      }
+      return prev;
+    });
   };
 
   const currentCourse = coursesList.find(c => c.id === selectedCourseId) || coursesList[0];
@@ -480,26 +540,34 @@ export default function Courses({ currentUser }) {
       return;
     }
 
-    const created = {
-      id: `c-${Date.now()}`,
-      code: newCourseCode.toUpperCase(),
-      title: newCourseTitle,
-      description: newCourseDesc || 'Comprehensive curriculum with grounded AI assessments.',
-      category: newCourseCategory,
-      studentsCount: 0,
-      completionRate: 0,
-      avgScore: 0,
-      engagementRate: 0,
-      modules: []
-    };
+    try {
+      const created = await courseService.createCourse({
+        code: newCourseCode.toUpperCase(),
+        title: newCourseTitle,
+        description: newCourseDesc || 'Comprehensive curriculum with grounded AI assessments.',
+        category: newCourseCategory,
+      });
+      created.modules = [];
+      created.fullDetailsLoaded = true;
+      created.finalAssessment = {
+        id: `final-${created.id}`,
+        title: `${created.title} Final Assessment`,
+        questionsCount: 20,
+        timeLimitMinutes: 60,
+        passPercentage: 70,
+        xpReward: 500
+      };
 
-    setCoursesList(prev => [...prev, created]);
-    setSelectedCourseId(created.id);
-    setShowCourseModal(false);
-    setNewCourseCode('');
-    setNewCourseTitle('');
-    setNewCourseDesc('');
-    showToast(`Created new course ${created.code}!`);
+      setCoursesList(prev => [...prev, created]);
+      setSelectedCourseId(created.id);
+      setShowCourseModal(false);
+      setNewCourseCode('');
+      setNewCourseTitle('');
+      setNewCourseDesc('');
+      showToast(`Created new course ${created.code}!`);
+    } catch (err) {
+      alert('Failed to create course. ' + err.message);
+    }
   };
 
   const handleCreateModule = async () => {
@@ -525,44 +593,56 @@ export default function Courses({ currentUser }) {
       }
     }
 
-    const newModId = `m-${Date.now()}`;
-    const newMod = {
-      id: newModId,
-      title: newModuleTitle,
-      description: newModuleDesc || 'Module curriculum with attached learning materials and assessment checkpoints.',
-      orderIndex: (currentCourse.modules?.length || 0) + 1,
-      pdfUrl: uploadedPdfUrl,
-      attachmentFileName: uploadedPdfName,
-      masteryRate: 0,
-      topics: [
-        {
-          id: `t-${Date.now()}`,
-          title: `${newModuleTitle} Core Concepts`,
-          masteryPercent: 0,
-          lessons: [
-            { id: `l-${Date.now()}`, title: 'Lecture Notes & Conceptual Overview', type: 'doc', duration: '30m', xp: 40, completed: false }
-          ]
+    try {
+      const createdMod = await courseService.createModule(currentCourse.id, {
+        title: newModuleTitle,
+        description: newModuleDesc || 'Module curriculum with attached learning materials and assessment checkpoints.',
+        orderIndex: (currentCourse.modules?.length || 0) + 1,
+        pdfUrl: uploadedPdfUrl,
+        attachmentFileName: uploadedPdfName,
+      });
+
+      const newMod = {
+        ...createdMod,
+        topics: [
+          {
+            id: `t-${Date.now()}`,
+            title: `${newModuleTitle} Core Concepts`,
+            masteryPercent: 0,
+            lessons: []
+          }
+        ],
+        moduleAssessment: {
+          id: `assm-${createdMod.id}`,
+          title: `${createdMod.title} Assessment`,
+          questionsCount: 5,
+          timeLimitMinutes: 15,
+          passPercentage: 70,
+          xpReward: 100,
+          isBossBattle: false
         }
-      ]
-    };
+      };
 
-    const updated = coursesList.map(c => {
-      if (c.id === currentCourse.id) {
-        return {
-          ...c,
-          modules: [...(c.modules || []), newMod]
-        };
-      }
-      return c;
-    });
+      const updated = coursesList.map(c => {
+        if (c.id === currentCourse.id) {
+          return {
+            ...c,
+            modules: [...(c.modules || []), newMod]
+          };
+        }
+        return c;
+      });
 
-    setCoursesList(updated);
-    setExpandedModules(prev => ({ ...prev, [newModId]: true }));
-    setShowModuleModal(false);
-    setNewModuleTitle('');
-    setNewModuleDesc('');
-    setModulePdfFile(null);
-    showToast(`Added module "${newMod.title}"!`);
+      setCoursesList(updated);
+      setExpandedModules(prev => ({ ...prev, [newMod.id]: true }));
+      setShowModuleModal(false);
+      setNewModuleTitle('');
+      setNewModuleDesc('');
+      setModulePdfFile(null);
+      showToast(`Added module "${newMod.title}"!`);
+    } catch (err) {
+      alert('Failed to create module. ' + err.message);
+    }
   };
 
   const handleOpenAddTopic = (mod) => {
@@ -573,49 +653,61 @@ export default function Courses({ currentUser }) {
     setShowTopicModal(true);
   };
 
-  const handleCreateTopic = () => {
+  const handleCreateTopic = async () => {
     if (!newTopicTitle || !activeModuleForTopic) {
       alert('Please enter a Topic Title.');
       return;
     }
 
-    const newTopic = {
-      id: `t-${Date.now()}`,
-      title: newTopicTitle,
-      masteryPercent: 0,
-      lessons: [
-        {
-          id: `l-${Date.now()}`,
-          title: newLessonTitle || `${newTopicTitle} Introduction`,
-          type: 'doc',
-          duration: newLessonDuration || '30m',
-          xp: Number(newLessonXp) || 40,
-          completed: false,
-          content: newLessonContent || 'Study the lecture notes and review the core architectural objectives.'
-        }
-      ]
-    };
+    try {
+      const createdLesson = await courseService.createLesson(activeModuleForTopic.id, {
+        title: newLessonTitle || `${newTopicTitle} Introduction`,
+        content: newLessonContent || 'Study the lecture notes and review the core architectural objectives.',
+        estimatedMinutes: parseInt(newLessonDuration) || 30,
+        xpReward: Number(newLessonXp) || 40,
+        orderIndex: 1
+      });
 
-    const updated = coursesList.map(c => {
-      if (c.id === currentCourse.id) {
-        const updatedMods = c.modules.map(m => {
-          if (m.id === activeModuleForTopic.id) {
-            return {
-              ...m,
-              topics: [...(m.topics || []), newTopic]
-            };
+      const newTopic = {
+        id: `t-${Date.now()}`,
+        title: newTopicTitle,
+        masteryPercent: 0,
+        lessons: [
+          {
+            id: createdLesson.id,
+            title: createdLesson.title,
+            type: 'doc',
+            duration: `${createdLesson.estimatedMinutes}m`,
+            xp: createdLesson.xpReward,
+            completed: false,
+            content: createdLesson.content
           }
-          return m;
-        });
-        return { ...c, modules: updatedMods };
-      }
-      return c;
-    });
+        ]
+      };
 
-    setCoursesList(updated);
-    setShowTopicModal(false);
-    setActiveModuleForTopic(null);
-    showToast(`Added topic "${newTopic.title}" to ${activeModuleForTopic.title}!`);
+      const updated = coursesList.map(c => {
+        if (c.id === currentCourse.id) {
+          const updatedMods = c.modules.map(m => {
+            if (m.id === activeModuleForTopic.id) {
+              return {
+                ...m,
+                topics: [...(m.topics || []), newTopic]
+              };
+            }
+            return m;
+          });
+          return { ...c, modules: updatedMods };
+        }
+        return c;
+      });
+
+      setCoursesList(updated);
+      setShowTopicModal(false);
+      setActiveModuleForTopic(null);
+      showToast(`Added topic "${newTopic.title}" to ${activeModuleForTopic.title}!`);
+    } catch (err) {
+      alert('Failed to create topic/lesson. ' + err.message);
+    }
   };
 
   const handleDeleteModule = (moduleId) => {
@@ -739,7 +831,7 @@ export default function Courses({ currentUser }) {
           {coursesList.map(c => (
             <button
               key={c.id}
-              onClick={() => setSelectedCourseId(c.id)}
+              onClick={() => handleSelectCourse(c.id)}
               style={{
                 padding: '8px 16px',
                 borderRadius: 'var(--radius-sm)',

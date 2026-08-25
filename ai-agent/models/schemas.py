@@ -110,6 +110,10 @@ class AgentTopologyResponse(BaseModel):
     # List of all directional communication edges connecting the agent nodes
     edges: List[AgentTopologyEdge]
 
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
+
 
 # =============================================================================
 # 2. Planner & Tool Schemas
@@ -328,6 +332,10 @@ class WorkflowDecisionResponse(BaseModel):
     # Human-readable confirmation message
     message: str
 
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
+
 
 # =============================================================================
 # 6. Study Plan Orchestration Schemas
@@ -453,6 +461,10 @@ class StudyPlanProposalResponse(BaseModel):
     # Optional snapshot of the LangGraph shared blackboard state
     shared_state: Optional[Dict[str, Any]] = None
 
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
+
 
 # =============================================================================
 # 7. Adaptive Challenge Generation Schemas
@@ -540,6 +552,10 @@ class AdaptiveChallengeResponse(BaseModel):
     
     # Review status ("PendingInstructorApproval")
     status: str = "PendingInstructorApproval"
+
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
 
 
 # =============================================================================
@@ -810,6 +826,10 @@ class DiagnosticQuizResponse(BaseModel):
     # Lifecycle status (e.g. "READY_FOR_REVIEW" or "PendingInstructorApproval")
     status: str = "READY_FOR_REVIEW"
 
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
+
 
 class SingleQuestionRegenerateRequest(BaseModel):
     """
@@ -923,6 +943,10 @@ class RetentionRiskResponse(BaseModel):
     # Execution audit trail
     audit_trail: List[AgentExecutionLog] = []
 
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
+
 
 # =============================================================================
 # 10. AI Coach Chat Schemas
@@ -963,6 +987,10 @@ class CoachChatResponse(BaseModel):
     
     # Audit log of the coach execution
     audit_log: Optional[AgentExecutionLog] = None
+
+    # Origin marker distinguishing a genuine AI microservice response from a
+    # degraded/offline fallback payload (e.g. the .NET gateway's canned JSON)
+    source: str = "ai-agent"
 
 
 # =============================================================================

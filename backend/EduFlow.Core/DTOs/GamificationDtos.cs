@@ -188,3 +188,45 @@ public record LeaderboardEntryDto(
     int Streak,
     bool IsCurrentStudent = false
 );
+
+public record SquadMemberDto(
+    Guid StudentId,
+    string StudentName,
+    string? AvatarUrl,
+    TeamRole Role,
+    int TotalXp,
+    DateTime JoinedAt
+);
+
+public record SquadDto(
+    Guid Id,
+    string Name,
+    string Description,
+    string? AvatarUrl,
+    Guid LeaderId,
+    string LeaderName,
+    int MemberCount,
+    int CombinedXp,
+    List<SquadMemberDto> Members,
+    DateTime CreatedAt
+);
+
+public record SquadLeaderboardEntryDto(
+    int Rank,
+    Guid SquadId,
+    string Name,
+    string? AvatarUrl,
+    int MemberCount,
+    int CombinedXp
+);
+
+public record CreateSquadRequest(
+    string Name,
+    string? Description
+);
+
+public record SquadActionResultDto(
+    bool Success,
+    string Message,
+    SquadDto? Squad
+);

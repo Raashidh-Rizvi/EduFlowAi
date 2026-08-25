@@ -22,10 +22,13 @@ load_dotenv()
 
 # Import typing annotations for flexible dictionaries and optional values
 from typing import Dict, Any, Optional
-# Import FastAPI core framework, HTTP exception handler, and request body extractor
-from fastapi import FastAPI, HTTPException, Body
+# Import FastAPI core framework, HTTP exception handler, request body extractor, and dependency injector
+from fastapi import FastAPI, HTTPException, Body, Depends
 # Import CORS middleware to allow cross-origin requests from frontend apps
 from fastapi.middleware.cors import CORSMiddleware
+
+# Import the internal service-to-service authentication guard (shared-secret header check)
+from core.internal_auth import verify_internal_token
 
 # Import all Pydantic request and response schemas
 from models.schemas import (
@@ -117,7 +120,7 @@ def health_check():
 
 
 @app.get("/agents/topology", response_model=AgentTopologyResponse)
-def get_agents_topology():
+def get_agents_topology(_: None = Depends(verify_internal_token)):
     """
     Returns the full interactive topology map of all 7 interconnected agents and their communication channels.
     """
@@ -128,7 +131,7 @@ def get_agents_topology():
 
 
 @app.get("/tools/registry")
-def get_tool_registry():
+def get_tool_registry(_: None = Depends(verify_internal_token)):
     """
     Returns all registered permitted tools, their descriptions, and authorized agent roles.
     """
@@ -146,7 +149,7 @@ def get_tool_registry():
 # =============================================================================
 
 @app.post("/orchestrate-study-plan", response_model=StudyPlanProposalResponse)
-def orchestrate_study_plan(request: StudyPlanRequest):
+def orchestrate_study_plan(request: StudyPlanRequest, _: None = Depends(verify_internal_token)):
     """
     Orchestrates the 4-agent pipeline to create a multi-week personalized study plan proposal.
     """
@@ -157,7 +160,7 @@ def orchestrate_study_plan(request: StudyPlanRequest):
 
 
 @app.post("/generate-adaptive-challenge", response_model=AdaptiveChallengeResponse)
-def generate_adaptive_challenge(request: AdaptiveChallengeRequest):
+def generate_adaptive_challenge(request: AdaptiveChallengeRequest, _: None = Depends(verify_internal_token)):
     """
     Generates a targeted, calibrated micro-challenge addressing diagnosed student knowledge gaps.
     """
@@ -173,7 +176,7 @@ def generate_adaptive_challenge(request: AdaptiveChallengeRequest):
 
 @app.post("/generate-quiz", response_model=DiagnosticQuizResponse)
 @app.post("/api/v1/ai/quiz-generation", response_model=DiagnosticQuizResponse)
-def generate_diagnostic_quiz(request: DiagnosticQuizRequest):
+def generate_diagnostic_quiz(request: DiagnosticQuizRequest, _: None = Depends(verify_internal_token)):
     """
     Synthesizes a curriculum-aligned quiz assessment across Course, Module, Topic, or Lesson scopes.
     """
@@ -184,7 +187,7 @@ def generate_diagnostic_quiz(request: DiagnosticQuizRequest):
 
 
 @app.post("/api/v1/ai/questions/{question_id}/regenerate")
-def regenerate_single_question(question_id: int, request: Dict[str, Any] = Body(...)):
+def regenerate_single_question(question_id: int, request: Dict[str, Any] = Body(...), _: None = Depends(verify_internal_token)):
     """
     Regenerates an individual question within a quiz using custom instructor natural language prompt guidance.
     """
@@ -206,7 +209,7 @@ def regenerate_single_question(question_id: int, request: Dict[str, Any] = Body(
 
 
 @app.post("/api/v1/ai/quiz-generation/{workflow_id}/regenerate", response_model=DiagnosticQuizResponse)
-def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest):
+def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest, _: None = Depends(verify_internal_token)):
     """
     Re-executes the quiz generation workflow for an entire assessment.
     """
@@ -221,7 +224,7 @@ def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest):
 # =============================================================================
 
 @app.post("/analyze-retention", response_model=RetentionRiskResponse)
-def analyze_retention(request: RetentionAnalysisRequest):
+def analyze_retention(request: RetentionAnalysisRequest, _: None = Depends(verify_internal_token)):
     """
     Analyzes student dropout risk and returns personalized habit retention interventions.
     """
@@ -232,7 +235,7 @@ def analyze_retention(request: RetentionAnalysisRequest):
 
 
 @app.post("/ai-coach-chat", response_model=CoachChatResponse)
-def ai_coach_chat(request: CoachChatRequest):
+def ai_coach_chat(request: CoachChatRequest, _: None = Depends(verify_internal_token)):
     """
     Conversational tutor endpoint for EduBuddy AI Coach, providing contextual guidance and practice actions.
     """
@@ -243,7 +246,7 @@ def ai_coach_chat(request: CoachChatRequest):
 
 
 @app.post("/api/v1/ai/next-best-action", response_model=NextBestActionResponse)
-def get_next_best_action(request: NextBestActionRequest):
+def get_next_best_action(request: NextBestActionRequest, _: None = Depends(verify_internal_token)):
     """
     Computes the deterministic next best action in the adaptive learning game loop based on student skill telemetry.
     """
@@ -265,7 +268,8 @@ def execute_langgraph_workflow(
     student_id: str = Body(..., embed=True),
     objective: Dict[str, Any] = Body(..., embed=True),
     student_context: Dict[str, Any] = Body(default_factory=dict, embed=True),
-    requires_human_approval: bool = Body(default=True, embed=True)
+    requires_human_approval: bool = Body(default=True, embed=True),
+    _: None = Depends(verify_internal_token)
 ):
     """
     Executes the end-to-end 11-field shared state LangGraph pipeline.
@@ -282,7 +286,7 @@ def execute_langgraph_workflow(
 
 
 @app.post("/workflows/{workflow_id}/decision", response_model=WorkflowDecisionResponse)
-def submit_workflow_decision(workflow_id: str, request: WorkflowDecisionRequest):
+def submit_workflow_decision(workflow_id: str, request: WorkflowDecisionRequest, _: None = Depends(verify_internal_token)):
     """
     Submits a human instructor review decision (APPROVED, REJECTED, REVISION_REQUESTED) into the state machine.
     """
@@ -308,7 +312,7 @@ def submit_workflow_decision(workflow_id: str, request: WorkflowDecisionRequest)
 
 
 @app.get("/workflows/{workflow_id}/status", response_model=SharedAgentState)
-def get_workflow_status(workflow_id: str):
+def get_workflow_status(workflow_id: str, _: None = Depends(verify_internal_token)):
     """
     Retrieves the current SharedAgentState snapshot of an active workflow.
     """
@@ -318,7 +322,7 @@ def get_workflow_status(workflow_id: str):
 
 
 @app.get("/observability/metrics")
-def get_observability_metrics():
+def get_observability_metrics(_: None = Depends(verify_internal_token)):
     """
     Returns system-wide telemetry stats, active workflow counts, and resilience policies.
     """

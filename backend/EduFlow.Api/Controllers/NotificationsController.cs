@@ -83,6 +83,31 @@ public class NotificationsController : ControllerBase
 
         return Ok(new { message = "Broadcast announcement published successfully!", announcementId = announcement.Id });
     }
+
+    [HttpGet("broadcasts")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetRecentBroadcasts([FromQuery] int limit = 20)
+    {
+        const int maxLimit = 100;
+        var take = limit <= 0 ? 20 : Math.Min(limit, maxLimit);
+
+        var broadcasts = await _dbContext.Announcements
+            .Include(a => a.Author)
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(take)
+            .Select(a => new BroadcastAnnouncementDto(
+                a.Id,
+                a.Title,
+                a.Content,
+                a.IsGlobal,
+                a.CourseId,
+                a.AuthorId,
+                a.Author != null ? a.Author.FullName : null,
+                a.CreatedAt))
+            .ToListAsync();
+
+        return Ok(broadcasts);
+    }
 }
 
 public record BroadcastRequest(
@@ -90,4 +115,15 @@ public record BroadcastRequest(
     string Content,
     bool IsGlobal,
     Guid? CourseId
+);
+
+public record BroadcastAnnouncementDto(
+    Guid Id,
+    string Title,
+    string Content,
+    bool IsGlobal,
+    Guid? CourseId,
+    Guid AuthorId,
+    string? AuthorName,
+    DateTime CreatedAt
 );

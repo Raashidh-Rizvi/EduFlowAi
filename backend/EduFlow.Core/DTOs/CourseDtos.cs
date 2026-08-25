@@ -223,7 +223,8 @@ public record ContentHierarchyTreeDto(
     string CourseCode,
     string CourseTitle,
     string Description,
-    List<HierarchicalModuleDto> Modules
+    List<HierarchicalModuleDto> Modules,
+    List<QuizDto> CourseLevelQuizzes
 );
 
 public record HierarchicalModuleDto(

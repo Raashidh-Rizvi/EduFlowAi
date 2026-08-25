@@ -5,6 +5,15 @@
 *.suo
 *.userosscache
 *.sln.docstates
+backend/EduFlow.Api/appsettings.Development.json
+backend/EduFlow.Api/appsettings.Local.json
+
+# Stray ad-hoc API-testing output (use a local /scratch/ dir instead, also gitignored)
+/backend_response*.json
+/response.json
+/final_success_test.json
+/success_test*.json
+/scratch/
 
 # Node.js / React
 **/node_modules/

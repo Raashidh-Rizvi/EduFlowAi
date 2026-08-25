@@ -78,6 +78,28 @@ public class CoursesController : ControllerBase
             return NotFound(new { message = "Course not found." });
         }
 
+        // Resolve real per-lesson completion only when an authenticated Student is viewing
+        // their own course. This endpoint has no [Authorize] attribute (it's browsable
+        // anonymously), and an Instructor/Admin here isn't "a student" whose completion state
+        // we could pick -- there is no single "current student" in either of those cases, so
+        // IsCompleted stays false for them below (matching GetLessonDetail's own fallback).
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        Guid? currentStudentId = role.Equals("Student", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(uidClaim, out var parsedStudentId)
+                ? parsedStudentId
+                : null;
+
+        var courseLessonIds = course.Modules.SelectMany(m => m.Lessons).Select(l => l.Id).ToList();
+        var completedLessonIds = currentStudentId.HasValue && courseLessonIds.Count > 0
+            ? (await _dbContext.LessonCompletions
+                .Where(lc => lc.StudentId == currentStudentId.Value
+                    && lc.LessonId != null
+                    && courseLessonIds.Contains(lc.LessonId.Value))
+                .Select(lc => lc.LessonId!.Value)
+                .ToListAsync()).ToHashSet()
+            : new HashSet<Guid>();
+
         var result = new CourseDetailDto(
             course.Id,
             course.Code,
@@ -100,7 +122,7 @@ public class CoursesController : ControllerBase
                     l.XpReward,
                     l.EstimatedMinutes,
                     l.OrderIndex,
-                    false,
+                    completedLessonIds.Contains(l.Id),
                     l.PdfUrl,
                     l.AttachmentFileName
                 )).ToList()
@@ -638,6 +660,34 @@ public class CoursesController : ControllerBase
             .Include(a => a.Questions)
             .ToListAsync();
 
+        // Resolve real per-content-item completion only when an authenticated Student is
+        // viewing their own course hierarchy. This endpoint has no [Authorize] attribute
+        // (it's browsable anonymously), and an Instructor/Admin here isn't "a student" whose
+        // completion state we could pick -- there is no single "current student" in either of
+        // those cases, so IsCompleted stays false for them below (matching GetLessonDetail's
+        // own fallback).
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        Guid? currentStudentId = role.Equals("Student", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(uidClaim, out var parsedStudentId)
+                ? parsedStudentId
+                : null;
+
+        var moduleIds = course.Modules.Select(m => m.Id).ToList();
+        var courseContentItemIds = await _dbContext.ContentItems
+            .Where(ci => moduleIds.Contains(ci.ModuleId))
+            .Select(ci => ci.Id)
+            .ToListAsync();
+
+        var completedContentItemIds = currentStudentId.HasValue && courseContentItemIds.Count > 0
+            ? (await _dbContext.LessonCompletions
+                .Where(lc => lc.StudentId == currentStudentId.Value
+                    && lc.ContentItemId != null
+                    && courseContentItemIds.Contains(lc.ContentItemId.Value))
+                .Select(lc => lc.ContentItemId!.Value)
+                .ToListAsync()).ToHashSet()
+            : new HashSet<Guid>();
+
         var hierarchicalModules = course.Modules.Select(m =>
         {
             var moduleQuizzes = allQuizzes
@@ -664,14 +714,14 @@ public class CoursesController : ControllerBase
                             sub.Id, sub.ModuleId, sub.TopicId, sub.ParentContentId, sub.Title,
                             sub.Content, sub.ContentType, sub.DisplayOrder, sub.EstimatedMinutes,
                             sub.XpReward, sub.VideoUrl, sub.PdfUrl, sub.AttachmentFileName, sub.Status,
-                            false, null, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == sub.Id)
+                            completedContentItemIds.Contains(sub.Id), null, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == sub.Id)
                         )).ToList();
 
                     return new ContentItemDto(
                         ci.Id, ci.ModuleId, ci.TopicId, ci.ParentContentId, ci.Title,
                         ci.Content, ci.ContentType, ci.DisplayOrder, ci.EstimatedMinutes,
                         ci.XpReward, ci.VideoUrl, ci.PdfUrl, ci.AttachmentFileName, ci.Status,
-                        false, subtopics, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == ci.Id)
+                        completedContentItemIds.Contains(ci.Id), subtopics, allQuizzes.Count(q => q.ScopeType == QuizScopeType.ContentItem && q.ScopeId == ci.Id)
                     );
                 }).ToList();
 
@@ -686,7 +736,7 @@ public class CoursesController : ControllerBase
                 .Select(ci => new ContentItemDto(
                     ci.Id, ci.ModuleId, null, null, ci.Title, ci.Content, ci.ContentType,
                     ci.DisplayOrder, ci.EstimatedMinutes, ci.XpReward, ci.VideoUrl, ci.PdfUrl,
-                    ci.AttachmentFileName, ci.Status, false, null, 0
+                    ci.AttachmentFileName, ci.Status, completedContentItemIds.Contains(ci.Id), null, 0
                 )).ToList();
 
             return new HierarchicalModuleDto(
@@ -694,12 +744,26 @@ public class CoursesController : ControllerBase
             );
         }).ToList();
 
+        // Course-level ("final exam") quizzes -- scoped to the whole course rather than any
+        // single module/topic/content item -- mirroring the same scope-filtering pattern used
+        // for moduleQuizzes above.
+        var courseLevelQuizzes = allQuizzes
+            .Where(q => q.ScopeType == QuizScopeType.Course)
+            .Select(q => new QuizDto(
+                q.Id, q.CourseId, q.Title, q.Description, q.Type, q.TimeLimitMinutes,
+                q.PassingScorePercent, q.XpReward, q.CoinReward, q.Questions.Count,
+                q.ScopeType, q.ScopeId, course.Title, q.Status, q.Difficulty, q.TimeLimitSeconds,
+                q.AttemptsAllowed, q.RandomizeQuestions, q.RandomizeOptions, q.FeedbackMode,
+                q.ShowCorrectAnswers, q.GeneratedByAI, q.GenerationWorkflowId, q.CreatedAt
+            )).ToList();
+
         var tree = new ContentHierarchyTreeDto(
             course.Id,
             course.Code,
             course.Title,
             course.Description,
-            hierarchicalModules
+            hierarchicalModules,
+            courseLevelQuizzes
         );
 
         return Ok(tree);

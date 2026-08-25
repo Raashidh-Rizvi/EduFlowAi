@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EduFlow.Core.Constants;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
@@ -32,6 +33,16 @@ public class GamificationService : IGamificationService
         if (xpAmount <= 0)
         {
             throw new ArgumentException("XP amount must be strictly positive.", nameof(xpAmount));
+        }
+
+        // Determine, before this transaction is recorded, whether this is genuinely the
+        // student's first-ever lesson completion (used to gate the FIRST_LESSON badge below).
+        bool isFirstLessonCompletion = false;
+        if (sourceType == XpSourceType.LessonCompleted)
+        {
+            int priorLessonCompletions = await _dbContext.XpTransactions
+                .CountAsync(x => x.StudentId == studentId && x.SourceType == XpSourceType.LessonCompleted, ct);
+            isFirstLessonCompletion = priorLessonCompletions == 0;
         }
 
         // 1. Record immutable transaction
@@ -79,7 +90,7 @@ public class GamificationService : IGamificationService
         await UpdateStreakInternalAsync(studentId, sourceType, ct);
 
         // 4. Evaluate Badges
-        var unlockedBadgeIds = await EvaluateBadgesInternalAsync(studentId, sourceType, ct);
+        var unlockedBadgeIds = await EvaluateBadgesInternalAsync(studentId, isFirstLessonCompletion, ct);
 
         await _dbContext.SaveChangesAsync(ct);
 
@@ -344,8 +355,8 @@ public class GamificationService : IGamificationService
             }
         }
 
-        // 12. Evaluate Badges
-        var unlockedBadges = await EvaluateBadgesInternalAsync(studentId, XpSourceType.QuizCompleted, ct);
+        // 12. Evaluate Badges (quiz completions never count toward the first-lesson badge)
+        var unlockedBadges = await EvaluateBadgesInternalAsync(studentId, false, ct);
         if (scorePercent == 100 && !unlockedBadges.Contains("PERFECT_SCORE"))
         {
             await TryUnlockBadgeAsync(studentId, "PERFECT_SCORE", ct);
@@ -762,60 +773,94 @@ public class GamificationService : IGamificationService
 
     public async Task<List<LeaderboardEntryDto>> GetWeeklyLeaderboardAsync(int top = 20, CancellationToken ct = default)
     {
-        return new List<LeaderboardEntryDto>
-        {
-            new(1, Guid.NewGuid(), "Sarah Chen", null, 8420, 16, 21),
-            new(2, Guid.NewGuid(), "Daniel Miller", null, 7850, 15, 18),
-            new(3, Guid.Parse("33333333-3333-3333-3333-333333333333"), "Alex Rivera (You)", null, 6420, 12, 14, true),
-            new(4, Guid.NewGuid(), "Marcus Vance", null, 5920, 11, 10),
-            new(5, Guid.NewGuid(), "Elena Rostova", null, 5410, 10, 8)
-        };
+        // No historical weekly XP-delta tracking exists in the schema yet (StudentXp only
+        // stores a running lifetime total), so the weekly leaderboard is approximated using
+        // the same current-TotalXp ranking as the global leaderboard.
+        return await BuildLeaderboardAsync(null, top, ct);
     }
 
     public async Task<List<LeaderboardEntryDto>> GetCourseLeaderboardAsync(Guid courseId, int top = 20, CancellationToken ct = default)
     {
-        return await GetWeeklyLeaderboardAsync(top, ct);
+        var enrolledStudentIds = await _dbContext.Enrollments
+            .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
+            .Select(e => e.StudentId)
+            .ToListAsync(ct);
+
+        return await BuildLeaderboardAsync(enrolledStudentIds, top, ct);
     }
 
     public async Task<List<LeaderboardEntryDto>> GetGlobalLeaderboardAsync(int top = 20, CancellationToken ct = default)
     {
-        return await GetWeeklyLeaderboardAsync(top, ct);
+        return await BuildLeaderboardAsync(null, top, ct);
+    }
+
+    /// <summary>
+    /// Builds a ranked leaderboard from live StudentXp/User/StudentStreak data.
+    /// When <paramref name="allowedStudentIds"/> is null, every student with an XP record is
+    /// eligible; otherwise only students whose id is in that list are considered (used to scope
+    /// the leaderboard to a course's actively enrolled students).
+    /// </summary>
+    private async Task<List<LeaderboardEntryDto>> BuildLeaderboardAsync(List<Guid>? allowedStudentIds, int top, CancellationToken ct)
+    {
+        int take = Math.Max(0, top);
+        if (take == 0)
+        {
+            return new List<LeaderboardEntryDto>();
+        }
+
+        var query = _dbContext.StudentXp
+            .Join(_dbContext.Users, sx => sx.StudentId, u => u.Id, (sx, u) => new
+            {
+                sx.StudentId,
+                sx.TotalXp,
+                sx.CurrentLevel,
+                u.FullName,
+                u.AvatarUrl
+            });
+
+        if (allowedStudentIds != null)
+        {
+            query = query.Where(x => allowedStudentIds.Contains(x.StudentId));
+        }
+
+        var ranked = await query
+            .OrderByDescending(x => x.TotalXp)
+            .ThenBy(x => x.FullName)
+            .Take(take)
+            .ToListAsync(ct);
+
+        if (ranked.Count == 0)
+        {
+            return new List<LeaderboardEntryDto>();
+        }
+
+        var rankedStudentIds = ranked.Select(r => r.StudentId).ToList();
+        var streaksByStudent = await _dbContext.StudentStreaks
+            .Where(s => rankedStudentIds.Contains(s.StudentId))
+            .ToDictionaryAsync(s => s.StudentId, s => s.CurrentStreak, ct);
+
+        return ranked
+            .Select((r, index) => new LeaderboardEntryDto(
+                Rank: index + 1,
+                StudentId: r.StudentId,
+                StudentName: r.FullName,
+                AvatarUrl: r.AvatarUrl,
+                ScoreXp: r.TotalXp,
+                Level: r.CurrentLevel,
+                Streak: streaksByStudent.TryGetValue(r.StudentId, out var streak) ? streak : 0
+            ))
+            .ToList();
     }
 
     public int CalculateLevel(int totalXp)
     {
-        if (totalXp < 500) return 1;
-        if (totalXp < 1000) return 2;
-        if (totalXp < 1750) return 3;
-        if (totalXp < 2500) return 4;
-        if (totalXp < 3500) return 5;
-        if (totalXp < 4500) return 6;
-        if (totalXp < 6000) return 7;
-        if (totalXp < 7500) return 8;
-        if (totalXp < 9000) return 9;
-        if (totalXp < 11000) return 10;
-        if (totalXp < 13500) return 11;
-        if (totalXp < 16500) return 12;
-        if (totalXp < 20000) return 13;
-        return 14;
+        return LevelCurve.GetLevelForXp(totalXp);
     }
 
     public (int MinXp, int MaxXp, string LevelName) GetLevelBounds(int level)
     {
-        return level switch
-        {
-            1 => (0, 500, "Novice Explorer"),
-            2 => (500, 1000, "Code Apprentice"),
-            3 => (1000, 1750, "Logic Adept"),
-            4 => (1750, 2500, "Data Scholar"),
-            5 => (2500, 3500, "Algorithm Knight"),
-            6 => (3500, 4500, "System Builder"),
-            7 => (4500, 6000, "Architecture Master"),
-            8 => (6000, 7500, "Optimization Specialist"),
-            9 => (7500, 9000, "Distributed Hero"),
-            10 => (9000, 11000, "AI Grandmaster"),
-            _ => (11000, 999999, "EduFlow Legend")
-        };
+        var entry = LevelCurve.GetEntryForLevel(level);
+        return (entry.MinXp, entry.MaxXp, entry.Name);
     }
 
     private async Task UpdateStreakInternalAsync(Guid studentId, XpSourceType sourceType, CancellationToken ct)
@@ -863,14 +908,11 @@ public class GamificationService : IGamificationService
         }
     }
 
-    private async Task<List<string>> EvaluateBadgesInternalAsync(Guid studentId, XpSourceType sourceType, CancellationToken ct)
+    private async Task<List<string>> EvaluateBadgesInternalAsync(Guid studentId, bool isFirstLessonCompletion, CancellationToken ct)
     {
         var unlocked = new List<string>();
-        int totalXp = await _dbContext.XpTransactions
-            .Where(x => x.StudentId == studentId)
-            .SumAsync(x => x.XpAmount, ct);
 
-        if (totalXp >= 500 && await TryUnlockBadgeAsync(studentId, "FIRST_LESSON", ct))
+        if (isFirstLessonCompletion && await TryUnlockBadgeAsync(studentId, "FIRST_LESSON", ct))
         {
             unlocked.Add("FIRST_LESSON");
         }

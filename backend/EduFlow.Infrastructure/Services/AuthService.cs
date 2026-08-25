@@ -223,7 +223,8 @@ public class AuthService : IAuthService
 
     private (string Token, DateTime ExpiresAt) GenerateJwtToken(User user)
     {
-        var jwtSecret = _configuration["JwtSettings:Secret"] ?? "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";
+        var jwtSecret = _configuration["JwtSettings:Secret"]
+            ?? throw new InvalidOperationException("JwtSettings:Secret is not configured. Set it via user-secrets or the JwtSettings__Secret environment variable.");
         var key = Encoding.UTF8.GetBytes(jwtSecret);
         var expiresAt = DateTime.UtcNow.AddHours(12);
 
@@ -268,15 +269,8 @@ public class AuthService : IAuthService
     }
 
     private static string HashPassword(string password)
-    {
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + "_eduflow_salt"));
-        return Convert.ToBase64String(hashedBytes);
-    }
+        => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 
     private static bool VerifyPassword(string password, string storedHash)
-    {
-        var computed = HashPassword(password);
-        return computed == storedHash || storedHash.StartsWith("$2a$"); // support seeded demo hash
-    }
+        => BCrypt.Net.BCrypt.Verify(password, storedHash);
 }

@@ -11,6 +11,7 @@ using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace EduFlow.Api.Controllers;
 
@@ -20,11 +21,13 @@ public class AiReviewController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IAiGatewayClient _aiGatewayClient;
+    private readonly ILogger<AiReviewController> _logger;
 
-    public AiReviewController(ApplicationDbContext dbContext, IAiGatewayClient aiGatewayClient)
+    public AiReviewController(ApplicationDbContext dbContext, IAiGatewayClient aiGatewayClient, ILogger<AiReviewController> logger)
     {
         _dbContext = dbContext;
         _aiGatewayClient = aiGatewayClient;
+        _logger = logger;
     }
 
     /// <summary>
@@ -171,8 +174,18 @@ public class AiReviewController : ControllerBase
 
         plan.InstructorNotes = request.Comments;
 
-        // Forward decision to Python AI Agent microservice if active
-        _ = Task.Run(() => _aiGatewayClient.SubmitWorkflowDecisionAsync(id.ToString(), new { decision = request.Decision, comments = request.Comments }));
+        // Forward decision to Python AI Agent microservice if active.
+        // SubmitWorkflowDecisionAsync already catches and falls back internally on transport
+        // failures, but we still guard the await so an unexpected exception here is logged
+        // instead of failing (or silently vanishing from) the instructor's decision request.
+        try
+        {
+            await _aiGatewayClient.SubmitWorkflowDecisionAsync(id.ToString(), new { decision = request.Decision, comments = request.Comments });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to forward workflow decision for study plan {StudyPlanId} to the AI gateway.", id);
+        }
 
         // Add Notification to student
         string notifTitle = isApproved ? "✅ Study Plan Approved!" : (isRevision ? "🔄 Study Plan Revision Requested" : "❌ Study Plan Requires Revision");

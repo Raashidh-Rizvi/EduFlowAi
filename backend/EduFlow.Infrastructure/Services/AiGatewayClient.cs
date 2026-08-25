@@ -31,6 +31,12 @@ public class AiGatewayClient : IAiGatewayClient
     {
         _httpClient = httpClient;
         _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+
+        var apiKey = configuration["AiService:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+        }
     }
 
     public async Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default)
@@ -125,7 +131,8 @@ public class AiGatewayClient : IAiGatewayClient
             reply = "I'm your EduFlow AI Learning Coach! Keep completing lessons and quizzes to earn XP and level up.",
             suggested_action = "Review Clean Architecture and start a practice challenge.",
             identified_weak_topic = "Database Optimization & Clean Architecture",
-            confidence_score = 0.95
+            confidence_score = 0.95,
+            source = "fallback"
         });
     }
 
@@ -167,7 +174,8 @@ public class AiGatewayClient : IAiGatewayClient
             workflowId = $"wf-{Guid.NewGuid().ToString("N")[..8]}",
             status = "PENDING_APPROVAL",
             plan = new[] { new { stepId = "1", action = "GET_STUDENT_PROGRESS", owner = "ACTION_TOOL" } },
-            validation = new { passed = true, deterministic_rule_count = 5 }
+            validation = new { passed = true, deterministic_rule_count = 5 },
+            source = "fallback"
         });
     }
 
@@ -190,7 +198,8 @@ public class AiGatewayClient : IAiGatewayClient
         {
             workflow_id = workflowId,
             current_status = "APPROVED",
-            message = "Decision processed successfully."
+            message = "Decision processed successfully.",
+            source = "fallback"
         });
     }
 
@@ -221,7 +230,8 @@ public class AiGatewayClient : IAiGatewayClient
                 new { name = "create_challenge_draft", description = "Generates adaptive quests." },
                 new { name = "generate_feedback_draft", description = "Generates remediation feedback." },
                 new { name = "get_gamification_rules", description = "Retrieves economy constraints." }
-            }
+            },
+            source = "fallback"
         });
     }
 
@@ -245,7 +255,8 @@ public class AiGatewayClient : IAiGatewayClient
             active_workflows_tracked = 5,
             registered_tools_count = 7,
             privacy_enforcement = "PII redaction active",
-            error_classification = "8 classified exception types"
+            error_classification = "8 classified exception types",
+            source = "fallback"
         });
     }
 
@@ -267,7 +278,8 @@ public class AiGatewayClient : IAiGatewayClient
                 new { day_number = 5, activity_title = "Knowledge Check: Quiz 1", description = "Complete self-assessment", activity_type = "Quiz", estimated_minutes = 45, xp_reward = 50 },
                 new { day_number = 7, activity_title = "Boss Encounter: Concurrency Dungeon", description = "Reinforce ACID boundaries", activity_type = "Boss", estimated_minutes = 60, xp_reward = 150 }
             },
-            validation = new { passed = true, errors = Array.Empty<string>(), deterministic_rule_count = 5 }
+            validation = new { passed = true, errors = Array.Empty<string>(), deterministic_rule_count = 5 },
+            source = "fallback"
         });
     }
 
@@ -295,7 +307,8 @@ public class AiGatewayClient : IAiGatewayClient
                 }
             },
             validation_passed = true,
-            status = "PendingInstructorApproval"
+            status = "PendingInstructorApproval",
+            source = "fallback"
         });
     }
 
@@ -311,6 +324,7 @@ public class AiGatewayClient : IAiGatewayClient
             total_points = 30,
             validation_passed = true,
             status = "PendingInstructorApproval",
+            source = "fallback",
             questions = new[]
             {
                 new
@@ -336,6 +350,7 @@ public class AiGatewayClient : IAiGatewayClient
             churn_risk_score = 0.25,
             streak_health = "Healthy",
             validation_passed = true,
+            source = "fallback",
             recommended_interventions = new[]
             {
                 new
@@ -358,6 +373,7 @@ public class AiGatewayClient : IAiGatewayClient
             service_name = "EduFlow Multi-Agent System",
             status = "Healthy",
             version = "2.0.0",
+            source = "fallback",
             nodes = new[]
             {
                 new { id = "coordinator-planner", name = "Coordinator / Planner Agent", role = "Decomposes student objectives into structured milestones", ownership = "Member 1 (Architecture & Planning)", status = "Active", capabilities = new[] { "Goal Decomposition", "Milestone Allocation" } },
