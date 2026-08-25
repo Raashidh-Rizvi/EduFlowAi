@@ -36,6 +36,16 @@ from models.schemas import (
     StrengthItem
 )
 
+# Import LangChain prompt/output-parser primitives used to turn each grounded
+# gap/strength's real computed numbers into ONE narrative evidence sentence via
+# Groq (mirrors the `prompt | llm | parser` pattern already used in
+# agents/quiz_generator.py). The concrete LLM client itself is resolved lazily
+# inside `_generate_grounded_evidence` (preferring core/llm.py, with a direct
+# ChatGroq fallback) so this module still imports cleanly if that shared helper
+# is ever unavailable.
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 
 class DomainAnalysisAgent(BaseAgent):
     """
@@ -53,6 +63,117 @@ class DomainAnalysisAgent(BaseAgent):
             role_description="Analyzes student telemetry and provides data-grounded learning gaps, strengths, and next-action recommendations.",
             member_owner="Member 3 (Gamification & Analytics)"
         )
+
+    def _generate_grounded_evidence(
+        self,
+        kind: str,
+        topic: str,
+        score: float,
+        threshold: float,
+        context_lines: List[str],
+        fallback: str
+    ) -> str:
+        """
+        Produces ONE concise, data-grounded evidence sentence for a diagnosed
+        learning gap or verified strength via a Groq-backed LLM call.
+
+        Why an LLM call here (and only here):
+        - The classification itself (gap vs. strength) is decided entirely by the
+          deterministic `score < 60.0` / `score >= 80.0` business-rule thresholds
+          in `analyze_student_features` -- this method never decides anything, it
+          only narrates a decision that has already been made from real numbers.
+        - The LLM is handed ONLY the real, already-computed numbers in scope for
+          this call (topic, measured score, the exact threshold crossed, and any
+          telemetry-derived context lines already available on `features`) and is
+          explicitly instructed to never invent a number, date, or fact -- only to
+          explain the numbers it is given. This matches this project's stated
+          anti-hallucination design principle (docs/07_AI_ORCHESTRATION.md): every
+          gap/strength must carry evidence traceable to real data, never invented
+          evidence.
+
+        Anti-crash safety net:
+        - If the Groq call fails for ANY reason (GROQ_API_KEY missing, rate limit,
+          timeout, provider 5xx, malformed/empty output, etc.) this returns the
+          deterministic `fallback` template sentence the caller supplies instead
+          -- the caller's classification/threshold logic and returned shape are
+          completely unaffected either way, and no exception escapes this method.
+
+        Args:
+            kind: "gap" or "strength" -- which classification this sentence explains.
+            topic: The exact topic/skill name being explained.
+            score: The measured accuracy percentage already computed for this topic.
+            threshold: The exact numeric threshold that was crossed (60.0 or 80.0).
+            context_lines: Additional real, already-computed telemetry data points
+                (as human-readable strings) available to ground the sentence in.
+            fallback: The deterministic template sentence to use if the LLM call
+                fails or returns nothing usable.
+
+        Returns:
+            A single evidence sentence -- Groq-generated when possible, else `fallback`.
+        """
+        classification = "LEARNING GAP" if kind == "gap" else "VERIFIED STRENGTH"
+        comparison = "below" if kind == "gap" else "at or above"
+        context_block = "\n".join(f"- {line}" for line in context_lines) if context_lines else "- No additional telemetry available."
+
+        try:
+            # Prefer the shared Groq LLM helper (core/llm.py) -- it centralizes
+            # model selection plus retry/backoff and error classification. Fall
+            # back to constructing ChatGroq directly (mirroring the existing
+            # pattern in agents/quiz_generator.py) if that shared helper module
+            # isn't importable in this checkout.
+            try:
+                from core.llm import get_groq_llm, invoke_structured
+                llm = get_groq_llm(temperature=0.2)
+                use_shared_invoke = True
+            except ImportError:
+                from langchain_groq import ChatGroq
+                llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=0.2)
+                use_shared_invoke = False
+
+            prompt = PromptTemplate(
+                template=(
+                    "You are an educational diagnostics assistant writing evidence notes "
+                    "for a student performance report.\n\n"
+                    "Write EXACTLY ONE concise, specific sentence of evidence explaining why "
+                    "the topic below is classified as a {classification}.\n\n"
+                    "Rules (follow strictly):\n"
+                    "- Use ONLY the real data points listed below.\n"
+                    "- Do NOT invent, estimate, guess, or add any number, percentage, date, "
+                    "quiz name, or fact that is not explicitly given below.\n"
+                    "- Only explain the numbers you are given -- never fabricate additional evidence.\n"
+                    "- Output ONLY the single sentence. No preamble, no quotation marks, no markdown.\n\n"
+                    "Topic: {topic}\n"
+                    "Measured accuracy: {score:.1f}%\n"
+                    "Classification threshold: scores {comparison} {threshold:.1f}% are classified as a {classification}\n"
+                    "Additional real telemetry for this student:\n"
+                    "{context_block}\n\n"
+                    "Evidence sentence:"
+                ),
+                input_variables=["classification", "topic", "score", "comparison", "threshold", "context_block"]
+            )
+            chain = prompt | llm | StrOutputParser()
+            chain_input = {
+                "classification": classification,
+                "topic": topic,
+                "score": score,
+                "comparison": comparison,
+                "threshold": threshold,
+                "context_block": context_block
+            }
+            raw_output = invoke_structured(chain, chain_input) if use_shared_invoke else chain.invoke(chain_input)
+
+            # Collapse any accidental multi-line output into a single sentence and
+            # strip stray wrapping quotes the model may still add despite instructions.
+            sentence = " ".join(str(raw_output).split()).strip().strip('"').strip()
+            if sentence:
+                return sentence
+        except Exception:
+            # Any failure here (missing GROQ_API_KEY, rate limit, timeout, provider
+            # error, parser hiccup, etc.) degrades gracefully to the deterministic
+            # template sentence -- narrative generation must never break diagnostics.
+            pass
+
+        return fallback
 
     def analyze_student_features(
         self,
@@ -75,13 +196,38 @@ class DomainAnalysisAgent(BaseAgent):
             # 1 & 2. Evaluate topic-level performance & recent quiz scores
             # -----------------------------------------------------------------
             for topic, score in features.topic_level_performance.items():
-                # Score < 60% indicates a learning gap requiring remediation
+                # Score < 60% indicates a learning gap requiring remediation.
+                # The threshold check itself stays 100% deterministic -- only the
+                # evidence sentence explaining it is now generated by Groq, grounded
+                # strictly in these same real, already-computed numbers.
                 if score < 60.0:
-                    evidence_str = f"Scored {score:.1f}% on recent assessment ({len(features.recent_mistakes)} identified misconceptions)."
+                    template_evidence = f"Scored {score:.1f}% on recent assessment ({len(features.recent_mistakes)} identified misconceptions)."
+                    evidence_str = self._generate_grounded_evidence(
+                        kind="gap",
+                        topic=topic,
+                        score=score,
+                        threshold=60.0,
+                        context_lines=[
+                            f"Recent logged mistakes/misconceptions on record: {len(features.recent_mistakes)}",
+                            ("Example logged mistakes: " + "; ".join(features.recent_mistakes[:2]))
+                            if features.recent_mistakes else "No specific mistake descriptions logged."
+                        ],
+                        fallback=template_evidence
+                    )
                     learning_gaps.append(LearningGapItem(topic=topic, accuracy_pct=score, evidence=evidence_str))
-                # Score >= 80% indicates verified mastery
+                # Score >= 80% indicates verified mastery.
                 elif score >= 80.0:
-                    evidence_str = f"Consistent mastery at {score:.1f}% with verified lesson completion."
+                    template_evidence = f"Consistent mastery at {score:.1f}% with verified lesson completion."
+                    evidence_str = self._generate_grounded_evidence(
+                        kind="strength",
+                        topic=topic,
+                        score=score,
+                        threshold=80.0,
+                        context_lines=[
+                            f"Lessons completed to date: {len(features.lesson_completion)}"
+                        ],
+                        fallback=template_evidence
+                    )
                     strengths.append(StrengthItem(topic=topic, accuracy_pct=score, evidence=evidence_str))
 
             # Fallback default gap if telemetry has none listed

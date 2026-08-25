@@ -260,7 +260,7 @@ def tool_get_content_hierarchy(params: Dict[str, Any]) -> Dict[str, Any]:
 def tool_get_content_by_scope(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Retrieves grounded learning content, textbook excerpts, and code examples for a given scope.
-    
+
     Why we use this tool:
     - Provides factual snippets to ground questions in syllabus text and prevent hallucinations.
     """
@@ -268,7 +268,7 @@ def tool_get_content_by_scope(params: Dict[str, Any]) -> Dict[str, Any]:
     scope_id = params.get("scope_id", "88888888-8888-8888-8888-888888888881")
     topic_name = params.get("topic_name") or "B-Tree Indexing Fundamentals"
 
-    return {
+    fallback = {
         "scope_type": scope_type,
         "scope_id": scope_id,
         "title": topic_name,
@@ -280,6 +280,23 @@ def tool_get_content_by_scope(params: Dict[str, Any]) -> Dict[str, Any]:
         "learning_objectives": ["LO-01: Understand Leftmost Prefix Rule", "LO-02: Contrast Index Scan vs Seq Scan", "LO-03: Covering Index Optimization"],
         "source_hash": f"sha256-{uuid.uuid4().hex[:12]}"
     }
+
+    try:
+        raw = backend_client.get_content_by_scope(scope_type, scope_id)
+        return {
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "title": _pick(raw, "title", "Title", default=topic_name),
+            "excerpts": _pick(raw, "excerpts", "Excerpts", default=fallback["excerpts"]),
+            "learning_objectives": _pick(raw, "learningObjectives", "learning_objectives", "LearningObjectives", default=fallback["learning_objectives"]),
+            "source_hash": _pick(raw, "sourceHash", "source_hash", "SourceHash", default=fallback["source_hash"])
+        }
+    except Exception as e:
+        logger.warning(
+            "tool_get_content_by_scope running in degraded/fallback mode (backend call failed for scope_type=%s scope_id=%s): %s",
+            scope_type, scope_id, e
+        )
+        return fallback
 
 
 def tool_get_learning_objectives(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -302,17 +319,32 @@ def tool_get_learning_objectives(params: Dict[str, Any]) -> Dict[str, Any]:
 def tool_get_existing_questions(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Retrieves existing questions in the scope to perform duplicate detection.
-    
+
     Why we use this tool:
     - Prevents repetitive questions by comparing candidate questions against existing question pools.
     """
-    return {
+    scope_id = (params or {}).get("scope_id") or "88888888-8888-8888-8888-888888888881"
+
+    fallback = {
         "existing_questions": [
             "Which index configuration best optimizes multi-column WHERE clause filtering in PostgreSQL?",
             "What is the fundamental dependency rule of Clean Architecture?",
             "How does PostgreSQL EXPLAIN ANALYZE evaluate execution cost matrices?"
         ]
     }
+
+    try:
+        raw = backend_client.get_existing_questions(scope_id)
+        existing = _normalize_question_text_list(
+            _pick(raw, "existingQuestions", "existing_questions", "ExistingQuestions", default=[])
+        )
+        return {"existing_questions": existing}
+    except Exception as e:
+        logger.warning(
+            "tool_get_existing_questions running in degraded/fallback mode (backend call failed for scope_id=%s): %s",
+            scope_id, e
+        )
+        return fallback
 
 
 def tool_calculate_question_distribution(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -584,7 +616,7 @@ def tool_get_gamification_rules(_: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Retrieves server-side gamification economy limits, XP caps, and streak thresholds.
     """
-    return {
+    fallback = {
         "topic_quiz_xp": 30,
         "lesson_quiz_xp": 35,
         "module_quiz_xp": 75,
@@ -599,13 +631,36 @@ def tool_get_gamification_rules(_: Dict[str, Any] = None) -> Dict[str, Any]:
         "xp_per_level_base": 1000
     }
 
+    try:
+        raw = backend_client.get_gamification_rules()
+        return {
+            "topic_quiz_xp": _pick(raw, "topicQuizXp", "topic_quiz_xp", "TopicQuizXp", default=fallback["topic_quiz_xp"]),
+            "lesson_quiz_xp": _pick(raw, "lessonQuizXp", "lesson_quiz_xp", "LessonQuizXp", default=fallback["lesson_quiz_xp"]),
+            "module_quiz_xp": _pick(raw, "moduleQuizXp", "module_quiz_xp", "ModuleQuizXp", default=fallback["module_quiz_xp"]),
+            "course_quiz_xp": _pick(raw, "courseQuizXp", "course_quiz_xp", "CourseQuizXp", default=fallback["course_quiz_xp"]),
+            "boss_challenge_xp": _pick(raw, "bossChallengeXp", "boss_challenge_xp", "BossChallengeXp", default=fallback["boss_challenge_xp"]),
+            "max_challenge_xp": _pick(raw, "maxChallengeXp", "max_challenge_xp", "MaxChallengeXp", default=fallback["max_challenge_xp"]),
+            "max_activity_xp": _pick(raw, "maxActivityXp", "max_activity_xp", "MaxActivityXp", default=fallback["max_activity_xp"]),
+            "max_challenge_coins": _pick(raw, "maxChallengeCoins", "max_challenge_coins", "MaxChallengeCoins", default=fallback["max_challenge_coins"]),
+            "min_study_hours_per_week": _pick(raw, "minStudyHoursPerWeek", "min_study_hours_per_week", "MinStudyHoursPerWeek", default=fallback["min_study_hours_per_week"]),
+            "max_study_hours_per_week": _pick(raw, "maxStudyHoursPerWeek", "max_study_hours_per_week", "MaxStudyHoursPerWeek", default=fallback["max_study_hours_per_week"]),
+            "streak_shield_threshold_days": _pick(raw, "streakShieldThresholdDays", "streak_shield_threshold_days", "StreakShieldThresholdDays", default=fallback["streak_shield_threshold_days"]),
+            "xp_per_level_base": _pick(raw, "xpPerLevelBase", "xp_per_level_base", "XpPerLevelBase", default=fallback["xp_per_level_base"])
+        }
+    except Exception as e:
+        logger.warning(
+            "tool_get_gamification_rules running in degraded/fallback mode (backend call failed): %s", e
+        )
+        return fallback
+
 
 def tool_get_student_progress(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Retrieves student lesson completions, time-on-task, and active streak.
     """
     student_id = params.get("student_id", "student-uuid")
-    return {
+
+    fallback = {
         "student_id": student_id,
         "completion_rate_pct": 68.5,
         "completed_lessons": ["66666666-6666-6666-6666-666666666661", "66666666-6666-6666-6666-666666666662"],
@@ -614,13 +669,31 @@ def tool_get_student_progress(params: Dict[str, Any]) -> Dict[str, Any]:
         "time_on_task_minutes": 185.0
     }
 
+    try:
+        raw = backend_client.get_student_progress(student_id)
+        return {
+            "student_id": _pick(raw, "studentId", "student_id", "StudentId", default=student_id),
+            "completion_rate_pct": _pick(raw, "completionRatePct", "completion_rate_pct", "CompletionRatePct", default=fallback["completion_rate_pct"]),
+            "completed_lessons": _pick(raw, "completedLessons", "completed_lessons", "CompletedLessons", default=fallback["completed_lessons"]),
+            "active_streak": _pick(raw, "activeStreak", "active_streak", "ActiveStreak", default=fallback["active_streak"]),
+            "weekly_xp": _pick(raw, "weeklyXp", "weekly_xp", "WeeklyXp", default=fallback["weekly_xp"]),
+            "time_on_task_minutes": _pick(raw, "timeOnTaskMinutes", "time_on_task_minutes", "TimeOnTaskMinutes", default=fallback["time_on_task_minutes"])
+        }
+    except Exception as e:
+        logger.warning(
+            "tool_get_student_progress running in degraded/fallback mode (backend call failed for student_id=%s): %s",
+            student_id, e
+        )
+        return fallback
+
 
 def tool_get_quiz_results(params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Retrieves student quiz scores, recent mistakes, and accuracy metrics.
     """
     student_id = params.get("student_id", "student-uuid")
-    return {
+
+    fallback = {
         "student_id": student_id,
         "recent_quizzes": [
             {
@@ -635,6 +708,29 @@ def tool_get_quiz_results(params: Dict[str, Any]) -> Dict[str, Any]:
         ],
         "overall_accuracy_pct": 65.0
     }
+
+    try:
+        raw = backend_client.get_student_quiz_results(student_id)
+        raw_quizzes = _pick(raw, "recentQuizzes", "recent_quizzes", "RecentQuizzes", default=[]) or []
+        return {
+            "student_id": _pick(raw, "studentId", "student_id", "StudentId", default=student_id),
+            "recent_quizzes": [
+                {
+                    "quiz_id": _pick(q, "quizId", "quiz_id", "QuizId"),
+                    "topic": _pick(q, "topic", "Topic"),
+                    "score_pct": _pick(q, "scorePct", "score_pct", "ScorePct"),
+                    "mistakes": _pick(q, "mistakes", "Mistakes", default=[])
+                }
+                for q in raw_quizzes
+            ],
+            "overall_accuracy_pct": _pick(raw, "overallAccuracyPct", "overall_accuracy_pct", "OverallAccuracyPct", default=fallback["overall_accuracy_pct"])
+        }
+    except Exception as e:
+        logger.warning(
+            "tool_get_quiz_results running in degraded/fallback mode (backend call failed for student_id=%s): %s",
+            student_id, e
+        )
+        return fallback
 
 
 def tool_create_challenge_draft(params: Dict[str, Any]) -> Dict[str, Any]:

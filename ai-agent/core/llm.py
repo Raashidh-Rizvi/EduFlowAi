@@ -54,12 +54,20 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 # Default Groq model
 # -----------------------------------------------------------------------------
-# NOTE: This is the current, non-deprecated Groq production model name as of
-# this codebase's authoring date. Groq's model catalog changes over time
-# (models get deprecated/renamed) -- verify this against Groq's live model
-# catalog (https://console.groq.com/docs/models) at deploy time and update
-# GROQ_MODEL in the environment rather than editing this default in place.
-DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+# NOTE: "llama-3.3-70b-versatile" was the expected current/non-deprecated Groq
+# model name as of this codebase's training cutoff, but it was verified live
+# against this deployment's actual GROQ_API_KEY (via client.models.list() and
+# a real chain.invoke()) and returns HTTP 404 model_not_found -- it is not in
+# this account's catalog at all, not just deprecated-with-a-redirect. Since
+# GROQ_API_KEY is live here and this path is meant to actually work rather
+# than merely look plausible, the default was changed to a model confirmed
+# working end-to-end (real chat completion, correct instruction-following)
+# against this key: "openai/gpt-oss-120b".
+# Groq's model catalog changes over time -- verify this against Groq's live
+# model catalog (https://console.groq.com/docs/models, or `client.models.list()`)
+# at deploy time and update GROQ_MODEL in the environment rather than editing
+# this default in place.
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 
 
 def get_groq_llm(temperature: float = 0.3) -> ChatGroq:

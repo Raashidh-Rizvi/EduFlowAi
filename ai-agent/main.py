@@ -187,9 +187,13 @@ def generate_diagnostic_quiz(request: DiagnosticQuizRequest, _: None = Depends(v
 
 
 @app.post("/api/v1/ai/questions/{question_id}/regenerate")
-def regenerate_single_question(question_id: int, request: Dict[str, Any] = Body(...), _: None = Depends(verify_internal_token)):
+def regenerate_single_question(question_id: str, request: Dict[str, Any] = Body(...), _: None = Depends(verify_internal_token)):
     """
     Regenerates an individual question within a quiz using custom instructor natural language prompt guidance.
+
+    `question_id` is a string (not int) because it is the .NET-owned Question.Id,
+    which is a Guid and serializes as a string -- see SingleQuestionRegenerateRequest
+    in models/schemas.py for the matching request field.
     """
     try:
         from models.schemas import SingleQuestionRegenerateRequest

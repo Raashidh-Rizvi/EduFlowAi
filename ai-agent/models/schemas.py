@@ -835,8 +835,13 @@ class SingleQuestionRegenerateRequest(BaseModel):
     """
     Request payload when an instructor wishes to regenerate a single question using custom prompt guidance.
     """
-    # The ID of the question to replace
-    question_id: int
+    # The ID of the question to replace. This is the .NET-owned Question.Id,
+    # which is a Guid (serializes as a string) -- NOT a small sequential int
+    # like the question_id fields elsewhere in this module (e.g.
+    # QuizQuestionModel.question_id, which is a within-quiz ordinal). Typed
+    # as str so a real Guid string round-trips correctly instead of every
+    # regenerate call from .NET 422ing on schema validation.
+    question_id: str
     
     # Specific concept to focus on during regeneration
     focus_topic: Optional[str] = None

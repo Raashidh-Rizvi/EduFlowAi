@@ -23,6 +23,8 @@ Why we use the Quiz Generator Agent:
 
 # Import uuid for generating unique quiz and workflow IDs
 import uuid
+# Import time for measuring regeneration execution duration
+import time
 # Import typing annotations for collections, tuples, and optional fields
 from typing import List, Tuple, Optional, Dict, Any
 # Import BaseAgent and AgentExecutionLog
@@ -40,10 +42,15 @@ from models.schemas import (
 )
 # Import tool registry singleton to execute question generation tools
 from tools.registry import tool_registry
+# Import the shared Groq LLM construction + retryable structured-invocation
+# helpers (single choke point for GROQ_MODEL config, retry/backoff, and
+# AIError classification -- see core/llm.py for rationale).
+from core.llm import get_groq_llm, invoke_structured
+# Import classified error types raised/inspected when validating Groq output
+from core.errors import AIError, ModelFailure, ValidationError
 
 import os
 import json
-from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -154,7 +161,11 @@ class QuizGeneratorAgent(BaseAgent):
                     retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
                     # 4. Generate Questions one by one using relevant chunks
-                    llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=0.1)
+                    # NOTE: constructed via the shared core.llm.get_groq_llm() helper
+                    # (GROQ_MODEL env-driven, defaults to a model verified working
+                    # against this deployment's live GROQ_API_KEY) instead of a
+                    # hand-rolled ChatGroq(...) with a hardcoded model name.
+                    llm = get_groq_llm(temperature=0.1)
                     prompt = PromptTemplate(
                         template="""You are an expert AI educator. Your task is to generate EXACTLY ONE quiz question based STRICTLY and ONLY on the provided document text. 
 Do not hallucinate any information outside the text.
@@ -192,7 +203,7 @@ JSON Object:""",
                         relevant_docs = retriever.invoke(search_topic)
                         context_text = "\n\n".join([doc.page_content for doc in relevant_docs])
                         
-                        result = chain.invoke({
+                        result = invoke_structured(chain, {
                             "text": context_text,
                             "topic": search_topic,
                             "question_type": q_type,
@@ -202,23 +213,40 @@ JSON Object:""",
                             extracted_questions_raw.append(result)
                 except Exception as e:
                     print(f"Error extracting from PDF with RAG: {e}")
-                    # Local fallback
+                    # Fallback: the primary RAG chain (embeddings/vectorstore/retriever)
+                    # failed, but that is no reason to degrade to naive
+                    # sentence-splitting with literal "Option A"/"Option B"/...
+                    # placeholder text. Re-attempt basic PDF text extraction (best
+                    # effort -- absent if even that fails) and route every fallback
+                    # question through the same real Groq-backed generator used by
+                    # the no-PDF path, so the output is still a genuine AI-authored
+                    # question grounded in whatever PDF text could be salvaged.
                     try:
-                        # Fallback uses basic loading
-                        loader = PyPDFLoader(req.pdf_path)
-                        docs = loader.load()
-                        pdf_text = "\n".join([d.page_content for d in docs])
-                        sentences = [s.strip() for s in pdf_text.split('.') if len(s.strip()) > 20]
+                        pdf_text = ""
+                        try:
+                            loader = PyPDFLoader(req.pdf_path)
+                            docs = loader.load()
+                            pdf_text = "\n".join([d.page_content for d in docs])
+                        except Exception as reload_e:
+                            print(f"Could not reload PDF text for Groq-grounded fallback: {reload_e}")
+
                         for i in range(count):
-                            if i < len(sentences):
-                                extracted_questions_raw.append({
-                                    "question_text": f"Fill in the blank based on the text: '{sentences[i][:40]}...'",
-                                    "question_type": "MULTIPLE_CHOICE",
-                                    "blooms_taxonomy_level": "Knowledge",
-                                    "options": ["Option A", "Option B", "Option C", "Option D"],
-                                    "correct_answer": "Option A",
-                                    "explanation": f"Extracted directly from PDF: {sentences[i]}"
-                                })
+                            q_type = q_types[i % len(q_types)]
+                            diff = req.difficulty.upper()
+                            search_topic = req.learning_objectives[i % len(req.learning_objectives)] if req.learning_objectives else (req.target_topics[i % len(req.target_topics)] if req.target_topics else scope_name)
+                            try:
+                                q_res = self._generate_real_question_via_groq(
+                                    topic=search_topic,
+                                    scope_name=scope_name,
+                                    question_type=q_type,
+                                    difficulty=diff,
+                                    learning_objective=search_topic,
+                                    grounding_text=pdf_text[:4000] if pdf_text else None,
+                                    source_content_id=req.scope_id
+                                )
+                                extracted_questions_raw.append(q_res)
+                            except Exception as groq_fallback_e:
+                                print(f"Groq-grounded PDF fallback failed for question {i + 1}: {groq_fallback_e}")
                     except Exception as fallback_e:
                         print(f"Fallback extraction failed: {fallback_e}")
 
@@ -246,19 +274,35 @@ JSON Object:""",
                         "sourceContentId": req.scope_id
                     }
                 else:
-                    # Invoke the generate_question tool via the ToolRegistry
-                    q_raw, _ = tool_registry.execute_tool(
-                        "generate_question",
-                        "ACTION_TOOL",
-                        {
-                            "question_id": i + 1,
-                            "question_type": q_type,
-                            "topic": scope_name,
-                            "difficulty": diff,
-                            "learning_objective": lo,
-                            "source_content_id": req.scope_id or "66666666-6666-6666-6666-666666666661"
-                        }
-                    )
+                    # Real, Groq-backed topic-based generation path (no uploaded
+                    # PDF required) -- REPLACES the old unconditional
+                    # tool_registry.execute_tool("generate_question", ...) static
+                    # template call. The tool_registry call is retained ONLY as
+                    # the last-resort safety net if the Groq call raises after
+                    # its internal retries are exhausted.
+                    try:
+                        q_raw = self._generate_real_question_via_groq(
+                            topic=scope_name,
+                            scope_name=scope_name,
+                            question_type=q_type,
+                            difficulty=diff,
+                            learning_objective=lo,
+                            source_content_id=req.scope_id
+                        )
+                    except Exception as e:
+                        print(f"Real Groq question generation failed for question {i + 1}, falling back to tool_registry template: {e}")
+                        q_raw, _ = tool_registry.execute_tool(
+                            "generate_question",
+                            "ACTION_TOOL",
+                            {
+                                "question_id": i + 1,
+                                "question_type": q_type,
+                                "topic": scope_name,
+                                "difficulty": diff,
+                                "learning_objective": lo,
+                                "source_content_id": req.scope_id or "66666666-6666-6666-6666-666666666661"
+                            }
+                        )
 
                 # Map option details
                 opt_models = [
@@ -365,13 +409,170 @@ JSON Object:""",
 
         return self.execute_with_trace(request, _execute)
 
+    def _generate_real_question_via_groq(
+        self,
+        topic: str,
+        scope_name: str,
+        question_type: str,
+        difficulty: str,
+        learning_objective: Optional[str] = None,
+        grounding_text: Optional[str] = None,
+        prompt_guidance: Optional[str] = None,
+        source_content_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generates ONE real, Groq-backed quiz question without requiring an uploaded
+        PDF -- the primary generation path for both topic-based quiz synthesis and
+        single-question regeneration. This REPLACES the old 100% static
+        `tool_registry.execute_tool("generate_question"/"regenerate_question", ...)`
+        template calls; those are retained ONLY as the last-resort safety net if
+        this Groq call raises after its internal retries (via `core.llm.invoke_structured`)
+        are exhausted.
+
+        Args:
+            topic: Specific concept/search focus for this question (e.g. a learning
+                objective, target_topics entry, or instructor-supplied focus_topic).
+            scope_name: Broader curriculum scope name (course/module/topic title)
+                used to frame the question.
+            question_type: Desired question format (e.g. "MULTIPLE_CHOICE").
+            difficulty: Desired difficulty ("EASY" | "MEDIUM" | "HARD" | "BOSS").
+            learning_objective: Optional accredited learning objective ID/text.
+            grounding_text: Optional curriculum excerpt text to ground the question
+                in (PDF text, or a `tool_get_content_by_scope` excerpt). When absent,
+                this method tries `get_content_by_scope` itself before falling back
+                to generating from topic/difficulty alone.
+            prompt_guidance: Optional natural-language instructor guidance used
+                during single-question regeneration (e.g. "Make it more scenario-based").
+            source_content_id: Optional curriculum content UUID for traceability.
+
+        Returns:
+            A dict shaped like the tool_registry `generate_question` output:
+            question_text, question_type, blooms_taxonomy_level, options,
+            option_details, correct_answer, correct_index, distractor_rationales,
+            explanation, points, marks, difficulty, learningObjective, sourceContentId.
+
+        Raises:
+            AIError: Propagated from `core.llm.invoke_structured` if the Groq call
+                fails after retries are exhausted, or `ValidationError`/`ModelFailure`
+                if Groq returns a structurally unusable payload. Callers are expected
+                to catch this and fall back to the deterministic tool_registry template.
+        """
+        # Resolve grounding text: use what the caller supplied, or try the tool
+        # registry's scope-content lookup (which itself degrades gracefully to
+        # deterministic fallback excerpts if the .NET backend is unreachable), or
+        # fall back to generating from topic/difficulty alone if both are empty.
+        resolved_grounding = grounding_text
+        if not resolved_grounding:
+            try:
+                content, _ = tool_registry.execute_tool(
+                    "get_content_by_scope",
+                    "ACTION_TOOL",
+                    {"scope_type": "TOPIC", "scope_id": source_content_id, "topic_name": scope_name}
+                )
+                excerpts = content.get("excerpts") or []
+                if excerpts:
+                    resolved_grounding = "\n".join(str(x) for x in excerpts)
+            except Exception as e:
+                print(f"tool_get_content_by_scope lookup failed, generating from topic/difficulty alone: {e}")
+                resolved_grounding = None
+
+        llm = get_groq_llm(temperature=0.4)
+        prompt = PromptTemplate(
+            template="""You are an expert AI educator generating a single high-quality quiz question.
+
+{grounding_block}
+Question Requirements:
+- Curriculum Scope: {scope_name}
+- Specific Topic/Focus: {topic}
+- Question Type: {question_type}
+- Difficulty: {difficulty}
+- Learning Objective: {learning_objective}
+{guidance_block}
+Output STRICT JSON with this exact schema (no markdown, no commentary):
+- question_text (string)
+- question_type (string, exactly "{question_type}")
+- blooms_taxonomy_level (string, one of: Knowledge, Comprehension, Application, Analysis, Synthesis, Evaluation)
+- options (list of strings, strictly 2 to 4 options)
+- correct_answer (string, MUST exactly match one of the strings in "options")
+- distractor_rationales (list of strings, same length as "options", one rationale per option explaining why it is correct or incorrect)
+- explanation (string, pedagogical rationale for the correct answer)
+
+JSON Object:""",
+            input_variables=["grounding_block", "scope_name", "topic", "question_type", "difficulty", "learning_objective", "guidance_block"]
+        )
+        parser = JsonOutputParser()
+        chain = prompt | llm | parser
+
+        grounding_block = (
+            f"Ground your question STRICTLY in the following curriculum text where possible:\n{resolved_grounding}\n"
+            if resolved_grounding else
+            "No curriculum excerpt is available -- generate a rigorous, factually sound question from general subject-matter expertise on the topic below.\n"
+        )
+        guidance_block = f"- Instructor Guidance: {prompt_guidance}\n" if prompt_guidance else ""
+
+        result = invoke_structured(chain, {
+            "grounding_block": grounding_block,
+            "scope_name": scope_name,
+            "topic": topic,
+            "question_type": question_type,
+            "difficulty": difficulty,
+            "learning_objective": learning_objective or "LO-01",
+            "guidance_block": guidance_block
+        })
+
+        if not isinstance(result, dict):
+            raise ModelFailure(f"Groq question generation returned a non-dict payload: {type(result).__name__}")
+
+        options = [str(o).strip() for o in (result.get("options") or []) if str(o).strip()]
+        if len(options) < 2:
+            raise ValidationError("Groq question generation returned fewer than 2 usable options.")
+
+        correct_answer = str(result.get("correct_answer") or "").strip()
+        # Ensure correct_answer matches one option exactly (case-insensitive
+        # fallback, then first option) rather than emitting an answer that
+        # doesn't correspond to any rendered option.
+        if correct_answer not in options:
+            matched = next((o for o in options if o.lower() == correct_answer.lower()), None)
+            correct_answer = matched or options[0]
+
+        correct_index = options.index(correct_answer)
+
+        distractor_rationales = result.get("distractor_rationales")
+        if not isinstance(distractor_rationales, list) or len(distractor_rationales) != len(options):
+            distractor_rationales = [
+                (f"Correct: '{opt}' directly satisfies the requirement for {topic}."
+                 if opt == correct_answer else
+                 f"Incorrect: does not satisfy the requirement addressed by '{topic}'.")
+                for opt in options
+            ]
+
+        return {
+            "question_text": result.get("question_text") or f"Question on {topic}",
+            "question_type": question_type,
+            "blooms_taxonomy_level": result.get("blooms_taxonomy_level") or "Application",
+            "options": options,
+            "option_details": [
+                {"text": opt, "isCorrect": (opt == correct_answer), "displayOrder": idx + 1}
+                for idx, opt in enumerate(options)
+            ],
+            "correct_answer": correct_answer,
+            "correct_index": correct_index,
+            "distractor_rationales": [str(r) for r in distractor_rationales],
+            "explanation": result.get("explanation") or f"Grounded in {scope_name}.",
+            "points": 10,
+            "marks": 10,
+            "difficulty": difficulty,
+            "learningObjective": learning_objective or "LO-01",
+            "sourceContentId": source_content_id
+        }
+
     def regenerate_single_question(self, request: SingleQuestionRegenerateRequest) -> SingleQuestionRegenerateResponse:
         """
         Regenerates an individual question with targeted instructor prompt guidance.
-        
+
         Args:
             request: SingleQuestionRegenerateRequest containing question_id, focus_topic, and prompt_guidance.
-            
+
         Returns:
             SingleQuestionRegenerateResponse containing the newly synthesized question model and audit log.
         """
@@ -380,20 +581,43 @@ JSON Object:""",
         target_type = request.target_type or "MULTIPLE_CHOICE"
         target_diff = request.target_difficulty or "MEDIUM"
 
-        # Execute regenerate_question tool
-        q_raw, duration_ms = tool_registry.execute_tool(
-            "regenerate_question",
-            "ACTION_TOOL",
-            {
-                "question_id": request.question_id,
-                "focus_topic": focus,
-                "prompt_guidance": guidance,
-                "target_type": target_type,
-                "target_difficulty": target_diff,
-                "learning_objective": request.learning_objective,
-                "source_content_id": request.source_content_id
-            }
-        )
+        start_time = time.time()
+        try:
+            # Real Groq-backed regeneration -- actually varies with focus_topic /
+            # prompt_guidance / target_difficulty / learning_objective instead of
+            # returning the same static canned tool_registry response every time.
+            q_raw = self._generate_real_question_via_groq(
+                topic=focus,
+                scope_name=focus,
+                question_type=target_type,
+                difficulty=target_diff,
+                learning_objective=request.learning_objective,
+                prompt_guidance=guidance,
+                source_content_id=request.source_content_id
+            )
+            duration_ms = max(int((time.time() - start_time) * 1000), 1)
+        except Exception as e:
+            print(f"Real Groq question regeneration failed for question_id={request.question_id}, falling back to tool_registry template: {e}")
+            # Last-resort safety net: deterministic tool_registry template.
+            # NOTE: tool_regenerate_question/tool_generate_question in
+            # tools/registry.py do `int(params["question_id"])` -- request.question_id
+            # is now the .NET-owned Question.Id Guid *string* (see schemas.py), which
+            # is not numeric, so a fixed placeholder int is passed here instead. The
+            # tool's echoed "question_id" is never read back out of q_raw below (the
+            # real identity is the Guid already held by the .NET caller).
+            q_raw, duration_ms = tool_registry.execute_tool(
+                "regenerate_question",
+                "ACTION_TOOL",
+                {
+                    "question_id": 1,
+                    "focus_topic": focus,
+                    "prompt_guidance": guidance,
+                    "target_type": target_type,
+                    "target_difficulty": target_diff,
+                    "learning_objective": request.learning_objective,
+                    "source_content_id": request.source_content_id
+                }
+            )
 
         opt_models = [
             QuestionOptionModel(text=o["text"], isCorrect=o["isCorrect"], displayOrder=o["displayOrder"])
@@ -401,7 +625,10 @@ JSON Object:""",
         ]
 
         q_model = QuizQuestionModel(
-            question_id=request.question_id,
+            question_id=1,  # Legacy sequential int field on the shared QuizQuestionModel --
+                             # single-question regeneration is identified by the .NET-owned
+                             # Question.Id Guid (request.question_id, now a string) which the
+                             # .NET caller already holds; it is not echoed through this int field.
             question_text=q_raw["question_text"],
             question_type=q_raw["question_type"],
             blooms_taxonomy_level=q_raw["blooms_taxonomy_level"],
