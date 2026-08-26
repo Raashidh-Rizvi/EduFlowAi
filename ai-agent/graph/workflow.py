@@ -61,6 +61,14 @@ from core.observability import ObservabilityCollector, redact_dict
 from core.retry import retry_with_backoff
 from tools.registry import tool_registry
 
+# Import the real langgraph StateGraph primitives used to orchestrate LangGraphPipeline.
+# `SharedAgentState` (a Pydantic BaseModel) is used directly as the graph's state schema --
+# langgraph accepts Pydantic models as state schemas natively, validating every partial
+# node update against the model on merge.
+from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.runnables import RunnableConfig
+
 
 # -----------------------------------------------------------------------------
 # Global Singleton Agent Instances
@@ -80,13 +88,224 @@ ACTIVE_WORKFLOWS: Dict[str, SharedAgentState] = {}
 # =============================================================================
 # 1. LangGraph Pipeline (Shared Blackboard State Graph)
 # =============================================================================
+#
+# The node functions below are real `langgraph.graph.StateGraph` nodes. Each one wraps
+# -- without reimplementing -- the exact same agent method call the pipeline used to make
+# sequentially. `SharedAgentState` (a Pydantic BaseModel) is used directly as the graph's
+# state schema: langgraph accepts Pydantic models natively, hands each node a validated
+# instance, and merges each node's returned partial-update dict back into the channel
+# state using last-write-wins semantics per field.
+#
+# Per-call dependencies that are not part of the persisted blackboard (the running
+# `ObservabilityCollector` and the `requires_human_approval` flag) are threaded through
+# via `config["configurable"]`, which langgraph passes to every node and conditional-edge
+# routing function for the duration of a single `invoke()` call.
+
+def _planner_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """
+    LangGraph node wrapping `CoordinatorPlannerAgent.build_execution_plan` (Stage 1).
+
+    This node is the graph's entry point and is re-entered directly whenever
+    `LangGraphPipeline.process_review_decision` routes a REVISION_REQUESTED decision
+    back into the graph -- a genuine cycle back to the planner node rather than a
+    duplicated inline call. On that re-entry `state.status` is REVISION_REQUESTED
+    (set by the caller immediately before invoking the graph), so this node replans
+    and moves status to VALIDATING; `_route_after_planner` then halts the graph there,
+    matching the legacy pipeline's behavior of only replanning on revision (it never
+    re-ran domain analysis / action / validation after a revision request).
+    """
+    obs: ObservabilityCollector = config["configurable"]["obs"]
+
+    plan_out, plan_log = planner_agent.build_execution_plan(state.objective, state.studentContext)
+    obs.record_agent_duration("Coordinator / Planner Agent", plan_log.execution_time_ms)
+    obs.record_token_usage(120, 85)
+
+    updates: Dict[str, Any] = {
+        "plan": [s.model_dump() for s in plan_out.steps],
+        "executionLogs": state.executionLogs + [plan_log.model_dump()]
+    }
+    if state.status == WorkflowStatus.REVISION_REQUESTED.value:
+        updates["status"] = WorkflowStatus.VALIDATING.value
+    return updates
+
+
+def _route_after_planner(state: SharedAgentState, config: RunnableConfig) -> str:
+    """Revision replans halt right after the planner node; fresh runs continue the pipeline."""
+    if state.status == WorkflowStatus.VALIDATING.value:
+        return END
+    return "domain_analysis"
+
+
+def _domain_analysis_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """LangGraph node wrapping `DomainAnalysisAgent.analyze_student_features` (Stage 2)."""
+    obs: ObservabilityCollector = config["configurable"]["obs"]
+
+    student_context = state.studentContext
+    features = DomainFeatureInputs(
+        recent_quiz_scores=student_context.get("recent_quiz_scores", [65.0, 70.0]),
+        topic_level_performance=student_context.get("topic_performance", {"PostgreSQL Composite Indexes": 45.0}),
+        lesson_completion=student_context.get("lesson_completion", ["MOD-01-L01"]),
+        streak=int(student_context.get("streak", 4)),
+        time_on_task=float(student_context.get("time_on_task", 185.0)),
+        recent_mistakes=student_context.get("mistakes", ["Composite index ordering"])
+    )
+    analysis_out, domain_log = domain_agent.analyze_student_features(features)
+    obs.record_agent_duration("Domain Analysis Agent", domain_log.execution_time_ms)
+    obs.record_token_usage(95, 110)
+
+    return {
+        "analysis": analysis_out.model_dump(),
+        "executionLogs": state.executionLogs + [domain_log.model_dump()]
+    }
+
+
+def _action_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """LangGraph node wrapping `ActionToolAgent.execute_controlled_tool` (Stage 3)."""
+    obs: ObservabilityCollector = config["configurable"]["obs"]
+
+    # `state.analysis` is the domain-analysis node's already-serialized (model_dump'd) output,
+    # so fields are read by dict key here rather than by attribute.
+    learning_gaps = state.analysis.get("learningGaps", [])
+    weak_topic = learning_gaps[0]["topic"] if learning_gaps else "Core Architecture"
+    difficulty = state.analysis.get("recommendedDifficulty", "medium")
+
+    tool_res, tool_log = action_agent.execute_controlled_tool(
+        "create_challenge_draft",
+        {
+            "weak_topic": weak_topic,
+            "difficulty": difficulty,
+            "xp_reward": 120,
+            "coin_reward": 40,
+            "time_limit_minutes": 15
+        }
+    )
+    obs.record_agent_duration("Content & Action Tool Agent", tool_log.execution_time_ms)
+    obs.record_tool_latency("create_challenge_draft", tool_log.execution_time_ms)
+    obs.record_token_usage(140, 160)
+
+    tool_result_entry = {
+        "toolName": "create_challenge_draft",
+        "executedBy": "ACTION_TOOL",
+        "durationMs": tool_log.execution_time_ms,
+        "data": tool_res
+    }
+    return {
+        "toolResults": state.toolResults + [tool_result_entry],
+        "candidateOutput": tool_res,
+        "executionLogs": state.executionLogs + [tool_log.model_dump()]
+    }
+
+
+def _validation_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """LangGraph node wrapping `ValidationGuardAgent.validate_candidate_draft` (Stage 4)."""
+    obs: ObservabilityCollector = config["configurable"]["obs"]
+
+    val_check, val_log = validation_agent.validate_candidate_draft("AdaptiveChallenge", state.candidateOutput)
+    obs.record_agent_duration("Validation & Safety Guard Agent", val_log.execution_time_ms)
+
+    return {
+        "status": WorkflowStatus.VALIDATING.value,
+        "validation": val_check.model_dump(),
+        "executionLogs": state.executionLogs + [val_log.model_dump()]
+    }
+
+
+def _route_after_validation(state: SharedAgentState, config: RunnableConfig) -> str:
+    """Branches to the fail / human-gate / auto-complete terminal node, mirroring the legacy if/else."""
+    if not state.validation.get("passed", False):
+        return "fail"
+
+    requires_human_approval = config["configurable"].get("requires_human_approval", True)
+    if requires_human_approval and state.validation.get("requires_human_approval", False):
+        return "pending_gate"
+    return "auto_complete"
+
+
+def _fail_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """Terminal node for a failed deterministic validation pass."""
+    obs: ObservabilityCollector = config["configurable"]["obs"]
+    for err in state.validation.get("errors", []):
+        obs.record_validation_failure(err)
+    return {"status": WorkflowStatus.FAILED.value}
+
+
+def _pending_gate_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """Terminal node for the Human Review Gate (HITL Governance) -- parks the workflow for instructor sign-off."""
+    return {
+        "status": WorkflowStatus.PENDING_APPROVAL.value,
+        "approval": ApprovalRecord(required=True, status="PENDING").model_dump()
+    }
+
+
+def _auto_complete_node(state: SharedAgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """Terminal node for direct safe auto-execution when human approval is not mandated."""
+    return {
+        "status": WorkflowStatus.COMPLETED.value,
+        "approval": ApprovalRecord(required=False, status="AUTO_APPROVED").model_dump()
+    }
+
+
+def _build_pipeline_graph():
+    """
+    Builds and compiles the real `StateGraph` backing `LangGraphPipeline`:
+
+    [START] -> planner -> [domain_analysis -> action -> validation] -> fail            -> [END]
+                  ^                                                 -> pending_gate    -> [END]
+                  |                                                 -> auto_complete   -> [END]
+                  |
+                  +-- (conditional edge, REVISION_REQUESTED re-entry) -----------------< [END]
+
+    A `MemorySaver` checkpointer is attached (keyed per-call by `workflow_id` as the
+    thread id) so that if a node raises, the partially-completed state up to the last
+    successful node is still recoverable via `get_state()` -- matching the legacy
+    implementation's in-place mutation, which also preserved partial progress on failure.
+    """
+    graph = StateGraph(SharedAgentState)
+
+    graph.add_node("planner", _planner_node)
+    graph.add_node("domain_analysis", _domain_analysis_node)
+    graph.add_node("action", _action_node)
+    graph.add_node("validation", _validation_node)
+    graph.add_node("fail", _fail_node)
+    graph.add_node("pending_gate", _pending_gate_node)
+    graph.add_node("auto_complete", _auto_complete_node)
+
+    graph.set_entry_point("planner")
+    graph.add_conditional_edges(
+        "planner",
+        _route_after_planner,
+        {"domain_analysis": "domain_analysis", END: END}
+    )
+    graph.add_edge("domain_analysis", "action")
+    graph.add_edge("action", "validation")
+    graph.add_conditional_edges(
+        "validation",
+        _route_after_validation,
+        {"fail": "fail", "pending_gate": "pending_gate", "auto_complete": "auto_complete"}
+    )
+    graph.add_edge("fail", END)
+    graph.add_edge("pending_gate", END)
+    graph.add_edge("auto_complete", END)
+
+    return graph.compile(checkpointer=MemorySaver())
+
+
+# Module-level compiled graph singleton, built once at import time and reused across requests.
+_PIPELINE_GRAPH = _build_pipeline_graph()
+
 
 class LangGraphPipeline:
     """
-    Executes the 11-field Shared State LangGraph multi-agent graph:
-    [START] -> [Planner] -> [Domain Analysis] -> [Action / Tool] -> [Validation Guard] -> [Human Review Gate] -> [Execute] -> [END]
-                                                                                                 ^           |
-                                                                                                 |--Revision-|
+    Executes the 11-field Shared State LangGraph multi-agent graph via a real, compiled
+    `langgraph.graph.StateGraph` (see `_build_pipeline_graph` above):
+
+    [START] -> [Planner] -> [Domain Analysis] -> [Action / Tool] -> [Validation Guard] -> [Human Review Gate] -> [END]
+                    ^                                                                             |
+                    |----------------------------- Revision (conditional edge) --------------------|
+
+    `execute_workflow` and `process_review_decision` are the class's public API and keep
+    their exact original signatures and return shapes -- both still return a `SharedAgentState`
+    instance -- while internally driving the compiled graph instead of plain sequential calls.
     """
     @staticmethod
     def execute_workflow(
@@ -97,13 +316,13 @@ class LangGraphPipeline:
     ) -> SharedAgentState:
         """
         Runs the end-to-end multi-agent pipeline using the 11-field SharedAgentState blackboard.
-        
+
         Args:
             student_id: UUID of the student.
             objective: High-level goal specification dictionary.
             student_context: Historical performance context dictionary.
             requires_human_approval: Flag indicating if instructor gating is enforced (default True).
-            
+
         Returns:
             Updated SharedAgentState object.
         """
@@ -111,7 +330,7 @@ class LangGraphPipeline:
         obs = ObservabilityCollector(workflow_id)
 
         # Initialize the 11-field SharedAgentState
-        state = SharedAgentState(
+        initial_state = SharedAgentState(
             workflowId=workflow_id,
             studentId=student_id,
             objective=objective,
@@ -119,86 +338,19 @@ class LangGraphPipeline:
             status=WorkflowStatus.DRAFT.value
         )
 
+        graph_config = {
+            "configurable": {
+                "thread_id": workflow_id,
+                "obs": obs,
+                "requires_human_approval": requires_human_approval
+            }
+        }
+
         try:
-            # -----------------------------------------------------------------
-            # Node 1: Coordinator / Planner Agent (Goal Decomposition & Whitelist)
-            # -----------------------------------------------------------------
-            plan_out, plan_log = planner_agent.build_execution_plan(objective, student_context)
-            state.plan = [s.model_dump() for s in plan_out.steps]
-            state.executionLogs.append(plan_log.model_dump())
-            obs.record_agent_duration("Coordinator / Planner Agent", plan_log.execution_time_ms)
-            obs.record_token_usage(120, 85)
-
-            # -----------------------------------------------------------------
-            # Node 2: Domain Analysis Agent (Telemetry Diagnostic Ingestion)
-            # -----------------------------------------------------------------
-            features = DomainFeatureInputs(
-                recent_quiz_scores=student_context.get("recent_quiz_scores", [65.0, 70.0]),
-                topic_level_performance=student_context.get("topic_performance", {"PostgreSQL Composite Indexes": 45.0}),
-                lesson_completion=student_context.get("lesson_completion", ["MOD-01-L01"]),
-                streak=int(student_context.get("streak", 4)),
-                time_on_task=float(student_context.get("time_on_task", 185.0)),
-                recent_mistakes=student_context.get("mistakes", ["Composite index ordering"])
-            )
-            analysis_out, domain_log = domain_agent.analyze_student_features(features)
-            state.analysis = analysis_out.model_dump()
-            state.executionLogs.append(domain_log.model_dump())
-            obs.record_agent_duration("Domain Analysis Agent", domain_log.execution_time_ms)
-            obs.record_token_usage(95, 110)
-
-            # -----------------------------------------------------------------
-            # Node 3: Content & Action Tool Agent (Controlled Tool Execution)
-            # -----------------------------------------------------------------
-            tool_res, tool_log = action_agent.execute_controlled_tool(
-                "create_challenge_draft",
-                {
-                    "weak_topic": analysis_out.learningGaps[0].topic if analysis_out.learningGaps else "Core Architecture",
-                    "difficulty": analysis_out.recommendedDifficulty,
-                    "xp_reward": 120,
-                    "coin_reward": 40,
-                    "time_limit_minutes": 15
-                }
-            )
-            state.toolResults.append({
-                "toolName": "create_challenge_draft",
-                "executedBy": "ACTION_TOOL",
-                "durationMs": tool_log.execution_time_ms,
-                "data": tool_res
-            })
-            state.candidateOutput = tool_res
-            state.executionLogs.append(tool_log.model_dump())
-            obs.record_agent_duration("Content & Action Tool Agent", tool_log.execution_time_ms)
-            obs.record_tool_latency("create_challenge_draft", tool_log.execution_time_ms)
-            obs.record_token_usage(140, 160)
-
-            # -----------------------------------------------------------------
-            # Node 4: Validation & Safety Guard Agent (Deterministic Rules)
-            # -----------------------------------------------------------------
-            state.status = WorkflowStatus.VALIDATING.value
-            val_check, val_log = validation_agent.validate_candidate_draft("AdaptiveChallenge", state.candidateOutput)
-            state.validation = val_check.model_dump()
-            state.executionLogs.append(val_log.model_dump())
-            obs.record_agent_duration("Validation & Safety Guard Agent", val_log.execution_time_ms)
-
-            # Check if validation failed
-            if not val_check.passed:
-                for err in val_check.errors:
-                    obs.record_validation_failure(err)
-                state.status = WorkflowStatus.FAILED.value
-                state.observabilityMetrics = obs.get_summary().model_dump()
-                ACTIVE_WORKFLOWS[workflow_id] = state
-                return state
-
-            # -----------------------------------------------------------------
-            # Node 5: Human Review Gate (HITL Governance)
-            # -----------------------------------------------------------------
-            if requires_human_approval and val_check.requires_human_approval:
-                state.status = WorkflowStatus.PENDING_APPROVAL.value
-                state.approval = ApprovalRecord(required=True, status="PENDING").model_dump()
-            else:
-                # Direct safe auto-execution if human approval is not mandated
-                state.status = WorkflowStatus.COMPLETED.value
-                state.approval = ApprovalRecord(required=False, status="AUTO_APPROVED").model_dump()
+            # Invoke the compiled StateGraph: planner -> domain_analysis -> action -> validation
+            # -> (fail | pending_gate | auto_complete). Returns the fully-merged final state dict.
+            result_dict = _PIPELINE_GRAPH.invoke(initial_state, config=graph_config)
+            state = SharedAgentState.from_graph_dict(result_dict)
 
             # Record final metrics summary
             state.observabilityMetrics = obs.get_summary().model_dump()
@@ -206,8 +358,16 @@ class LangGraphPipeline:
             return state
 
         except Exception as e:
-            # Capture failure and update state
+            # Capture failure and update state, preserving whatever progress the graph's
+            # checkpointer captured from nodes that completed before the failing one.
             obs.record_failure(str(e))
+            try:
+                snapshot = _PIPELINE_GRAPH.get_state(graph_config)
+                recovered = dict(snapshot.values) if snapshot and snapshot.values else {}
+            except Exception:
+                recovered = {}
+            merged = {**initial_state.model_dump(), **recovered}
+            state = SharedAgentState.from_graph_dict(merged)
             state.status = WorkflowStatus.FAILED.value
             state.observabilityMetrics = obs.get_summary().model_dump()
             ACTIVE_WORKFLOWS[workflow_id] = state
@@ -223,13 +383,13 @@ class LangGraphPipeline:
         """
         Handles human instructor review decisions (APPROVED, REJECTED, REVISION_REQUESTED)
         and transitions the shared state graph accordingly.
-        
+
         Args:
             workflow_id: Unique identifier of the active workflow.
             decision: Instructor's decision ('APPROVED' | 'REJECTED' | 'REVISION_REQUESTED').
             reviewer_id: Identifier of the reviewer.
             comments: Feedback or revision guidance.
-            
+
         Returns:
             Updated SharedAgentState reflecting the decision and new lifecycle status.
         """
@@ -254,7 +414,7 @@ class LangGraphPipeline:
         else:
             target_status = WorkflowStatus.PENDING_APPROVAL.value
 
-        # Execute state machine transition
+        # Execute state machine transition (raises ValidationError on an illegal transition)
         transition_record = ApprovalStateMachine.transition(
             current_status=current_status,
             target_status=target_status,
@@ -273,18 +433,31 @@ class LangGraphPipeline:
         )
         state.approval = approval_rec.model_dump()
 
-        # If revision requested, trigger Planner re-evaluation loop
+        # If revision requested, re-enter the compiled graph at its entry point (the planner
+        # node) -- a real conditional-edge cycle back to the planner, rather than an inline
+        # duplicate call. `_route_after_planner` halts the graph immediately after replanning
+        # (status becomes VALIDATING), matching the legacy behavior of only replanning on a
+        # revision request without re-running domain analysis / action / validation.
         if target_status == WorkflowStatus.REVISION_REQUESTED.value:
             state.objective["revision_instructions"] = comments
-            plan_out, plan_log = planner_agent.build_execution_plan(state.objective, state.studentContext)
-            state.plan = [s.model_dump() for s in plan_out.steps]
-            state.executionLogs.append(plan_log.model_dump())
-            state.status = WorkflowStatus.VALIDATING.value
+            # This collector's summary is intentionally not persisted onto state.observabilityMetrics,
+            # matching the legacy method which never touched that field during a revision replan.
+            revision_obs = ObservabilityCollector(workflow_id)
+            graph_config = {
+                "configurable": {
+                    "thread_id": workflow_id,
+                    "obs": revision_obs,
+                    "requires_human_approval": True
+                }
+            }
+            result_dict = _PIPELINE_GRAPH.invoke(state, config=graph_config)
+            state = SharedAgentState.from_graph_dict(result_dict)
 
         # If approved, advance to completed execution
         elif target_status == WorkflowStatus.APPROVED.value:
             state.status = WorkflowStatus.COMPLETED.value
 
+        ACTIVE_WORKFLOWS[workflow_id] = state
         return state
 
 

@@ -933,30 +933,116 @@ public class QuizzesController : ControllerBase
         var targetType = request.TargetType ?? question.Type;
         var targetDiff = request.TargetDifficulty ?? question.Difficulty;
 
-        question.Prompt = $"Regenerated Scenario: In {focus}, how should the system handle high-frequency cache invalidations under strict transactional boundaries?";
-        var options = new List<string>
+        // -------------------------------------------------------------------------
+        // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
+        // -------------------------------------------------------------------------
+        // Route confirmed against ai-agent/main.py: POST /api/v1/ai/questions/{question_id}/regenerate.
+        // question_id there is a str (the .NET Question.Id Guid), so it round-trips correctly.
+        var pythonPayload = new
         {
-            "Use transactional outbox event streams to notify subscribers asynchronously",
-            "Perform synchronous lock-all table flushes on every write",
-            "Bypass cache validation completely for all active sessions",
-            "Store all cache keys directly in unencrypted local cookies"
+            focus_topic = focus,
+            prompt_guidance = request.PromptGuidance,
+            target_type = MapQuestionTypeToPython(targetType),
+            target_difficulty = targetDiff.ToString().ToUpperInvariant(),
+            learning_objective = question.LearningObjective,
+            source_content_id = question.SourceContentId?.ToString()
         };
-        question.Type = targetType;
-        question.OptionsJson = JsonSerializer.Serialize(options);
-        question.CorrectAnswer = "Use transactional outbox event streams to notify subscribers asynchronously";
-        question.Explanation = "Transactional outbox ensures atomic state updates and consistent downstream cache eviction.";
-        question.Difficulty = targetDiff;
-        question.MetadataJson = JsonSerializer.Serialize(new
+
+        string newPrompt = string.Empty;
+        List<string> options = new();
+        string correctAnswer = string.Empty;
+        string explanation = string.Empty;
+        string bloomsLevel = "Synthesis";
+        List<string> distractorRationales = new();
+        QuestionType resolvedType = targetType;
+        bool usedPython = false;
+
+        try
         {
-            bloomsTaxonomy = "Synthesis",
-            promptGuidance = request.PromptGuidance ?? "Targeted single-question AI regeneration.",
+            var responseString = await _aiGatewayClient.RegenerateQuestionAsync(questionId.ToString(), pythonPayload);
+            var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
+
+            // The gateway client transparently returns its own degraded/offline fallback
+            // JSON (tagged "source": "fallback") when the real AI microservice is unreachable
+            // at the network level. Treat that the same as a failed call so the local
+            // hardcoded fallback below runs (Groq-level failures are already retried and
+            // handled with a real-question fallback on the Python side).
+            bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
+                && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
+
+            if (!isGatewayFallback && aiResult.TryGetProperty("question", out var qToken))
+            {
+                newPrompt = qToken.TryGetProperty("question_text", out var textProp) ? (textProp.GetString() ?? "") : "";
+                var qTypeStr = qToken.TryGetProperty("question_type", out var qTypeProp) ? qTypeProp.GetString() : null;
+                resolvedType = MapPythonQuestionType(qTypeStr, targetType);
+                correctAnswer = qToken.TryGetProperty("correct_answer", out var caProp) ? (caProp.GetString() ?? "") : "";
+                explanation = qToken.TryGetProperty("explanation", out var expProp) ? (expProp.GetString() ?? "AI Explanation") : "AI Explanation";
+                bloomsLevel = qToken.TryGetProperty("blooms_taxonomy_level", out var bloomProp) ? (bloomProp.GetString() ?? bloomsLevel) : bloomsLevel;
+
+                if (qToken.TryGetProperty("options", out var optionsArray))
+                {
+                    foreach (var opt in optionsArray.EnumerateArray())
+                    {
+                        options.Add(opt.GetString() ?? "");
+                    }
+                }
+
+                if (qToken.TryGetProperty("distractor_rationales", out var rationalesArray))
+                {
+                    foreach (var r in rationalesArray.EnumerateArray())
+                    {
+                        distractorRationales.Add(r.GetString() ?? "");
+                    }
+                }
+
+                // Only trust the AI response if it produced usable options and a
+                // correct answer -- otherwise fall through to the local fallback.
+                usedPython = options.Count >= 2 && !string.IsNullOrWhiteSpace(newPrompt) && !string.IsNullOrWhiteSpace(correctAnswer);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AI Agent] Python single-question regenerate error: {ex.Message}");
+        }
+
+        // -------------------------------------------------------------------------
+        // FALLBACK: If the AI gateway call fails entirely (network-level) or returns
+        // an unusable payload, reuse the existing deterministic hardcoded question.
+        // -------------------------------------------------------------------------
+        if (!usedPython)
+        {
+            newPrompt = $"Regenerated Scenario: In {focus}, how should the system handle high-frequency cache invalidations under strict transactional boundaries?";
+            options = new List<string>
+            {
+                "Use transactional outbox event streams to notify subscribers asynchronously",
+                "Perform synchronous lock-all table flushes on every write",
+                "Bypass cache validation completely for all active sessions",
+                "Store all cache keys directly in unencrypted local cookies"
+            };
+            correctAnswer = "Use transactional outbox event streams to notify subscribers asynchronously";
+            explanation = "Transactional outbox ensures atomic state updates and consistent downstream cache eviction.";
+            bloomsLevel = "Synthesis";
+            resolvedType = targetType;
             distractorRationales = new List<string>
             {
                 "Correct: Outbox pattern guarantees event dispatch consistency without distributed transactions.",
                 "Incorrect: Causes severe concurrency lockups and system degradation.",
                 "Incorrect: Leads to stale reads and data corruption.",
                 "Incorrect: Serious security and architectural violation."
-            }
+            };
+        }
+
+        question.Prompt = newPrompt;
+        question.Type = resolvedType;
+        question.OptionsJson = JsonSerializer.Serialize(options);
+        question.CorrectAnswer = correctAnswer;
+        question.Explanation = explanation;
+        question.Difficulty = targetDiff;
+        question.MetadataJson = JsonSerializer.Serialize(new
+        {
+            bloomsTaxonomy = bloomsLevel,
+            promptGuidance = request.PromptGuidance ?? "Targeted single-question AI regeneration.",
+            distractorRationales
         });
         question.UpdatedAt = DateTime.UtcNow;
 
@@ -993,6 +1079,43 @@ public class QuizzesController : ControllerBase
             question.Options.Select(o => new QuestionOptionDto(o.Id, o.OptionText, o.IsCorrect, o.DisplayOrder)).ToList()
         ));
     }
+
+    // -------------------------------------------------------------------------
+    // Question type <-> Python question_type string mapping helpers, used only
+    // by RegenerateSingleQuestion above to talk to ai-agent's 10-format schema
+    // (MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE | SHORT_ANSWER |
+    // FILL_IN_THE_BLANK | MATCHING | ORDERING | SCENARIO_BASED |
+    // TIMED_CHALLENGE | MIXED).
+    // -------------------------------------------------------------------------
+    private static string MapQuestionTypeToPython(QuestionType type) => type switch
+    {
+        QuestionType.MultipleChoice => "MULTIPLE_CHOICE",
+        QuestionType.MultipleSelect => "MULTIPLE_SELECT",
+        QuestionType.TrueFalse => "TRUE_FALSE",
+        QuestionType.ShortAnswer => "SHORT_ANSWER",
+        QuestionType.FillInBlank => "FILL_IN_THE_BLANK",
+        QuestionType.Matching => "MATCHING",
+        QuestionType.Ordering => "ORDERING",
+        QuestionType.ScenarioBased => "SCENARIO_BASED",
+        QuestionType.TimedChallenge => "TIMED_CHALLENGE",
+        QuestionType.CodeSnippet => "SCENARIO_BASED",
+        QuestionType.OpenEnded => "SHORT_ANSWER",
+        _ => "MULTIPLE_CHOICE"
+    };
+
+    private static QuestionType MapPythonQuestionType(string? pyType, QuestionType fallback) => pyType?.ToUpperInvariant() switch
+    {
+        "MULTIPLE_CHOICE" => QuestionType.MultipleChoice,
+        "MULTIPLE_SELECT" => QuestionType.MultipleSelect,
+        "TRUE_FALSE" => QuestionType.TrueFalse,
+        "SHORT_ANSWER" => QuestionType.ShortAnswer,
+        "FILL_IN_THE_BLANK" => QuestionType.FillInBlank,
+        "MATCHING" => QuestionType.Matching,
+        "ORDERING" => QuestionType.Ordering,
+        "SCENARIO_BASED" => QuestionType.ScenarioBased,
+        "TIMED_CHALLENGE" => QuestionType.TimedChallenge,
+        _ => fallback
+    };
 
     // -------------------------------------------------------------------------
     // 5. STUDENT QUIZ TAKING & DETERMINISTIC GRADING

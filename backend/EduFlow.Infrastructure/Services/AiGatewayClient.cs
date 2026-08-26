@@ -13,6 +13,7 @@ public interface IAiGatewayClient
     Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateAdaptiveChallengeAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default);
+    Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default);
     Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default);
     Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GetAgentsTopologyAsync(CancellationToken ct = default);
@@ -91,6 +92,26 @@ public class AiGatewayClient : IAiGatewayClient
         }
 
         return FallbackQuizJson();
+    }
+
+    public async Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/questions/{question_id}/regenerate")
+            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/v1/ai/questions/{questionId}/regenerate", requestPayload, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+        }
+        catch
+        {
+            // Fallback when the python microservice is unreachable at the network level
+            // (Groq-level failures are already handled/retried on the Python side).
+        }
+
+        return FallbackSingleQuestionJson(questionId);
     }
 
     public async Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default)
@@ -338,6 +359,41 @@ public class AiGatewayClient : IAiGatewayClient
                     points = 10
                 }
             }
+        });
+    }
+
+    private static string FallbackSingleQuestionJson(string questionId)
+    {
+        // Shaped to match ai-agent's SingleQuestionRegenerateResponse (models/schemas.py)
+        // so QuizzesController.RegenerateSingleQuestion can parse this the same way
+        // whether it came from the real Python microservice or this network-failure fallback.
+        return JsonSerializer.Serialize(new
+        {
+            question = new
+            {
+                question_id = 1,
+                question_text = $"Regenerated Scenario (question {questionId}): how should the system handle high-frequency cache invalidations under strict transactional boundaries?",
+                question_type = "MULTIPLE_CHOICE",
+                blooms_taxonomy_level = "Synthesis",
+                options = new[]
+                {
+                    "Use transactional outbox event streams to notify subscribers asynchronously",
+                    "Perform synchronous lock-all table flushes on every write",
+                    "Bypass cache validation completely for all active sessions",
+                    "Store all cache keys directly in unencrypted local cookies"
+                },
+                correct_answer = "Use transactional outbox event streams to notify subscribers asynchronously",
+                explanation = "Transactional outbox ensures atomic state updates and consistent downstream cache eviction.",
+                distractor_rationales = new[]
+                {
+                    "Correct: Outbox pattern guarantees event dispatch consistency without distributed transactions.",
+                    "Incorrect: Causes severe concurrency lockups and system degradation.",
+                    "Incorrect: Leads to stale reads and data corruption.",
+                    "Incorrect: Serious security and architectural violation."
+                }
+            },
+            validation_passed = true,
+            source = "fallback"
         });
     }
 
