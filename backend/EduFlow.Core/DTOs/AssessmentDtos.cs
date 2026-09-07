@@ -136,7 +136,10 @@ public record QuestionResultItem(
     string CorrectAnswer,
     bool IsCorrect,
     int PointsAwarded,
-    string Explanation
+    string Explanation,
+    string? SlideCitation = null,
+    string? QuestionType = null,
+    string? MarkingScheme = null
 );
 
 public record CreateQuizRequest(
@@ -190,6 +193,8 @@ public record GenerateAiQuizRequest(
     QuizScopeType ScopeType = QuizScopeType.Course,
     Guid? ScopeId = null,
     string? PdfUrl = null,
+    string? SlideUrl = null,
+    List<string>? SelectedTopics = null,
     List<string>? QuestionTypes = null,
     Dictionary<string, int>? QuestionTypeDistribution = null,
     Dictionary<string, int>? DifficultyDistribution = null,

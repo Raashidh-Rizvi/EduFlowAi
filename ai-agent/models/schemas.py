@@ -657,6 +657,15 @@ class QuizQuestionModel(BaseModel):
     
     # Optional code snippet for programming / SQL inspection questions
     code_snippet: Optional[str] = None
+
+    # Marking scheme / scoring rubric
+    marking_scheme: Optional[str] = None
+
+    # Slide citation evidence (e.g. Slide 3: Indexing Concepts)
+    slide_citation: Optional[str] = None
+
+    # Concept pairs for Matching questions
+    matching_pairs: Optional[List[Dict[str, str]]] = None
     
     # Additional key-value metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
@@ -682,6 +691,12 @@ class DiagnosticQuizRequest(BaseModel):
     
     # Path to uploaded PDF for extraction
     pdf_path: Optional[str] = None
+
+    # Path to uploaded slide deck (PDF or PPTX)
+    slide_path: Optional[str] = None
+
+    # List of selected topics to filter RAG generation
+    selected_topics: Optional[List[str]] = None
     
     # Course title
     course_title: Optional[str] = "Software Engineering & Architecture"
@@ -1078,3 +1093,79 @@ class NextBestActionResponse(BaseModel):
     
     # Audit log of the Next Best Action evaluation
     audit_log: AgentExecutionLog
+
+
+# =============================================================================
+# 12. SlideQuest AI - Slide Topic Discovery & Automated Marking Engine Schemas
+# =============================================================================
+
+class SlideTopicItem(BaseModel):
+    """
+    Categorized topic extracted from a lecture slide presentation (PDF/PPTX).
+    """
+    id: str
+    title: str
+    summary: str
+    slide_range: str
+    key_concepts: List[str] = Field(default_factory=list)
+
+
+class SlideCategorizeRequest(BaseModel):
+    """
+    Request to discover and categorize subtopics in an uploaded slide deck.
+    """
+    slide_path: str
+    max_topics: int = 6
+
+
+class SlideCategorizeResponse(BaseModel):
+    """
+    Categorized subtopics discovered across the slide deck.
+    """
+    slide_name: str
+    total_slides: int
+    topics: List[SlideTopicItem]
+    source: str = "ai-agent"
+    audit_log: Optional[AgentExecutionLog] = None
+
+
+class QuizAutoGradeRequest(BaseModel):
+    """
+    Payload for automated instant grading of multi-format student submissions.
+    """
+    quiz_id: Optional[str] = None
+    questions: List[Dict[str, Any]] = Field(default_factory=list)
+    answers: List[Dict[str, Any]] = Field(default_factory=list)
+    pass_percentage: int = 70
+
+
+class QuestionMarkingItem(BaseModel):
+    """
+    Detailed marking scheme outcome for an individual question.
+    """
+    question_id: str
+    prompt: str
+    question_type: str
+    student_answer: str
+    correct_answer: str
+    is_correct: bool
+    points_awarded: int
+    max_points: int
+    rubric_explanation: str
+    slide_citation: Optional[str] = None
+
+
+class QuizAutoGradeResponse(BaseModel):
+    """
+    Automated marking result with full Marking Scheme breakdown and gamification rewards.
+    """
+    score_obtained: int
+    max_score: int
+    percentage_score: float
+    passed: bool
+    xp_earned: int
+    coins_earned: int
+    feedback: str
+    question_breakdown: List[QuestionMarkingItem]
+    source: str = "ai-agent"
+

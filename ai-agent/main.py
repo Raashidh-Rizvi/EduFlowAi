@@ -46,8 +46,14 @@ from models.schemas import (
     NextBestActionResponse,
     AgentTopologyResponse,
     WorkflowDecisionRequest,
-    WorkflowDecisionResponse
+    WorkflowDecisionResponse,
+    SlideCategorizeRequest,
+    SlideCategorizeResponse,
+    QuizAutoGradeRequest,
+    QuizAutoGradeResponse
 )
+from agents.slide_topic_agent import SlideTopicAgent
+from agents.quiz_evaluator_agent import QuizEvaluatorAgent
 
 # Import state models
 from models.state import SharedAgentState
@@ -219,6 +225,52 @@ def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest, _
     """
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -----------------------------------------------------------------------------
+# SlideQuest AI - Slide Topic Discovery & Automated Marking Endpoints
+# -----------------------------------------------------------------------------
+
+@app.post("/api/v1/ai/slides/categorize-topics", response_model=SlideCategorizeResponse)
+def categorize_slide_topics(request: SlideCategorizeRequest, _: None = Depends(verify_internal_token)):
+    """
+    Analyzes lecture slide presentations (PDF/PPTX) and categorizes subtopics for quiz creation.
+    """
+    try:
+        agent = SlideTopicAgent()
+        res, log = agent.categorize_slides(file_path=request.slide_path, max_topics=request.max_topics)
+        res["audit_log"] = log
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ai/slides/generate-quiz", response_model=DiagnosticQuizResponse)
+def generate_slide_rag_quiz(request: DiagnosticQuizRequest, _: None = Depends(verify_internal_token)):
+    """
+    Generates a multi-format quiz strictly grounded in chosen slide topics.
+    """
+    try:
+        return QuizGeneratorOrchestrator.generate_quiz(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/v1/ai/quizzes/auto-grade", response_model=QuizAutoGradeResponse)
+def auto_grade_quiz_submission(request: QuizAutoGradeRequest, _: None = Depends(verify_internal_token)):
+    """
+    Automatically evaluates student quiz answers across all formats with AI semantic grading for typed responses.
+    """
+    try:
+        agent = QuizEvaluatorAgent()
+        res, _ = agent.evaluate_submission(
+            questions=request.questions,
+            answers=request.answers,
+            pass_percentage=request.pass_percentage
+        )
+        return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

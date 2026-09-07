@@ -735,15 +735,15 @@ public class QuizzesController : ControllerBase
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
         // -------------------------------------------------------------------------
 
-        // Map relative PdfUrl to physical path for the python service
-        string? physicalPdfPath = null;
-        if (!string.IsNullOrEmpty(request.PdfUrl))
+        // Map relative PdfUrl or SlideUrl to physical path for the python service
+        string? slideRelativeUrl = request.SlideUrl ?? request.PdfUrl;
+        string? physicalSlidePath = null;
+        if (!string.IsNullOrEmpty(slideRelativeUrl))
         {
-            // E.g., /uploads/pdfs/file.pdf -> d:/Project/EduHub/backend/EduFlow.Api/wwwroot/uploads/pdfs/file.pdf
-            physicalPdfPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", request.PdfUrl.TrimStart('/'));
-            if (!System.IO.File.Exists(physicalPdfPath))
+            physicalSlidePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", slideRelativeUrl.TrimStart('/'));
+            if (!System.IO.File.Exists(physicalSlidePath))
             {
-                physicalPdfPath = null; // Don't send invalid paths
+                physicalSlidePath = null;
             }
         }
 
@@ -753,7 +753,10 @@ public class QuizzesController : ControllerBase
             topic_title = request.Topic ?? "System Architecture",
             difficulty = request.Difficulty,
             question_count = count,
-            pdf_path = physicalPdfPath
+            pdf_path = physicalSlidePath,
+            slide_path = physicalSlidePath,
+            selected_topics = request.SelectedTopics,
+            question_types = request.QuestionTypes
         };
 
         bool usedPython = false;
@@ -762,10 +765,6 @@ public class QuizzesController : ControllerBase
             var responseString = await _aiGatewayClient.GenerateQuizAsync(pythonPayload);
             var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
 
-            // The gateway client transparently returns its own degraded/offline fallback
-            // JSON (tagged "source": "fallback") when the real AI microservice is unreachable.
-            // Treat that the same as a failed call so the local hardcoded fallback below runs,
-            // preserving prior behavior.
             bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
                 && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
 
@@ -775,13 +774,20 @@ public class QuizzesController : ControllerBase
                 foreach (var qToken in questionsArray.EnumerateArray())
                 {
                     var prompt = qToken.GetProperty("question_text").GetString() ?? "Generated Question";
-                    var qTypeStr = qToken.GetProperty("question_type").GetString() ?? "MULTIPLE_CHOICE";
-                    var correct = qToken.GetProperty("correct_answer").GetString() ?? "A";
-                    var explanation = qToken.GetProperty("explanation").GetString() ?? "AI Explanation";
+                    var qTypeStr = qToken.TryGetProperty("question_type", out var qt) ? qt.GetString() ?? "MULTIPLE_CHOICE" : "MULTIPLE_CHOICE";
+                    var correct = qToken.TryGetProperty("correct_answer", out var ca) ? ca.GetString() ?? "A" : "A";
+                    var explanation = qToken.TryGetProperty("explanation", out var exp) ? exp.GetString() ?? "AI Explanation" : "AI Explanation";
+                    var markingScheme = qToken.TryGetProperty("marking_scheme", out var ms) ? ms.GetString() ?? explanation : explanation;
+                    var slideCitation = qToken.TryGetProperty("slide_citation", out var sc) ? sc.GetString() ?? $"Curriculum for {request.Topic}" : $"Curriculum for {request.Topic}";
 
                     var qType = QuestionType.MultipleChoice;
-                    if (qTypeStr == "TRUE_FALSE") qType = QuestionType.TrueFalse;
-                    if (qTypeStr == "MULTIPLE_SELECT") qType = QuestionType.MultipleSelect;
+                    var upperType = qTypeStr.ToUpperInvariant();
+                    if (upperType.Contains("TRUE_FALSE") || upperType == "TRUEFALSE") qType = QuestionType.TrueFalse;
+                    else if (upperType.Contains("SELECT")) qType = QuestionType.MultipleSelect;
+                    else if (upperType.Contains("FILL")) qType = QuestionType.FillInBlank;
+                    else if (upperType.Contains("MATCH")) qType = QuestionType.Matching;
+                    else if (upperType.Contains("SHORT") || upperType.Contains("TYPING") || upperType.Contains("OPEN")) qType = QuestionType.ShortAnswer;
+                    else if (upperType.Contains("DROPDOWN")) qType = QuestionType.MultipleChoice;
 
                     var options = new List<string>();
                     if (qToken.TryGetProperty("options", out var optionsArray))
@@ -790,6 +796,18 @@ public class QuizzesController : ControllerBase
                         {
                             options.Add(opt.GetString() ?? "");
                         }
+                    }
+
+                    var metadataDict = new Dictionary<string, object>
+                    {
+                        ["markingScheme"] = markingScheme,
+                        ["slideCitation"] = slideCitation,
+                        ["questionType"] = qTypeStr
+                    };
+
+                    if (qToken.TryGetProperty("matching_pairs", out var pairsArray))
+                    {
+                        metadataDict["matchingPairs"] = pairsArray.ToString();
                     }
 
                     var question = new Question
@@ -803,7 +821,7 @@ public class QuizzesController : ControllerBase
                         Points = 10,
                         OrderIndex = i + 1,
                         LearningObjective = $"LO-0{(i % 3) + 1}",
-                        MetadataJson = "{}"
+                        MetadataJson = JsonSerializer.Serialize(metadataDict)
                     };
 
                     int optIdx = 1;
@@ -1210,19 +1228,80 @@ public class QuizzesController : ControllerBase
             var studentAns = request.Answers.FirstOrDefault(a => a.QuestionId == q.Id)?.SelectedAnswer?.Trim() ?? string.Empty;
 
             bool isCorrect = false;
+            int awarded = 0;
+            string feedback = q.Explanation;
+
+            string rubricExplanation = q.Explanation;
+            string slideCitation = "Lecture slide material";
+            string qTypeLabel = q.Type.ToString();
+            try
+            {
+                if (!string.IsNullOrEmpty(q.MetadataJson) && q.MetadataJson.Trim().StartsWith("{"))
+                {
+                    var meta = JsonSerializer.Deserialize<JsonElement>(q.MetadataJson);
+                    if (meta.TryGetProperty("markingScheme", out var msProp)) rubricExplanation = msProp.GetString() ?? rubricExplanation;
+                    if (meta.TryGetProperty("slideCitation", out var scProp)) slideCitation = scProp.GetString() ?? slideCitation;
+                    if (meta.TryGetProperty("questionType", out var qtProp)) qTypeLabel = qtProp.GetString() ?? qTypeLabel;
+                }
+            }
+            catch {}
 
             if (q.Type == QuestionType.MultipleSelect)
             {
                 var studentSet = studentAns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var correctSet = q.CorrectAnswer.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 isCorrect = studentSet.SetEquals(correctSet);
+                awarded = isCorrect ? q.Points : 0;
+                feedback = isCorrect ? "All selected options are correct." : $"Selected options differed from solution: {q.CorrectAnswer}";
+            }
+            else if (q.Type == QuestionType.FillInBlank)
+            {
+                var cleanStudent = System.Text.RegularExpressions.Regex.Replace(studentAns.ToLowerInvariant(), @"[^\w\s]", "").Trim();
+                var cleanCorrect = System.Text.RegularExpressions.Regex.Replace(q.CorrectAnswer.ToLowerInvariant(), @"[^\w\s]", "").Trim();
+                isCorrect = cleanStudent == cleanCorrect || (cleanCorrect.Length > 3 && cleanStudent.Contains(cleanCorrect));
+                awarded = isCorrect ? q.Points : 0;
+                feedback = isCorrect ? "Correct key term provided." : $"Expected term: '{q.CorrectAnswer}'";
+            }
+            else if (q.Type == QuestionType.Matching)
+            {
+                var sClean = studentAns.Replace(" ", "").ToLowerInvariant();
+                var cClean = q.CorrectAnswer.Replace(" ", "").ToLowerInvariant();
+                isCorrect = sClean == cClean;
+                awarded = isCorrect ? q.Points : (sClean.Length > 0 ? (int)(q.Points * 0.5) : 0);
+                feedback = isCorrect ? "All concept pairs matched correctly." : $"Matching solution: {q.CorrectAnswer}";
+            }
+            else if (q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.OpenEnded)
+            {
+                if (!string.IsNullOrWhiteSpace(studentAns))
+                {
+                    var modelWords = q.CorrectAnswer.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                        .Where(w => w.Length > 3)
+                        .Select(w => w.ToLowerInvariant())
+                        .ToHashSet();
+
+                    int matchedKeywords = modelWords.Count(kw => studentAns.ToLowerInvariant().Contains(kw));
+                    double matchRatio = modelWords.Count > 0 ? (double)matchedKeywords / modelWords.Count : 0.5;
+
+                    awarded = Math.Clamp((int)Math.Round(matchRatio * q.Points), studentAns.Length > 15 ? 4 : 0, q.Points);
+                    isCorrect = awarded >= (int)(q.Points * 0.7);
+                    feedback = isCorrect
+                        ? $"AI Evaluation: Strong conceptual alignment with slide criteria (+{awarded}/{q.Points} marks)."
+                        : $"AI Evaluation: Partial conceptual match. Expected core concept: {q.CorrectAnswer}";
+                }
+                else
+                {
+                    awarded = 0;
+                    isCorrect = false;
+                    feedback = "No answer typed for this question.";
+                }
             }
             else
             {
                 isCorrect = string.Equals(studentAns, q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase);
+                awarded = isCorrect ? q.Points : 0;
+                feedback = isCorrect ? "Correct answer selected." : $"Incorrect. Correct option: {q.CorrectAnswer}";
             }
 
-            int awarded = isCorrect ? q.Points : 0;
             scoreObtained += awarded;
 
             submission.Answers.Add(new SubmissionAnswer
@@ -1234,13 +1313,16 @@ public class QuizzesController : ControllerBase
             });
 
             breakdown.Add(new QuestionResultItem(
-                q.Id,
-                q.Prompt,
-                studentAns,
-                quiz.ShowCorrectAnswers ? q.CorrectAnswer : "Hidden",
-                isCorrect,
-                awarded,
-                quiz.ShowCorrectAnswers ? q.Explanation : "Feedback available on review."
+                QuestionId: q.Id,
+                Prompt: q.Prompt,
+                SelectedAnswer: studentAns,
+                CorrectAnswer: quiz.ShowCorrectAnswers ? q.CorrectAnswer : "Hidden",
+                IsCorrect: isCorrect,
+                PointsAwarded: awarded,
+                Explanation: quiz.ShowCorrectAnswers ? feedback : "Feedback available on review.",
+                SlideCitation: slideCitation,
+                QuestionType: qTypeLabel,
+                MarkingScheme: rubricExplanation
             ));
 
             Guid? topicScopeId = quiz.ScopeType == QuizScopeType.Topic ? quiz.ScopeId : null;

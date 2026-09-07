@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using System.IO;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using EduFlow.Infrastructure.Services;
 
 namespace EduFlow.Api.Controllers;
 
@@ -24,15 +25,18 @@ public class CoursesController : ControllerBase
     private readonly ApplicationDbContext _dbContext;
     private readonly IGamificationService _gamificationService;
     private readonly IWebHostEnvironment? _environment;
+    private readonly IAiGatewayClient? _aiGatewayClient;
 
     public CoursesController(
         ApplicationDbContext dbContext,
         IGamificationService gamificationService,
-        IWebHostEnvironment? environment = null)
+        IWebHostEnvironment? environment = null,
+        IAiGatewayClient? aiGatewayClient = null)
     {
         _dbContext = dbContext;
         _gamificationService = gamificationService;
         _environment = environment;
+        _aiGatewayClient = aiGatewayClient;
     }
 
     // -------------------------------------------------------------------------
@@ -416,13 +420,14 @@ public class CoursesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    // FILE UPLOAD (PDF Document Storage)
+    // FILE UPLOAD (PDF & PowerPoint Slide Presentation Storage)
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Uploads and stores a PDF document for modules/lessons, returning the accessible URL.
+    /// Uploads and stores a lecture slide presentation (PDF or PowerPoint PPTX/PPT), returning the accessible URL.
     /// </summary>
     [HttpPost("upload-pdf")]
+    [HttpPost("upload-slide")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UploadPdf(IFormFile? file)
     {
@@ -432,18 +437,19 @@ public class CoursesController : ControllerBase
         }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext != ".pdf")
+        if (ext != ".pdf" && ext != ".pptx" && ext != ".ppt")
         {
-            return BadRequest(new { message = "Only PDF documents (.pdf) are allowed." });
+            return BadRequest(new { message = "Only PDF documents (.pdf) and PowerPoint presentations (.pptx, .ppt) are allowed." });
         }
 
-        if (file.Length > 25 * 1024 * 1024) // 25MB limit
+        if (file.Length > 50 * 1024 * 1024) // 50MB limit
         {
-            return BadRequest(new { message = "File size exceeds 25MB limit." });
+            return BadRequest(new { message = "File size exceeds 50MB limit." });
         }
 
         var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadDir = Path.Combine(webRoot, "uploads", "pdfs");
+        var folderName = (ext == ".pptx" || ext == ".ppt") ? "slides" : "pdfs";
+        var uploadDir = Path.Combine(webRoot, "uploads", folderName);
         if (!Directory.Exists(uploadDir))
         {
             Directory.CreateDirectory(uploadDir);
@@ -457,13 +463,65 @@ public class CoursesController : ControllerBase
             await file.CopyToAsync(stream);
         }
 
-        var fileUrl = $"/uploads/pdfs/{safeFileName}";
+        var fileUrl = $"/uploads/{folderName}/{safeFileName}";
         return Ok(new PdfUploadResultDto(
             FileUrl: fileUrl,
             FileName: file.FileName,
             FileSizeBytes: file.Length,
-            Message: "PDF uploaded and stored successfully."
+            Message: "Lecture slide uploaded and stored successfully."
         ));
+    }
+
+    /// <summary>
+    /// Analyzes an uploaded module's lecture slides with the AI Topic Discovery Agent to extract 4-6 topics.
+    /// </summary>
+    [HttpPost("modules/{moduleId:guid}/categorize-topics")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> CategorizeModuleSlideTopics(Guid moduleId)
+    {
+        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        if (module == null)
+        {
+            return NotFound(new { message = "Module not found." });
+        }
+
+        if (string.IsNullOrEmpty(module.PdfUrl))
+        {
+            return BadRequest(new { message = "Module does not have an attached lecture slide or document." });
+        }
+
+        var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var physicalPath = Path.Combine(webRoot, module.PdfUrl.TrimStart('/'));
+
+        if (!System.IO.File.Exists(physicalPath))
+        {
+            return BadRequest(new { message = $"Slide file not found on disk at: {physicalPath}" });
+        }
+
+        var payload = new
+        {
+            slide_path = physicalPath,
+            max_topics = 6
+        };
+
+        if (_aiGatewayClient != null)
+        {
+            var res = await _aiGatewayClient.CategorizeSlideTopicsAsync(payload);
+            return Content(res, "application/json");
+        }
+
+        return Ok(new
+        {
+            slide_name = module.AttachmentFileName ?? "Lecture Slides",
+            total_slides = 5,
+            topics = new[]
+            {
+                new { id = "topic_1", title = $"{module.Title} Foundations", summary = "Core theoretical foundation and introduction.", slide_range = "Slides 1-5", key_concepts = new[] { "Architecture", "Design" } },
+                new { id = "topic_2", title = $"{module.Title} Implementation", summary = "Practical architectural patterns and code implementation.", slide_range = "Slides 6-12", key_concepts = new[] { "Patterns", "Code" } },
+                new { id = "topic_3", title = $"{module.Title} Best Practices & Optimization", summary = "Production hardening, security, and performance metrics.", slide_range = "Slides 13-20", key_concepts = new[] { "Optimization", "Security" } }
+            },
+            source = "fallback"
+        });
     }
 
     // -------------------------------------------------------------------------

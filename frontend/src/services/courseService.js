@@ -79,6 +79,20 @@ export const courseService = {
     return response.data;
   },
 
+  async uploadSlide(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/courses/upload-slide', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return response.data;
+  },
+
+  async categorizeSlideTopics(moduleId) {
+    const response = await api.post(`/courses/modules/${moduleId}/categorize-topics`);
+    return response.data;
+  },
+
   async enrollCourse(courseId) {
     const response = await api.post(`/courses/${courseId}/enroll`);
     return response.data;

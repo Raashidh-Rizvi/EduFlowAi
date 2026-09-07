@@ -57,6 +57,8 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from core.slide_parser import SlideParser
 class QuizGeneratorAgent(BaseAgent):
     """
     Automated Quiz & Assessment Generator Agent (Member 2 - Assessments & Quizzes)
@@ -143,63 +145,74 @@ class QuizGeneratorAgent(BaseAgent):
             # -----------------------------------------------------------------
             questions: List[QuizQuestionModel] = []
             
-            # PDF Extraction & RAG Logic
+            # Slide Extraction & Multi-Format RAG Logic (PDF and PowerPoint PPTX)
             extracted_questions_raw = []
-            if req.pdf_path and os.path.exists(req.pdf_path):
+            slide_file = req.slide_path or req.pdf_path
+            if slide_file and os.path.exists(slide_file):
                 try:
-                    # 1. Load Document
-                    loader = PyPDFLoader(req.pdf_path)
-                    docs = loader.load()
+                    # 1. Load Slides via Unified SlideParser (handles both .pdf and .pptx/.ppt)
+                    slides = SlideParser.extract_slides(slide_file)
+                    
+                    # 2. Filter slides by selected topics if specified
+                    selected_topics_set = [t.lower() for t in (req.selected_topics or []) if t.lower() != "all"]
+                    docs = []
+                    for s in slides:
+                        content = f"[Slide {s.page_number}: {s.title}]\n{s.text}"
+                        if selected_topics_set:
+                            # If filtering by topics, check if slide title or text matches any selected topic
+                            matches = any(top in s.title.lower() or top in s.text.lower() for top in selected_topics_set)
+                            if matches:
+                                docs.append(Document(page_content=content, metadata={"slide": s.page_number, "title": s.title}))
+                        else:
+                            docs.append(Document(page_content=content, metadata={"slide": s.page_number, "title": s.title}))
 
-                    # 2. Chunking
+                    if not docs:
+                        docs = [Document(page_content=f"[Slide {s.page_number}: {s.title}]\n{s.text}", metadata={"slide": s.page_number, "title": s.title}) for s in slides]
+
+                    # 3. Chunking & Vector Store
                     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
                     chunks = text_splitter.split_documents(docs)
 
-                    # 3. Embeddings & Vector Store
                     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                     vectorstore = FAISS.from_documents(chunks, embeddings)
                     retriever = vectorstore.as_retriever(search_kwargs={"k": 2})
 
-                    # 4. Generate Questions one by one using relevant chunks
-                    # NOTE: constructed via the shared core.llm.get_groq_llm() helper
-                    # (GROQ_MODEL env-driven, defaults to a model verified working
-                    # against this deployment's live GROQ_API_KEY) instead of a
-                    # hand-rolled ChatGroq(...) with a hardcoded model name.
+                    # 4. Multi-Format Question Generation LLM
                     llm = get_groq_llm(temperature=0.1)
                     prompt = PromptTemplate(
-                        template="""You are an expert AI educator. Your task is to generate EXACTLY ONE quiz question based STRICTLY and ONLY on the provided document text. 
-Do not hallucinate any information outside the text.
+                        template="""You are an expert curriculum evaluator. Generate EXACTLY ONE quiz question based STRICTLY and ONLY on the provided lecture slide text.
+Do not hallucinate any information outside the provided text.
 
-Context Document Text:
+Context Lecture Slide Text:
 {text}
 
-Question Requirements:
-- Topic/Focus: {topic}
-- Question Type: {question_type}
-- Difficulty: {difficulty}
+Requirements:
+- Topic / Concept Focus: {topic}
+- Target Question Type: {question_type} (One of: MULTIPLE_CHOICE, DROPDOWN, FILL_IN_THE_BLANK, MATCHING, SHORT_ANSWER)
+- Difficulty Level: {difficulty}
 
-Output a JSON object with the following schema:
-- question_text (string)
-- question_type (string, exactly "{question_type}")
-- blooms_taxonomy_level (string, e.g. "Knowledge", "Application")
-- options (list of strings, strictly 2 to 4 options)
-- correct_answer (string, MUST exactly match one of the options)
-- explanation (string, pedagogical rationale, MUST cite the text)
+Output a single JSON object with the following schema:
+- question_text (string: the question prompt or statement)
+- question_type (string: exactly "{question_type}")
+- blooms_taxonomy_level (string: e.g. "Knowledge", "Application", "Analysis")
+- options (list of strings: for MULTIPLE_CHOICE or DROPDOWN; for others provide empty list [])
+- matching_pairs (list of objects with "term" and "definition" keys: only if question_type is MATCHING, otherwise empty list [])
+- correct_answer (string: the exact correct option, missing word, comma-separated matched pairs, or concise model answer for SHORT_ANSWER)
+- marking_scheme (string: clear scoring criteria and rubric, stating what concepts must be present to earn full marks)
+- slide_citation (string: exact slide citation, e.g. "Slide 4: B-Tree Indexing Architecture")
+- explanation (string: pedagogical explanation citing the slide text)
 
-JSON Object:""",
+Strictly return ONLY the JSON Object:""",
                         input_variables=["text", "topic", "question_type", "difficulty"]
                     )
                     parser = JsonOutputParser()
                     chain = prompt | llm | parser
                     
-                    print(f"Trying OpenAI extraction with RAG for {count} questions...")
                     for i in range(count):
                         q_type = q_types[i % len(q_types)]
                         diff = req.difficulty.upper()
-                        # Use learning objectives or topics for search
-                        search_topic = req.learning_objectives[i % len(req.learning_objectives)] if req.learning_objectives else (req.target_topics[i % len(req.target_topics)] if req.target_topics else scope_name)
+                        search_topic = (req.selected_topics[i % len(req.selected_topics)] if req.selected_topics else None) or (req.learning_objectives[i % len(req.learning_objectives)] if req.learning_objectives else (req.target_topics[i % len(req.target_topics)] if req.target_topics else scope_name))
                         
-                        # Retrieve relevant chunks
                         relevant_docs = retriever.invoke(search_topic)
                         context_text = "\n\n".join([doc.page_content for doc in relevant_docs])
                         
@@ -212,28 +225,15 @@ JSON Object:""",
                         if isinstance(result, dict):
                             extracted_questions_raw.append(result)
                 except Exception as e:
-                    print(f"Error extracting from PDF with RAG: {e}")
-                    # Fallback: the primary RAG chain (embeddings/vectorstore/retriever)
-                    # failed, but that is no reason to degrade to naive
-                    # sentence-splitting with literal "Option A"/"Option B"/...
-                    # placeholder text. Re-attempt basic PDF text extraction (best
-                    # effort -- absent if even that fails) and route every fallback
-                    # question through the same real Groq-backed generator used by
-                    # the no-PDF path, so the output is still a genuine AI-authored
-                    # question grounded in whatever PDF text could be salvaged.
+                    print(f"Error extracting from slides with RAG: {e}")
+                    # Fallback to SlideParser direct text extraction
                     try:
-                        pdf_text = ""
-                        try:
-                            loader = PyPDFLoader(req.pdf_path)
-                            docs = loader.load()
-                            pdf_text = "\n".join([d.page_content for d in docs])
-                        except Exception as reload_e:
-                            print(f"Could not reload PDF text for Groq-grounded fallback: {reload_e}")
-
+                        slides = SlideParser.extract_slides(slide_file)
+                        full_slide_text = SlideParser.get_full_text(slides)[:4000]
                         for i in range(count):
                             q_type = q_types[i % len(q_types)]
                             diff = req.difficulty.upper()
-                            search_topic = req.learning_objectives[i % len(req.learning_objectives)] if req.learning_objectives else (req.target_topics[i % len(req.target_topics)] if req.target_topics else scope_name)
+                            search_topic = (req.selected_topics[i % len(req.selected_topics)] if req.selected_topics else None) or scope_name
                             try:
                                 q_res = self._generate_real_question_via_groq(
                                     topic=search_topic,
@@ -241,14 +241,14 @@ JSON Object:""",
                                     question_type=q_type,
                                     difficulty=diff,
                                     learning_objective=search_topic,
-                                    grounding_text=pdf_text[:4000] if pdf_text else None,
+                                    grounding_text=full_slide_text,
                                     source_content_id=req.scope_id
                                 )
                                 extracted_questions_raw.append(q_res)
                             except Exception as groq_fallback_e:
-                                print(f"Groq-grounded PDF fallback failed for question {i + 1}: {groq_fallback_e}")
+                                print(f"Groq-grounded slide fallback failed for question {i + 1}: {groq_fallback_e}")
                     except Exception as fallback_e:
-                        print(f"Fallback extraction failed: {fallback_e}")
+                        print(f"Slide text fallback failed: {fallback_e}")
 
             for i in range(count):
                 q_type = q_types[i % len(q_types)]
@@ -259,16 +259,19 @@ JSON Object:""",
                     ext_q = extracted_questions_raw[i]
                     q_raw = {
                         "question_text": ext_q.get("question_text", f"Generated Q{i+1}"),
-                        "question_type": ext_q.get("question_type", "MULTIPLE_CHOICE"),
+                        "question_type": ext_q.get("question_type", q_type),
                         "blooms_taxonomy_level": ext_q.get("blooms_taxonomy_level", "Knowledge"),
-                        "options": ext_q.get("options", ["A", "B", "C", "D"]),
+                        "options": ext_q.get("options", ["A", "B", "C", "D"] if q_type in ["MULTIPLE_CHOICE", "DROPDOWN"] else []),
                         "option_details": [
                             {"text": opt, "isCorrect": (opt == ext_q.get("correct_answer")), "displayOrder": idx + 1}
-                            for idx, opt in enumerate(ext_q.get("options", ["A", "B", "C", "D"]))
+                            for idx, opt in enumerate(ext_q.get("options", []))
                         ],
+                        "matching_pairs": ext_q.get("matching_pairs", []),
                         "correct_answer": ext_q.get("correct_answer"),
-                        "distractor_rationales": [],
-                        "explanation": ext_q.get("explanation", "Extracted from PDF."),
+                        "distractor_rationales": ext_q.get("distractor_rationales", []),
+                        "explanation": ext_q.get("explanation", "Extracted from lecture slides."),
+                        "marking_scheme": ext_q.get("marking_scheme", ext_q.get("explanation", "Criteria based on slide text.")),
+                        "slide_citation": ext_q.get("slide_citation", f"Slide material for {scope_name}"),
                         "points": 10,
                         "marks": 10,
                         "sourceContentId": req.scope_id
@@ -327,12 +330,15 @@ JSON Object:""",
                     correct_answer=q_raw.get("correct_answer"),
                     distractor_rationales=q_raw.get("distractor_rationales", []),
                     explanation=q_raw["explanation"],
+                    marking_scheme=q_raw.get("marking_scheme"),
+                    slide_citation=q_raw.get("slide_citation"),
+                    matching_pairs=q_raw.get("matching_pairs"),
                     points=q_raw.get("points", 10),
                     marks=q_raw.get("marks", 10),
                     difficulty=diff,
                     sourceContentId=q_raw.get("sourceContentId"),
                     learningObjective=lo,
-                    sourceReference=f"Curriculum grounded in {scope_name}",
+                    sourceReference=q_raw.get("slide_citation") or f"Curriculum grounded in {scope_name}",
                     code_snippet=code_snip
                 ))
 
