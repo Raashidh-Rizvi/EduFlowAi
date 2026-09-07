@@ -54,6 +54,75 @@ public class TeamsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet]
+    public async Task<ActionResult<List<SquadDto>>> GetAllSquads(CancellationToken ct = default)
+    {
+        var squads = await _teamService.GetAllSquadsAsync(ct);
+        return Ok(squads);
+    }
+
+    [HttpGet("eligible-students")]
+    public async Task<ActionResult<List<StudentTeamOptionDto>>> GetEligibleStudents(CancellationToken ct = default)
+    {
+        var students = await _teamService.GetStudentsForTeamsAsync(ct);
+        return Ok(students);
+    }
+
+    [HttpPost("instructor-create")]
+    public async Task<ActionResult<SquadActionResultDto>> InstructorCreateSquad([FromBody] InstructorCreateSquadRequest request, CancellationToken ct)
+    {
+        var result = await _teamService.InstructorCreateSquadAsync(request, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<ActionResult<SquadActionResultDto>> UpdateSquad(Guid id, [FromBody] UpdateSquadRequest request, CancellationToken ct)
+    {
+        var result = await _teamService.UpdateSquadAsync(id, request, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpPost("{id:guid}/members")]
+    public async Task<ActionResult<SquadActionResultDto>> AddMember(Guid id, [FromQuery] Guid studentId, CancellationToken ct)
+    {
+        var result = await _teamService.AddMemberAsync(id, studentId, EduFlow.Core.Enums.TeamRole.Member, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpDelete("{id:guid}/members/{studentId:guid}")]
+    public async Task<ActionResult<SquadActionResultDto>> RemoveMember(Guid id, Guid studentId, CancellationToken ct)
+    {
+        var result = await _teamService.RemoveMemberAsync(id, studentId, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<ActionResult<bool>> DeleteSquad(Guid id, CancellationToken ct)
+    {
+        var success = await _teamService.DeleteSquadAsync(id, ct);
+        if (!success)
+        {
+            return NotFound("Squad not found.");
+        }
+        return Ok(true);
+    }
+
     [HttpPost("{id:guid}/join")]
     [Authorize]
     public async Task<ActionResult<SquadActionResultDto>> JoinSquad(Guid id, CancellationToken ct)

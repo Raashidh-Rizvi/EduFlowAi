@@ -19,8 +19,8 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await page.getByRole('button', { name: /Gamification & XP/i }).click();
 
     // Verify Gamification banner & tabs
-    await expect(page.getByRole('heading', { name: 'Gamification & Experience Progression' })).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Boss Slayer').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Gamification & Team Command Center|Gamification & Experience Progression/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Quantum Coders').first()).toBeVisible({ timeout: 10000 });
 
     await page.screenshot({ path: 'e2e/screenshots/11-gamification-dashboard.png' });
   });

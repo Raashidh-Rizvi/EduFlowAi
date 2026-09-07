@@ -115,7 +115,88 @@ public static class DbInitializer
                 });
             }
 
+            // Seed additional cohort students if missing
+            var cohortSeedData = new[]
+            {
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333334"), Name = "Sarah Chen", Email = "sarah.chen@eduflow.ai", Xp = 1420, Level = 4, Streak = 8, Coins = 240 },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333335"), Name = "Daniel Miller", Email = "daniel.miller@eduflow.ai", Xp = 1150, Level = 3, Streak = 6, Coins = 190 },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333336"), Name = "Marcus Vance", Email = "marcus.vance@eduflow.ai", Xp = 890, Level = 3, Streak = 4, Coins = 150 },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333337"), Name = "Priya Patel", Email = "priya.patel@eduflow.ai", Xp = 720, Level = 2, Streak = 5, Coins = 120 },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333338"), Name = "Elena Rostova", Email = "elena.rostova@eduflow.ai", Xp = 480, Level = 2, Streak = 2, Coins = 80 }
+            };
+
+            foreach (var cs in cohortSeedData)
+            {
+                if (!context.Users.Any(u => u.Email.ToLower() == cs.Email.ToLower()))
+                {
+                    context.Users.Add(new User
+                    {
+                        Id = cs.Id,
+                        FullName = cs.Name,
+                        Email = cs.Email,
+                        PasswordHash = validPasswordHash,
+                        Role = UserRole.Student,
+                        IsActive = true
+                    });
+                }
+
+                if (!context.StudentXp.Any(x => x.StudentId == cs.Id))
+                {
+                    context.StudentXp.Add(new StudentXp
+                    {
+                        StudentId = cs.Id,
+                        TotalXp = cs.Xp,
+                        CurrentLevel = cs.Level,
+                        Coins = cs.Coins,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+
+                if (!context.StudentStreaks.Any(s => s.StudentId == cs.Id))
+                {
+                    context.StudentStreaks.Add(new StudentStreak
+                    {
+                        StudentId = cs.Id,
+                        CurrentStreak = cs.Streak,
+                        LongestStreak = cs.Streak + 2,
+                        FreezeTokensAvailable = 2,
+                        LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
             context.SaveChanges();
+
+            if (!context.Teams.Any())
+            {
+                var starterTeamId = Guid.Parse("99999999-9999-9999-9999-999999999991");
+                var starterTeam = new Team
+                {
+                    Id = starterTeamId,
+                    Name = "Quantum Coders",
+                    Description = "Quest: Master ACID concurrency & EF Core query optimization",
+                    AvatarUrl = "🚀",
+                    LeaderId = Guid.Parse("33333333-3333-3333-3333-333333333334"),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                context.Teams.Add(starterTeam);
+                context.TeamMembers.Add(new TeamMember
+                {
+                    TeamId = starterTeamId,
+                    StudentId = Guid.Parse("33333333-3333-3333-3333-333333333334"),
+                    Role = TeamRole.Leader,
+                    JoinedAt = DateTime.UtcNow
+                });
+                context.TeamMembers.Add(new TeamMember
+                {
+                    TeamId = starterTeamId,
+                    StudentId = Guid.Parse("33333333-3333-3333-3333-333333333335"),
+                    Role = TeamRole.Member,
+                    JoinedAt = DateTime.UtcNow
+                });
+                context.SaveChanges();
+            }
 
             // Ensure default course CS-301 exists
             var courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");

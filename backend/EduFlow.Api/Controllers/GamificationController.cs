@@ -98,4 +98,28 @@ public class GamificationController : ControllerBase
 
         return Ok(await _gamificationService.GetWeeklyLeaderboardAsync(top, ct));
     }
+
+    [HttpPost("focus-session")]
+    public async Task<ActionResult<FocusSessionResponseDto>> RecordFocusSession([FromBody] FocusSessionRequestDto request, CancellationToken ct)
+    {
+        var result = await _gamificationService.AwardFocusSessionXpAsync(request, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpGet("multiplier")]
+    public ActionResult<double> GetMultiplier()
+    {
+        return Ok(_gamificationService.GetXpMultiplier());
+    }
+
+    [HttpPost("multiplier")]
+    public ActionResult<double> SetMultiplier([FromBody] SetMultiplierRequest request)
+    {
+        _gamificationService.SetXpMultiplier(request.Multiplier);
+        return Ok(_gamificationService.GetXpMultiplier());
+    }
 }

@@ -30,6 +30,9 @@ public interface IGamificationService
     Task<List<LeaderboardEntryDto>> GetWeeklyLeaderboardAsync(int top = 20, CancellationToken ct = default);
     Task<List<LeaderboardEntryDto>> GetCourseLeaderboardAsync(Guid courseId, int top = 20, CancellationToken ct = default);
     Task<List<LeaderboardEntryDto>> GetGlobalLeaderboardAsync(int top = 20, CancellationToken ct = default);
+    Task<FocusSessionResponseDto> AwardFocusSessionXpAsync(FocusSessionRequestDto request, CancellationToken ct = default);
+    double GetXpMultiplier();
+    void SetXpMultiplier(double multiplier);
     int CalculateLevel(int totalXp);
     (int MinXp, int MaxXp, string LevelName) GetLevelBounds(int level);
 }

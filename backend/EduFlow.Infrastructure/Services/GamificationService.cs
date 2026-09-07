@@ -1010,4 +1010,113 @@ public class GamificationService : IGamificationService
 
         return true;
     }
+
+    private static double _xpMultiplier = 1.0;
+
+    public double GetXpMultiplier() => _xpMultiplier;
+
+    public void SetXpMultiplier(double multiplier)
+    {
+        _xpMultiplier = Math.Clamp(multiplier, 1.0, 5.0);
+    }
+
+    public async Task<FocusSessionResponseDto> AwardFocusSessionXpAsync(FocusSessionRequestDto request, CancellationToken ct = default)
+    {
+        var student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.StudentId, ct);
+        if (student == null)
+        {
+            return new FocusSessionResponseDto(false, 0, 0, 0, 0, "Student not found", string.Empty);
+        }
+
+        int baseMinutes = Math.Max(5, request.DurationMinutes);
+        int baseEarned = (int)Math.Round(baseMinutes * 1.5);
+        if (baseMinutes >= 45) baseEarned += 20;
+        else if (baseMinutes >= 25) baseEarned += 10;
+
+        int finalXp = (int)Math.Round(baseEarned * _xpMultiplier);
+        int coinsEarned = Math.Max(5, baseMinutes / 3);
+
+        var txn = new XpTransaction
+        {
+            StudentId = request.StudentId,
+            SourceType = XpSourceType.FocusSession,
+            SourceId = Guid.NewGuid(),
+            XpAmount = finalXp,
+            Description = $"Deep Focus Sprint ({baseMinutes}m): {request.TopicOrTask}"
+        };
+        await _dbContext.XpTransactions.AddAsync(txn, ct);
+
+        var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(x => x.StudentId == request.StudentId, ct);
+        if (studentXp == null)
+        {
+            studentXp = new StudentXp
+            {
+                StudentId = request.StudentId,
+                TotalXp = finalXp,
+                CurrentLevel = CalculateLevel(finalXp),
+                Coins = coinsEarned,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _dbContext.StudentXp.AddAsync(studentXp, ct);
+        }
+        else
+        {
+            studentXp.TotalXp += finalXp;
+            studentXp.Coins += coinsEarned;
+            studentXp.CurrentLevel = CalculateLevel(studentXp.TotalXp);
+            studentXp.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == request.StudentId, ct);
+        if (streak == null)
+        {
+            streak = new StudentStreak
+            {
+                StudentId = request.StudentId,
+                CurrentStreak = 1,
+                LongestStreak = 1,
+                LastActivityDate = today,
+                FreezeTokensAvailable = 2,
+                UpdatedAt = DateTime.UtcNow
+            };
+            await _dbContext.StudentStreaks.AddAsync(streak, ct);
+        }
+        else if (streak.LastActivityDate != today)
+        {
+            if (streak.LastActivityDate.HasValue && streak.LastActivityDate.Value == today.AddDays(-1))
+            {
+                streak.CurrentStreak += 1;
+                if (streak.CurrentStreak > streak.LongestStreak)
+                    streak.LongestStreak = streak.CurrentStreak;
+            }
+            else
+            {
+                streak.CurrentStreak = 1;
+            }
+            streak.LastActivityDate = today;
+            streak.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _dbContext.StreakHistories.AddAsync(new StreakHistory
+        {
+            StudentId = request.StudentId,
+            ActivityDate = today,
+            ActivityType = "DeepFocusSession"
+        }, ct);
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        string artifactName = baseMinutes >= 45 ? "💎 Ancient Focus Crystal" : (baseMinutes >= 25 ? "🌳 Golden Oak Sapling" : "🌱 Emerald Sprout");
+
+        return new FocusSessionResponseDto(
+            Success: true,
+            XpAwarded: finalXp,
+            CoinsAwarded: coinsEarned,
+            NewTotalXp: studentXp.TotalXp,
+            NewStreak: streak.CurrentStreak,
+            Message: $"Focus Sprint completed! +{finalXp} XP and +{coinsEarned} Coins awarded.",
+            FocusArtifactAwarded: artifactName
+        );
+    }
 }

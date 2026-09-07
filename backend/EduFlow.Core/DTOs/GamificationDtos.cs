@@ -230,3 +230,56 @@ public record SquadActionResultDto(
     string Message,
     SquadDto? Squad
 );
+
+public record InstructorCreateSquadRequest(
+    string Name,
+    string? Description,
+    string? AvatarUrl,
+    Guid? LeaderId,
+    List<Guid> StudentIds,
+    string? ActiveQuest,
+    int TargetGoalXp
+);
+
+public record UpdateSquadRequest(
+    string Name,
+    string? Description,
+    string? AvatarUrl,
+    Guid? LeaderId,
+    string? ActiveQuest,
+    int TargetGoalXp
+);
+
+public record StudentTeamOptionDto(
+    Guid StudentId,
+    string FullName,
+    string Email,
+    string? AvatarUrl,
+    int TotalXp,
+    int CurrentLevel,
+    int CurrentStreak,
+    Guid? CurrentSquadId,
+    string? CurrentSquadName
+);
+
+public record FocusSessionRequestDto(
+    Guid StudentId,
+    int DurationMinutes,
+    string TopicOrTask,
+    string FocusTechnique
+);
+
+public record FocusSessionResponseDto(
+    bool Success,
+    int XpAwarded,
+    int CoinsAwarded,
+    int NewTotalXp,
+    int NewStreak,
+    string Message,
+    string FocusArtifactAwarded
+);
+
+public record SetMultiplierRequest(
+    double Multiplier
+);
+

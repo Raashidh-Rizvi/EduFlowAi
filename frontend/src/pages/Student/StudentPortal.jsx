@@ -26,6 +26,11 @@ import {
   Download,
   X,
   Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Users,
   HelpCircle,
   Sparkles
 } from 'lucide-react';
@@ -233,6 +238,46 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
           </div>
         </div>
       </div>
+
+      {/* Deep Work Focus Sprint Launcher */}
+      <button
+        onClick={() => onNavigate('focus')}
+        className="card-premium glass-card-hover"
+        style={{
+          padding: '16px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)',
+          border: '1px solid var(--primary-border)',
+          cursor: 'pointer',
+          textAlign: 'left'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--primary-soft)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--primary)'
+          }}>
+            <Zap size={20} />
+          </div>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: '13.5px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Deep Work Focus Sprint <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>+35-75 XP</span>
+            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+              Lock in uninterrupted concentration, grow your Mind Garden, and preserve your streak.
+            </div>
+          </div>
+        </div>
+        <ChevronRight size={18} color="var(--primary)" />
+      </button>
 
       {/* AI Coach Shortcut */}
       <button
@@ -835,40 +880,654 @@ function CoachTab() {
   );
 }
 
-function LeaderboardTab({ profile }) {
-  const LEADERBOARD = [
-    { rank: 1, name: profile.fullName || 'Alex Rivera', level: profile.level, xp: profile.totalXp, streak: profile.streak, isMe: true }
-  ];
+function FocusFlowTab({ profile, onSessionCompleted }) {
+  const [presetMinutes, setPresetMinutes] = useState(25);
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [isActive, setIsActive] = useState(false);
+  const [selectedTask, setSelectedTask] = useState('PostgreSQL B-Tree Index Selectivity');
+  const [customTask, setCustomTask] = useState('');
+  const [soundMode, setSoundMode] = useState('binaural'); // 'none' | 'binaural' | 'rain'
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [completedSessions, setCompletedSessions] = useState(() => {
+    try {
+      return Number(localStorage.getItem('eduflow_focus_count') || 0);
+    } catch { return 0; }
+  });
+  const [gardenArtifacts, setGardenArtifacts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('eduflow_mind_garden') || '["🌱 Focus Seedling", "🌳 Golden Oak Sapling"]');
+    } catch { return ['🌱 Focus Seedling', '🌳 Golden Oak Sapling']; }
+  });
+  const [celebrationModal, setCelebrationModal] = useState(null);
+
+  // Web Audio synthesizer for ambient focus soundscapes
+  useEffect(() => {
+    let ctx = null;
+    let osc = null;
+    let gain = null;
+
+    if (isActive && audioPlaying && soundMode !== 'none') {
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.03, ctx.currentTime);
+
+        if (soundMode === 'binaural') {
+          osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(216, ctx.currentTime);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+        } else if (soundMode === 'rain') {
+          const bufferSize = ctx.sampleRate * 2;
+          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          let lastOut = 0.0;
+          for (let i = 0; i < bufferSize; i++) {
+            const white = Math.random() * 2 - 1;
+            data[i] = (lastOut + (0.02 * white)) / 1.02;
+            lastOut = data[i];
+            data[i] *= 1.5;
+          }
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer;
+          noise.loop = true;
+          noise.connect(gain);
+          gain.connect(ctx.destination);
+          noise.start();
+          osc = noise;
+        }
+      } catch (err) {
+        console.warn('Web Audio error:', err);
+      }
+    }
+
+    return () => {
+      try {
+        if (osc) osc.stop();
+        if (ctx) ctx.close();
+      } catch {}
+    };
+  }, [isActive, audioPlaying, soundMode]);
+
+  // Timer Tick
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(t => t - 1);
+      }, 1000);
+    } else if (isActive && timeLeft === 0) {
+      setIsActive(false);
+      handleFinishSprint();
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
+
+  const handleSelectPreset = (mins) => {
+    setIsActive(false);
+    setPresetMinutes(mins);
+    setTimeLeft(mins * 60);
+  };
+
+  const playChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 1.2);
+    } catch {}
+  };
+
+  const handleFinishSprint = async () => {
+    playChime();
+    const taskName = customTask.trim() || selectedTask;
+    const minutes = presetMinutes;
+
+    try {
+      const res = await gamificationService.recordFocusSession({
+        studentId: profile.studentId || '33333333-3333-3333-3333-333333333333',
+        durationMinutes: minutes,
+        topicOrTask: taskName,
+        focusTechnique: `Pomodoro (${minutes}m)`
+      });
+
+      const artifact = res.focusArtifactAwarded || (minutes >= 45 ? '💎 Ancient Focus Crystal' : (minutes >= 25 ? '🌳 Golden Oak Sapling' : '🌱 Emerald Sprout'));
+
+      const newGarden = [...gardenArtifacts, artifact];
+      setGardenArtifacts(newGarden);
+      const newCount = completedSessions + 1;
+      setCompletedSessions(newCount);
+      try {
+        localStorage.setItem('eduflow_focus_count', String(newCount));
+        localStorage.setItem('eduflow_mind_garden', JSON.stringify(newGarden));
+      } catch {}
+
+      setCelebrationModal({
+        xp: res.xpAwarded || (minutes * 2),
+        coins: res.coinsAwarded || 15,
+        artifact,
+        task: taskName,
+        message: res.message
+      });
+
+      if (onSessionCompleted) {
+        onSessionCompleted(res.xpAwarded || (minutes * 2), res.coinsAwarded || 15, res.newStreak || (profile.streak + 1));
+      }
+    } catch (err) {
+      console.warn('Session recording error:', err);
+    }
+  };
+
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const totalSec = presetMinutes * 60;
+  const progressPct = Math.round(((totalSec - timeLeft) / totalSec) * 100);
+
+  let growthEmoji = '🌱';
+  let growthLabel = 'Focus Seed Planted';
+  if (progressPct >= 75) {
+    growthEmoji = presetMinutes >= 45 ? '💎' : '🌳';
+    growthLabel = presetMinutes >= 45 ? 'Ancient Crystal Resonating' : 'Golden Oak Thriving';
+  } else if (progressPct >= 35) {
+    growthEmoji = '🌿';
+    growthLabel = 'Deep Flow State Reached';
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Header Banner */}
+      <div className="card-premium" style={{
+        padding: '22px',
+        backgroundColor: 'var(--bg-surface)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <span className="badge-pill badge-primary">DEEP WORK STUDIO</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Flow State & Pomodoro Motivation</span>
+          </div>
+          <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+            Study Focus & Mind Garden
+          </h3>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            Lock in uninterrupted concentration. Uninterrupted focus awards +XP, grows your Mind Garden, and protects your streak!
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="card-premium" style={{ padding: '8px 14px', textAlign: 'center', backgroundColor: 'var(--bg-card)' }}>
+            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--primary)' }}>{completedSessions}</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Sprints Finished</div>
+          </div>
+          <div className="card-premium" style={{ padding: '8px 14px', textAlign: 'center', backgroundColor: 'var(--bg-card)' }}>
+            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--warning)' }}>{gardenArtifacts.length}</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Mind Garden</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Timer Display */}
+      <div className="card-premium glass-card-hover" style={{
+        padding: '32px 24px',
+        backgroundColor: 'var(--bg-surface)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        {/* Interval Presets */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {[
+            { mins: 25, label: '25m Classic Sprint', xp: '+35 XP' },
+            { mins: 45, label: '45m Deep Work', xp: '+75 XP' },
+            { mins: 15, label: '15m Quick Burst', xp: '+20 XP' },
+            { mins: 1, label: '1m Test Demo', xp: '+10 XP' }
+          ].map(p => (
+            <button
+              key={p.mins}
+              onClick={() => handleSelectPreset(p.mins)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: presetMinutes === p.mins ? 'var(--primary)' : 'var(--bg-card)',
+                color: presetMinutes === p.mins ? '#ffffff' : 'var(--text-main)',
+                fontSize: '11.5px',
+                fontWeight: '700',
+                border: presetMinutes === p.mins ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <span>{p.label}</span>
+              <span style={{ fontSize: '10px', opacity: 0.85 }}>({p.xp})</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Growing Mind Garden Visualization */}
+        <div style={{
+          width: '180px',
+          height: '180px',
+          borderRadius: '50%',
+          background: 'var(--bg-card)',
+          border: '4px solid var(--border-card)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          boxShadow: isActive ? '0 0 35px rgba(139, 92, 246, 0.35)' : 'none',
+          transition: 'all 0.5s ease'
+        }}>
+          <div style={{ fontSize: '46px', animation: isActive ? 'pulse 2s infinite' : 'none' }}>
+            {growthEmoji}
+          </div>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: '800',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-main)',
+            letterSpacing: '-0.02em',
+            marginTop: '4px'
+          }}>
+            {formatTime(timeLeft)}
+          </div>
+          <div style={{ fontSize: '10.5px', color: 'var(--secondary)', fontWeight: '700' }}>
+            {growthLabel}
+          </div>
+        </div>
+
+        {/* Focus Progress Bar */}
+        <div style={{ width: '100%', maxWidth: '380px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <span>Flow State Progress</span>
+            <span>{progressPct}% Completed</span>
+          </div>
+          <div style={{
+            width: '100%',
+            height: '8px',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 'var(--radius-full)',
+            overflow: 'hidden',
+            border: '1px solid var(--border-subtle)'
+          }}>
+            <div style={{
+              width: `${progressPct}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)',
+              borderRadius: 'var(--radius-full)',
+              transition: 'width 0.4s ease'
+            }} />
+          </div>
+        </div>
+
+        {/* Active Study Objective */}
+        <div style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            Active Concentration Topic:
+          </label>
+          <select
+            value={selectedTask}
+            onChange={e => setSelectedTask(e.target.value)}
+            disabled={isActive}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-card)',
+              color: 'var(--text-main)',
+              fontSize: '12.5px'
+            }}
+          >
+            <option value="PostgreSQL B-Tree Index Selectivity">PostgreSQL B-Tree Index Selectivity (Module 1)</option>
+            <option value="ACID Transactions & Graph Deadlocks">ACID Transactions & Graph Deadlocks (Module 2)</option>
+            <option value="Clean Architecture & DIP Invariants">Clean Architecture & DIP Invariants</option>
+            <option value="Custom Technical Research">Custom Technical Sprint...</option>
+          </select>
+
+          {selectedTask === 'Custom Technical Research' && (
+            <input
+              type="text"
+              placeholder="What are you focusing on?"
+              value={customTask}
+              onChange={e => setCustomTask(e.target.value)}
+              disabled={isActive}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: 'var(--bg-input)',
+                border: '1px solid var(--border-card)',
+                color: 'var(--text-main)',
+                fontSize: '12px'
+              }}
+            />
+          )}
+        </div>
+
+        {/* Ambient Audio Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <button
+              onClick={() => setAudioPlaying(!audioPlaying)}
+              className="btn-ghost"
+              style={{ padding: '6px', color: audioPlaying ? 'var(--primary)' : 'var(--text-muted)' }}
+              title={audioPlaying ? 'Mute ambient sound' : 'Unmute ambient sound'}
+            >
+              {audioPlaying ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <span>Ambient Sound:</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[
+              { id: 'binaural', label: 'Gamma 40Hz Wave' },
+              { id: 'rain', label: 'Rain Resonance' },
+              { id: 'none', label: 'Silent' }
+            ].map(s => (
+              <button
+                key={s.id}
+                onClick={() => { setSoundMode(s.id); setAudioPlaying(s.id !== 'none'); }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: soundMode === s.id ? 'var(--bg-card)' : 'transparent',
+                  color: soundMode === s.id ? 'var(--primary)' : 'var(--text-muted)',
+                  fontSize: '11px',
+                  fontWeight: soundMode === s.id ? '700' : '500',
+                  border: soundMode === s.id ? '1px solid var(--border-card)' : '1px solid transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Timer Action Buttons */}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+          <button
+            onClick={() => {
+              if (!isActive && audioPlaying && soundMode !== 'none') {
+                // Audio will start automatically
+              }
+              setIsActive(!isActive);
+            }}
+            className="btn-primary hover-scale"
+            style={{
+              padding: '10px 32px',
+              fontSize: '14px',
+              fontWeight: '800',
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 16px rgba(139, 92, 246, 0.4)'
+            }}
+          >
+            {isActive ? <Pause size={16} /> : <Play size={16} />}
+            {isActive ? 'Pause Sprint' : (timeLeft === totalSec ? 'Start Focus Sprint' : 'Resume Sprint')}
+          </button>
+
+          <button
+            onClick={() => {
+              setIsActive(false);
+              setTimeLeft(presetMinutes * 60);
+            }}
+            className="btn-secondary hover-scale"
+            style={{
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title="Reset timer"
+          >
+            <RotateCcw size={15} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '360px', marginTop: '4px' }}>
+          💡 <strong>Psychology Tip:</strong> Completing a continuous focus sprint activates the dopamine reward pathways, reinforcing deep academic recall.
+        </div>
+      </div>
+
+      {/* Mind Garden Showcase */}
       <div>
-        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>Cohort Rankings</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Weekly progress leaderboard across all enrolled learners.</div>
+        <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '0.04em', marginBottom: '8px' }}>
+          MIND GARDEN & FOCUS ARTIFACTS
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {gardenArtifacts.map((art, idx) => (
+            <div key={idx} className="card-premium" style={{
+              padding: '10px 16px',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              fontWeight: '700',
+              color: 'var(--text-main)'
+            }}>
+              <span>{art.split(' ')[0]}</span>
+              <span>{art.slice(2)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Celebration Modal upon Completion */}
+      {celebrationModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%',
+            maxWidth: '420px',
+            backgroundColor: 'var(--bg-card)',
+            padding: '28px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            border: '2px solid var(--success-border)'
+          }}>
+            <div style={{ fontSize: '56px' }}>🎉</div>
+            <h3 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+              Focus Sprint Conquered!
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+              You completed your sprint on <strong>{celebrationModal.task}</strong> without losing concentration!
+            </p>
+
+            <div style={{
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--success-soft)',
+              border: '1px solid var(--success-border)',
+              color: 'var(--success)',
+              fontWeight: '800',
+              fontSize: '16px'
+            }}>
+              +{celebrationModal.xp} XP • +{celebrationModal.coins} Coins Awarded!
+            </div>
+
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-surface)',
+              fontSize: '12px',
+              color: 'var(--text-muted)'
+            }}>
+              Unlocked Focus Artifact: <strong>{celebrationModal.artifact}</strong> added to your Mind Garden!
+            </div>
+
+            <button
+              onClick={() => setCelebrationModal(null)}
+              className="btn-primary hover-scale"
+              style={{ width: '100%', padding: '10px', fontSize: '13px', fontWeight: '800', marginTop: '6px' }}
+            >
+              Collect Rewards & Keep Flowing
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeaderboardTab({ profile }) {
+  const [standings, setStandings] = useState([]);
+  const [squads, setSquads] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchRanks() {
+      try {
+        const [lb, sq] = await Promise.all([
+          gamificationService.getLeaderboard('weekly', 10),
+          gamificationService.getAllSquads()
+        ]);
+        setStandings(lb || []);
+        setSquads(sq || []);
+      } catch (err) {
+        console.warn(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchRanks();
+  }, []);
+
+  const mySquad = squads.find(s => 
+    s.members && s.members.some(m => m.studentId === profile.studentId || m.studentName === profile.fullName)
+  ) || squads[0];
+
+  const targetXp = 2500;
+  const squadProgressPct = mySquad ? Math.min(100, Math.round(((mySquad.combinedXp || 0) / targetXp) * 100)) : 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Collaborative Squad Banner */}
+      {mySquad && (
+        <div className="card-premium glass-card-hover" style={{
+          padding: '20px',
+          backgroundColor: 'var(--bg-surface)',
+          borderLeft: '4px solid var(--secondary)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>{mySquad.avatarUrl || '🚀'}</span>
+              <div>
+                <span className="badge-pill badge-neutral" style={{ fontSize: '10px', marginBottom: '2px' }}>
+                  MY SQUAD COLLABORATIVE GOAL
+                </span>
+                <h4 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                  {mySquad.name}
+                </h4>
+              </div>
+            </div>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--secondary)' }}>
+              {mySquad.combinedXp?.toLocaleString() || 0} XP
+            </span>
+          </div>
+
+          <div style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-xs)',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            marginBottom: '10px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Quest: {mySquad.description || 'Sprint Quest'}</span>
+              <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{squadProgressPct}% Completed</span>
+            </div>
+            <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+              <div style={{ width: `${squadProgressPct}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)', borderRadius: 'var(--radius-full)' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>Teammates:</span>
+            {(mySquad.members || []).map(m => (
+              <span key={m.studentId} className="badge-pill badge-neutral" style={{ fontSize: '11px' }}>
+                {m.studentName} ({m.totalXp} XP)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cohort Leaderboard */}
+      <div>
+        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>Cohort Standings</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Weekly ranking of all learners based on genuine lesson mastery and focus sprints.</div>
       </div>
 
       <div className="card-premium" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
-        {LEADERBOARD.map(s => (
-          <div key={s.rank} style={{
-            padding: '10px 14px', borderRadius: 'var(--radius-sm)',
-            background: 'var(--primary-soft)',
-            border: '1px solid var(--primary-border)',
-            display: 'flex', alignItems: 'center', gap: '12px'
-          }}>
-            <div style={{ fontWeight: '800', fontSize: '13px', color: 'var(--warning)', width: '24px', flexShrink: 0 }}>
-              #{s.rank}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {s.name} <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>YOU</span>
+        {standings.map((s, idx) => {
+          const isMe = s.studentName === profile.fullName || s.studentId === profile.studentId;
+          return (
+            <div key={s.studentId || idx} style={{
+              padding: '12px 14px', borderRadius: 'var(--radius-sm)',
+              background: isMe ? 'var(--primary-soft)' : (idx === 0 ? 'var(--warning-soft)' : 'var(--bg-surface)'),
+              border: isMe ? '1px solid var(--primary-border)' : (idx === 0 ? '1px solid var(--warning-border)' : '1px solid var(--border-subtle)'),
+              display: 'flex', alignItems: 'center', gap: '12px'
+            }}>
+              <div style={{ fontWeight: '800', fontSize: '13px', color: idx === 0 ? 'var(--warning)' : 'var(--text-muted)', width: '26px', flexShrink: 0 }}>
+                {idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`))}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level} • {s.streak}d streak</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {s.studentName} {isMe && <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>YOU</span>}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level || 1} • {s.streak || 0}d streak</div>
+              </div>
+              <div style={{ fontWeight: '700', fontSize: '13.5px', color: isMe ? 'var(--primary)' : 'var(--secondary)', flexShrink: 0 }}>
+                {(s.scoreXp || 0).toLocaleString()} XP
+              </div>
             </div>
-            <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--warning)', flexShrink: 0 }}>
-              {s.xp.toLocaleString()} XP
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1199,8 +1858,9 @@ export default function StudentPortal({ user, onLogout }) {
   const TABS = [
     { id: 'curriculum', label: 'Curriculum', icon: BookOpen },
     { id: 'home', label: 'Dashboard', icon: Home },
+    { id: 'focus', label: 'Focus & Flow', icon: Zap },
     { id: 'coach', label: 'AI Assistant', icon: Bot },
-    { id: 'ranks', label: 'Rankings', icon: Trophy },
+    { id: 'ranks', label: 'Rankings & Squad', icon: Trophy },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
@@ -1263,6 +1923,25 @@ export default function StudentPortal({ user, onLogout }) {
                 onFreezeUse={handleFreezeUse}
                 onNavigate={(tab) => setActiveTab(tab)}
                 onStartQuiz={(quiz) => handleStartQuiz(quiz)}
+              />
+            )}
+            {activeTab === 'focus' && (
+              <FocusFlowTab
+                profile={profile}
+                onSessionCompleted={(xp, coins, streak) => {
+                  setProfile(p => {
+                    const newTotal = p.totalXp + xp;
+                    const newLevel = Math.floor(newTotal / 1000) + 1;
+                    return {
+                      ...p,
+                      totalXp: newTotal,
+                      xpInLevel: newTotal % 1000,
+                      level: newLevel,
+                      coins: p.coins + coins,
+                      streak: Math.max(p.streak, streak)
+                    };
+                  });
+                }}
               />
             )}
             {activeTab === 'coach' && <CoachTab />}

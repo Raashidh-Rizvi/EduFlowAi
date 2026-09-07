@@ -64,7 +64,7 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     // Navigate to Rankings tab
     const ranksTab = page.getByRole('button', { name: /Rankings/i }).first();
     await ranksTab.click();
-    await expect(page.locator('text=Cohort Rankings').first()).toBeVisible();
+    await expect(page.locator('text=Cohort Standings').or(page.locator('text=Cohort Rankings')).first()).toBeVisible();
     await expect(page.locator('text=Alex Rivera').first()).toBeVisible();
 
     // Navigate to Profile tab
@@ -73,6 +73,25 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     await expect(page.locator('text=EARNED CREDENTIALS & BADGES').or(page.locator('text=Credentials')).first()).toBeVisible();
 
     await page.screenshot({ path: 'e2e/screenshots/10-student-profile.png' });
+  });
+
+  test('should explore Focus & Flow Studio and run a study sprint', async ({ page }) => {
+    // Navigate to Focus & Flow tab
+    const focusTab = page.getByRole('button', { name: /Focus & Flow/i }).first();
+    await focusTab.click();
+    await expect(page.locator('text=Study Focus & Mind Garden').first()).toBeVisible();
+    await expect(page.locator('text=DEEP WORK STUDIO').first()).toBeVisible();
+
+    // Select 1m Test Demo sprint
+    const demoBtn = page.locator('button', { hasText: /1m Test Demo/i }).first();
+    await demoBtn.click();
+
+    // Start Focus Sprint
+    const startBtn = page.getByRole('button', { name: /Start Focus Sprint/i }).first();
+    await startBtn.click();
+    await expect(page.getByRole('button', { name: /Pause Sprint/i }).first()).toBeVisible();
+
+    await page.screenshot({ path: 'e2e/screenshots/16-focus-sprint-active.png' });
   });
 
   test('should take a quiz in QuizRunner, answer questions, submit, and earn XP', async ({ page }) => {

@@ -108,6 +108,231 @@ public class TeamService : ITeamService
         return new SquadActionResultDto(true, $"Squad '{team.Name}' created successfully.", squadDto);
     }
 
+    public async Task<List<SquadDto>> GetAllSquadsAsync(CancellationToken ct = default)
+    {
+        var teams = await _dbContext.Teams
+            .OrderByDescending(t => t.CreatedAt)
+            .ToListAsync(ct);
+
+        var result = new List<SquadDto>();
+        foreach (var team in teams)
+        {
+            result.Add(await BuildSquadDtoAsync(team, ct));
+        }
+        return result;
+    }
+
+    public async Task<SquadActionResultDto> InstructorCreateSquadAsync(InstructorCreateSquadRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return new SquadActionResultDto(false, "Squad name is required.", null);
+        }
+
+        var studentIds = request.StudentIds ?? new List<Guid>();
+        if (studentIds.Count == 0)
+        {
+            return new SquadActionResultDto(false, "Please select at least one student for the squad.", null);
+        }
+
+        Guid leaderId = request.LeaderId ?? studentIds.First();
+        if (!studentIds.Contains(leaderId))
+        {
+            studentIds.Insert(0, leaderId);
+        }
+
+        var team = new Team
+        {
+            Name = request.Name.Trim(),
+            Description = !string.IsNullOrWhiteSpace(request.Description)
+                ? request.Description.Trim()
+                : (!string.IsNullOrWhiteSpace(request.ActiveQuest) ? $"Quest: {request.ActiveQuest.Trim()}" : "Collaborative Learning Squad"),
+            AvatarUrl = !string.IsNullOrWhiteSpace(request.AvatarUrl) ? request.AvatarUrl.Trim() : "⚔️",
+            LeaderId = leaderId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _dbContext.Teams.AddAsync(team, ct);
+        await _dbContext.SaveChangesAsync(ct);
+
+        // Remove these students from any previous squads so they don't have duplicate memberships
+        var existingMemberships = await _dbContext.TeamMembers
+            .Where(tm => studentIds.Contains(tm.StudentId))
+            .ToListAsync(ct);
+        if (existingMemberships.Count > 0)
+        {
+            _dbContext.TeamMembers.RemoveRange(existingMemberships);
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        // Add members
+        foreach (var sId in studentIds)
+        {
+            var role = (sId == leaderId) ? TeamRole.Leader : TeamRole.Member;
+            await _dbContext.TeamMembers.AddAsync(new TeamMember
+            {
+                TeamId = team.Id,
+                StudentId = sId,
+                Role = role,
+                JoinedAt = DateTime.UtcNow
+            }, ct);
+
+            // Unlock SQUAD_GOALS badge if not already unlocked
+            var hasBadge = await _dbContext.StudentBadges.AnyAsync(sb => sb.StudentId == sId && sb.BadgeId == "SQUAD_GOALS", ct);
+            if (!hasBadge && await _dbContext.Badges.AnyAsync(b => b.Id == "SQUAD_GOALS", ct))
+            {
+                await _dbContext.StudentBadges.AddAsync(new StudentBadge
+                {
+                    StudentId = sId,
+                    BadgeId = "SQUAD_GOALS",
+                    UnlockedAt = DateTime.UtcNow
+                }, ct);
+
+                var xpRecord = await _dbContext.StudentXp.FirstOrDefaultAsync(x => x.StudentId == sId, ct);
+                if (xpRecord != null)
+                {
+                    xpRecord.TotalXp += 75;
+                    xpRecord.Coins += 20;
+                }
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        var squadDto = await BuildSquadDtoAsync(team, ct);
+        return new SquadActionResultDto(true, $"Squad '{team.Name}' created successfully with {studentIds.Count} members.", squadDto);
+    }
+
+    public async Task<SquadActionResultDto> UpdateSquadAsync(Guid squadId, UpdateSquadRequest request, CancellationToken ct = default)
+    {
+        var team = await _dbContext.Teams.FirstOrDefaultAsync(t => t.Id == squadId, ct);
+        if (team == null)
+        {
+            return new SquadActionResultDto(false, "Squad not found.", null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+            team.Name = request.Name.Trim();
+        if (request.Description != null)
+            team.Description = request.Description.Trim();
+        if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
+            team.AvatarUrl = request.AvatarUrl.Trim();
+        if (request.LeaderId.HasValue)
+            team.LeaderId = request.LeaderId.Value;
+
+        team.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+
+        var squadDto = await BuildSquadDtoAsync(team, ct);
+        return new SquadActionResultDto(true, $"Squad '{team.Name}' updated successfully.", squadDto);
+    }
+
+    public async Task<SquadActionResultDto> AddMemberAsync(Guid squadId, Guid studentId, TeamRole role = TeamRole.Member, CancellationToken ct = default)
+    {
+        var team = await _dbContext.Teams.FirstOrDefaultAsync(t => t.Id == squadId, ct);
+        if (team == null)
+        {
+            return new SquadActionResultDto(false, "Squad not found.", null);
+        }
+
+        var existing = await _dbContext.TeamMembers.FirstOrDefaultAsync(tm => tm.StudentId == studentId, ct);
+        if (existing != null)
+        {
+            if (existing.TeamId == squadId)
+                return new SquadActionResultDto(false, "Student is already a member of this squad.", await BuildSquadDtoAsync(team, ct));
+
+            _dbContext.TeamMembers.Remove(existing);
+        }
+
+        await _dbContext.TeamMembers.AddAsync(new TeamMember
+        {
+            TeamId = squadId,
+            StudentId = studentId,
+            Role = role,
+            JoinedAt = DateTime.UtcNow
+        }, ct);
+
+        await _dbContext.SaveChangesAsync(ct);
+        return new SquadActionResultDto(true, "Student added to squad.", await BuildSquadDtoAsync(team, ct));
+    }
+
+    public async Task<SquadActionResultDto> RemoveMemberAsync(Guid squadId, Guid studentId, CancellationToken ct = default)
+    {
+        var team = await _dbContext.Teams.FirstOrDefaultAsync(t => t.Id == squadId, ct);
+        if (team == null)
+        {
+            return new SquadActionResultDto(false, "Squad not found.", null);
+        }
+
+        var member = await _dbContext.TeamMembers.FirstOrDefaultAsync(tm => tm.TeamId == squadId && tm.StudentId == studentId, ct);
+        if (member == null)
+        {
+            return new SquadActionResultDto(false, "Member not found in squad.", await BuildSquadDtoAsync(team, ct));
+        }
+
+        _dbContext.TeamMembers.Remove(member);
+
+        if (team.LeaderId == studentId)
+        {
+            var nextMember = await _dbContext.TeamMembers.FirstOrDefaultAsync(tm => tm.TeamId == squadId && tm.StudentId != studentId, ct);
+            if (nextMember != null)
+            {
+                team.LeaderId = nextMember.StudentId;
+                nextMember.Role = TeamRole.Leader;
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+        return new SquadActionResultDto(true, "Student removed from squad.", await BuildSquadDtoAsync(team, ct));
+    }
+
+    public async Task<bool> DeleteSquadAsync(Guid squadId, CancellationToken ct = default)
+    {
+        var team = await _dbContext.Teams.FirstOrDefaultAsync(t => t.Id == squadId, ct);
+        if (team == null) return false;
+
+        var members = await _dbContext.TeamMembers.Where(tm => tm.TeamId == squadId).ToListAsync(ct);
+        _dbContext.TeamMembers.RemoveRange(members);
+
+        _dbContext.Teams.Remove(team);
+        await _dbContext.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<List<StudentTeamOptionDto>> GetStudentsForTeamsAsync(CancellationToken ct = default)
+    {
+        var students = await _dbContext.Users
+            .Where(u => u.Role == UserRole.Student)
+            .Include(u => u.StudentXp)
+            .Include(u => u.StudentStreak)
+            .ToListAsync(ct);
+
+        var memberships = await _dbContext.TeamMembers
+            .Include(tm => tm.Team)
+            .ToListAsync(ct);
+
+        var membershipMap = memberships.ToDictionary(m => m.StudentId, m => m.Team);
+
+        return students.Select(s =>
+        {
+            membershipMap.TryGetValue(s.Id, out var team);
+            return new StudentTeamOptionDto(
+                StudentId: s.Id,
+                FullName: s.FullName,
+                Email: s.Email,
+                AvatarUrl: s.AvatarUrl,
+                TotalXp: s.StudentXp?.TotalXp ?? 0,
+                CurrentLevel: s.StudentXp?.CurrentLevel ?? 1,
+                CurrentStreak: s.StudentStreak?.CurrentStreak ?? 0,
+                CurrentSquadId: team?.Id,
+                CurrentSquadName: team?.Name
+            );
+        })
+        .OrderByDescending(s => s.TotalXp)
+        .ToList();
+    }
+
     public async Task<SquadActionResultDto> JoinSquadAsync(Guid squadId, Guid studentId, CancellationToken ct = default)
     {
         var team = await _dbContext.Teams.FirstOrDefaultAsync(t => t.Id == squadId, ct);

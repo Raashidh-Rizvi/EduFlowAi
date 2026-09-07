@@ -26,7 +26,8 @@ public enum XpSourceType
     BossBattle,
     TeamChallenge,
     AiAdaptiveChallenge,
-    RemediationCompleted
+    RemediationCompleted,
+    FocusSession
 }
 
 public enum DifficultyLevel
