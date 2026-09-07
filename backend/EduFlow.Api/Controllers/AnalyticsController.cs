@@ -13,6 +13,7 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize(Roles = "Instructor,Admin")]
 public class AnalyticsController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;

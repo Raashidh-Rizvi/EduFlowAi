@@ -1243,8 +1243,9 @@ public class QuizzesController : ControllerBase
                 quiz.ShowCorrectAnswers ? q.Explanation : "Feedback available on review."
             ));
 
+            Guid? topicScopeId = quiz.ScopeType == QuizScopeType.Topic ? quiz.ScopeId : null;
             string topicName = !string.IsNullOrWhiteSpace(q.LearningObjective) ? q.LearningObjective : quiz.Title;
-            questionOutcomes.Add((quiz.ScopeId, topicName, q.LearningObjective ?? topicName, isCorrect));
+            questionOutcomes.Add((topicScopeId, topicName, q.LearningObjective ?? topicName, isCorrect));
         }
 
         double percent = totalPoints > 0 ? ((double)scoreObtained / totalPoints) * 100 : 0;

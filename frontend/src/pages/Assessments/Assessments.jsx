@@ -317,11 +317,37 @@ export default function Assessments({ currentUser }) {
     alert(`🎉 Quiz "${createdQuiz.title}" successfully published with ${createdQuiz.questionsCount} questions and +${createdQuiz.xpReward} XP reward!`);
   };
 
-  const handleStartQuiz = (quiz) => {
-    setRunningQuiz(quiz);
+  const handleStartQuiz = async (quiz) => {
+    let fullQuiz = quiz;
+    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
+      try {
+        const detail = await quizService.getQuizById(quiz.id);
+        if (detail && detail.questions) {
+          fullQuiz = detail;
+        }
+      } catch (err) {
+        console.warn('Could not load quiz details:', err);
+      }
+    }
+    setRunningQuiz(fullQuiz);
     setRunnerStep(0);
     setRunnerAnswers({});
     setRewardBreakdownModal(null);
+  };
+
+  const handleInspectQuiz = async (quiz) => {
+    let fullQuiz = quiz;
+    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
+      try {
+        const detail = await quizService.getQuizById(quiz.id);
+        if (detail && detail.questions) {
+          fullQuiz = detail;
+        }
+      } catch (err) {
+        console.warn('Could not load quiz inspection details:', err);
+      }
+    }
+    setInspectingQuiz(fullQuiz);
   };
 
   const handleSelectRunnerAnswer = (qIdx, answer) => {
@@ -627,7 +653,7 @@ export default function Assessments({ currentUser }) {
                   </button>
 
                   <button
-                    onClick={() => setInspectingQuiz(quiz)}
+                    onClick={() => handleInspectQuiz(quiz)}
                     className="btn-secondary"
                     style={{ padding: '5px 10px', fontSize: '11.5px', gap: '5px' }}
                   >

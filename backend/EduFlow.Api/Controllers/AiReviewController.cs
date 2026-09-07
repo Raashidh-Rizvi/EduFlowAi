@@ -34,6 +34,7 @@ public class AiReviewController : ControllerBase
     /// Lists all study plan proposals pending instructor review.
     /// </summary>
     [HttpGet("pending-proposals")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetPendingProposals()
     {
         var plans = await _dbContext.StudyPlans

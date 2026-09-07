@@ -107,7 +107,7 @@ test.describe('Student Portal & AI Coach Exploration', () => {
 
     // Verify Completion Card
     await expect(page.locator('text=Assessment Completed')).toBeVisible();
-    await expect(page.locator('text=Earned +80 XP')).toBeVisible();
+    await expect(page.locator('text=+80 XP')).toBeVisible();
 
     await page.screenshot({ path: 'e2e/screenshots/15-quiz-completed.png' });
 

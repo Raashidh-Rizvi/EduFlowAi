@@ -73,7 +73,15 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("EduFlowCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:2174", "http://localhost:2175", "http://localhost:5173", "http://localhost:3000", "http://localhost:8080")
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  if (string.IsNullOrWhiteSpace(origin)) return false;
+                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                  {
+                      return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+                  }
+                  return false;
+              })
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

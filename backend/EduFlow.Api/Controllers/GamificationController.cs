@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace EduFlow.Api.Controllers;
 
 [ApiController]
+[Route("api/[controller]")]
 [Route("api/v1/gamification")]
 public class GamificationController : ControllerBase
 {

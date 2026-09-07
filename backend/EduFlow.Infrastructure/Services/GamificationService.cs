@@ -295,15 +295,26 @@ public class GamificationService : IGamificationService
                 string topicName = string.IsNullOrWhiteSpace(item.TopicName) ? "Core Concepts" : item.TopicName;
                 string skillName = string.IsNullOrWhiteSpace(item.SkillName) ? topicName : item.SkillName;
 
+                // Validate that item.TopicId actually exists in Topics to prevent foreign key violations
+                Guid? verifiedTopicId = null;
+                if (item.TopicId.HasValue && item.TopicId != Guid.Empty)
+                {
+                    bool topicExists = await _dbContext.Topics.AnyAsync(t => t.Id == item.TopicId.Value, ct);
+                    if (topicExists)
+                    {
+                        verifiedTopicId = item.TopicId.Value;
+                    }
+                }
+
                 var mastery = await _dbContext.SkillMasteries
-                    .FirstOrDefaultAsync(m => m.StudentId == studentId && (m.TopicName == topicName || (m.TopicId == item.TopicId && item.TopicId != null)), ct);
+                    .FirstOrDefaultAsync(m => m.StudentId == studentId && (m.TopicName == topicName || (verifiedTopicId != null && m.TopicId == verifiedTopicId)), ct);
 
                 if (mastery == null)
                 {
                     mastery = new SkillMastery
                     {
                         StudentId = studentId,
-                        TopicId = item.TopicId,
+                        TopicId = verifiedTopicId,
                         TopicName = topicName,
                         SkillName = skillName,
                         TotalAttempts = 1,
@@ -315,6 +326,10 @@ public class GamificationService : IGamificationService
                 }
                 else
                 {
+                    if (mastery.TopicId == null && verifiedTopicId != null)
+                    {
+                        mastery.TopicId = verifiedTopicId;
+                    }
                     mastery.TotalAttempts += 1;
                     if (item.IsCorrect) mastery.CorrectAttempts += 1;
                     mastery.MasteryPercentage = (int)Math.Round((double)mastery.CorrectAttempts / mastery.TotalAttempts * 100);
@@ -937,6 +952,54 @@ public class GamificationService : IGamificationService
             .AnyAsync(sb => sb.StudentId == studentId && sb.BadgeId == badgeId, ct);
 
         if (alreadyUnlocked) return false;
+
+        // Ensure badge definition exists in Badges table before referencing it
+        var badge = await _dbContext.Badges.FirstOrDefaultAsync(b => b.Id == badgeId, ct);
+        if (badge == null)
+        {
+            badge = new Badge
+            {
+                Id = badgeId,
+                Title = badgeId switch
+                {
+                    "PERFECT_SCORE" => "Perfect Score",
+                    "QUIZ_MASTER" => "Quiz Master",
+                    "BOSS_SLAYER" => "Boss Slayer",
+                    "COMEBACK_KID" => "Comeback Kid",
+                    "FIRST_LESSON" => "First Step",
+                    "SEVEN_DAY_STREAK" => "7-Day Streak",
+                    "FOURTEEN_DAY_STREAK" => "14-Day Streak",
+                    _ => badgeId.Replace("_", " ")
+                },
+                Description = badgeId switch
+                {
+                    "PERFECT_SCORE" => "Scored 100% on an authoritative assessment",
+                    "QUIZ_MASTER" => "Scored 90%+ in quizzes",
+                    "BOSS_SLAYER" => "Conquered a module challenge encounter",
+                    "COMEBACK_KID" => "Improved topic mastery significantly",
+                    "FIRST_LESSON" => "Completed your very first lesson",
+                    "SEVEN_DAY_STREAK" => "Maintained a continuous 7-day study streak",
+                    "FOURTEEN_DAY_STREAK" => "Maintained a continuous 14-day study streak",
+                    _ => $"Unlocked badge {badgeId}"
+                },
+                IconUrl = badgeId switch
+                {
+                    "PERFECT_SCORE" => "🎯",
+                    "QUIZ_MASTER" => "🏆",
+                    "BOSS_SLAYER" => "⚔️",
+                    "COMEBACK_KID" => "📈",
+                    "FIRST_LESSON" => "🌱",
+                    "SEVEN_DAY_STREAK" => "🔥",
+                    "FOURTEEN_DAY_STREAK" => "⚡",
+                    _ => "🏅"
+                },
+                Category = badgeId.Contains("STREAK") ? BadgeCategory.Streak : BadgeCategory.Assessment,
+                XpBonus = 100,
+                CreatedAt = DateTime.UtcNow
+            };
+            await _dbContext.Badges.AddAsync(badge, ct);
+            await _dbContext.SaveChangesAsync(ct);
+        }
 
         await _dbContext.StudentBadges.AddAsync(new StudentBadge
         {

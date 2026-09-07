@@ -176,6 +176,87 @@ public static class DbInitializer
                 });
                 context.SaveChanges();
             }
+
+            // Ensure baseline diagnostic assessment exists for CS-301
+            var quizId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+            var existingQuiz = context.Assessments.FirstOrDefault(a => a.Id == quizId || (a.CourseId == course.Id && a.Title.Contains("Clean Architecture & PostgreSQL")));
+            if (existingQuiz == null)
+            {
+                var quiz = new Assessment
+                {
+                    Id = quizId,
+                    CourseId = course.Id,
+                    Title = "Clean Architecture & PostgreSQL Indexing Diagnostic",
+                    Description = "Official diagnostic assessment for CS-301 covering ACID transactions, B-Tree index selectivity, and Clean Architecture boundaries.",
+                    Type = AssessmentType.Quiz,
+                    TimeLimitMinutes = 15,
+                    TimeLimitSeconds = 900,
+                    PassingScorePercent = 70,
+                    XpReward = 80,
+                    CoinReward = 30,
+                    ScopeType = QuizScopeType.Course,
+                    ScopeId = course.Id,
+                    Status = QuizStatus.Published,
+                    Difficulty = DifficultyLevel.Medium,
+                    AttemptsAllowed = 3,
+                    RandomizeQuestions = false,
+                    RandomizeOptions = false,
+                    FeedbackMode = FeedbackMode.Immediate,
+                    ShowCorrectAnswers = true,
+                    GeneratedByAI = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                var q1 = new Question
+                {
+                    Id = Guid.Parse("77777777-7777-7777-7777-777777777771"),
+                    AssessmentId = quizId,
+                    Prompt = "What does the 'I' represent in the ACID properties of relational databases?",
+                    Type = QuestionType.MultipleChoice,
+                    OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "Isolation", "Integration", "Iteration", "Indexing" }),
+                    CorrectAnswer = "Isolation",
+                    Explanation = "Isolation ensures concurrent transactions execute independently without interfering with each other.",
+                    Difficulty = DifficultyLevel.Medium,
+                    Points = 10,
+                    OrderIndex = 1,
+                    LearningObjective = "ACID Transaction Foundations"
+                };
+
+                var q2 = new Question
+                {
+                    Id = Guid.Parse("77777777-7777-7777-7777-777777777772"),
+                    AssessmentId = quizId,
+                    Prompt = "In PostgreSQL, how are composite B-Tree indexes (colA, colB) evaluated during queries?",
+                    Type = QuestionType.MultipleChoice,
+                    OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "Left-to-right starting with colA", "Right-to-left starting with colB", "Any order arbitrarily", "Only when both columns are hashed" }),
+                    CorrectAnswer = "Left-to-right starting with colA",
+                    Explanation = "Composite B-Tree indexes evaluate left-to-right; the leading column must be present in the WHERE clause.",
+                    Difficulty = DifficultyLevel.Medium,
+                    Points = 10,
+                    OrderIndex = 2,
+                    LearningObjective = "B-Tree Indexing Fundamentals"
+                };
+
+                var q3 = new Question
+                {
+                    Id = Guid.Parse("77777777-7777-7777-7777-777777777773"),
+                    AssessmentId = quizId,
+                    Prompt = "What is the primary role of the ValidationGuardAgent in EduFlow's LangGraph pipeline?",
+                    Type = QuestionType.MultipleChoice,
+                    OptionsJson = System.Text.Json.JsonSerializer.Serialize(new List<string> { "Enforce safety invariants like ≤ 20h/wk workload ceiling", "Generate random quiz questions", "Bypass instructor approval", "Format CSS stylesheets" }),
+                    CorrectAnswer = "Enforce safety invariants like ≤ 20h/wk workload ceiling",
+                    Explanation = "ValidationGuardAgent enforces pedagogical safety, workload limits, and schema invariants.",
+                    Difficulty = DifficultyLevel.Medium,
+                    Points = 10,
+                    OrderIndex = 3,
+                    LearningObjective = "LangGraph Multi-Agent Safety"
+                };
+
+                context.Assessments.Add(quiz);
+                context.Questions.AddRange(q1, q2, q3);
+                context.SaveChanges();
+            }
         }
         catch
         {
