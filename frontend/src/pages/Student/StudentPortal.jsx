@@ -664,7 +664,7 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
   );
 }
 
-function CoachTab() {
+function CoachTab({ studentId, courseId }) {
   const [messages, setMessages] = useState([
     { sender: 'ai', text: 'Hello. I am your AI Learning Assistant. I analyze curriculum progress and clarify technical concepts. What topic are you studying today?' }
   ]);
@@ -685,7 +685,7 @@ function CoachTab() {
     setIsLoading(true);
 
     try {
-      const res = await aiService.chatWithCoach(text);
+      const res = await aiService.chatWithCoach(text, studentId, courseId);
       if (res && res.reply) {
         setMessages(m => [
           ...m, 
@@ -1876,7 +1876,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 }}
               />
             )}
-            {activeTab === 'coach' && <CoachTab />}
+            {activeTab === 'coach' && <CoachTab studentId={user?.id} courseId={courses[0]?.id} />}
             {activeTab === 'ranks' && <LeaderboardTab profile={profile} />}
             {activeTab === 'profile' && (
               <ProfileTab
@@ -1934,28 +1934,14 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
               </div>
             </div>
 
-            <div style={{ flex: 1, backgroundColor: 'var(--bg-canvas)', padding: '20px', overflowY: 'auto' }}>
-              <div style={{
-                maxWidth: '620px', margin: '0 auto', background: 'var(--bg-card)',
-                borderRadius: 'var(--radius-md)', padding: '24px', border: '1px solid var(--border-card)'
-              }}>
-                <span style={{ fontSize: '11px', color: 'var(--secondary)', fontWeight: '700' }}>COURSE SPECIFICATION MATERIAL</span>
-                <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px', marginBottom: '14px' }}>{pdfDoc.title}</h3>
-                <div style={{ color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: '1.7', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <p>
-                    <strong>Architecture Standards:</strong> Strict isolation of domain entities and separation of database persistence layers.
-                  </p>
-                  <p>
-                    <strong>PostgreSQL Indexing:</strong> Composite indexes evaluated left-to-right according to query predicate selectivity.
-                  </p>
-                  <p>
-                    <strong>Gamification Verification:</strong> Append-only transactions record all earned rewards to ensure state integrity.
-                  </p>
-                  <div style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--primary-soft)', color: 'var(--text-main)', fontSize: '11.5px' }}>
-                    💡 Once finished reading, return to complete the knowledge assessment for this unit.
-                  </div>
-                </div>
-              </div>
+            <div style={{ flex: 1, backgroundColor: 'var(--bg-canvas)', overflow: 'hidden' }}>
+              <iframe
+                src={pdfDoc.url}
+                title={pdfDoc.title}
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
             </div>
           </div>
         </div>

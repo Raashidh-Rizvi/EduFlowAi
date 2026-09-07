@@ -2526,27 +2526,29 @@ export default function Courses({ currentUser }) {
                   {pdfViewerDoc.title}
                 </h3>
               </div>
-              <button onClick={() => setPdfViewerDoc(null)} className="btn-ghost" style={{ padding: '4px' }}>✕</button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <a
+                  href={pdfViewerDoc.url}
+                  download={pdfViewerDoc.fileName || 'document.pdf'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-primary"
+                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                >
+                  <Download size={12} /> Download
+                </a>
+                <button onClick={() => setPdfViewerDoc(null)} className="btn-ghost" style={{ padding: '4px' }}>✕</button>
+              </div>
             </div>
 
-            <div style={{ flex: 1, padding: '24px', overflowY: 'auto', backgroundColor: 'var(--bg-surface)' }}>
-              <div style={{ backgroundColor: '#fff', color: '#1E293B', padding: '32px', borderRadius: 'var(--radius-md)', boxShadow: '0 2px 10px rgba(0,0,0,0.08)', minHeight: '100%' }}>
-                <div style={{ borderBottom: '2px solid #4F46E5', paddingBottom: '12px', marginBottom: '20px' }}>
-                  <h2 style={{ fontSize: '20px', fontWeight: '800', color: '#1E293B', margin: 0 }}>{pdfViewerDoc.title}</h2>
-                  <span style={{ fontSize: '12px', color: '#64748B' }}>EduFlow AI Curriculum Document: {pdfViewerDoc.fileName}</span>
-                </div>
-                <p style={{ fontSize: '14px', lineHeight: '1.7', color: '#334155' }}>
-                  This official syllabus and reading material is attached to the module. The AI Assessment Generator reads and grounds quiz questions directly against the core learning objectives and conceptual boundaries documented herein.
-                </p>
-                <div style={{ marginTop: '20px', padding: '14px', backgroundColor: '#F8FAFC', borderRadius: '6px', border: '1px solid #E2E8F0', fontSize: '13px' }}>
-                  <strong>Key Learning Invariants:</strong>
-                  <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                    <li>Deterministic scope validation & boundary enforcement.</li>
-                    <li>Bloom taxonomy alignment: Knowledge $\rightarrow$ Application $\rightarrow$ Evaluation.</li>
-                    <li>Integration with adaptive retention telemetry and mastery matrices.</li>
-                  </ul>
-                </div>
-              </div>
+            <div style={{ flex: 1, backgroundColor: 'var(--bg-surface)', overflow: 'hidden' }}>
+              <iframe
+                src={pdfViewerDoc.url}
+                title={pdfViewerDoc.title}
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
             </div>
           </div>
         </div>

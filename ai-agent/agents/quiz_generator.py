@@ -201,6 +201,8 @@ Output a single JSON object with the following schema:
 - marking_scheme (string: clear scoring criteria and rubric, stating what concepts must be present to earn full marks)
 - slide_citation (string: exact slide citation, e.g. "Slide 4: B-Tree Indexing Architecture")
 - explanation (string: pedagogical explanation citing the slide text)
+- topic_tag (string: brief label of the core topic, e.g. "recursion")
+- source_chunk_ids (list of strings: empty list if not applicable)
 
 Strictly return ONLY the JSON Object:""",
                         input_variables=["text", "topic", "question_type", "difficulty"]
@@ -272,6 +274,8 @@ Strictly return ONLY the JSON Object:""",
                         "explanation": ext_q.get("explanation", "Extracted from lecture slides."),
                         "marking_scheme": ext_q.get("marking_scheme", ext_q.get("explanation", "Criteria based on slide text.")),
                         "slide_citation": ext_q.get("slide_citation", f"Slide material for {scope_name}"),
+                        "topic_tag": ext_q.get("topic_tag", search_topic),
+                        "source_chunk_ids": ext_q.get("source_chunk_ids", []),
                         "points": 10,
                         "marks": 10,
                         "sourceContentId": req.scope_id
@@ -333,6 +337,8 @@ Strictly return ONLY the JSON Object:""",
                     marking_scheme=q_raw.get("marking_scheme"),
                     slide_citation=q_raw.get("slide_citation"),
                     matching_pairs=q_raw.get("matching_pairs"),
+                    topic_tag=q_raw.get("topic_tag"),
+                    source_chunk_ids=q_raw.get("source_chunk_ids"),
                     points=q_raw.get("points", 10),
                     marks=q_raw.get("marks", 10),
                     difficulty=diff,
@@ -502,6 +508,8 @@ Output STRICT JSON with this exact schema (no markdown, no commentary):
 - correct_answer (string, MUST exactly match one of the strings in "options")
 - distractor_rationales (list of strings, same length as "options", one rationale per option explaining why it is correct or incorrect)
 - explanation (string, pedagogical rationale for the correct answer)
+- topic_tag (string, brief label of the core topic, e.g. "recursion")
+- source_chunk_ids (list of strings, UUIDs from the provided grounding text if any, or empty list)
 
 JSON Object:""",
             input_variables=["grounding_block", "scope_name", "topic", "question_type", "difficulty", "learning_objective", "guidance_block"]
@@ -565,6 +573,8 @@ JSON Object:""",
             "correct_index": correct_index,
             "distractor_rationales": [str(r) for r in distractor_rationales],
             "explanation": result.get("explanation") or f"Grounded in {scope_name}.",
+            "topic_tag": result.get("topic_tag") or topic,
+            "source_chunk_ids": result.get("source_chunk_ids") or [],
             "points": 10,
             "marks": 10,
             "difficulty": difficulty,

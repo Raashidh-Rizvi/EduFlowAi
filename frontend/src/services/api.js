@@ -25,7 +25,17 @@ api.interceptors.response.use(
     let friendlyMessage = "An unexpected error occurred. Please check your connection and try again.";
     
     if (error.response) {
-      if (error.response.status === 400 || error.response.status === 401 || error.response.status === 404) {
+      if (error.response.status === 401) {
+        friendlyMessage = "Your session has expired or is invalid. Please log in again.";
+        // Clear stale token
+        localStorage.removeItem('eduflow_token');
+        localStorage.removeItem('eduflow_user');
+        
+        // Only reload if we aren't already on the login page to prevent loops
+        if (window.location.pathname !== '/') {
+           window.location.reload();
+        }
+      } else if (error.response.status === 400 || error.response.status === 404) {
         friendlyMessage = error.response.data?.message || "We couldn't process that request. Please verify your information.";
       } else if (error.response.status === 500) {
         friendlyMessage = error.response.data?.message || "Our servers are experiencing issues. Please try again later.";

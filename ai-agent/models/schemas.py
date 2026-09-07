@@ -667,6 +667,12 @@ class QuizQuestionModel(BaseModel):
     # Concept pairs for Matching questions
     matching_pairs: Optional[List[Dict[str, str]]] = None
     
+    # Topic tag for adaptive assignment and tracking
+    topic_tag: Optional[str] = None
+    
+    # Traceability back to specific RAG knowledge base chunks
+    source_chunk_ids: Optional[List[str]] = None
+    
     # Additional key-value metadata
     metadata: Dict[str, Any] = Field(default_factory=dict)
 

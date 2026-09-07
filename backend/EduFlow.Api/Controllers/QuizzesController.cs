@@ -756,7 +756,7 @@ public class QuizzesController : ControllerBase
             pdf_path = physicalSlidePath,
             slide_path = physicalSlidePath,
             selected_topics = request.SelectedTopics,
-            question_types = request.QuestionTypes
+            question_types = request.QuestionTypes ?? new List<string> { "MULTIPLE_CHOICE", "TRUE_FALSE", "MULTIPLE_SELECT" }
         };
 
         bool usedPython = false;
