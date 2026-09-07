@@ -19,7 +19,10 @@ import {
   Bot,
   Zap,
   Check,
-  X
+  X,
+  Play,
+  Trophy,
+  ArrowRight
 } from 'lucide-react';
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';

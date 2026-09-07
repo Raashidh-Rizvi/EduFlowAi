@@ -48,18 +48,7 @@ export default function AiReview() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchProposals() {
-      setLoading(true);
-      try {
-        const data = await aiService.getPendingProposals();
-        setProposals(data || []);
-      } catch (err) {
-        console.error('Failed to load pending proposals:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchProposals();
+    loadBackendProposals();
   }, []);
 
   // Filter & Search states
@@ -480,18 +469,17 @@ export default function AiReview() {
         }
       };
 
-      try {
-        await aiService.orchestrateStudyPlan({
-          student_id: '33333333-3333-3333-3333-333333333333',
-          course_id: '44444444-4444-4444-4444-444444444444',
-          student_name: genStudentName,
-          target_goal: genGoal,
-          hours_per_week: Number(genHours),
-          target_weeks: Number(genWeeks)
-        });
-      } catch (err) {
+      // Trigger backend multi-agent orchestration concurrently
+      aiService.orchestrateStudyPlan({
+        student_id: '33333333-3333-3333-3333-333333333333',
+        course_id: '44444444-4444-4444-4444-444444444444',
+        student_name: genStudentName,
+        target_goal: genGoal,
+        hours_per_week: Number(genHours),
+        target_weeks: Number(genWeeks)
+      }).catch(err => {
         console.warn('Backend orchestration called with graceful fallback sync', err);
-      }
+      });
 
       setProposals(prev => [newProposal, ...prev]);
       setSelectedProposalId(newPlanId);
@@ -517,7 +505,7 @@ export default function AiReview() {
   };
 
   // Calculate dynamic total XP with multiplier
-  const baseTotalXp = current ? current.schedule.reduce((acc, item) => acc + (Number(item.xp) || 0), 0) : 0;
+  const baseTotalXp = (current && Array.isArray(current.schedule)) ? current.schedule.reduce((acc, item) => acc + (Number(item.xp) || 0), 0) : 0;
   const calibratedTotalXp = Math.round(baseTotalXp * (current?.xpMultiplier || 1.0));
 
   return (

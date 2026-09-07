@@ -86,20 +86,21 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
 
 The backend serves the REST API, JWT authentication, gamification engine, database persistence, and AI gateway forwarding.
 
-#1. Navigate to the API project directory:
- # powershell
+1. Navigate to the API project directory:
+   ```powershell
    cd backend\EduFlow.Api
-  
+   ```
 
-#2. Restore and run the application with **Auto-Reload / Hot Reload**:
-# powershell
+2. Restore and run the application with **Build Reload / Recompile on Save**:
+   ```powershell
+   # Clean rebuild and restart on save (no flaky delta hot-reload)
+   dotnet watch --no-hot-reload run --non-interactive
 
+   # Or standard delta watch
    dotnet watch run
-   
-   *(Or standard `dotnet run` if you don't need active file watching)*
+   ```
    - **Swagger UI**: [http://localhost:5204/swagger](http://localhost:5204/swagger) or [http://localhost:5000/swagger](http://localhost:5000/swagger)
    - **API Base URL**: `http://localhost:5204/api`
-
 
 ---
 
@@ -107,36 +108,36 @@ The backend serves the REST API, JWT authentication, gamification engine, databa
 
 The frontend provides the interactive **Instructor AI Review & Governance Workspace**, **Student Portal**, **Course Curriculum Management**, **Gamification Dashboard**, and **Cohort Analytics**.
 
-#1. Navigate to the frontend directory:
- # powershell
+1. Navigate to the frontend directory:
+   ```powershell
    cd frontend
-  
+   ```
 
-#2. Install dependencies *(first time only)*:
-# powershell
+2. Install dependencies *(first time only)*:
+   ```powershell
    npm install
-   
+   ```
 
-#3. Start the Vite development server:
- # powershell
+3. Start the Vite development server:
+   ```powershell
    npm run dev
-   
+   ```
    - **Web Application URL**: [http://localhost:2174](http://localhost:2174)
 
 ---
 
 ### Terminal 4: Flutter Mobile App *(Optional)*
 
-#1. Navigate to the mobile directory:
- # powershell
-   cd d:\Project\EduFlow\mobile
-  
+1. Navigate to the mobile directory:
+   ```powershell
+   cd mobile
+   ```
 
-#2. Fetch dependencies and launch:
-# powershell
+2. Fetch dependencies and launch:
+   ```powershell
    flutter pub get
    flutter run
-  
+   ```
 
 ---
 
@@ -194,7 +195,29 @@ npm run build
 
 ---
 
-## 7. Troubleshooting & FAQ
+## 7. Continuous Rebuild Watcher ("Build Reload") 🔨
+
+To automatically trigger a clean background re-compilation/rebuild whenever any file changes across the entire repository:
+
+```powershell
+# From root workspace directory (d:\Project\EduFlow):
+npm run watch:build
+```
+
+- **Backend (.NET)**: Watches `backend/**/*.cs`, `*.csproj` and automatically runs `dotnet build`.
+- **Frontend (React/Vite)**: Watches `frontend/src/**/*.{jsx,js,css}` and continuously rebuilds `dist/` bundle.
+- **AI Agent (Python)**: Watches `ai-agent/**/*.py` and compiles bytecode/validates syntax instantly.
+
+You can also run continuous watch-building for individual layers:
+```powershell
+npm run watch:frontend          # Continuous Vite production bundle build
+npm run watch:backend           # dotnet watch build for .NET backend
+npm run dev:backend:build-reload# dotnet watch run with clean rebuild on save
+```
+
+---
+
+## 8. Troubleshooting & FAQ
 
 ### Q: Port 8000 or 5000 is already in use
 - Check running processes or change the port in `ai-agent/main.py` (`port=8000`) or `backend/EduFlow.Api/Properties/launchSettings.json`.

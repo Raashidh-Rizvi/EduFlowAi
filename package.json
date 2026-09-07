@@ -1,0 +1,28 @@
+{
+  "name": "eduflow-ai-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "EduFlow AI - Full-Stack Gamified Adaptive Learning Microservices & React Web App",
+  "type": "module",
+  "scripts": {
+    "watch:build": "node build-watcher.mjs",
+    "watch:frontend": "npm --prefix frontend run build -- --watch",
+    "watch:backend": "dotnet watch --project backend/EduFlow.Api build",
+    "build": "npm run build:backend && npm run build:agent && npm run build:frontend",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "dotnet build backend/EduFlow.slnx",
+    "build:agent": "python -m compileall -q ai-agent/agents ai-agent/core ai-agent/graph ai-agent/models ai-agent/tools ai-agent/main.py",
+    "dev:backend:build-reload": "dotnet watch --project backend/EduFlow.Api run --no-hot-reload --non-interactive",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:agent": "cd ai-agent && python -m uvicorn main:app --reload --port 8000"
+  },
+  "keywords": [
+    "eduflow",
+    "langgraph",
+    "aspnetcore",
+    "react",
+    "vite"
+  ],
+  "author": "EduFlow AI Team",
+  "license": "MIT"
+}

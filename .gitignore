@@ -27,6 +27,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Playwright
+**/playwright-report/
+**/test-results/
+**/e2e/screenshots/
+
 # Flutter / Dart
 **/mobile/build/
 **/mobile/.dart_tool/

@@ -345,5 +345,5 @@ def get_observability_metrics(_: None = Depends(verify_internal_token)):
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    # Start the Uvicorn ASGI server on port 8000
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Start the Uvicorn ASGI server on port 8000 with auto-reload
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["agents", "core", "graph", "models", "tools"])

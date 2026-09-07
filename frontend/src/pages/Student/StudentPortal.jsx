@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Map,
@@ -32,6 +32,7 @@ import {
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { aiService } from '../../services/aiService';
+import { courseService } from '../../services/courseService';
 
 // ─── Seed Data for Student Portal ─────────────────────────────────────────────
 const STUDENT_DATA = {
@@ -56,8 +57,71 @@ const STUDENT_DATA = {
   }
 };
 
-const INITIAL_COURSES = [];
-const QUIZZES = [];
+const INITIAL_COURSES = [
+  {
+    id: 'course-cs301',
+    code: 'CS-301',
+    title: 'Advanced Database Architecture & EF Core',
+    modules: [
+      {
+        id: 'm1',
+        title: 'High-Performance Indexing & Query Execution',
+        pdfUrl: '/materials/db-indexing-guide.pdf',
+        attachmentFileName: 'PostgreSQL_Indexing_Architecture.pdf',
+        lessons: [
+          { id: 'l1', title: 'B-Tree & Composite Index Selectivity', duration: '30 mins', xp: 40, completed: false },
+          { id: 'l2', title: 'Query Execution Plans & EXPLAIN ANALYZE', duration: '45 mins', xp: 60, completed: false }
+        ]
+      },
+      {
+        id: 'm2',
+        title: 'Transactional Integrity & Deadlock Resolution',
+        pdfUrl: '/materials/acid-transactions.pdf',
+        attachmentFileName: 'ACID_Transactions_Concurrency.pdf',
+        lessons: [
+          { id: 'l3', title: 'Isolation Levels & Concurrency Anomalies', duration: '40 mins', xp: 50, completed: false },
+          { id: 'l4', title: 'Two-Phase Locking & Graph Deadlock Detection', duration: '50 mins', xp: 75, completed: false }
+        ]
+      }
+    ]
+  }
+];
+
+const QUIZZES = [
+  {
+    id: 'quiz-1',
+    title: 'Clean Architecture & PostgreSQL Indexing Diagnostic',
+    passingScore: 70,
+    xpReward: 80,
+    coinReward: 30,
+    questions: [
+      {
+        id: 'q1',
+        prompt: 'What does the "I" represent in the ACID properties of relational databases?',
+        question: 'What does the "I" represent in the ACID properties of relational databases?',
+        options: ['Isolation', 'Integration', 'Iteration', 'Indexing'],
+        correct: 0,
+        explanation: 'Isolation ensures concurrent transactions execute independently without interfering with each other.'
+      },
+      {
+        id: 'q2',
+        prompt: 'In PostgreSQL, how are composite B-Tree indexes (colA, colB) evaluated during queries?',
+        question: 'In PostgreSQL, how are composite B-Tree indexes (colA, colB) evaluated during queries?',
+        options: ['Left-to-right starting with colA', 'Right-to-left starting with colB', 'Any order arbitrarily', 'Only when both columns are hashed'],
+        correct: 0,
+        explanation: 'Composite B-Tree indexes evaluate left-to-right; the leading column must be present in the WHERE clause.'
+      },
+      {
+        id: 'q3',
+        prompt: 'What is the primary role of the ValidationGuardAgent in EduFlow\'s LangGraph pipeline?',
+        question: 'What is the primary role of the ValidationGuardAgent in EduFlow\'s LangGraph pipeline?',
+        options: ['Enforce safety invariants like ≤ 20h/wk workload ceiling', 'Generate random quiz questions', 'Bypass instructor approval', 'Format CSS stylesheets'],
+        correct: 0,
+        explanation: 'ValidationGuardAgent enforces pedagogical safety, workload limits, and schema invariants.'
+      }
+    ]
+  }
+];
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
 
@@ -830,10 +894,58 @@ function ProfileTab({ profile, onLogout }) {
 
 // ─── Main StudentPortal Component ─────────────────────────────────────────────
 export default function StudentPortal({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('curriculum');
+  const [activeTab, setActiveTabState] = useState(() => {
+    try {
+      return sessionStorage.getItem('eduflow_student_active_tab') || 'curriculum';
+    } catch {
+      return 'curriculum';
+    }
+  });
+
+  const setActiveTab = (tab) => {
+    try {
+      sessionStorage.setItem('eduflow_student_active_tab', tab);
+    } catch {}
+    setActiveTabState(tab);
+  };
   const [activeQuiz, setActiveQuiz] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [courses, setCourses] = useState(INITIAL_COURSES);
+
+  useEffect(() => {
+    async function loadStudentCourses() {
+      try {
+        const data = await courseService.getCourses();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map(c => ({
+            id: c.id,
+            code: c.code || 'CS-301',
+            title: c.title,
+            modules: (c.modules || []).map((m, idx) => ({
+              id: m.id || `m_${idx}`,
+              title: m.title,
+              pdfUrl: m.pdfUrl || null,
+              attachmentFileName: m.attachmentFileName || 'Course Notes.pdf',
+              lessons: (m.lessons || []).map((l, lIdx) => ({
+                id: l.id || `l_${lIdx}`,
+                title: l.title,
+                duration: `${l.estimatedMinutes || 30} mins`,
+                xp: l.xpReward || 40,
+                completed: l.isCompleted || false
+              }))
+            }))
+          }));
+          const validCourses = mapped.filter(c => c.modules && c.modules.length > 0);
+          if (validCourses.length > 0) {
+            setCourses(validCourses);
+          }
+        }
+      } catch {
+        // Fall back to INITIAL_COURSES
+      }
+    }
+    loadStudentCourses();
+  }, []);
 
   const profileData = STUDENT_DATA[user?.email] || STUDENT_DATA['student@eduflow.ai'];
   const [profile, setProfile] = useState({ ...profileData });

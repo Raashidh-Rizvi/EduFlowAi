@@ -16,7 +16,20 @@ import { authService } from './services/authService';
 import { ShieldAlert } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState(() => {
+    try {
+      return sessionStorage.getItem('eduflow_active_tab') || 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  });
+
+  const setActiveTab = (tab) => {
+    try {
+      sessionStorage.setItem('eduflow_active_tab', tab);
+    } catch {}
+    setActiveTabState(tab);
+  };
   const [showLogin, setShowLogin] = useState(false);
   const [forceLanding, setForceLanding] = useState(false);
   const [unreadNotifications] = useState(3);
