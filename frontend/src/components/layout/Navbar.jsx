@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Search, Bell, Sparkles, Activity, ShieldCheck, LogOut, Shield, ChevronDown } from 'lucide-react';
 import ThemeToggle from '../common/ThemeToggle';
+import RoleSwitcher from '../common/RoleSwitcher';
 
-export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout }) {
+export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout, onSwitchRole }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   const user = currentUser || {
@@ -67,7 +68,7 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
       padding: '16px 24px',
       margin: '24px 0',
       borderRadius: 'var(--radius-xl)',
-      gap: '24px',
+      gap: '20px',
       flexWrap: 'wrap',
       position: 'relative',
       zIndex: 100
@@ -79,6 +80,14 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', fontWeight: '500' }}>
           {current.subtitle}
         </p>
+      </div>
+
+      {/* Direct Role Redirection Buttons (Student, Instructor, Admin) */}
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <RoleSwitcher 
+          currentRole={user.role} 
+          onSwitchRole={onSwitchRole} 
+        />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -277,6 +286,39 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
                 {user.role}
               </span>
             </div>
+
+            {onSwitchRole && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingTop: '4px', borderTop: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Switch Portal
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                  {['Student', 'Instructor', 'Admin'].map(r => (
+                    <button
+                      key={r}
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        onSwitchRole(r);
+                      }}
+                      style={{
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        fontWeight: user.role === r ? '700' : '500',
+                        borderRadius: 'var(--radius-xs)',
+                        border: '1px solid',
+                        borderColor: user.role === r ? 'var(--primary)' : 'var(--border-subtle)',
+                        backgroundColor: user.role === r ? 'var(--primary-soft)' : 'var(--bg-canvas)',
+                        color: user.role === r ? 'var(--primary)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {onLogout && (
               <button

@@ -28,7 +28,16 @@ import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
 
-export default function Dashboard({ onNavigateTo }) {
+export default function Dashboard({ onNavigateTo, currentUser }) {
+  const userRole = currentUser?.role || (() => {
+    try {
+      return JSON.parse(localStorage.getItem('eduflow_user') || '{}')?.role;
+    } catch {
+      return null;
+    }
+  })();
+  const isAdmin = userRole === 'Admin';
+
   const [loading, setLoading] = useState(true);
   const [courses, setCourses] = useState([]);
   const [summaryKpis, setSummaryKpis] = useState({
@@ -304,19 +313,19 @@ export default function Dashboard({ onNavigateTo }) {
             fontWeight: '800',
             boxShadow: '0 4px 12px rgba(79, 70, 229, 0.35)'
           }}>
-            SJ
+            {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'SJ'}
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <h1 style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', margin: 0 }}>
-                Good morning, <span className="text-gradient">Dr. Sarah</span>
+                Good morning, <span className="text-gradient">{currentUser?.name || 'Dr. Sarah'}</span>
               </h1>
               <span className="glass-badge" style={{ fontSize: '11px', fontWeight: '700', padding: '4px 8px', color: 'var(--primary)' }}>
-                INSTRUCTOR CONSOLE
+                {currentUser?.role === 'Admin' ? 'ADMINISTRATOR CONSOLE' : 'INSTRUCTOR CONSOLE'}
               </span>
             </div>
             <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Here's what's happening across your courses today. Review course mastery, assist at-risk learners, and manage AI assessment drafts.
+              Here's what's happening across your platform today. Review course mastery, assist at-risk learners, and manage AI assessment drafts.
             </p>
           </div>
         </div>
@@ -345,20 +354,22 @@ export default function Dashboard({ onNavigateTo }) {
       {/* ── 1. SECTION 1: INSTRUCTOR SUMMARY KPIS ───────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
         
-        {/* My Courses */}
-        <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(14,165,233,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
-            <BookOpen size={22} />
-          </div>
-          <div>
-            <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
-              {summaryKpis.totalCourses}
+        {/* My Courses (Visible to Instructors, omitted for Administrators) */}
+        {!isAdmin && (
+          <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, rgba(79,70,229,0.15) 0%, rgba(14,165,233,0.1) 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+              <BookOpen size={22} />
             </div>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
-              My Courses
+            <div>
+              <div className="metric-gradient" style={{ fontSize: '28px', fontWeight: '800', lineHeight: '1.1' }}>
+                {summaryKpis.totalCourses}
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', marginTop: '2px' }}>
+                My Courses
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Active Students */}
         <div className="card-premium glass-card-hover" style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: '14px' }}>

@@ -1,479 +1,278 @@
 # EduFlow AI – SE3090 Assignment 1
 ## Integrated Gamified Education Platform with Agentic AI
 
-> **Project vision:** EduFlow AI transforms traditional course delivery into an engaging, game-like learning experience. Students learn through lessons, quizzes, missions and challenges; earn XP, badges and achievements; maintain streaks; compete on leaderboards; and receive adaptive AI-generated learning challenges.
+> **Project vision:** EduFlow AI transforms traditional course delivery into an engaging, game-like learning experience. Students learn through lessons, quizzes, missions and challenges; earn XP, badges and achievements; maintain streaks; compete on leaderboards; and receive adaptive AI-generated learning challenges — all powered by a RAG-based AI knowledge system grounded in actual course materials.
 
-This implementation blueprint is organized around four business components owned by four members. Authentication/authorization and shared platform infrastructure are mandatory cross-cutting capabilities and should not be counted as one of the four main business components.
+> **Documentation start here:** See [INDEX.md](./INDEX.md) for a full navigation guide to all 20 documentation files.
 
 ---
 
-## 1. Core Product Goal
+## 1. The Problem We're Solving
 
-The product is **not simply an LMS with AI**.
+```
+Traditional LMS                        EduFlow AI
+──────────────────────                 ──────────────────────
+📋 PDFs and static content     →       🎮 Gamified learning journey
+😴 No motivation               →       🔥 Streaks, XP, badges, leaderboard
+🤷 Student disengaged          →       🤖 AI tutor available 24/7
+📝 Same quiz for everyone      →       ⚡ Adaptive AI-personalized challenges
+👨‍🏫 Instructor guesses gaps    →       📊 AI detects weak topics automatically
+🗂️ Manual quiz creation        →       ✅ AI generates, instructor approves
+```
 
-The primary learning loop is:
+**The core insight**: Students don't lack intelligence — they lack motivation and the right study experience. EduFlow AI fixes the experience, not the student.
+
+---
+
+## 2. Core Learning Loop
 
 ```mermaid
 flowchart LR
-    A[Learn Lesson] --> B[Practice]
-    B --> C[Quiz / Challenge]
-    C --> D[Earn XP]
-    D --> E[Level / Badge / Streak]
-    E --> F[Leaderboard / Achievement]
-    F --> G[AI Analysis]
-    G --> H[Next Best Challenge]
+    A["📚 Learn Lesson"] --> B["💪 Practice"]
+    B --> C["⚡ Quiz / Challenge"]
+    C --> D["🎯 Earn XP"]
+    D --> E["⭐ Level / Badge / Streak"]
+    E --> F["🏆 Leaderboard / Achievement"]
+    F --> G["🤖 AI Analysis"]
+    G --> H["Next Best Challenge"]
     H --> A
 ```
 
-The AI layer should make the loop adaptive rather than replacing deterministic platform rules.
-
-### Product promise
-
-> **Learn. Play. Compete. Master.**
+The AI layer makes the loop **adaptive** — it identifies what each student struggles with and tailors the next challenge to their specific gaps. The deterministic backend enforces the rules and rewards.
 
 ---
 
-# 2. Team Ownership
+## 3. Team Structure
 
-| Member | Business Component | Main Ownership | Agentic AI Role |
-|---|---|---|---|
-| Member 1 | User & Course Management | Users, roles, courses, modules, enrollments, profiles | Coordinator / Planner Agent |
-| Member 2 | Assessments & Quizzes | Quizzes, questions, submissions, grading | Action / Tool Agent |
-| Member 3 | Gamification & Engagement | XP, badges, streaks, achievements, leaderboards | Domain Analysis Agent |
-| Member 4 | Analytics & Reporting | Analytics, reporting, external integration, audit/validation | Validation / Safety Agent |
+| Member | Business Component | Core Ownership | AI Agent |
+|--------|------------------|----------------|----------|
+| **Member 1** | User & Course Management | Users, roles, courses, modules, lessons, enrollments, document upload | Coordinator / Planner Agent |
+| **Member 2** | Assessment & Quiz Engine | Quizzes, questions, quiz attempts, auto-grading, question bank, HITL review | Action / Tool Agent |
+| **Member 3** | Gamification & Engagement | XP ledger, levels, badges, streaks, challenges, leaderboards | Domain Analysis Agent |
+| **Member 4** | Analytics, Reporting & AI Validation | Analytics, reporting, HITL approval queue, audit logs, notifications | Validation / Safety Agent |
 
-### Shared mandatory responsibilities
+### Shared Responsibilities (All Members)
 
-All members contribute to:
-- JWT authentication and RBAC integration
-- API standards
-- PostgreSQL migrations
-- React/Flutter integration contracts
-- automated testing
-- documentation
-- error handling
-- audit logging
-- CI/CD
-- secure configuration
+```text
+✓ JWT authentication and RBAC integration
+✓ API standards (DTOs, error codes, pagination)
+✓ PostgreSQL migrations for owned tables
+✓ React / Flutter integration contracts
+✓ Unit and integration tests
+✓ Documentation of owned component
+✓ Error handling and audit logging
+✓ CI/CD pipeline contribution
+✓ Secure configuration (no hardcoded secrets)
+```
 
 ---
 
-# 3. High-Level System Architecture
+## 4. System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Clients
-        R[React Web App]
-        F[Flutter Mobile App]
+    subgraph Clients["Client Applications"]
+        R["🖥️ React 18 + Vite\nInstructor / Admin Web\nPort 2174"]
+        F["📱 Flutter 3.x\nStudent Mobile App"]
     end
 
-    subgraph Backend["ASP.NET Core Backend"]
-        G[API Gateway / Controllers]
-        A[Authentication & Authorization]
-        U[User & Course Module]
-        Q[Assessment Module]
-        GM[Gamification Module]
-        AN[Analytics & Reporting Module]
-        E[Domain Events]
-        N[Notification Module]
+    subgraph Backend["ASP.NET Core 8.0 Web API (Ports 5000/5001)"]
+        AUTH["🔐 Auth & RBAC"]
+        C1["Component 1\nUser & Course"]
+        C2["Component 2\nAssessment"]
+        C3["Component 3\nGamification"]
+        C4["Component 4\nAnalytics & AI"]
+        SIGNAL["📡 SignalR Hubs\n(Real-time)"]
     end
 
-    subgraph AI["Agentic AI Orchestration"]
-        P[Coordinator / Planner Agent]
-        T[Action / Tool Agent]
-        D[Domain Analysis Agent]
-        V[Validation / Safety Agent]
-        O[Human Approval Gate]
+    subgraph AI["AI Microservice — Python + LangGraph (Port 8000)"]
+        COORD["Coordinator Agent"]
+        TOOL["Tool Agent"]
+        DOMAIN["Analysis Agent"]
+        VAL["Validation Agent"]
+        RAG["RAG Engine\n(pgvector)"]
     end
 
-    DB[(PostgreSQL)]
-    C[(Redis Cache)]
-    EXT[Third-Party APIs]
-    MSG[Email / SMS / Push Provider]
+    DB[("🐘 PostgreSQL 16\n+ pgvector")]
+    REDIS[("⚡ Redis 7")]
 
-    R --> G
-    F --> G
-    G --> A
-    G --> U
-    G --> Q
-    G --> GM
-    G --> AN
-
-    U --> DB
-    Q --> DB
-    GM --> DB
-    AN --> DB
-    GM --> C
-    AN --> C
-
-    G --> P
-    P --> T
-    P --> D
-    T --> Q
-    D --> GM
-    D --> AN
-    T --> V
-    D --> V
-    V --> O
-    O --> G
-
-    E --> U
-    E --> Q
-    E --> GM
-    E --> AN
-    E --> N
-
-    N --> MSG
-    AN --> EXT
+    R --> Backend
+    F --> Backend
+    Backend --> DB
+    Backend --> REDIS
+    Backend --> AI
+    AI --> RAG
+    RAG --> DB
+    Backend --> SIGNAL
+    SIGNAL --> F
+    SIGNAL --> R
 ```
 
 ---
 
-# 4. Integration Principle
+## 5. Technology Stack
 
-The four components should behave as a **modular monolith first** unless the assignment specifically requires microservices.
-
-Recommended internal structure:
-
-```text
-React Web
-      \
-       --> ASP.NET Core API --> Application Layer
-      /                            |
-Flutter                            +--> User/Course
-                                   +--> Assessment
-                                   +--> Gamification
-                                   +--> Analytics
-                                   +--> AI Orchestration
-                                   |
-                                   +--> PostgreSQL
-                                   +--> Redis
-                                   +--> External APIs
-```
-
-This avoids unnecessary operational complexity while preserving clean boundaries for future extraction.
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| Backend | ASP.NET Core | 8.0 | REST API, SignalR, RBAC |
+| Database | PostgreSQL + pgvector | 16 | Relational data + vector embeddings |
+| Cache | Redis | 7.x | Leaderboards, hot-path cache |
+| Web Frontend | React + Vite + Zustand | 18 | Instructor & Admin web portal |
+| Mobile | Flutter + Riverpod | 3.x | Student learning app |
+| AI Service | Python + FastAPI + LangGraph | 3.11 | Multi-agent AI orchestration |
+| ORM | Entity Framework Core | 8 | Database access + migrations |
+| Auth | JWT (RS256) + Refresh Tokens | — | Stateless authentication |
+| Real-time | ASP.NET Core SignalR | — | XP toasts, badge alerts |
+| Vector Search | pgvector (HNSW index) | — | Semantic document retrieval |
+| LLM | OpenAI GPT-4o / local | — | Quiz generation, tutoring |
+| CI/CD | GitHub Actions | — | Automated test + build |
 
 ---
 
-# 5. Core End-to-End Workflow
+## 6. Key Architectural Principles
 
-## Example objective
+### 6.1 Deterministic First, AI Second
 
-A student submits:
+```text
+Deterministic backend (core rules, XP math, levels, badges)
+                    +
+         Gamification engine (events, streaks, missions)
+                    +
+            Agentic AI (LangGraph recommendations)
+                    +
+    Human-in-the-Loop review (instructor approval)
+```
 
-> "I want to improve my Python programming and reach the next level."
+> **Mandate**: AI generates *drafts*. Instructors *approve*. Backend *enforces* rules.
 
-### Workflow
+### 6.2 AI Safety Boundary
 
-```mermaid
-sequenceDiagram
-    actor Student
-    participant Flutter
-    participant API as ASP.NET Core
-    participant Planner as Coordinator Agent
-    participant Analysis as Domain Analysis Agent
-    participant Action as Action/Tool Agent
-    participant Validation as Validation Agent
-    participant Instructor
-    participant Gamification
-    participant DB as PostgreSQL
+The AI agents must NEVER directly:
+- Assign grades or modify scores
+- Write to the database
+- Award XP or badges
+- Publish content without instructor approval
+- Access data from courses the student is not enrolled in
 
-    Student->>Flutter: Submit learning objective
-    Flutter->>API: POST /ai/objectives
-    API->>Planner: Objective + student context
-    Planner->>Planner: Build structured execution plan
+### 6.3 Human-in-the-Loop (HITL)
 
-    Planner->>Analysis: Analyze progress and weak areas
-    Analysis->>DB: Read progress / engagement data
-    DB-->>Analysis: Student context
-    Analysis-->>Planner: Skills + recommended difficulty
+```text
+Every AI-generated quiz question:
+    Draft → Validation → Instructor Review → Approve/Edit/Reject → Publish
 
-    Planner->>Action: Generate/execute appropriate quiz or challenge
-    Action->>DB: Read course/question content
-    DB-->>Action: Content context
-    Action-->>Planner: Structured candidate challenge
+Every AI-generated study plan or challenge:
+    Same pipeline
 
-    Planner->>Validation: Validate candidate output
-    Validation->>Validation: Schema + business-rule + safety checks
+AI tutor chat responses:
+    Auto-approved (informational, no grading impact)
 
-    alt Human approval required
-        Validation->>Instructor: Pending approval
-        Instructor->>Validation: Approve / Reject / Revise
-    end
-
-    Validation-->>API: Validated result
-    API-->>Flutter: Challenge available
-    Student->>Flutter: Complete challenge
-    Flutter->>API: Submit result
-    API->>Gamification: Quiz/challenge completed event
-    Gamification->>DB: Award XP / badge / streak
-    Gamification-->>Flutter: Updated rewards
+AI document summaries:
+    Auto-approved (read-only)
 ```
 
 ---
 
-# 6. Domain Events
+## 7. User Roles Summary
 
-The modules should communicate primarily through explicit domain events.
+| Role | Interface | Key Power |
+|------|-----------|-----------|
+| **Admin** | React Web Portal | Full platform control, user management |
+| **Instructor** | React Web Portal | Course authoring, AI quiz review, student monitoring |
+| **Student** | Flutter Mobile App | Learning, quizzes, AI tutor, XP/badges, leaderboard |
 
-Recommended events:
-
-```text
-UserRegistered
-CourseCreated
-StudentEnrolled
-LessonCompleted
-QuizStarted
-QuizSubmitted
-QuizPassed
-QuizPerfectScore
-ChallengeCompleted
-XPGranted
-LevelUp
-BadgeUnlocked
-StreakUpdated
-CompetitionJoined
-LeaderboardChanged
-AIObjectiveSubmitted
-AIPlanCreated
-AIGeneratedContentCreated
-AIValidationPassed
-AIValidationFailed
-ApprovalRequested
-ApprovalCompleted
-NotificationRequested
-ReportGenerated
-```
-
-### Event envelope
-
-```json
-{
-  "eventId": "uuid",
-  "eventType": "QuizCompleted",
-  "occurredAt": "2026-08-16T18:30:00Z",
-  "actorId": "uuid",
-  "aggregateId": "uuid",
-  "version": 1,
-  "payload": {}
-}
-```
-
-Rules:
-1. Events must be immutable.
-2. Handlers must be idempotent.
-3. Event consumers must not trust client-provided XP.
-4. Business rules remain server-side.
+**Critical rule**: Authorization is enforced **server-side by ASP.NET Core**. Frontend role checks are UI-only.
 
 ---
 
-# 7. Shared Security Architecture
-
-### Authentication
-
-- JWT access token
-- refresh token
-- password hashing
-- role-based authorization
-- account status checks
-- token rotation
-
-### Roles
+## 8. Database Entities Overview
 
 ```text
-Student
-Instructor
-Admin
-```
-
-### Authorization matrix
-
-| Capability | Student | Instructor | Admin |
-|---|---:|---:|---:|
-| View published courses | ✓ | ✓ | ✓ |
-| Enroll | ✓ | — | — |
-| Take quiz | ✓ | — | — |
-| View own progress | ✓ | — | ✓ |
-| Manage course | — | ✓ | ✓ |
-| Manage quizzes | — | ✓ | ✓ |
-| Approve AI content | — | ✓ | ✓ |
-| Configure gamification rules | — | Limited | ✓ |
-| View system analytics | Limited | ✓ | ✓ |
-| Manage users/roles | — | — | ✓ |
-
-Never implement authorization only in React/Flutter. It must be enforced by ASP.NET Core.
-
----
-
-# 8. Database Ownership
-
-Each member owns the schema objects for their component, but cross-component foreign keys and shared audit conventions are agreed by the team.
-
-Suggested ownership:
-
-### Member 1
-
-```text
-users
-roles
-user_roles
-profiles
-courses
-modules
-lessons
-enrollments
-```
-
-### Member 2
-
-```text
-quizzes
-questions
-answers
-submissions
-submission_answers
-grades
-```
-
-### Member 3
-
-```text
-badges
-achievements
-user_points
-xp_transactions
-streaks
-leaderboards
-leaderboard_entries
-gamification_rules
-```
-
-### Member 4
-
-```text
-analytics_snapshots
-reports
-report_history
-ai_workflows
-ai_workflow_steps
-ai_approvals
-audit_logs
-integration_logs
-notifications
+Member 1 owns:        Member 2 owns:        Member 3 owns:        Member 4 owns:
+──────────────        ──────────────        ──────────────        ──────────────
+users                 quizzes               xp_transactions       study_plans
+roles                 questions             user_points           ai_workflows
+user_roles            question_options      badges                ai_approvals
+courses               quiz_submissions      user_badges           audit_logs
+modules               submission_answers    streaks               notifications
+lessons                                     challenges            reports
+enrollments                                 student_challenges
+course_documents
+document_chunks
 ```
 
 ---
 
-# 9. Repository Structure
-
-Recommended monorepo:
+## 9. Core Domain Events
 
 ```text
-eduflow-ai/
-├── backend/
-│   ├── EduFlow.Api/
-│   ├── EduFlow.Application/
-│   ├── EduFlow.Domain/
-│   ├── EduFlow.Infrastructure/
-│   └── EduFlow.Tests/
-│
-├── web/
-│   └── eduflow-admin/
-│
-├── mobile/
-│   └── eduflow-student/
-│
-├── ai/
-│   ├── agents/
-│   ├── tools/
-│   ├── schemas/
-│   └── tests/
-│
-├── docs/
-│   ├── architecture/
-│   ├── api/
-│   ├── components/
-│   └── ai/
-│
-├── docker/
-├── .github/
-└── README.md
+UserRegistered          → Gamification initializes profile (C1 → C3)
+LessonCompleted         → XP awarded, streak updated (C1 → C3)
+QuizSubmitted           → XP, badges, streak, analytics (C2 → C3, C4)
+QuizPerfectScore        → Bonus XP, PERFECT_SCORE badge (C2 → C3)
+XPGranted               → Analytics tracks engagement (C3 → C4)
+LevelUp                 → Animation in Flutter, analytics (C3 → C4)
+BadgeUnlocked           → Notification, analytics (C3 → C4)
+AtRiskStudentDetected   → Instructor alert, remedial challenge (C4 → C1, C3)
+AIWorkflowCompleted     → Approval queue update (C4 → C2)
 ```
 
 ---
 
-# 10. Implementation Order
+## 10. Implementation Order (10 Sprints)
 
-## Sprint 1
-Foundation, Git, Docker, PostgreSQL, ASP.NET Core, React, Flutter, authentication.
-
-## Sprint 2
-Users, roles, profiles, courses, modules, lessons, enrollment.
-
-## Sprint 3
-Quiz engine, grading, attempts, question management.
-
-## Sprint 4
-XP, levels, badges, achievements, streak engine.
-
-## Sprint 5
-Leaderboards, challenges and engagement dashboard.
-
-## Sprint 6
-Analytics, reports, notifications and third-party integration.
-
-## Sprint 7
-AI coordinator, tool agent, domain analysis agent.
-
-## Sprint 8
-Validation/safety agent, human approval and audit trail.
-
-## Sprint 9
-End-to-end workflow integration, real-time events, performance.
-
-## Sprint 10
-Testing, security, deployment, documentation and final demo.
+| Sprint | Focus |
+|--------|-------|
+| 1 | Foundation: Git, Docker, PostgreSQL, ASP.NET Core 8, React setup, Flutter setup, JWT auth |
+| 2 | Users, roles, profiles, courses, modules, lessons, enrollment |
+| 3 | Quiz engine: questions, attempts, grading, attempt limits, timing |
+| 4 | XP ledger, levels, badges, achievements, streak engine |
+| 5 | Leaderboards (Redis), challenges, daily missions, engagement dashboard |
+| 6 | Analytics, reports, notifications, at-risk detection |
+| 7 | AI coordinator, tool agent, domain analysis agent, RAG pipeline |
+| 8 | Validation/safety agent, HITL approval, audit trail, AI chat |
+| 9 | End-to-end integration, real-time SignalR events, performance tuning |
+| 10 | Testing (unit + integration + E2E), security hardening, deployment, documentation |
 
 ---
 
-# 11. Definition of Done
+## 11. Definition of Done
 
-A component is not complete when its API "works."
+A component is **NOT complete** when its API "works."
 
-A component is complete when:
-
-- DB schema is migrated
-- API endpoints are implemented
-- validation exists
-- authorization exists
-- React page exists
-- Flutter page exists where applicable
-- unit tests exist
-- integration tests exist
-- errors are handled
-- audit requirements are covered
-- API documentation is updated
-- component integrates with domain events
-- AI responsibility is demonstrated
-- README/component document is updated
-
----
-
-# 12. Important Design Rule
-
-AI should **recommend, reason, generate and coordinate**.
-
-Deterministic backend code should **authorize, validate, calculate, persist and enforce business rules**.
-
-For example:
+A component is **COMPLETE** when:
 
 ```text
-AI: "Award 300 XP."
-        ↓
-Backend rule:
-"Maximum XP for this challenge type = 150."
-        ↓
-Backend rejects/normalizes invalid value.
+✓ Database schema migrated (EF Core migrations)
+✓ API endpoints implemented with proper DTOs
+✓ Input validation on all endpoints
+✓ Authorization enforced (role + ownership)
+✓ React page or component exists for instructor/admin actions
+✓ Flutter screen exists where student-facing
+✓ Unit tests cover all business rules
+✓ Integration tests cover critical flows
+✓ Errors handled gracefully (no raw 500s to client)
+✓ Audit logging for sensitive actions
+✓ API documented in Swagger
+✓ Component integrates via domain events
+✓ AI responsibility demonstrated with HITL
+✓ This component's doc file is updated
 ```
 
-Do not let an LLM become the source of truth for grades, XP, permissions, leaderboards, eligibility, or database mutations.
+---
+
+## 12. Important Design Rule
+
+```text
+AI should:    recommend, reason, generate, coordinate
+Backend should: authorize, validate, calculate, persist, enforce
+
+Example:
+    AI: "Award 500 XP for this challenge."
+              ↓
+    Backend rule: "Maximum challenge XP = 150."
+              ↓
+    Backend normalizes to 150 XP and logs auto-fix.
+    
+The LLM is never the source of truth for grades, XP,
+permissions, leaderboard scores, or database mutations.
+```

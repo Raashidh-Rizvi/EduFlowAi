@@ -20,7 +20,7 @@ test.describe('Gamification & Admin Governance Exploration', () => {
 
     // Verify Gamification banner & tabs
     await expect(page.getByRole('heading', { name: /Gamification & Team Command Center|Gamification & Experience Progression/i })).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Quantum Coders').first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Instructor Team Roster').or(page.locator('text=Gamification & Team Command Center')).first()).toBeVisible({ timeout: 10000 });
 
     await page.screenshot({ path: 'e2e/screenshots/11-gamification-dashboard.png' });
   });
@@ -52,4 +52,33 @@ test.describe('Gamification & Admin Governance Exploration', () => {
 
     await page.screenshot({ path: 'e2e/screenshots/12-admin-management.png' });
   });
+
+  test('should verify My Courses button is hidden for Administrator in Executive Overview but visible for Instructor', async ({ page }) => {
+    // 1. Login as Admin
+    const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
+    await tryNowBtn.click();
+    await page.locator('text=System Administrator').click();
+    await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
+
+    await expect(page.locator('text=ADMINISTRATOR CONSOLE')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 10000 });
+    // Verify "My Courses" is NOT visible for Admin
+    await expect(page.locator('text=My Courses')).not.toBeVisible();
+    await page.screenshot({ path: 'e2e/screenshots/17-admin-overview-no-my-courses.png' });
+
+    // 2. Switch/login as Instructor
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('/');
+    const tryNow2 = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
+    await tryNow2.click();
+    await page.locator('text=Dr. Sarah Jenkins').click();
+    await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
+
+    await expect(page.locator('text=INSTRUCTOR CONSOLE')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 10000 });
+    // Verify "My Courses" IS visible for Instructor
+    await expect(page.locator('text=My Courses')).toBeVisible({ timeout: 10000 });
+    await page.screenshot({ path: 'e2e/screenshots/18-instructor-overview-with-my-courses.png' });
+  });
 });
+

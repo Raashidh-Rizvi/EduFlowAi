@@ -1,8 +1,9 @@
 import React from 'react';
 import { ArrowRight, BrainCircuit, Users, Bot, CheckCircle2, TrendingUp, Clock, Target, Star, PlayCircle, Smartphone } from 'lucide-react';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import RoleSwitcher from '../../components/common/RoleSwitcher';
 
-export default function LandingPage({ onLoginClick, currentUser }) {
+export default function LandingPage({ onLoginClick, currentUser, onSwitchRole }) {
   return (
     <div style={{
       minHeight: '100vh',
@@ -43,7 +44,9 @@ export default function LandingPage({ onLoginClick, currentUser }) {
         paddingTop: '24px',
         paddingBottom: '24px',
         position: 'relative',
-        zIndex: 10
+        zIndex: 10,
+        gap: '16px',
+        flexWrap: 'wrap'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <BrainCircuit size={28} color="var(--primary)" />
@@ -52,25 +55,27 @@ export default function LandingPage({ onLoginClick, currentUser }) {
           </span>
         </div>
 
-        <nav className="glass-badge" style={{ display: 'none', md: 'flex', gap: '32px', padding: '12px 32px' }}>
-          <a href="#home" style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-main)' }}>Home</a>
-          <a href="#results" style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-muted)' }}>Results</a>
-          <a href="#features" style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-muted)' }}>Why Choose Us</a>
-        </nav>
+        {/* Direct Role Redirection Switcher */}
+        <RoleSwitcher 
+          currentRole={currentUser?.role || null} 
+          onSwitchRole={onSwitchRole} 
+        />
 
-        <button 
-          onClick={onLoginClick}
-          className="btn-primary" 
-          style={{ 
-            borderRadius: 'var(--radius-full)', 
-            padding: '12px 24px', 
-            fontSize: '14px',
-            background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
-            border: 'none',
-            boxShadow: 'var(--shadow-primary-sm)'
-          }}>
-          {currentUser ? 'Return to Console' : 'Try Now'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button 
+            onClick={onLoginClick}
+            className="btn-primary" 
+            style={{ 
+              borderRadius: 'var(--radius-full)', 
+              padding: '12px 24px', 
+              fontSize: '14px',
+              background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)',
+              border: 'none',
+              boxShadow: 'var(--shadow-primary-sm)'
+            }}>
+            {currentUser ? 'Return to Console' : 'Try Now'}
+          </button>
+        </div>
       </header>
 
       {/* Hero Section */}

@@ -60,7 +60,7 @@ export default function Insights({ onTriggerRemedial }) {
         setAtRiskStudents(atRisk);
       }
     } catch (err) {
-      console.error('Failed to load telemetry insights:', err);
+      alert(err.friendlyMessage || 'We were unable to load the latest telemetry insights. Please try refreshing the page.');
     } finally {
       setLoading(false);
       setRefreshing(false);

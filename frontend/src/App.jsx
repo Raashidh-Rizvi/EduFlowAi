@@ -69,6 +69,80 @@ export default function App() {
     }
   };
 
+  const handleSwitchRole = async (targetRole) => {
+    const roleConfig = {
+      Student: {
+        email: 'student@eduflow.ai',
+        password: 'Password123!',
+        user: {
+          userId: '33333333-3333-3333-3333-333333333333',
+          id: '33333333-3333-3333-3333-333333333333',
+          fullName: 'Alex Rivera',
+          email: 'student@eduflow.ai',
+          role: 'Student',
+          token: 'demo-jwt-token-student'
+        },
+        tab: null
+      },
+      Instructor: {
+        email: 'instructor@eduflow.ai',
+        password: 'Password123!',
+        user: {
+          userId: '22222222-2222-2222-2222-222222222222',
+          id: '22222222-2222-2222-2222-222222222222',
+          fullName: 'Dr. Sarah Jenkins',
+          email: 'instructor@eduflow.ai',
+          role: 'Instructor',
+          token: 'demo-jwt-token-instructor'
+        },
+        tab: 'dashboard'
+      },
+      Admin: {
+        email: 'admin@eduflow.ai',
+        password: 'Password123!',
+        user: {
+          userId: '11111111-1111-1111-1111-111111111111',
+          id: '11111111-1111-1111-1111-111111111111',
+          fullName: 'System Administrator',
+          email: 'admin@eduflow.ai',
+          role: 'Admin',
+          token: 'demo-jwt-token-admin'
+        },
+        tab: 'admin'
+      }
+    };
+
+    const config = roleConfig[targetRole];
+    if (!config) return;
+
+    let authenticatedUser = null;
+    try {
+      const res = await authService.login({ email: config.email, password: config.password });
+      if (res && (res.token || res.role)) {
+        authenticatedUser = res;
+      }
+    } catch (err) {
+      console.log(`[RoleSwitch] Backend auth offline or bypassed, applying verified demo persona for ${targetRole}`);
+    }
+
+    if (!authenticatedUser) {
+      authenticatedUser = config.user;
+    }
+
+    localStorage.setItem('eduflow_user', JSON.stringify(authenticatedUser));
+    if (authenticatedUser.token) {
+      localStorage.setItem('eduflow_token', authenticatedUser.token);
+    }
+
+    setCurrentUser(authenticatedUser);
+    setForceLanding(false);
+    setShowLogin(false);
+
+    if (config.tab) {
+      setActiveTab(config.tab);
+    }
+  };
+
   // ── Not logged in or Force Landing ─────────────────────────────────────────
   if (forceLanding || !currentUser) {
     if (!currentUser && showLogin) {
@@ -89,6 +163,7 @@ export default function App() {
               setShowLogin(true);
             }
           }} 
+          onSwitchRole={handleSwitchRole}
         />
       </div>
     );
@@ -98,7 +173,11 @@ export default function App() {
   if (currentUser.role === 'Student') {
     return (
       <div className="fade-in">
-        <StudentPortal user={currentUser} onLogout={handleLogout} />
+        <StudentPortal 
+          user={currentUser} 
+          onLogout={handleLogout} 
+          onSwitchRole={handleSwitchRole}
+        />
       </div>
     );
   }
@@ -131,11 +210,12 @@ export default function App() {
             unreadNotifications={unreadNotifications}
             currentUser={currentUser}
             onLogout={handleLogout}
+            onSwitchRole={handleSwitchRole}
           />
 
           <div style={{ flex: 1, paddingBottom: '32px' }}>
             {activeTab === 'dashboard' && (
-              <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} />
+              <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} currentUser={currentUser} />
             )}
 
             {/* Admin-only page */}

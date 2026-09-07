@@ -272,13 +272,9 @@ def tool_get_content_by_scope(params: Dict[str, Any]) -> Dict[str, Any]:
         "scope_type": scope_type,
         "scope_id": scope_id,
         "title": topic_name,
-        "excerpts": [
-            "B-Tree index leaf nodes contain sorted tuples pointing to table heap block offsets.",
-            "PostgreSQL composite indexes require filtering on the leading column (leftmost prefix) to perform index range scans.",
-            "Covering indexes with INCLUDE clauses allow satisfying queries without visiting table data blocks (Index Only Scan)."
-        ],
-        "learning_objectives": ["LO-01: Understand Leftmost Prefix Rule", "LO-02: Contrast Index Scan vs Seq Scan", "LO-03: Covering Index Optimization"],
-        "source_hash": f"sha256-{uuid.uuid4().hex[:12]}"
+        "excerpts": [],
+        "learning_objectives": [],
+        "source_hash": None
     }
 
     try:
@@ -307,12 +303,7 @@ def tool_get_learning_objectives(params: Dict[str, Any]) -> Dict[str, Any]:
     - Enables alignment of generated questions with formal academic competency targets.
     """
     return {
-        "objectives": [
-            {"id": "LO-01", "description": "Understand multi-column index selectivity and leftmost prefix rule"},
-            {"id": "LO-02", "description": "Analyze EXPLAIN ANALYZE execution costs and buffer hits"},
-            {"id": "LO-03", "description": "Apply Dependency Inversion Principle with domain repository interfaces"},
-            {"id": "LO-04", "description": "Implement deterministic multi-agent guard rails and invariant validation"}
-        ]
+        "objectives": []
     }
 
 
@@ -326,11 +317,7 @@ def tool_get_existing_questions(params: Dict[str, Any]) -> Dict[str, Any]:
     scope_id = (params or {}).get("scope_id") or "88888888-8888-8888-8888-888888888881"
 
     fallback = {
-        "existing_questions": [
-            "Which index configuration best optimizes multi-column WHERE clause filtering in PostgreSQL?",
-            "What is the fundamental dependency rule of Clean Architecture?",
-            "How does PostgreSQL EXPLAIN ANALYZE evaluate execution cost matrices?"
-        ]
+        "existing_questions": []
     }
 
     try:

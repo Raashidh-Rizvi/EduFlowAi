@@ -188,8 +188,7 @@ export default function Gamification() {
         showToast(res?.message || 'Failed to create team');
       }
     } catch (err) {
-      console.error(err);
-      showToast('Error creating team');
+      showToast(err.friendlyMessage || 'An unexpected error occurred while creating the team.');
     } finally {
       setCreatingTeam(false);
     }

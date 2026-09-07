@@ -13,7 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    connectionString = "Host=ep-empty-bird-ax89v5us-pooler.c-4.us-east-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_xMTIqYu1Vrn4;SSL Mode=Require;Trust Server Certificate=true";
+    connectionString = "Host=ep-empty-bird-ax89v5us.c-4.us-east-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_xMTIqYu1Vrn4;SSL Mode=Require;Trust Server Certificate=true;Timeout=30;Command Timeout=30;";
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -157,6 +157,16 @@ if (app.Environment.IsDevelopment())
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "EduFlow AI API v1");
     });
 }
+
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new { message = "An unexpected server error occurred. Please try again later." });
+    });
+});
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();

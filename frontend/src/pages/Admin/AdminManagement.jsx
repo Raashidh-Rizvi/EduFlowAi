@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '../../services/api';
 import { 
   Shield, 
   Users, 
@@ -25,11 +26,30 @@ export default function AdminManagement() {
   const [searchFilter, setSearchFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
 
-  const [usersList, setUsersList] = useState([
-    { id: '11111111-1111-1111-1111-111111111111', name: 'System Administrator', email: 'admin@eduflow.ai', role: 'Admin', status: 'Active', xp: 'N/A', joined: '2026-08-01' },
-    { id: '22222222-2222-2222-2222-222222222222', name: 'Dr. Sarah Jenkins', email: 'instructor@eduflow.ai', role: 'Instructor', status: 'Active', xp: 'N/A', joined: '2026-08-05' },
-    { id: '33333333-3333-3333-3333-333333333333', name: 'Alex Rivera', email: 'student@eduflow.ai', role: 'Student', status: 'Active', xp: '0 XP', joined: '2026-08-10' }
-  ]);
+  const [usersList, setUsersList] = useState([]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const response = await api.get('/admin/users');
+      // Map API response to match UI format
+      const mapped = response.data.map(u => ({
+        id: u.id,
+        name: u.fullName,
+        email: u.email,
+        role: u.role,
+        status: u.isActive ? 'Active' : 'Suspended',
+        xp: `${u.totalXp} XP`,
+        joined: new Date(u.createdAt).toISOString().split('T')[0]
+      }));
+      setUsersList(mapped);
+    } catch (err) {
+      console.warn('Failed to fetch users:', err);
+    }
+  };
 
   const [systemConfig, setSystemConfig] = useState({
     globalXpMultiplier: 1.0,
@@ -40,23 +60,22 @@ export default function AdminManagement() {
     requireInstructorHitlApproval: true
   });
 
-  const handleToggleUserStatus = (id) => {
-    setUsersList(prev => prev.map(u => {
-      if (u.id === id) {
-        const newStatus = u.status === 'Active' ? 'Suspended' : 'Active';
-        return { ...u, status: newStatus };
-      }
-      return u;
-    }));
+  const handleToggleUserStatus = async (id) => {
+    try {
+      await api.post(`/admin/users/${id}/toggle-status`);
+      fetchUsers();
+    } catch (err) {
+      console.warn('Failed to toggle user status:', err);
+    }
   };
 
-  const handleChangeRole = (id, newRole) => {
-    setUsersList(prev => prev.map(u => {
-      if (u.id === id) {
-        return { ...u, role: newRole };
-      }
-      return u;
-    }));
+  const handleChangeRole = async (id, newRole) => {
+    try {
+      await api.post(`/admin/users/${id}/change-role`, { newRole });
+      fetchUsers();
+    } catch (err) {
+      console.warn('Failed to change user role:', err);
+    }
   };
 
   const filteredUsers = usersList.filter(u => {
@@ -201,9 +220,18 @@ export default function AdminManagement() {
               </select>
             </div>
 
-            <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-              Showing {filteredUsers.length} of {usersList.length} Accounts
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                Showing {filteredUsers.length} of {usersList.length} Accounts
+              </span>
+              <button 
+                onClick={() => alert('Add User Modal will open here. You can add Instructors or Students.')} 
+                className="btn-primary"
+                style={{ padding: '6px 12px', fontSize: '12px', gap: '6px' }}
+              >
+                + Add User
+              </button>
+            </div>
           </div>
 
           {/* User Table */}

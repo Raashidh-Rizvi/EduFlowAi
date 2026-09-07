@@ -20,6 +20,9 @@ from dotenv import load_dotenv
 # Execute dotenv loading immediately upon module import
 load_dotenv()
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 # Import typing annotations for flexible dictionaries and optional values
 from typing import Dict, Any, Optional
 # Import FastAPI core framework, HTTP exception handler, request body extractor, and dependency injector
@@ -133,7 +136,8 @@ def get_agents_topology(_: None = Depends(verify_internal_token)):
     try:
         return AgentTopologyRegistry.get_topology()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error getting topology: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving the agent topology.")
 
 
 @app.get("/tools/registry")
@@ -147,7 +151,8 @@ def get_tool_registry(_: None = Depends(verify_internal_token)):
             "tools": tool_registry.list_tools()
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error getting tool registry: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving the tool registry.")
 
 
 # =============================================================================
@@ -162,7 +167,8 @@ def orchestrate_study_plan(request: StudyPlanRequest, _: None = Depends(verify_i
     try:
         return StudyPlanOrchestrator.run_pipeline(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error orchestrating study plan: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while creating the study plan.")
 
 
 @app.post("/generate-adaptive-challenge", response_model=AdaptiveChallengeResponse)
@@ -173,7 +179,8 @@ def generate_adaptive_challenge(request: AdaptiveChallengeRequest, _: None = Dep
     try:
         return AdaptiveChallengeOrchestrator.generate_challenge(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error generating adaptive challenge: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the adaptive challenge.")
 
 
 # =============================================================================
@@ -189,7 +196,8 @@ def generate_diagnostic_quiz(request: DiagnosticQuizRequest, _: None = Depends(v
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error generating quiz: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the quiz.")
 
 
 @app.post("/api/v1/ai/questions/{question_id}/regenerate")
@@ -215,7 +223,8 @@ def regenerate_single_question(question_id: str, request: Dict[str, Any] = Body(
         from graph.workflow import quiz_agent
         return quiz_agent.regenerate_single_question(req_obj)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error regenerating question: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while regenerating the question.")
 
 
 @app.post("/api/v1/ai/quiz-generation/{workflow_id}/regenerate", response_model=DiagnosticQuizResponse)
@@ -226,7 +235,8 @@ def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest, _
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error regenerating quiz workflow: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while regenerating the quiz workflow.")
 
 
 # -----------------------------------------------------------------------------
@@ -244,7 +254,8 @@ def categorize_slide_topics(request: SlideCategorizeRequest, _: None = Depends(v
         res["audit_log"] = log
         return res
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error categorizing slide topics: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while categorizing slide topics.")
 
 
 @app.post("/api/v1/ai/slides/generate-quiz", response_model=DiagnosticQuizResponse)
@@ -255,7 +266,8 @@ def generate_slide_rag_quiz(request: DiagnosticQuizRequest, _: None = Depends(ve
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error generating slide RAG quiz: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the slide quiz.")
 
 
 @app.post("/api/v1/ai/quizzes/auto-grade", response_model=QuizAutoGradeResponse)
@@ -272,7 +284,8 @@ def auto_grade_quiz_submission(request: QuizAutoGradeRequest, _: None = Depends(
         )
         return res
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error auto-grading quiz: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while evaluating the quiz submission.")
 
 
 # =============================================================================
@@ -287,7 +300,8 @@ def analyze_retention(request: RetentionAnalysisRequest, _: None = Depends(verif
     try:
         return RetentionOrchestrator.analyze_retention(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error analyzing retention: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while analyzing retention.")
 
 
 @app.post("/ai-coach-chat", response_model=CoachChatResponse)
@@ -298,7 +312,8 @@ def ai_coach_chat(request: CoachChatRequest, _: None = Depends(verify_internal_t
     try:
         return AiCoachOrchestrator.answer_student_query(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in AI coach chat: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while connecting to the AI Coach.")
 
 
 @app.post("/api/v1/ai/next-best-action", response_model=NextBestActionResponse)
@@ -312,7 +327,8 @@ def get_next_best_action(request: NextBestActionRequest, _: None = Depends(verif
         res, _ = nba_agent.evaluate_next_action(request)
         return res
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error getting next best action: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while determining the next action.")
 
 
 # =============================================================================
@@ -338,7 +354,8 @@ def execute_langgraph_workflow(
             requires_human_approval=requires_human_approval
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error executing LangGraph workflow: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while executing the workflow.")
 
 
 @app.post("/workflows/{workflow_id}/decision", response_model=WorkflowDecisionResponse)
@@ -364,7 +381,8 @@ def submit_workflow_decision(workflow_id: str, request: WorkflowDecisionRequest,
             message=f"Workflow state successfully updated to '{updated_state.status}'."
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logging.error(f"Error submitting workflow decision: {e}")
+        raise HTTPException(status_code=400, detail="An error occurred while processing your decision. Please verify your input and try again.")
 
 
 @app.get("/workflows/{workflow_id}/status", response_model=SharedAgentState)
@@ -399,3 +417,5 @@ if __name__ == "__main__":
     import uvicorn
     # Start the Uvicorn ASGI server on port 8000 with auto-reload
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["agents", "core", "graph", "models", "tools"])
+
+# Trigger reload

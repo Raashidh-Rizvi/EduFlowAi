@@ -16,9 +16,9 @@ public static class DbInitializer
         {
             context.Database.Migrate();
         }
-        catch
+        catch (Exception ex)
         {
-            // Table may already exist in external managed PostgreSQL
+            Console.WriteLine($"[DbInitializer] Migration failed: {ex.Message} -> {ex.InnerException?.Message}");
         }
 
         try

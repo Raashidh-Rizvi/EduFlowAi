@@ -37,7 +37,8 @@ export default function Assessments({ currentUser }) {
   const [runnerAnswers, setRunnerAnswers] = useState({});
   const [rewardBreakdownModal, setRewardBreakdownModal] = useState(null);
   const [submittingAttempt, setSubmittingAttempt] = useState(false);
-
+  const [aiGenToast, setAiGenToast] = useState(null);
+  const [quizCountdown, setQuizCountdown] = useState(null);
 
   // Form State
   const [quizTitle, setQuizTitle] = useState('');
@@ -87,13 +88,36 @@ export default function Assessments({ currentUser }) {
         const data = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444');
         setQuizzesList(data || []);
       } catch (err) {
-        console.error('Failed to load assessments:', err);
+        alert(err.friendlyMessage || 'Unable to load your assessments. Please try refreshing the page.');
       } finally {
         setIsLoading(false);
       }
     }
     loadAssessments();
   }, []);
+
+  // AI Generation Toast Timer
+  useEffect(() => {
+    let interval;
+    if (aiGenToast && aiGenToast.status === 'generating') {
+      interval = setInterval(() => {
+        setAiGenToast(prev => prev ? { ...prev, timeElapsed: prev.timeElapsed + 1 } : null);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [aiGenToast?.status]);
+
+  // Quiz Start Countdown Timer
+  useEffect(() => {
+    let interval;
+    const isCountingDown = quizCountdown !== null && quizCountdown > 0;
+    if (isCountingDown) {
+      interval = setInterval(() => {
+        setQuizCountdown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [quizCountdown !== null && quizCountdown > 0]);
 
   // Question editing helpers
   const handleAddQuestion = () => {
@@ -150,6 +174,9 @@ export default function Assessments({ currentUser }) {
     setQuizXp(targetXp);
     setQuizCoins(targetCoins);
 
+    setAiGenToast({ status: 'generating', timeElapsed: 0, topic: aiTopic });
+    setShowCreateModal(false);
+
     try {
       const res = await quizService.generateAiQuiz({
         courseId: quizCourseId,
@@ -198,7 +225,7 @@ export default function Assessments({ currentUser }) {
       setQuizTitle(`${aiQuizType} Quiz: ${aiTopic} (${aiDifficulty})`);
     } finally {
       setIsAiGenerating(false);
-      setCreationMode('typed'); // switch to question review
+      setAiGenToast(prev => prev ? { ...prev, status: 'completed' } : null);
     }
   };
 
@@ -333,6 +360,7 @@ export default function Assessments({ currentUser }) {
     setRunnerStep(0);
     setRunnerAnswers({});
     setRewardBreakdownModal(null);
+    setQuizCountdown(3);
   };
 
   const handleInspectQuiz = async (quiz) => {
@@ -411,7 +439,7 @@ export default function Assessments({ currentUser }) {
       setRunningQuiz(null);
       setRewardBreakdownModal(res);
     } catch (err) {
-      console.error('Quiz attempt failed:', err);
+      alert(err.friendlyMessage || 'An unexpected error occurred while submitting your quiz attempt.');
     } finally {
       setSubmittingAttempt(false);
     }
@@ -454,6 +482,54 @@ export default function Assessments({ currentUser }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <style>{`
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+      `}</style>
+      
+      {aiGenToast && (
+        <div 
+          onClick={() => {
+            if (aiGenToast.status === 'completed') {
+              setAiGenToast(null);
+              setCreationMode('typed');
+              setShowCreateModal(true);
+            }
+          }}
+          style={{
+            position: 'fixed', top: '24px', right: '24px', backgroundColor: 'var(--bg-card)',
+            border: `1px solid ${aiGenToast.status === 'completed' ? 'var(--success)' : 'var(--primary)'}`,
+            borderRadius: 'var(--radius-md)', padding: '16px', display: 'flex', alignItems: 'center',
+            gap: '12px', boxShadow: 'var(--shadow-popover)', zIndex: 9999,
+            cursor: aiGenToast.status === 'completed' ? 'pointer' : 'default', minWidth: '280px',
+            transition: 'all 0.3s ease'
+          }}
+        >
+          {aiGenToast.status === 'generating' ? (
+            <div style={{ width: '24px', height: '24px', borderRadius: '50%', border: '2px solid var(--primary-soft)', borderTopColor: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
+          ) : (
+            <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--success-soft)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Check size={14} />
+            </div>
+          )}
+          
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>
+              {aiGenToast.status === 'generating' ? 'Generating AI Quiz...' : 'Quiz Generated! Click to view.'}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Topic: {aiGenToast.topic}
+            </div>
+          </div>
+
+          {aiGenToast.status === 'generating' && (
+            <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--primary)', fontFamily: 'monospace' }}>
+              {Math.floor(aiGenToast.timeElapsed / 60)}:{(aiGenToast.timeElapsed % 60).toString().padStart(2, '0')}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Sub Tab Navigation & Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
         <div style={{
@@ -504,24 +580,26 @@ export default function Assessments({ currentUser }) {
           </button>
         </div>
 
-        {activeSubTab === 'quizzes' ? (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary"
-            style={{ padding: '8px 16px', fontSize: '13px' }}
-          >
-            <Plus size={15} /> 
-            <span>Create Assessment</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => setShowBossModal(true)}
-            className="btn-danger"
-            style={{ padding: '8px 16px', fontSize: '13px' }}
-          >
-            <Plus size={15} /> 
-            <span>Author Boss Raid</span>
-          </button>
+        {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+          activeSubTab === 'quizzes' ? (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="btn-primary"
+              style={{ padding: '8px 16px', fontSize: '13px' }}
+            >
+              <Plus size={15} /> 
+              <span>Create Assessment</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowBossModal(true)}
+              className="btn-danger"
+              style={{ padding: '8px 16px', fontSize: '13px' }}
+            >
+              <Plus size={15} /> 
+              <span>Author Boss Raid</span>
+            </button>
+          )
         )}
       </div>
 
@@ -578,14 +656,16 @@ export default function Assessments({ currentUser }) {
                 Create your first assessment using manual questions, upload a quiz sheet, or generate one automatically via AI.
               </p>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
-              style={{ padding: '8px 18px', fontSize: '13px' }}
-            >
-              <Plus size={15} /> 
-              <span>Create First Assessment</span>
-            </button>
+            {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary"
+                style={{ padding: '8px 18px', fontSize: '13px' }}
+              >
+                <Plus size={15} /> 
+                <span>Create First Assessment</span>
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '16px' }}>
@@ -643,32 +723,38 @@ export default function Assessments({ currentUser }) {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', gap: '8px' }}>
-                  <button
-                    onClick={() => handleStartQuiz(quiz)}
-                    className="btn-primary"
-                    style={{ padding: '5px 12px', fontSize: '11.5px', gap: '5px', flex: 1 }}
-                  >
-                    <Play size={12} fill="currentColor" /> 
-                    <span>Take Quiz</span>
-                  </button>
+                  {currentUser?.role === 'Student' && (
+                    <button
+                      onClick={() => handleStartQuiz(quiz)}
+                      className="btn-primary"
+                      style={{ padding: '5px 12px', fontSize: '11.5px', gap: '5px', flex: 1 }}
+                    >
+                      <Play size={12} fill="currentColor" /> 
+                      <span>Take Quiz</span>
+                    </button>
+                  )}
 
-                  <button
-                    onClick={() => handleInspectQuiz(quiz)}
-                    className="btn-secondary"
-                    style={{ padding: '5px 10px', fontSize: '11.5px', gap: '5px' }}
-                  >
-                    <Eye size={13} /> 
-                    <span>Inspect</span>
-                  </button>
+                  {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                    <>
+                      <button
+                        onClick={() => handleInspectQuiz(quiz)}
+                        className="btn-secondary"
+                        style={{ padding: '5px 10px', fontSize: '11.5px', gap: '5px' }}
+                      >
+                        <Eye size={13} /> 
+                        <span>Inspect</span>
+                      </button>
 
-                  <button
-                    onClick={() => handleDeleteQuiz(quiz.id)}
-                    title="Delete Quiz"
-                    className="btn-danger"
-                    style={{ padding: '5px 8px' }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                      <button
+                        onClick={() => handleDeleteQuiz(quiz.id)}
+                        title="Delete Quiz"
+                        className="btn-danger"
+                        style={{ padding: '5px 8px' }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
                 </div>
 
               </div>
@@ -1291,7 +1377,17 @@ export default function Assessments({ currentUser }) {
             </div>
 
             {/* Question Body */}
-            {runningQuiz.questions && runningQuiz.questions[runnerStep] && (
+            {quizCountdown > 0 ? (
+              <div style={{ padding: '60px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                <div style={{ fontSize: '72px', fontWeight: '900', color: 'var(--primary)', lineHeight: 1, animation: 'pulse 1s infinite' }}>
+                  {quizCountdown}
+                </div>
+                <div style={{ fontSize: '18px', color: 'var(--text-muted)', marginTop: '16px', fontWeight: '600' }}>
+                  Get Ready!
+                </div>
+              </div>
+            ) : (
+            runningQuiz.questions && runningQuiz.questions[runnerStep] && (
               <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)', lineHeight: '1.5' }}>
                   {runningQuiz.questions[runnerStep].prompt}
@@ -1339,12 +1435,13 @@ export default function Assessments({ currentUser }) {
                   })}
                 </div>
               </div>
-            )}
+            ))}
 
             {/* Footer Navigation */}
             <div style={{
               padding: '16px 24px', background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              visibility: quizCountdown > 0 ? 'hidden' : 'visible'
             }}>
               <button
                 onClick={() => setRunnerStep(prev => Math.max(0, prev - 1))}

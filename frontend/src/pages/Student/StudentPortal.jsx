@@ -36,99 +36,12 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import RoleSwitcher from '../../components/common/RoleSwitcher';
 import { aiService } from '../../services/aiService';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
 import { gamificationService } from '../../services/gamificationService';
 
-// ─── Seed Data for Student Portal ─────────────────────────────────────────────
-const STUDENT_DATA = {
-  'student@eduflow.ai': {
-    fullName: 'Alex Rivera',
-    level: 1,
-    levelName: 'Novice Explorer',
-    totalXp: 0,
-    xpInLevel: 0,
-    xpToNext: 500,
-    coins: 0,
-    streak: 0,
-    freezeTokens: 1,
-    badges: [
-      { id: 'FIRST_STEP', name: 'First Step', icon: '🌱', unlocked: false, desc: 'Completed first lesson' },
-      { id: 'QUIZ_ACE', name: 'Quiz Ace', icon: '🎯', unlocked: false, desc: 'Scored 100% on a quiz' },
-      { id: 'UNSTOPPABLE', name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day study streak' },
-      { id: 'BOSS_SLAYER', name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { id: 'TEAM_PLAYER', name: 'Team Player', icon: '🤝', unlocked: false, desc: 'Joined a student squad' },
-      { id: 'AI_MASTER', name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
-    ]
-  }
-};
-
-const INITIAL_COURSES = [
-  {
-    id: 'course-cs301',
-    code: 'CS-301',
-    title: 'Advanced Database Architecture & EF Core',
-    modules: [
-      {
-        id: 'm1',
-        title: 'High-Performance Indexing & Query Execution',
-        pdfUrl: '/materials/db-indexing-guide.pdf',
-        attachmentFileName: 'PostgreSQL_Indexing_Architecture.pdf',
-        lessons: [
-          { id: 'l1', title: 'B-Tree & Composite Index Selectivity', duration: '30 mins', xp: 40, completed: false },
-          { id: 'l2', title: 'Query Execution Plans & EXPLAIN ANALYZE', duration: '45 mins', xp: 60, completed: false }
-        ]
-      },
-      {
-        id: 'm2',
-        title: 'Transactional Integrity & Deadlock Resolution',
-        pdfUrl: '/materials/acid-transactions.pdf',
-        attachmentFileName: 'ACID_Transactions_Concurrency.pdf',
-        lessons: [
-          { id: 'l3', title: 'Isolation Levels & Concurrency Anomalies', duration: '40 mins', xp: 50, completed: false },
-          { id: 'l4', title: 'Two-Phase Locking & Graph Deadlock Detection', duration: '50 mins', xp: 75, completed: false }
-        ]
-      }
-    ]
-  }
-];
-
-const QUIZZES = [
-  {
-    id: 'quiz-1',
-    title: 'Clean Architecture & PostgreSQL Indexing Diagnostic',
-    passingScore: 70,
-    xpReward: 80,
-    coinReward: 30,
-    questions: [
-      {
-        id: 'q1',
-        prompt: 'What does the "I" represent in the ACID properties of relational databases?',
-        question: 'What does the "I" represent in the ACID properties of relational databases?',
-        options: ['Isolation', 'Integration', 'Iteration', 'Indexing'],
-        correct: 0,
-        explanation: 'Isolation ensures concurrent transactions execute independently without interfering with each other.'
-      },
-      {
-        id: 'q2',
-        prompt: 'In PostgreSQL, how are composite B-Tree indexes (colA, colB) evaluated during queries?',
-        question: 'In PostgreSQL, how are composite B-Tree indexes (colA, colB) evaluated during queries?',
-        options: ['Left-to-right starting with colA', 'Right-to-left starting with colB', 'Any order arbitrarily', 'Only when both columns are hashed'],
-        correct: 0,
-        explanation: 'Composite B-Tree indexes evaluate left-to-right; the leading column must be present in the WHERE clause.'
-      },
-      {
-        id: 'q3',
-        prompt: 'What is the primary role of the ValidationGuardAgent in EduFlow\'s LangGraph pipeline?',
-        question: 'What is the primary role of the ValidationGuardAgent in EduFlow\'s LangGraph pipeline?',
-        options: ['Enforce safety invariants like ≤ 20h/wk workload ceiling', 'Generate random quiz questions', 'Bypass instructor approval', 'Format CSS stylesheets'],
-        correct: 0,
-        explanation: 'ValidationGuardAgent enforces pedagogical safety, workload limits, and schema invariants.'
-      }
-    ]
-  }
-];
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
 
@@ -221,7 +134,7 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
-              onClick={() => onStartQuiz(QUIZZES[0])}
+              onClick={() => onStartQuiz(null)}
               className="btn-primary hover-scale"
               style={{ flex: 1, padding: '9px', fontSize: '12.5px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)', border: 'none' }}
             >
@@ -515,7 +428,7 @@ function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
                           Ready for evaluation?
                         </span>
                         <button
-                          onClick={() => onStartQuiz(QUIZZES[modIdx % QUIZZES.length])}
+                          onClick={() => onStartQuiz(null)}
                           className="btn-primary"
                           style={{ padding: '5px 12px', fontSize: '11.5px', gap: '4px' }}
                         >
@@ -1604,7 +1517,7 @@ function ProfileTab({ profile, onLogout }) {
 }
 
 // ─── Main StudentPortal Component ─────────────────────────────────────────────
-export default function StudentPortal({ user, onLogout }) {
+export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   const [activeTab, setActiveTabState] = useState(() => {
     try {
       return sessionStorage.getItem('eduflow_student_active_tab') || 'curriculum';
@@ -1622,7 +1535,7 @@ export default function StudentPortal({ user, onLogout }) {
   const [activeQuiz, setActiveQuiz] = useState(null);
   const [serverQuiz, setServerQuiz] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
-  const [courses, setCourses] = useState(INITIAL_COURSES);
+  const [courses, setCourses] = useState([]);
 
   useEffect(() => {
     async function loadStudentData() {
@@ -1705,8 +1618,18 @@ export default function StudentPortal({ user, onLogout }) {
     loadStudentData();
   }, [user]);
 
-  const profileData = STUDENT_DATA[user?.email] || STUDENT_DATA['student@eduflow.ai'];
-  const [profile, setProfile] = useState({ ...profileData });
+  const [profile, setProfile] = useState({
+    fullName: user?.fullName || 'Student',
+    level: 1,
+    levelName: 'Novice',
+    totalXp: 0,
+    xpInLevel: 0,
+    xpToNext: 100,
+    coins: 0,
+    streak: 0,
+    freezeTokens: 0,
+    badges: []
+  });
 
   const handleMissionClaim = async (xp, coins) => {
     try {
@@ -1737,7 +1660,7 @@ export default function StudentPortal({ user, onLogout }) {
   };
 
   const handleStartQuiz = async (quizToRun) => {
-    const target = quizToRun || serverQuiz || QUIZZES[0];
+    const target = quizToRun || serverQuiz;
     if (target && (!target.questions || target.questions.length === 0)) {
       try {
         const detailed = await quizService.getQuizById(target.id);
@@ -1882,9 +1805,18 @@ export default function StudentPortal({ user, onLogout }) {
         padding: '12px 20px',
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-subtle)',
-        flexShrink: 0
+        flexShrink: 0,
+        gap: '12px',
+        flexWrap: 'wrap'
       }}>
         <BrandLogo size="sm" subtitle="Student Workspace" />
+
+        {/* Direct Redirection Role Switcher */}
+        <RoleSwitcher 
+          currentRole="Student" 
+          onSwitchRole={onSwitchRole} 
+          compact 
+        />
 
         {/* Stat Pills & Theme Toggle */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
