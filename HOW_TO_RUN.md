@@ -51,7 +51,7 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
 
 1. Navigate to the `ai-agent` directory:
    ```powershell
-   cd d:\Project\EduHub\ai-agent
+   cd ai-agent
    ```
 
 2. Activate the virtual environment (or create one if first time):
@@ -86,15 +86,16 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
 
 The backend serves the REST API, JWT authentication, gamification engine, database persistence, and AI gateway forwarding.
 
-1. Navigate to the API project directory:
-   ```powershell
-   cd d:\Project\EduHub\backend\EduFlow.Api
-   ```
+#1. Navigate to the API project directory:
+ # powershell
+   cd backend\EduFlow.Api
+  
 
-2. Restore and run the application with **Auto-Reload / Hot Reload**:
-   ```powershell
+#2. Restore and run the application with **Auto-Reload / Hot Reload**:
+# powershell
+
    dotnet watch run
-   ```
+   
    *(Or standard `dotnet run` if you don't need active file watching)*
    - **Swagger UI**: [http://localhost:5204/swagger](http://localhost:5204/swagger) or [http://localhost:5000/swagger](http://localhost:5000/swagger)
    - **API Base URL**: `http://localhost:5204/api`
@@ -106,36 +107,36 @@ The backend serves the REST API, JWT authentication, gamification engine, databa
 
 The frontend provides the interactive **Instructor AI Review & Governance Workspace**, **Student Portal**, **Course Curriculum Management**, **Gamification Dashboard**, and **Cohort Analytics**.
 
-1. Navigate to the frontend directory:
-   ```powershell
-   cd d:\Project\EduHub\frontend
-   ```
+#1. Navigate to the frontend directory:
+ # powershell
+   cd frontend
+  
 
-2. Install dependencies *(first time only)*:
-   ```powershell
+#2. Install dependencies *(first time only)*:
+# powershell
    npm install
-   ```
+   
 
-3. Start the Vite development server:
-   ```powershell
+#3. Start the Vite development server:
+ # powershell
    npm run dev
-   ```
+   
    - **Web Application URL**: [http://localhost:2174](http://localhost:2174)
 
 ---
 
 ### Terminal 4: Flutter Mobile App *(Optional)*
 
-1. Navigate to the mobile directory:
-   ```powershell
-   cd d:\Project\EduHub\mobile
-   ```
+#1. Navigate to the mobile directory:
+ # powershell
+   cd d:\Project\EduFlow\mobile
+  
 
-2. Fetch dependencies and launch:
-   ```powershell
+#2. Fetch dependencies and launch:
+# powershell
    flutter pub get
    flutter run
-   ```
+  
 
 ---
 
@@ -174,20 +175,20 @@ The database comes pre-seeded with 3 authorized role-based user accounts:
 
 ### Python Multi-Agent Microservice Tests
 ```powershell
-cd d:\Project\EduHub\ai-agent
+cd d:\Project\EduFlow\ai-agent
 .\venv\Scripts\pytest.exe -v
 ```
 *(Executes tests verifying all 7 agents, deterministic validations, schemas, and topology).*
 
 ### Backend Integration & Unit Tests
 ```powershell
-cd d:\Project\EduHub\backend\EduFlow.Tests
+cd d:\Project\EduFlow\backend\EduFlow.Tests
 dotnet test
 ```
 
 ### Frontend Production Bundle Build
 ```powershell
-cd d:\Project\EduHub\frontend
+cd d:\Project\EduFlow\frontend
 npm run build
 ```
 
