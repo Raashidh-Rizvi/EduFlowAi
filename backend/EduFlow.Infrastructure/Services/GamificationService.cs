@@ -243,14 +243,21 @@ public class GamificationService : IGamificationService
             .Take(top)
             .ToListAsync(ct);
 
+        var studentIds = topStudentIds.Select(t => t.StudentId).ToList();
+
+        // ⚡ Bolt: Batch fetches to eliminate N+1 queries
+        var users = await _dbContext.Users.Where(u => studentIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
+        var xps = await _dbContext.StudentXp.Where(x => studentIds.Contains(x.StudentId)).ToDictionaryAsync(x => x.StudentId, ct);
+        var streaks = await _dbContext.StudentStreaks.Where(s => studentIds.Contains(s.StudentId)).ToDictionaryAsync(s => s.StudentId, ct);
+
         var result = new List<LeaderboardEntryDto>();
         int rank = 1;
 
         foreach (var item in topStudentIds)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var xp = await _dbContext.StudentXp.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            users.TryGetValue(item.StudentId, out var user);
+            xps.TryGetValue(item.StudentId, out var xp);
+            streaks.TryGetValue(item.StudentId, out var streak);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,
@@ -279,13 +286,19 @@ public class GamificationService : IGamificationService
             .Take(top)
             .ToListAsync(ct);
 
+        var studentIds = studentXpList.Select(x => x.StudentId).ToList();
+
+        // ⚡ Bolt: Batch fetches to eliminate N+1 queries
+        var users = await _dbContext.Users.Where(u => studentIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
+        var streaks = await _dbContext.StudentStreaks.Where(s => studentIds.Contains(s.StudentId)).ToDictionaryAsync(s => s.StudentId, ct);
+
         var result = new List<LeaderboardEntryDto>();
         int rank = 1;
 
         foreach (var item in studentXpList)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            users.TryGetValue(item.StudentId, out var user);
+            streaks.TryGetValue(item.StudentId, out var streak);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,
@@ -308,13 +321,19 @@ public class GamificationService : IGamificationService
             .Take(top)
             .ToListAsync(ct);
 
+        var studentIds = topStudents.Select(x => x.StudentId).ToList();
+
+        // ⚡ Bolt: Batch fetches to eliminate N+1 queries
+        var users = await _dbContext.Users.Where(u => studentIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, ct);
+        var streaks = await _dbContext.StudentStreaks.Where(s => studentIds.Contains(s.StudentId)).ToDictionaryAsync(s => s.StudentId, ct);
+
         var result = new List<LeaderboardEntryDto>();
         int rank = 1;
 
         foreach (var item in topStudents)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            users.TryGetValue(item.StudentId, out var user);
+            streaks.TryGetValue(item.StudentId, out var streak);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,
