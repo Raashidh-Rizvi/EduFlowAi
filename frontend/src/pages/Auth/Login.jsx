@@ -175,11 +175,7 @@ export default function Login({ onLoginSuccess }) {
                 const Icon = acc.icon;
                 const isSelected = email.toLowerCase() === acc.email.toLowerCase();
                 return (
-                  <div
-                    key={idx}
-                    onClick={() => handleFillDemo(acc)}
-                    style={{
-                      padding: '12px 14px',
+                  <button type="button" key={idx} onClick={() => handleFillDemo(acc)} aria-label={`Fill demo credentials for ${acc.role}: ${acc.name}`} style={{ width: '100%', textAlign: 'left', padding: '12px 14px',
                       borderRadius: 'var(--radius-md)',
                       backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.18)' : 'rgba(0, 0, 0, 0.25)',
                       border: isSelected ? '1px solid var(--border-accent)' : '1px solid var(--border-subtle)',
@@ -224,7 +220,7 @@ export default function Login({ onLoginSuccess }) {
                     }}>
                       {acc.badge}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -282,8 +278,8 @@ export default function Login({ onLoginSuccess }) {
             {isRegister && (
               <>
                 <div>
-                  <label style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Full Name</label>
-                  <input
+                  <label htmlFor="fullName" style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Full Name</label>
+                  <input id="fullName"
                     type="text"
                     required
                     value={fullName}
@@ -304,8 +300,8 @@ export default function Login({ onLoginSuccess }) {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Role</label>
-                  <select
+                  <label htmlFor="role" style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Role</label>
+                  <select id="role"
                     value={role}
                     onChange={(e) => setRole(e.target.value)}
                     style={{
@@ -329,10 +325,11 @@ export default function Login({ onLoginSuccess }) {
             )}
 
             <div>
-              <label style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Email Address</label>
+              <label htmlFor="email" style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Email Address</label>
               <div style={{ position: 'relative', marginTop: '4px' }}>
                 <Mail size={15} color="var(--text-subtle)" style={{ position: 'absolute', left: '12px', top: '13px' }} />
                 <input
+                  id="email"
                   type="email"
                   required
                   value={email}
@@ -353,10 +350,11 @@ export default function Login({ onLoginSuccess }) {
             </div>
 
             <div>
-              <label style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Password</label>
+              <label htmlFor="password" style={{ fontSize: '11.5px', color: 'var(--text-muted)', fontWeight: '600' }}>Password</label>
               <div style={{ position: 'relative', marginTop: '4px' }}>
                 <Lock size={15} color="var(--text-subtle)" style={{ position: 'absolute', left: '12px', top: '13px' }} />
                 <input
+                  id="password"
                   type="password"
                   required
                   value={password}
@@ -403,6 +401,7 @@ export default function Login({ onLoginSuccess }) {
           <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
             {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
+              type="button"
               onClick={() => setIsRegister(!isRegister)}
               style={{ background: 'none', border: 'none', color: 'var(--primary)', fontWeight: '700', cursor: 'pointer', textDecoration: 'underline' }}
             >
