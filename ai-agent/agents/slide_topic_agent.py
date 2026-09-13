@@ -12,7 +12,7 @@ import uuid
 import json
 from typing import List, Dict, Any, Tuple
 from core.slide_parser import SlideParser, SlidePage
-from core.llm import get_groq_llm, invoke_structured
+from core.llm import get_gemini_llm, invoke_structured
 from agents.base import BaseAgent, AgentExecutionLog
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -77,7 +77,7 @@ class SlideTopicAgent(BaseAgent):
 
         # Attempt LLM Categorization
         try:
-            llm = get_groq_llm(temperature=0.2)
+            llm = get_gemini_llm(temperature=0.2)
             prompt = PromptTemplate(
                 template="""You are an expert curriculum architect. Analyze the following lecture slide catalog and organize its content into {max_topics} distinct, high-level learning topics/modules.
 

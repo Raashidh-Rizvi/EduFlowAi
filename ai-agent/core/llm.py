@@ -1,47 +1,45 @@
 """
 ===============================================================================
-EduFlow AI - Shared LLM Invocation Helper (Groq)
+EduFlow AI - Shared LLM Invocation Helper (Gemini)
 ===============================================================================
 This module is the single choke point every agent should call through when it
-needs a Groq-backed `ChatGroq` chat model, or wants to invoke an LCEL chain
+needs a Gemini-backed `ChatGoogleGenerativeAI` chat model, or wants to invoke an LCEL chain
 (`prompt | llm | parser`) with consistent retry and error-classification
 behavior.
 
 Why we centralize this here instead of each agent hand-rolling its own
-`ChatGroq(...)` construction and `try/except` around `chain.invoke(...)`:
+`ChatGoogleGenerativeAI(...)` construction and `try/except` around `chain.invoke(...)`:
 1. Consistent Configuration:
-   - `GROQ_MODEL` becomes a single environment-driven knob instead of a model
+   - `GEMINI_MODEL` becomes a single environment-driven knob instead of a model
      name hardcoded independently inside every agent module.
 2. Consistent Resilience:
    - Every structured chain invocation gets the same exponential backoff with
      jitter (`core.retry.retry_with_backoff`) applied around it, instead of
      ad-hoc retry logic (or none) per agent.
 3. Consistent Error Classification:
-   - Raw Groq SDK / LangChain exceptions are re-raised as the codebase's
+   - Raw Google SDK / LangChain exceptions are re-raised as the codebase's
      standardized `AIError` subclasses (`core.errors`) so callers (and the
      LangGraph pipeline) can uniformly branch on `is_retryable`.
 """
 
-# Import os to read GROQ_API_KEY / GROQ_MODEL from the environment
+# Import os to read GEMINI_API_KEY / GEMINI_MODEL from the environment
 import os
 # Import logging for warnings when falling back to defaults or classifying failures
 import logging
 # Import typing annotations for the generic chain invocation wrapper
 from typing import Any, Dict
 
-# Import the concrete Groq chat model wrapper (mirrors agents/quiz_generator.py usage)
-from langchain_groq import ChatGroq
-
-# Import raw Groq SDK exceptions so we can classify them into our own AIError hierarchy
-from groq import (
-    RateLimitError as GroqRateLimitError,
-    APITimeoutError as GroqAPITimeoutError,
-    APIConnectionError as GroqAPIConnectionError,
-    AuthenticationError as GroqAuthenticationError,
-    BadRequestError as GroqBadRequestError,
-    PermissionDeniedError as GroqPermissionDeniedError,
-    NotFoundError as GroqNotFoundError,
-    InternalServerError as GroqInternalServerError,
+# Import the concrete Gemini chat model wrapper
+from langchain_google_genai import ChatGoogleGenerativeAI
+from google.api_core.exceptions import (
+    ResourceExhausted,
+    DeadlineExceeded,
+    ServiceUnavailable,
+    InvalidArgument,
+    PermissionDenied,
+    Unauthenticated,
+    NotFound,
+    InternalServerError as GoogleInternalServerError,
 )
 
 # Import our standardized error hierarchy and the shared retry decorator
@@ -51,62 +49,43 @@ from core.retry import retry_with_backoff
 # Module-level logger
 logger = logging.getLogger(__name__)
 
-# -----------------------------------------------------------------------------
-# Default Groq model
-# -----------------------------------------------------------------------------
-# NOTE: "llama-3.3-70b-versatile" was the expected current/non-deprecated Groq
-# model name as of this codebase's training cutoff, but it was verified live
-# against this deployment's actual GROQ_API_KEY (via client.models.list() and
-# a real chain.invoke()) and returns HTTP 404 model_not_found -- it is not in
-# this account's catalog at all, not just deprecated-with-a-redirect. Since
-# GROQ_API_KEY is live here and this path is meant to actually work rather
-# than merely look plausible, the default was changed to a model confirmed
-# working end-to-end (real chat completion, correct instruction-following)
-# against this key: "openai/gpt-oss-120b".
-# Groq's model catalog changes over time -- verify this against Groq's live
-# model catalog (https://console.groq.com/docs/models, or `client.models.list()`)
-# at deploy time and update GROQ_MODEL in the environment rather than editing
-# this default in place.
-DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 
-def get_groq_llm(temperature: float = 0.3) -> ChatGroq:
+def get_gemini_llm(temperature: float = 0.3) -> ChatGoogleGenerativeAI:
     """
-    Constructs a `ChatGroq` chat model instance from environment configuration.
+    Constructs a `ChatGoogleGenerativeAI` chat model instance from environment configuration.
 
     Reads:
-        GROQ_API_KEY: Required. Groq API secret key.
-        GROQ_MODEL: Optional. Defaults to DEFAULT_GROQ_MODEL when unset.
+        GEMINI_API_KEY: Required. Gemini API secret key.
+        GEMINI_MODEL: Optional. Defaults to DEFAULT_GEMINI_MODEL when unset.
 
     Args:
-        temperature: Sampling temperature passed straight through to ChatGroq.
+        temperature: Sampling temperature passed straight through to ChatGoogleGenerativeAI.
 
     Returns:
-        A configured `ChatGroq` instance ready for use in an LCEL chain.
+        A configured `ChatGoogleGenerativeAI` instance ready for use in an LCEL chain.
 
     Raises:
-        ValidationError: If GROQ_API_KEY is not configured. This is a
+        ValidationError: If GEMINI_API_KEY is not configured. This is a
             deterministic configuration problem, not a transient failure, so
             it is intentionally non-retryable.
     """
-    api_key = os.environ.get("GROQ_API_KEY")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValidationError(
-            "GROQ_API_KEY is not set - cannot construct a ChatGroq LLM client.",
-            details={"env_var": "GROQ_API_KEY"}
+            "GEMINI_API_KEY is not set - cannot construct a ChatGoogleGenerativeAI LLM client.",
+            details={"env_var": "GEMINI_API_KEY"}
         )
 
-    model_name = os.environ.get("GROQ_MODEL") or DEFAULT_GROQ_MODEL
+    model_name = os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
 
-    # Mirrors the exact ChatGroq(...) construction pattern already used in
-    # agents/quiz_generator.py (model=, temperature=) -- GROQ_API_KEY is picked
-    # up automatically by ChatGroq/the underlying Groq SDK from the environment.
-    return ChatGroq(model=model_name, temperature=temperature)
+    return ChatGoogleGenerativeAI(model=model_name, temperature=temperature, google_api_key=api_key)
 
 
 def _classify_llm_exception(exc: Exception) -> AIError:
     """
-    Maps a raw Groq SDK / LangChain exception to the codebase's AIError hierarchy.
+    Maps a raw Google SDK / LangChain exception to the codebase's AIError hierarchy.
 
     Args:
         exc: The exception raised out of `chain.invoke(...)`.
@@ -117,28 +96,25 @@ def _classify_llm_exception(exc: Exception) -> AIError:
     details = {"original_error": str(exc), "original_type": type(exc).__name__}
 
     # Provider throttling -> retryable rate limit
-    if isinstance(exc, GroqRateLimitError):
-        return RateLimit(f"Groq rate limit encountered during LLM invocation: {exc}", details=details)
+    if isinstance(exc, ResourceExhausted):
+        return RateLimit(f"Gemini rate limit encountered during LLM invocation: {exc}", details=details)
 
     # Network / request timeouts -> retryable timeout
-    if isinstance(exc, GroqAPITimeoutError):
-        return Timeout(f"Groq request timed out during LLM invocation: {exc}", details=details)
+    if isinstance(exc, DeadlineExceeded):
+        return Timeout(f"Gemini request timed out during LLM invocation: {exc}", details=details)
 
     # Connection issues -> retryable model/provider failure
-    if isinstance(exc, GroqAPIConnectionError):
-        return ModelFailure(f"Groq connection error during LLM invocation: {exc}", details=details)
+    if isinstance(exc, ServiceUnavailable):
+        return ModelFailure(f"Gemini service unavailable error during LLM invocation: {exc}", details=details)
 
     # Deterministic misconfiguration/request problems -> non-retryable
-    if isinstance(exc, (GroqAuthenticationError, GroqBadRequestError, GroqPermissionDeniedError, GroqNotFoundError)):
-        return ValidationError(f"Groq rejected the LLM request: {exc}", details=details)
+    if isinstance(exc, (Unauthenticated, InvalidArgument, PermissionDenied, NotFound)):
+        return ValidationError(f"Gemini rejected the LLM request: {exc}", details=details)
 
     # Provider-side 5xx errors -> retryable model failure
-    if isinstance(exc, GroqInternalServerError):
-        return ModelFailure(f"Groq internal server error during LLM invocation: {exc}", details=details)
+    if isinstance(exc, GoogleInternalServerError):
+        return ModelFailure(f"Gemini internal server error during LLM invocation: {exc}", details=details)
 
-    # Anything else (parser failures, unexpected LangChain errors, etc.) is
-    # treated as a retryable model failure -- transient issues are far more
-    # common than deterministic ones for chain invocations.
     return ModelFailure(f"LLM chain invocation failed: {exc}", details=details)
 
 
@@ -169,8 +145,6 @@ def invoke_structured(chain, input_dict: Dict[str, Any], retryable: bool = True)
         try:
             return chain.invoke(input_dict)
         except AIError:
-            # Already one of our classified exceptions (e.g. raised by a
-            # nested invoke_structured call) -- propagate unchanged.
             raise
         except Exception as e:
             classified = _classify_llm_exception(e)

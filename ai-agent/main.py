@@ -195,6 +195,8 @@ def generate_diagnostic_quiz(request: DiagnosticQuizRequest, _: None = Depends(v
     """
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error generating quiz: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the quiz.")
@@ -234,6 +236,8 @@ def regenerate_quiz_workflow(workflow_id: str, request: DiagnosticQuizRequest, _
     """
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error regenerating quiz workflow: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while regenerating the quiz workflow.")
@@ -265,6 +269,8 @@ def generate_slide_rag_quiz(request: DiagnosticQuizRequest, _: None = Depends(ve
     """
     try:
         return QuizGeneratorOrchestrator.generate_quiz(request)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"Error generating slide RAG quiz: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred while generating the slide quiz.")

@@ -40,9 +40,9 @@ from tools.registry import tool_registry
 # Import LangChain prompt/parser primitives (mirrors agents/quiz_generator.py's existing pattern)
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-# Import the shared Groq LLM helper -- single choke point for ChatGroq construction plus
+# Import the shared Groq LLM helper -- single choke point for ChatGoogleGenerativeAI construction plus
 # consistent retry/error-classification behavior (core/llm.py)
-from core.llm import get_groq_llm, invoke_structured
+from core.llm import get_gemini_llm, invoke_structured
 from core.errors import AIError
 
 # Module-level logger for graceful-degradation warnings when a Groq call fails
@@ -201,7 +201,7 @@ class ActionToolAgent(BaseAgent):
             # -----------------------------------------------------------------
             generated_text = None
             try:
-                llm = get_groq_llm(temperature=0.4)
+                llm = get_gemini_llm(temperature=0.4)
                 chain = STUDY_SCHEDULE_PROMPT | llm | JsonOutputParser()
                 result = invoke_structured(chain, {
                     "target_goal": target_goal,
@@ -310,7 +310,7 @@ class ActionToolAgent(BaseAgent):
             # fixed deterministic value (10) regardless of source.
             generated_question = None
             try:
-                llm = get_groq_llm(temperature=0.4)
+                llm = get_gemini_llm(temperature=0.4)
                 chain = CHALLENGE_QUESTION_PROMPT | llm | JsonOutputParser()
                 result = invoke_structured(chain, {
                     "weak_topic": req.weak_topic,

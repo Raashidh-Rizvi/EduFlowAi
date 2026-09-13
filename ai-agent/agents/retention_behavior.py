@@ -38,7 +38,7 @@ from models.schemas import (
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 # Import the shared Groq client factory + resilient chain-invocation helper
-from core.llm import get_groq_llm, invoke_structured
+from core.llm import get_gemini_llm, invoke_structured
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def _generate_retention_copy(
     analysis.
 
     Args:
-        llm: A constructed ChatGroq instance, or None if Groq is unavailable.
+        llm: A constructed ChatGoogleGenerativeAI instance, or None if Groq is unavailable.
         action_type: The already-decided intervention type (e.g. "StreakShield").
         fallback_title: The existing hardcoded template title for this type.
         fallback_message: The existing hardcoded template message for this type.
@@ -178,7 +178,7 @@ class RetentionBehaviorAgent(BaseAgent):
             # for any reason (missing GROQ_API_KEY, rate limit, network), every
             # intervention below silently falls back to its hardcoded template.
             try:
-                retention_llm = get_groq_llm(temperature=0.6)
+                retention_llm = get_gemini_llm(temperature=0.6)
             except Exception as e:
                 logger.warning("Groq LLM unavailable for retention copy generation, using template fallback: %s", e)
                 retention_llm = None

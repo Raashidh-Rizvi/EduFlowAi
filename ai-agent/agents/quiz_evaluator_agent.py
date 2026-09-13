@@ -15,7 +15,7 @@ import time
 import re
 import json
 from typing import List, Dict, Any, Tuple, Optional
-from core.llm import get_groq_llm, invoke_structured
+from core.llm import get_gemini_llm, invoke_structured
 from agents.base import BaseAgent, AgentExecutionLog
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -155,7 +155,7 @@ class QuizEvaluatorAgent(BaseAgent):
             }
 
         try:
-            llm = get_groq_llm(temperature=0.1)
+            llm = get_gemini_llm(temperature=0.1)
             eval_prompt = PromptTemplate(
                 template="""You are an impartial academic evaluator. Grade the student's typed answer based strictly on the model answer and marking scheme.
 Do not require word-for-word memorization; grade based on conceptual understanding and presence of key technical points.

@@ -87,18 +87,18 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
 The backend serves the REST API, JWT authentication, gamification engine, database persistence, and AI gateway forwarding.
 
 1. Navigate to the API project directory:
-   ```powershell
+   # powershell
    cd backend\EduFlow.Api
-   ```
 
-2. Restore and run the application with **Build Reload / Recompile on Save**:
-   ```powershell
+
+#2. Restore and run the application with **Build Reload / Recompile on Save**:
+  
    # Clean rebuild and restart on save (no flaky delta hot-reload)
    dotnet watch --no-hot-reload run --non-interactive
 
    # Or standard delta watch
    dotnet watch run
-   ```
+
    - **Swagger UI**: [http://localhost:5204/swagger](http://localhost:5204/swagger) or [http://localhost:5000/swagger](http://localhost:5000/swagger)
    - **API Base URL**: `http://localhost:5204/api`
 

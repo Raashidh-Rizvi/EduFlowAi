@@ -41,7 +41,7 @@ from models.schemas import (
 # Groq (mirrors the `prompt | llm | parser` pattern already used in
 # agents/quiz_generator.py). The concrete LLM client itself is resolved lazily
 # inside `_generate_grounded_evidence` (preferring core/llm.py, with a direct
-# ChatGroq fallback) so this module still imports cleanly if that shared helper
+# ChatGoogleGenerativeAI fallback) so this module still imports cleanly if that shared helper
 # is ever unavailable.
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -118,16 +118,16 @@ class DomainAnalysisAgent(BaseAgent):
         try:
             # Prefer the shared Groq LLM helper (core/llm.py) -- it centralizes
             # model selection plus retry/backoff and error classification. Fall
-            # back to constructing ChatGroq directly (mirroring the existing
+            # back to constructing ChatGoogleGenerativeAI directly (mirroring the existing
             # pattern in agents/quiz_generator.py) if that shared helper module
             # isn't importable in this checkout.
             try:
-                from core.llm import get_groq_llm, invoke_structured
-                llm = get_groq_llm(temperature=0.2)
+                from core.llm import get_gemini_llm, invoke_structured
+                llm = get_gemini_llm(temperature=0.2)
                 use_shared_invoke = True
             except ImportError:
-                from langchain_groq import ChatGroq
-                llm = ChatGroq(model="llama-3.1-70b-versatile", temperature=0.2)
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                llm = ChatGoogleGenerativeAI(model="gemini-3.8-flash", temperature=0.2)
                 use_shared_invoke = False
 
             prompt = PromptTemplate(

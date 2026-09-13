@@ -37,7 +37,7 @@ from models.schemas import (
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 # Import the shared Groq client factory + resilient chain-invocation helper
-from core.llm import get_groq_llm, invoke_structured
+from core.llm import get_gemini_llm, invoke_structured
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def _generate_edubuddy_message(llm, action_type: str, fallback_message: str, con
     exception -- so a Groq outage can never break the next-best-action call.
 
     Args:
-        llm: A constructed ChatGroq instance, or None if Groq is unavailable.
+        llm: A constructed ChatGoogleGenerativeAI instance, or None if Groq is unavailable.
         action_type: The already-decided action type (e.g. "TAKE_REMEDIATION_QUIZ").
         fallback_message: The existing hardcoded template message for this type.
         context_lines: Real student telemetry formatted as a bullet list, the
@@ -157,7 +157,7 @@ class NextBestActionAgent(BaseAgent):
             # GROQ_API_KEY, rate limit, network), edubuddy_message silently
             # falls back to its hardcoded template string.
             try:
-                nba_llm = get_groq_llm(temperature=0.6)
+                nba_llm = get_gemini_llm(temperature=0.6)
             except Exception as e:
                 logger.warning("Groq LLM unavailable for edubuddy message generation, using template fallback: %s", e)
                 nba_llm = None

@@ -36,9 +36,11 @@ api.interceptors.response.use(
            window.location.reload();
         }
       } else if (error.response.status === 400 || error.response.status === 404) {
-        friendlyMessage = error.response.data?.message || "We couldn't process that request. Please verify your information.";
+        friendlyMessage = error.response.data?.detail || error.response.data?.message || "We couldn't process that request. Please verify your information.";
+      } else if (error.response.status === 429) {
+        friendlyMessage = error.response.data?.detail || error.response.data?.message || "Too many requests. Please slow down and try again in a few moments.";
       } else if (error.response.status === 500) {
-        friendlyMessage = error.response.data?.message || "Our servers are experiencing issues. Please try again later.";
+        friendlyMessage = error.response.data?.detail || error.response.data?.message || "Our servers are experiencing issues. Please try again later.";
       }
     }
     
