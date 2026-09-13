@@ -99,7 +99,7 @@ public class GamificationService : IGamificationService
 
     public async Task<GamificationProfileDto> GetStudentProfileAsync(Guid studentId, CancellationToken ct = default)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == studentId, ct);
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == studentId, ct);
         var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
         var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
 
@@ -248,9 +248,9 @@ public class GamificationService : IGamificationService
 
         foreach (var item in topStudentIds)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var xp = await _dbContext.StudentXp.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
+            var xp = await _dbContext.StudentXp.AsNoTracking().FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            var streak = await _dbContext.StudentStreaks.AsNoTracking().FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,
@@ -284,8 +284,8 @@ public class GamificationService : IGamificationService
 
         foreach (var item in studentXpList)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
+            var streak = await _dbContext.StudentStreaks.AsNoTracking().FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,
@@ -313,8 +313,8 @@ public class GamificationService : IGamificationService
 
         foreach (var item in topStudents)
         {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
-            var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
+            var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == item.StudentId, ct);
+            var streak = await _dbContext.StudentStreaks.AsNoTracking().FirstOrDefaultAsync(u => u.StudentId == item.StudentId, ct);
 
             result.Add(new LeaderboardEntryDto(
                 Rank: rank++,

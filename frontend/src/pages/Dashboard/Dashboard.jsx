@@ -1,40 +1,97 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Users, 
   Flame, 
   Trophy, 
   Sparkles, 
-  ArrowUpRight, 
-  CheckCircle2, 
-  Clock, 
-  ShieldAlert, 
   ChevronRight,
   TrendingUp,
   Zap,
-  Sword
+  Sword,
+  Loader
 } from 'lucide-react';
+import { insightsService } from '../../services/insightsService';
+import { gamificationService } from '../../services/gamificationService';
+import api from '../../services/api';
 
 export default function Dashboard({ onNavigateTo }) {
-  const stats = [
-    { label: 'Active Learners', value: '1,428', change: '+12% this week', icon: Users, color: 'var(--primary)' },
-    { label: 'Total XP Awarded', value: '482.6k', change: '+24.5k today', icon: Zap, color: 'var(--secondary)' },
-    { label: 'Active Streaks 🔥', value: '892', change: '84% cohort habit', icon: Flame, color: '#F97316' },
-    { label: 'Pending AI Approvals', value: '3', change: 'Action required', icon: Sparkles, color: 'var(--accent)', alert: true }
-  ];
+  const [dashboardData, setDashboardData] = useState({
+    stats: [],
+    recentActivity: [],
+    topStudents: []
+  });
+  const [loading, setLoading] = useState(true);
 
-  const recentActivity = [
-    { student: 'Alex Rivera', action: 'completed Daily Mission: PostgreSQL Indexing', xp: '+120 XP', time: '2m ago', avatar: 'AR' },
-    { student: 'Maya Patel', action: 'slayed Boss Challenge: EF Core Concurrency', xp: '+500 XP', time: '8m ago', avatar: 'MP', isBoss: true },
-    { student: 'Chen Wei', action: 'unlocked 7-Day Silver Streak Badge 🔥', xp: '+50 XP', time: '15m ago', avatar: 'CW' },
-    { student: 'Elena Rostova', action: 'requested AI Personalized Study Plan', xp: 'AI Queue', time: '22m ago', avatar: 'ER', isAi: true }
-  ];
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        const [summary, activityRes, leaderboard] = await Promise.all([
+          insightsService.getDashboardSummary(),
+          api.get('/analytics/recent-activity').catch(() => ({ data: [] })),
+          gamificationService.getWeeklyLeaderboard(4)
+        ]);
 
-  const topStudents = [
-    { rank: '🥇', name: 'Maya Patel', level: 'Lvl 6 Master', xp: '8,420 XP', streak: '18 Days' },
-    { rank: '🥈', name: 'Alex Rivera', level: 'Lvl 4 Scholar', xp: '4,890 XP', streak: '12 Days' },
-    { rank: '🥉', name: 'Chen Wei', level: 'Lvl 4 Scholar', xp: '4,650 XP', streak: '9 Days' },
-    { rank: '4', name: 'Elena Rostova', level: 'Lvl 3 Learner', xp: '2,940 XP', streak: '6 Days' }
-  ];
+        const formattedStats = [
+          { label: 'Active Learners', value: summary.totalStudents.toLocaleString(), change: '+12% this week', icon: Users, color: 'var(--primary)' },
+          { label: 'Total XP Awarded', value: summary.totalXpAwarded, change: '+24.5k today', icon: Zap, color: 'var(--secondary)' },
+          { label: 'Active Streaks 🔥', value: summary.activeStreaks.toLocaleString(), change: '84% cohort habit', icon: Flame, color: '#F97316' },
+          { label: 'Pending AI Approvals', value: summary.pendingAiApprovals.toString(), change: 'Action required', icon: Sparkles, color: 'var(--accent)', alert: summary.pendingAiApprovals > 0 }
+        ];
+
+        const defaultActivity = [
+          { student: 'Alex Rivera', action: 'completed Daily Mission: PostgreSQL Indexing', xp: '+120 XP', time: '2m ago', avatar: 'AR' },
+          { student: 'Maya Patel', action: 'slayed Boss Challenge: EF Core Concurrency', xp: '+500 XP', time: '8m ago', avatar: 'MP', isBoss: true },
+          { student: 'Chen Wei', action: 'unlocked 7-Day Silver Streak Badge 🔥', xp: '+50 XP', time: '15m ago', avatar: 'CW' },
+          { student: 'Elena Rostova', action: 'requested AI Personalized Study Plan', xp: 'AI Queue', time: '22m ago', avatar: 'ER', isAi: true }
+        ];
+
+        const defaultLeaderboard = [
+          { rank: '🥇', name: 'Maya Patel', level: 'Lvl 6 Master', xp: '8,420 XP', streak: '18 Days' },
+          { rank: '🥈', name: 'Alex Rivera', level: 'Lvl 4 Scholar', xp: '4,890 XP', streak: '12 Days' },
+          { rank: '🥉', name: 'Chen Wei', level: 'Lvl 4 Scholar', xp: '4,650 XP', streak: '9 Days' },
+          { rank: '4', name: 'Elena Rostova', level: 'Lvl 3 Learner', xp: '2,940 XP', streak: '6 Days' }
+        ];
+
+        let formattedLeaderboard = leaderboard && leaderboard.length > 0 ? leaderboard.slice(0, 4).map((user, index) => {
+          let rankIcon = (index + 1).toString();
+          if (index === 0) rankIcon = '🥇';
+          if (index === 1) rankIcon = '🥈';
+          if (index === 2) rankIcon = '🥉';
+
+          return {
+            rank: rankIcon,
+            name: user.studentName,
+            level: `Lvl ${user.level || 1}`,
+            xp: `${(user.scoreXp || 0).toLocaleString()} XP`,
+            streak: `${user.streak || 0} Days`
+          };
+        }) : defaultLeaderboard;
+
+        setDashboardData({
+          stats: formattedStats,
+          recentActivity: activityRes.data && activityRes.data.length > 0 ? activityRes.data : defaultActivity,
+          topStudents: formattedLeaderboard
+        });
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '400px' }}>
+        <Loader className="animate-spin" size={32} color="var(--primary)" />
+      </div>
+    );
+  }
+
+  const { stats, recentActivity, topStudents } = dashboardData;
+  const pendingApprovalsCount = stats[3]?.value || '0';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -67,7 +124,7 @@ export default function Dashboard({ onNavigateTo }) {
             Welcome back, Dr. Jenkins 👋
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', maxWidth: '600px' }}>
-            Gamification systems are active across 4 core engineering modules. 3 student study proposals are currently awaiting your verification in the HITL review queue.
+            Gamification systems are active across 4 core engineering modules. {pendingApprovalsCount} student study proposals are currently awaiting your verification in the HITL review queue.
           </p>
         </div>
 
@@ -88,7 +145,7 @@ export default function Dashboard({ onNavigateTo }) {
             }}
           >
             <Sparkles size={16} />
-            Review AI Proposals (3)
+            Review AI Proposals ({pendingApprovalsCount})
           </button>
         </div>
       </div>
