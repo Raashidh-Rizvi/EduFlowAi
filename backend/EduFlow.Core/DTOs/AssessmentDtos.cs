@@ -240,3 +240,8 @@ public record DuplicateQuizResponse(
     string Message
 );
 
+public record SubmissionFeedbackRequest(
+    string Feedback
+);
+
+

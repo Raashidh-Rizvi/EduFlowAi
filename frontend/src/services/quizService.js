@@ -44,5 +44,16 @@ export const quizService = {
   async submitQuiz(quizId, answers) {
     const response = await api.post('/quizzes/submit', { quizId, answers });
     return response.data;
+  },
+
+  async getQuizSubmissions(quizId) {
+    const response = await api.get(`/quizzes/${quizId}/submissions`);
+    return response.data;
+  },
+
+  async sendSubmissionFeedback(submissionId, feedback) {
+    const response = await api.post(`/quizzes/submissions/${submissionId}/feedback`, { feedback });
+    return response.data;
   }
 };
+

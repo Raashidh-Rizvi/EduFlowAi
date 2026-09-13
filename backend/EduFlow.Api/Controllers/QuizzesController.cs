@@ -1407,5 +1407,82 @@ public class QuizzesController : ControllerBase
             masteryUpdates = rewardResult.MasteryUpdates
         });
     }
+
+    // -------------------------------------------------------------------------
+    // 6. INSTRUCTOR SUBMISSION & TELEMETRY FEEDBACK ENDPOINTS
+    // -------------------------------------------------------------------------
+
+    [HttpGet("{id:guid}/submissions")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetQuizSubmissions(Guid id)
+    {
+        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        var submissions = await _dbContext.Submissions
+            .Where(s => s.AssessmentId == id)
+            .Include(s => s.Student)
+            .Include(s => s.Answers)
+                .ThenInclude(a => a.Question)
+            .OrderByDescending(s => s.SubmittedAt)
+            .Select(s => new
+            {
+                submissionId = s.Id,
+                quizId = s.AssessmentId,
+                studentId = s.StudentId,
+                studentName = s.Student != null ? s.Student.FullName : "Student",
+                studentEmail = s.Student != null ? s.Student.Email : "student@eduflow.edu",
+                scoreObtained = s.ScoreObtained,
+                maxScore = s.MaxScore,
+                percentageScore = s.PercentageScore,
+                passed = s.Passed,
+                submittedAt = s.SubmittedAt,
+                instructorFeedback = s.InstructorFeedback,
+                answers = s.Answers.Select(a => new
+                {
+                    questionId = a.QuestionId,
+                    prompt = a.Question != null ? a.Question.Prompt : "",
+                    selectedAnswer = a.SelectedAnswer,
+                    correctAnswer = a.Question != null ? a.Question.CorrectAnswer : "",
+                    isCorrect = a.IsCorrect,
+                    pointsAwarded = a.PointsAwarded,
+                    explanation = a.Question != null ? a.Question.Explanation : ""
+                }).ToList()
+            })
+            .ToListAsync();
+
+        double avgScore = submissions.Any() ? submissions.Average(s => s.percentageScore) : 0;
+        int passCount = submissions.Count(s => s.passed);
+
+        return Ok(new
+        {
+            quizId = id,
+            quizTitle = quiz.Title,
+            totalSubmissions = submissions.Count,
+            averagePercentage = Math.Round(avgScore, 1),
+            passCount = passCount,
+            submissions = submissions
+        });
+    }
+
+    [HttpPost("submissions/{submissionId:guid}/feedback")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> SendSubmissionFeedback(Guid submissionId, [FromBody] SubmissionFeedbackRequest request)
+    {
+        var submission = await _dbContext.Submissions.FirstOrDefaultAsync(s => s.Id == submissionId);
+        if (submission == null)
+        {
+            return NotFound(new { message = "Submission not found." });
+        }
+
+        submission.InstructorFeedback = request.Feedback;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Feedback saved successfully.", submissionId = submission.Id, feedback = submission.InstructorFeedback });
+    }
 }
+
 

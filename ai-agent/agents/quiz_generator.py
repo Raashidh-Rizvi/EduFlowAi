@@ -107,9 +107,11 @@ class QuizGeneratorAgent(BaseAgent):
             )
 
             if req.quiz_type == "MicroQuiz" or req.scope_level == "Topic":
-                q_types = ["MULTIPLE_CHOICE", "SHORT_ANSWER", "TRUE_FALSE"]
+                q_types = req.question_types if req.question_types else ["CodeSnippet", "MULTIPLE_CHOICE", "TRUE_FALSE"]
+
             else:
                 q_types = req.question_types if req.question_types else ["MULTIPLE_CHOICE", "SHORT_ANSWER", "TRUE_FALSE"]
+
             count = max(1, min(req.question_count, 25))
 
             questions: List[QuizQuestionModel] = []
@@ -214,10 +216,17 @@ class QuizGeneratorAgent(BaseAgent):
                 if q_type.lower() in ["codesnippet", "code_snippet"]:
                     code_snip = f"-- {scope_name} query inspection\nSELECT * FROM Entities WHERE Status = 'Active' ORDER BY CreatedAt DESC;"
 
+                raw_q_type = (q_raw.get("question_type") or q_type or "MULTIPLE_CHOICE").strip()
+                if raw_q_type.upper() in ["CODESNIPPET", "CODE_SNIPPET"]:
+                    raw_q_type = "CodeSnippet"
+
                 questions.append(QuizQuestionModel(
                     question_id=i + 1,
                     question_text=q_raw.get("question_text", "Untitled"),
-                    question_type=q_raw.get("question_type", q_type),
+                    question_type=raw_q_type,
+
+
+
                     blooms_taxonomy_level=q_raw.get("blooms_taxonomy_level", "Application"),
                     options=q_raw.get("options", []),
                     option_details=opt_models,
@@ -338,35 +347,47 @@ class QuizGeneratorAgent(BaseAgent):
         )
 
         prompt = PromptTemplate(
-            template='''You are an expert AI educator generating a rigorous quiz assessment.
+            template='''You are an expert AI educator generating a rigorous RAG-grounded assessment.
 
 {grounding_block}
 
 Requirements:
 - Curriculum Scope: {scope_name}
-- Difficulty: {difficulty}
+- Target Difficulty Level: {difficulty}
 - Total Questions Required: {count}
 - Target Topics: {target_topics}
 - Question Types to distribute: {q_types}
 
-Rules:
-- Generate exactly {count} questions about educational concepts and technical subject matter.
-- DO NOT ask questions about administrative metadata (instructor names, slide numbers, etc.).
-- Ensure question types are selected from the allowed distribution list.
-- If question_type is TRUE_FALSE, the options MUST be exactly ["True", "False"].
-- If question_type is MULTIPLE_CHOICE, provide 4 distinct options.
+Pedagogical Rules & Difficulty Calibration:
+- If Difficulty is EASY: Focus on core definitions, fundamental concepts, and direct recall.
+- If Difficulty is MEDIUM: Focus on applied scenarios, practical implementation choices, and code/logic analysis.
+- If Difficulty is HARD: Focus on system architecture, concurrency, performance bottlenecks, trade-offs, and edge cases.
+- If Difficulty is BOSS: Focus on complex multi-tier architectural decisions and scenario problem solving.
 
-Output STRICT JSON containing a SINGLE flat array of question objects, matching this exact schema for each object:
+Question Format Rules:
+- Generate questions matching the specified question types. Supported formats:
+  * MULTIPLE_CHOICE: Single choice radio format. Provide 4 distinct options and exact correct_answer.
+  * MULTIPLE_SELECT: Checkbox multi-answer format. Provide 4 options, and set correct_answer to a comma-separated list of ALL correct option strings (e.g. "Option A, Option C").
+  * FILL_IN_THE_BLANK / DROPDOWN: Interactive dropdown format. Provide 4 options representing dropdown choices.
+  * MATCHING: Drag-and-drop matching format. Provide "matching_pairs" array of objects with "left" and "right" properties.
+  * TRUE_FALSE: Options MUST be exactly ["True", "False"].
+
+Output STRICT JSON containing a SINGLE flat array of question objects matching this schema:
 [
   {{
     "question_text": "string (the question prompt)",
-    "question_type": "string (exactly one from the provided distribution list)",
-    "blooms_taxonomy_level": "string (e.g. Knowledge, Application, Analysis)",
+    "question_type": "string (MULTIPLE_CHOICE | MULTIPLE_SELECT | FILL_IN_THE_BLANK | MATCHING | TRUE_FALSE)",
+    "blooms_taxonomy_level": "string (Knowledge | Comprehension | Application | Analysis | Synthesis)",
     "options": ["string", "string", "string", "string"],
-    "correct_answer": "string (MUST exactly match one of the strings in options)",
-    "distractor_rationales": ["string", "string", "string", "string"] (one rationale per option explaining why it is correct or incorrect),
-    "explanation": "string (pedagogical rationale for the correct answer)",
-    "topic_tag": "string (brief label of the core topic)"
+    "correct_answer": "string (the correct option string or comma-separated list of correct options for MULTIPLE_SELECT)",
+    "matching_pairs": [
+      {{"left": "Term 1", "right": "Definition 1"}},
+      {{"left": "Term 2", "right": "Definition 2"}}
+    ],
+    "distractor_rationales": ["string", "string", "string", "string"],
+    "explanation": "string (step-by-step pedagogical explanation)",
+    "slide_citation": "string (e.g. Grounded in {scope_name} curriculum module)",
+    "topic_tag": "string (brief topic tag)"
   }}
 ]
 
@@ -374,6 +395,7 @@ STRICT JSON Array Output:''',
             input_variables=["grounding_block", "scope_name", "count", "difficulty", "target_topics", "q_types"]
         )
         parser = JsonOutputParser()
+
 
         last_err = None
         for cand_model in model_candidates:
