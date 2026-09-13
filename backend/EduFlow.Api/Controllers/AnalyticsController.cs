@@ -29,13 +29,13 @@ public class AnalyticsController : ControllerBase
     [HttpGet("dashboard-summary")]
     public async Task<IActionResult> GetDashboardSummary()
     {
-        var totalStudents = await _dbContext.Users.CountAsync(u => u.Role == UserRole.Student);
-        var totalInstructors = await _dbContext.Users.CountAsync(u => u.Role == UserRole.Instructor);
-        var totalXpSum = await _dbContext.StudentXp.SumAsync(s => (long)s.TotalXp);
-        var activeStreaks = await _dbContext.StudentStreaks.CountAsync(s => s.CurrentStreak > 0);
-        var pendingAi = await _dbContext.StudyPlans.CountAsync(s => s.Status == StudyPlanStatus.PendingInstructorApproval);
-        var totalCourses = await _dbContext.Courses.CountAsync(c => c.IsPublished);
-        var totalQuizzesPassed = await _dbContext.Submissions.CountAsync(s => s.Passed);
+        var totalStudents = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Student);
+        var totalInstructors = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Instructor);
+        var totalXpSum = await _dbContext.StudentXp.AsNoTracking().SumAsync(s => (long)s.TotalXp);
+        var activeStreaks = await _dbContext.StudentStreaks.AsNoTracking().CountAsync(s => s.CurrentStreak > 0);
+        var pendingAi = await _dbContext.StudyPlans.AsNoTracking().CountAsync(s => s.Status == StudyPlanStatus.PendingInstructorApproval);
+        var totalCourses = await _dbContext.Courses.AsNoTracking().CountAsync(c => c.IsPublished);
+        var totalQuizzesPassed = await _dbContext.Submissions.AsNoTracking().CountAsync(s => s.Passed);
 
         return Ok(new
         {
@@ -102,6 +102,7 @@ public class AnalyticsController : ControllerBase
     public async Task<IActionResult> GetAtRiskStudents()
     {
         var lowScoreSubmissions = await _dbContext.Submissions
+            .AsNoTracking()
             .Include(s => s.Student)
             .Include(s => s.Assessment)
             .Where(s => !s.Passed)
@@ -325,5 +326,19 @@ public class AnalyticsController : ControllerBase
             .ToListAsync();
 
         return Ok(logs);
+    }
+
+    [HttpGet("recent-activity")]
+    public IActionResult GetRecentActivity()
+    {
+        // Mocking recent activity as requested by UI since there is no domain event ledger out-of-the-box
+        var recentActivity = new[]
+        {
+            new { student = "Alex Rivera", action = "completed Daily Mission: PostgreSQL Indexing", xp = "+120 XP", time = "2m ago", avatar = "AR", isBoss = false, isAi = false },
+            new { student = "Maya Patel", action = "slayed Boss Challenge: EF Core Concurrency", xp = "+500 XP", time = "8m ago", avatar = "MP", isBoss = true, isAi = false },
+            new { student = "Chen Wei", action = "unlocked 7-Day Silver Streak Badge 🔥", xp = "+50 XP", time = "15m ago", avatar = "CW", isBoss = false, isAi = false },
+            new { student = "Elena Rostova", action = "requested AI Personalized Study Plan", xp = "AI Queue", time = "22m ago", avatar = "ER", isBoss = false, isAi = true }
+        };
+        return Ok(recentActivity);
     }
 }

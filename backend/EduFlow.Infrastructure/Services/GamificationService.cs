@@ -632,7 +632,7 @@ public class GamificationService : IGamificationService
 
     public async Task<GamificationProfileDto> GetStudentProfileAsync(Guid studentId, CancellationToken ct = default)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == studentId, ct);
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == studentId, ct);
         var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
         var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
 
