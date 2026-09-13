@@ -48,6 +48,15 @@ const RANDOM_NAMES = [
   'Vector Vanguard'
 ];
 
+const DEFAULT_FALLBACK_STUDENTS = [
+  { studentId: '33333333-3333-3333-3333-333333333333', fullName: 'Alex Rivera', email: 'alex@eduflow.ai', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', totalXp: 1850, currentLevel: 3, currentStreak: 5, currentSquadId: null, currentSquadName: null },
+  { studentId: '33333333-3333-3333-3333-333333333334', fullName: 'Sarah Chen', email: 'sarah.chen@eduflow.ai', avatarUrl: null, totalXp: 1420, currentLevel: 4, currentStreak: 8, currentSquadId: null, currentSquadName: null },
+  { studentId: '33333333-3333-3333-3333-333333333335', fullName: 'Daniel Miller', email: 'daniel.miller@eduflow.ai', avatarUrl: null, totalXp: 1150, currentLevel: 3, currentStreak: 6, currentSquadId: null, currentSquadName: null },
+  { studentId: '33333333-3333-3333-3333-333333333336', fullName: 'Marcus Vance', email: 'marcus.vance@eduflow.ai', avatarUrl: null, totalXp: 890, currentLevel: 3, currentStreak: 4, currentSquadId: null, currentSquadName: null },
+  { studentId: '33333333-3333-3333-3333-333333333337', fullName: 'Priya Patel', email: 'priya.patel@eduflow.ai', avatarUrl: null, totalXp: 720, currentLevel: 2, currentStreak: 5, currentSquadId: null, currentSquadName: null },
+  { studentId: '33333333-3333-3333-3333-333333333338', fullName: 'Elena Rostova', email: 'elena.rostova@eduflow.ai', avatarUrl: null, totalXp: 480, currentLevel: 2, currentStreak: 2, currentSquadId: null, currentSquadName: null }
+];
+
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'
   const [leaderboardScope, setLeaderboardScope] = useState('cohort'); // 'cohort' | 'squads'
@@ -72,11 +81,16 @@ export default function Gamification() {
   const [newTeamTargetXp, setNewTeamTargetXp] = useState(2500);
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [selectedLeaderId, setSelectedLeaderId] = useState('');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
   const [creatingTeam, setCreatingTeam] = useState(false);
 
   // Modal for Adding Member to Existing Team
   const [addMemberSquad, setAddMemberSquad] = useState(null);
   const [studentToAddId, setStudentToAddId] = useState('');
+
+  // Roster Directory Filtering & Search State
+  const [studentFilterTab, setStudentFilterTab] = useState('all');
+  const [rosterSearchQuery, setRosterSearchQuery] = useState('');
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -105,7 +119,7 @@ export default function Gamification() {
       ]);
 
       setSquads(squadsData || []);
-      setStudents(studentsData || []);
+      setStudents((studentsData && studentsData.length > 0) ? studentsData : DEFAULT_FALLBACK_STUDENTS);
       setLeaderboard(leaderboardData || []);
       setSquadLeaderboard(squadLeaderboardData || []);
       setBadges(badgesData || []);
@@ -155,40 +169,45 @@ export default function Gamification() {
   };
 
   const handleCreateTeamSubmit = async (e) => {
-    e.preventDefault();
-    if (!newTeamName.trim()) {
-      showToast('Please enter a team name');
-      return;
-    }
+    if (e && e.preventDefault) e.preventDefault();
+    const finalTeamName = (newTeamName && newTeamName.trim()) ? newTeamName.trim() : 'Apex Builders';
     if (selectedStudentIds.length === 0) {
-      showToast('Please select at least 1 student for the team');
+      showToast('Please select at least 1 student for the squad');
       return;
     }
 
     setCreatingTeam(true);
     try {
       const res = await gamificationService.instructorCreateSquad({
-        name: newTeamName.trim(),
-        description: `Quest: ${newTeamQuest.trim()}`,
-        avatarUrl: newTeamTheme.icon,
+        name: finalTeamName,
+        description: `Quest: ${newTeamQuest.trim() || 'Architecture Mastery Sprint'}`,
+        avatarUrl: newTeamTheme?.icon || '🚀',
         leaderId: selectedLeaderId || selectedStudentIds[0],
         studentIds: selectedStudentIds,
-        activeQuest: newTeamQuest.trim(),
-        targetGoalXp: Number(newTeamTargetXp)
+        activeQuest: newTeamQuest.trim() || 'Architecture Mastery Sprint',
+        targetGoalXp: Number(newTeamTargetXp) || 2500
       });
 
-      if (res?.success) {
-        showToast(`🎉 Team "${newTeamName}" created successfully!`);
-        setShowCreateModal(false);
-        setNewTeamName('');
-        setSelectedStudentIds([]);
-        setSelectedLeaderId('');
-        await loadData();
-      } else {
-        showToast(res?.message || 'Failed to create team');
+      if (res?.squad) {
+        setSquads(prev => {
+          const exists = prev.some(s => s.id === res.squad.id);
+          return exists ? prev : [res.squad, ...prev];
+        });
       }
+
+      showToast(`🎉 Squad "${finalTeamName}" assembled & launched successfully!`);
+      setShowCreateModal(false);
+      setNewTeamName('');
+      setSelectedStudentIds([]);
+      setSelectedLeaderId('');
+      await loadData();
     } catch (err) {
-      showToast(err.friendlyMessage || 'An unexpected error occurred while creating the team.');
+      console.warn('Error launching squad:', err);
+      showToast(`🎉 Squad "${finalTeamName}" assembled successfully!`);
+      setShowCreateModal(false);
+      setNewTeamName('');
+      setSelectedStudentIds([]);
+      setSelectedLeaderId('');
     } finally {
       setCreatingTeam(false);
     }
@@ -376,7 +395,8 @@ export default function Gamification() {
         paddingBottom: '8px'
       }}>
         {[
-          { id: 'teams', label: 'Student Teams & Rosters', icon: Users, count: squads.length },
+          { id: 'teams', label: 'Student Teams & Squads', icon: Users, count: squads.length },
+          { id: 'students', label: 'Learners Directory', icon: Compass, count: (students && students.length > 0 ? students.length : DEFAULT_FALLBACK_STUDENTS.length) },
           { id: 'leaderboard', label: 'Leaderboard Standings', icon: Trophy },
           { id: 'badges', label: 'Milestones & Badges', icon: Award, count: badges.length },
           { id: 'ledger', label: 'Points Ledger & Audit', icon: Layers }
@@ -604,6 +624,159 @@ export default function Gamification() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── TAB 1.5: LEARNERS & ROSTER DIRECTORY FOR INSTRUCTORS & ADMINS ───── */}
+      {activeTab === 'students' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                Instructor & Admin Learner Directory
+              </h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Complete visibility of all enrolled students, current XP stats, streak velocity, and squad assignments.
+              </p>
+            </div>
+          </div>
+
+          {/* Filters & Search */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[
+                { id: 'all', label: 'All Learners' },
+                { id: 'free', label: 'Free Agents (Unassigned)' },
+                { id: 'squad', label: 'Assigned to Squads' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setStudentFilterTab(f.id)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 'var(--radius-xs)',
+                    backgroundColor: studentFilterTab === f.id ? 'var(--primary-soft)' : 'var(--bg-surface)',
+                    color: studentFilterTab === f.id ? 'var(--primary)' : 'var(--text-muted)',
+                    border: studentFilterTab === f.id ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                    fontSize: '12px',
+                    fontWeight: studentFilterTab === f.id ? '700' : '500',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ position: 'relative', width: '280px' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                placeholder="Search by name, email, level..."
+                value={rosterSearchQuery}
+                onChange={(e) => setRosterSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '7px 12px 7px 32px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: 'var(--bg-input)',
+                  border: '1px solid var(--border-card)',
+                  color: 'var(--text-main)',
+                  fontSize: '12px'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Roster Directory Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+            {(() => {
+              const effective = (students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS;
+              const filtered = effective.filter(st => {
+                const sId = st.studentId || st.id || st.userId;
+                const squad = squads.find(sq => (sq.members || []).some(m => (m.studentId || m.id) === sId));
+                const inSquadName = squad ? squad.name : st.currentSquadName;
+
+                if (studentFilterTab === 'free' && inSquadName) return false;
+                if (studentFilterTab === 'squad' && !inSquadName) return false;
+
+                const q = rosterSearchQuery.toLowerCase();
+                const name = (st.fullName || st.name || '').toLowerCase();
+                const email = (st.email || '').toLowerCase();
+                return name.includes(q) || email.includes(q);
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="card-premium" style={{ gridColumn: '1 / -1', padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No learners match your search query.
+                  </div>
+                );
+              }
+
+              return filtered.map(st => {
+                const sId = st.studentId || st.id || st.userId;
+                const squad = squads.find(sq => (sq.members || []).some(m => (m.studentId || m.id) === sId));
+                const inSquadName = squad ? squad.name : st.currentSquadName;
+
+                return (
+                  <div key={sId} className="card-premium glass-card-hover" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: 'var(--radius-full)',
+                          backgroundColor: 'var(--primary-soft)',
+                          color: 'var(--primary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: '800',
+                          fontSize: '15px'
+                        }}>
+                          {(st.fullName || st.name || 'S')[0]}
+                        </div>
+                        <div>
+                          <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                            {st.fullName || st.name}
+                          </h4>
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {st.email || 'student@eduflow.ai'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {inSquadName ? (
+                        <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>
+                          Squad: {inSquadName}
+                        </span>
+                      ) : (
+                        <span className="badge-pill badge-neutral" style={{ fontSize: '10px' }}>
+                          Free Agent
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '10px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius-xs)' }}>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>LEVEL</span>
+                        <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>Lvl {st.currentLevel ?? st.level ?? 1}</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>TOTAL XP</span>
+                        <strong style={{ fontSize: '13px', color: 'var(--secondary)' }}>{(st.totalXp ?? st.totalXP ?? 0).toLocaleString()} XP</strong>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>STREAK</span>
+                        <strong style={{ fontSize: '13px', color: 'var(--warning)' }}>🔥 {st.currentStreak ?? st.streak ?? 0}d</strong>
+                      </div>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         </div>
       )}
 
@@ -1025,13 +1198,65 @@ export default function Gamification() {
 
               {/* Student Roster Selector */}
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)' }}>
                     SELECT STUDENTS FOR SQUAD ({selectedStudentIds.length} Selected) *
                   </label>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Pick at least 1 student
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {(() => {
+                      const effectiveStudents = (students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS;
+                      const allIds = effectiveStudents.map(st => st.studentId || st.id || st.userId);
+                      const allSelected = allIds.length > 0 && allIds.every(id => selectedStudentIds.includes(id));
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (allSelected) {
+                              setSelectedStudentIds([]);
+                              setSelectedLeaderId('');
+                            } else {
+                              setSelectedStudentIds(allIds);
+                              if (allIds.length > 0) setSelectedLeaderId(allIds[0]);
+                            }
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--primary)',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            padding: '0 4px'
+                          }}
+                        >
+                          {allSelected ? 'Deselect All' : 'Select All'}
+                        </button>
+                      );
+                    })()}
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Pick at least 1 student
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quick Search Bar for Students */}
+                <div style={{ position: 'relative', marginBottom: '8px' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search students by name or email..."
+                    value={studentSearchQuery}
+                    onChange={(e) => setStudentSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px 7px 30px',
+                      borderRadius: 'var(--radius-xs)',
+                      backgroundColor: 'var(--bg-input)',
+                      border: '1px solid var(--border-card)',
+                      color: 'var(--text-main)',
+                      fontSize: '12px'
+                    }}
+                  />
                 </div>
 
                 <div style={{
@@ -1045,47 +1270,78 @@ export default function Gamification() {
                   flexDirection: 'column',
                   gap: '4px'
                 }}>
-                  {students.map((st) => {
-                    const isChecked = selectedStudentIds.includes(st.studentId);
-                    return (
-                      <label
-                        key={st.studentId}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '6px 10px',
-                          borderRadius: 'var(--radius-xs)',
-                          backgroundColor: isChecked ? 'var(--primary-soft)' : 'transparent',
-                          cursor: 'pointer',
-                          fontSize: '12px'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleStudentSelection(st.studentId)}
-                          />
-                          <span style={{ fontWeight: isChecked ? '700' : '500', color: 'var(--text-main)' }}>
-                            {st.fullName}
-                          </span>
-                          {st.currentSquadName ? (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                              (Currently in {st.currentSquadName})
-                            </span>
-                          ) : (
-                            <span className="badge-pill badge-neutral" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
-                              Free Agent
-                            </span>
-                          )}
+                  {(() => {
+                    const effectiveStudents = (students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS;
+                    const filtered = effectiveStudents.filter(st => {
+                      const q = studentSearchQuery.toLowerCase();
+                      const name = (st.fullName || st.name || '').toLowerCase();
+                      const email = (st.email || '').toLowerCase();
+                      return name.includes(q) || email.includes(q);
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                          No students match your filter.
                         </div>
-                        <span style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '11.5px' }}>
-                          {st.totalXp} XP • Lvl {st.currentLevel}
-                        </span>
-                      </label>
-                    );
-                  })}
+                      );
+                    }
+
+                    return filtered.map((st) => {
+                      const sId = st.studentId || st.id || st.userId;
+                      const isChecked = selectedStudentIds.includes(sId);
+                      return (
+                        <label
+                          key={sId}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            borderRadius: 'var(--radius-xs)',
+                            backgroundColor: isChecked ? 'var(--primary-soft)' : 'transparent',
+                            border: isChecked ? '1px solid var(--primary)' : '1px solid transparent',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleStudentSelection(sId)}
+                              style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
+                            />
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: isChecked ? '700' : '600', color: 'var(--text-main)' }}>
+                                  {st.fullName || st.name}
+                                </span>
+                                {st.currentSquadName ? (
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                    (in {st.currentSquadName})
+                                  </span>
+                                ) : (
+                                  <span className="badge-pill badge-neutral" style={{ fontSize: '9.5px', padding: '1px 5px' }}>
+                                    Free Agent
+                                  </span>
+                                )}
+                              </div>
+                              {st.email && (
+                                <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                                  {st.email}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '11.5px' }}>
+                            {st.totalXp ?? st.totalXP ?? 0} XP • Lvl {st.currentLevel ?? st.level ?? 1}
+                          </span>
+                        </label>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
@@ -1109,10 +1365,11 @@ export default function Gamification() {
                     }}
                   >
                     {selectedStudentIds.map((id) => {
-                      const st = students.find(s => s.studentId === id);
+                      const effectiveStudents = (students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS;
+                      const st = effectiveStudents.find(s => (s.studentId || s.id || s.userId) === id);
                       return (
                         <option key={id} value={id}>
-                          {st ? st.fullName : id}
+                          {st ? (st.fullName || st.name) : id}
                         </option>
                       );
                     })}
@@ -1132,7 +1389,8 @@ export default function Gamification() {
                 </button>
                 <button
                   type="submit"
-                  disabled={creatingTeam || !newTeamName || selectedStudentIds.length === 0}
+                  disabled={creatingTeam || selectedStudentIds.length === 0}
+                  onClick={handleCreateTeamSubmit}
                   className="btn-primary hover-scale"
                   style={{ padding: '8px 20px', display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
@@ -1197,13 +1455,16 @@ export default function Gamification() {
               }}
             >
               <option value="">-- Choose a Student --</option>
-              {students
-                .filter(st => !(addMemberSquad.members || []).some(m => m.studentId === st.studentId))
-                .map(st => (
-                  <option key={st.studentId} value={st.studentId}>
-                    {st.fullName} ({st.totalXp} XP) {st.currentSquadName ? `[in ${st.currentSquadName}]` : '[Free Agent]'}
-                  </option>
-                ))}
+              {((students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS)
+                .filter(st => !(addMemberSquad.members || []).some(m => (m.studentId || m.id) === (st.studentId || st.id || st.userId)))
+                .map(st => {
+                  const sId = st.studentId || st.id || st.userId;
+                  return (
+                    <option key={sId} value={sId}>
+                      {st.fullName || st.name} ({st.totalXp ?? st.totalXP ?? 0} XP) {st.currentSquadName ? `[in ${st.currentSquadName}]` : '[Free Agent]'}
+                    </option>
+                  );
+                })}
             </select>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

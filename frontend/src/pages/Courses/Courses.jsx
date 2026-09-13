@@ -56,12 +56,34 @@ export default function Courses({ currentUser }) {
   const [loading, setLoading] = useState(true);
 
   const mapBackendCourseToFrontend = (backendCourse) => {
-    return {
-      ...backendCourse,
-      fullDetailsLoaded: true,
-      modules: (backendCourse.modules || []).map(m => ({
+    if (!backendCourse) return backendCourse;
+    const courseId = backendCourse.id;
+    const localQuizzes = getGeneratedQuizzes(courseId);
+
+    const apiCourseQuizzes = backendCourse.quizzes || [];
+    const localCourseQuizzes = localQuizzes.filter(q => q.scopeType === 'Course' || !q.scopeType);
+    const combinedCourseQuizzes = [...apiCourseQuizzes];
+    for (const lq of localCourseQuizzes) {
+      if (!combinedCourseQuizzes.some(cq => cq.id === lq.id || cq.title === lq.title)) {
+        combinedCourseQuizzes.push(lq);
+      }
+    }
+
+    const mappedModules = (backendCourse.modules || []).map(m => {
+      const apiModQuizzes = m.quizzes || [];
+      const localModQuizzes = localQuizzes.filter(q => q.scopeType === 'Module' && (q.scopeId === m.id || q.moduleId === m.id));
+      const combinedModQuizzes = [...apiModQuizzes];
+      for (const lq of localModQuizzes) {
+        if (!combinedModQuizzes.some(cq => cq.id === lq.id || cq.title === lq.title)) {
+          combinedModQuizzes.push(lq);
+        }
+      }
+
+      return {
         ...m,
-        topics: [
+        quizzes: combinedModQuizzes,
+        moduleAssessment: combinedModQuizzes[0] || (m.moduleAssessment ? m.moduleAssessment : null),
+        topics: m.topics || [
           {
             id: `topic-${m.id}`,
             title: `${m.title} Core Concepts`,
@@ -76,31 +98,44 @@ export default function Courses({ currentUser }) {
               content: l.content || 'Lecture material'
             }))
           }
-        ],
-        moduleAssessment: {
-          id: `assm-${m.id}`,
-          title: `${m.title} Assessment`,
-          questionsCount: 5,
-          timeLimitMinutes: 15,
-          passPercentage: 70,
-          xpReward: 100,
-          isBossBattle: false
-        }
-      })),
-      finalAssessment: {
-        id: `final-${backendCourse.id}`,
-        title: `${backendCourse.title} Final Assessment`,
-        questionsCount: 20,
-        timeLimitMinutes: 60,
-        passPercentage: 70,
-        xpReward: 500
-      }
+        ]
+      };
+    });
+
+    return {
+      ...backendCourse,
+      fullDetailsLoaded: true,
+      modules: mappedModules,
+      quizzes: combinedCourseQuizzes,
+      finalAssessment: combinedCourseQuizzes[0] || backendCourse.finalAssessment || null
     };
   };
 
   useEffect(() => {
     loadCourses();
-  }, []);
+
+    const handleQuizRefresh = () => {
+      if (selectedCourseId) {
+        courseService.getCourseById(selectedCourseId).then(fullCourse => {
+          if (fullCourse) {
+            setCoursesList(current => current.map(c => c.id === selectedCourseId ? mapBackendCourseToFrontend(fullCourse) : c));
+          }
+        });
+      } else {
+        loadCourses();
+      }
+    };
+
+    window.addEventListener('eduflow_quiz_created', handleQuizRefresh);
+    window.addEventListener('eduflow_quiz_deleted', handleQuizRefresh);
+    window.addEventListener('storage', handleQuizRefresh);
+
+    return () => {
+      window.removeEventListener('eduflow_quiz_created', handleQuizRefresh);
+      window.removeEventListener('eduflow_quiz_deleted', handleQuizRefresh);
+      window.removeEventListener('storage', handleQuizRefresh);
+    };
+  }, [selectedCourseId]);
 
   const loadCourses = async () => {
     setLoading(true);
@@ -154,6 +189,7 @@ export default function Courses({ currentUser }) {
   const [newCourseCode, setNewCourseCode] = useState('');
   const [newCourseTitle, setNewCourseTitle] = useState('');
   const [newCourseCategory, setNewCourseCategory] = useState('Software Engineering');
+  const [newCourseTerm, setNewCourseTerm] = useState('Fall 2026');
   const [newCourseDesc, setNewCourseDesc] = useState('');
 
   // New Module Form State
@@ -914,6 +950,7 @@ export default function Courses({ currentUser }) {
         title: newCourseTitle,
         description: newCourseDesc || 'Comprehensive curriculum with grounded AI assessments.',
         category: newCourseCategory,
+        term: newCourseTerm || 'Fall 2026',
       });
       created.modules = [];
       created.fullDetailsLoaded = true;
@@ -1136,13 +1173,24 @@ export default function Courses({ currentUser }) {
                     <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Code</label>
                     <input placeholder="e.g. CS101" value={newCourseCode} onChange={e => setNewCourseCode(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
                   </div>
-                  <div style={{ flex: '2' }}>
+                  <div style={{ flex: '1' }}>
                     <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Category</label>
                     <select value={newCourseCategory} onChange={e => setNewCourseCategory(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
                       <option value="Software Engineering">Software Engineering</option>
                       <option value="Data Science">Data Science</option>
                       <option value="Design">Design</option>
                       <option value="Business">Business</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: '1' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Academic Term</label>
+                    <select value={newCourseTerm} onChange={e => setNewCourseTerm(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
+                      <option value="Fall 2026">Fall 2026</option>
+                      <option value="Spring 2026">Spring 2026</option>
+                      <option value="Summer 2026">Summer 2026</option>
+                      <option value="Fall 2025">Fall 2025</option>
+                      <option value="Term 1">Term 1</option>
+                      <option value="Term 2">Term 2</option>
                     </select>
                   </div>
                 </div>
@@ -1480,9 +1528,22 @@ export default function Courses({ currentUser }) {
         backgroundColor: 'var(--bg-surface)'
       }}>
         <div style={{ maxWidth: '680px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
             <span className="badge-pill badge-primary" style={{ fontWeight: '700' }}>
               {currentCourse.code}
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: '700',
+              padding: '3px 8px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(99, 102, 241, 0.12)',
+              color: '#818cf8',
+              border: '1px solid rgba(99, 102, 241, 0.25)',
+              display: 'inline-flex',
+              alignItems: 'center'
+            }}>
+              📅 {currentCourse.term || 'Fall 2026'}
             </span>
             <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
               Category: {currentCourse.category}
@@ -1829,75 +1890,100 @@ export default function Courses({ currentUser }) {
                       </div>
                     )}
 
-                    {/* ── MODULE ASSESSMENT & MODULE BOSS BATTLE SECTION ────── */}
-                    {mod.moduleAssessment && (
-                      <div style={{
-                        padding: '16px 18px',
-                        borderRadius: 'var(--radius-md)',
-                        backgroundColor: mod.moduleAssessment.isBossBattle ? 'rgba(239, 68, 68, 0.04)' : 'rgba(79, 70, 229, 0.04)',
-                        border: mod.moduleAssessment.isBossBattle ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--primary-border)',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        flexWrap: 'wrap',
-                        gap: '12px'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{
-                            width: '38px',
-                            height: '38px',
-                            borderRadius: 'var(--radius-sm)',
-                            backgroundColor: mod.moduleAssessment.isBossBattle ? 'rgba(239, 68, 68, 0.15)' : 'rgba(79, 70, 229, 0.15)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: mod.moduleAssessment.isBossBattle ? '#EF4444' : 'var(--primary)'
-                          }}>
-                            {mod.moduleAssessment.isBossBattle ? <Swords size={20} /> : <Award size={20} />}
+                    {/* ── MODULE ASSESSMENTS & QUIZZES SECTION (SUPPORTS MULTIPLE QUIZZES) ── */}
+                    {((mod.quizzes && mod.quizzes.length > 0) || mod.moduleAssessment) && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <HelpCircle size={14} />
+                            <span>Module Quizzes & Assessments ({mod.quizzes?.length || (mod.moduleAssessment ? 1 : 0)})</span>
                           </div>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span className={`badge-pill ${mod.moduleAssessment.isBossBattle ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: '10px', fontWeight: '700' }}>
-                                {mod.moduleAssessment.isBossBattle ? '👹 MODULE BOSS CHALLENGE' : '🧠 MODULE ASSESSMENT'}
-                              </span>
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                {mod.moduleAssessment.questionsCount} Questions • {mod.moduleAssessment.timeLimitMinutes} Mins • Pass Mark: {mod.moduleAssessment.passPercentage}%
-                              </span>
-                            </div>
-                            <h4 style={{ fontSize: '14.5px', fontWeight: '800', color: 'var(--text-main)', margin: '3px 0 1px' }}>
-                              {mod.moduleAssessment.title}
-                            </h4>
-                            <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
-                              Covers all topics in {mod.title}. +{mod.moduleAssessment.xpReward} XP upon completion.
-                            </p>
-                          </div>
+                          {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                            <button
+                              onClick={() => handleOpenModuleAiQuiz(mod, false)}
+                              className="btn-secondary"
+                              style={{ padding: '3px 8px', fontSize: '11px', gap: '4px' }}
+                            >
+                              <Plus size={12} /> <span>Add Quiz</span>
+                            </button>
+                          )}
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={() => handleStartSlideQuestRunner(mod.moduleAssessment, mod)}
-                            className="btn-primary"
+                        {(mod.quizzes && mod.quizzes.length > 0 ? mod.quizzes : [mod.moduleAssessment]).map((quizItem, qIdx) => (
+                          <div
+                            key={quizItem.id || qIdx}
                             style={{
-                              padding: '6px 14px',
-                              fontSize: '11.5px',
-                              fontWeight: '700',
-                              gap: '6px',
-                              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                              padding: '14px 16px',
+                              borderRadius: 'var(--radius-md)',
+                              backgroundColor: quizItem.isBossBattle ? 'rgba(239, 68, 68, 0.04)' : 'rgba(79, 70, 229, 0.04)',
+                              border: quizItem.isBossBattle ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--primary-border)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                              gap: '12px'
                             }}
                           >
-                            <Play size={13} fill="currentColor" />
-                            <span>🎮 Take Quiz Quest</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenModuleAiQuiz(mod, mod.moduleAssessment.isBossBattle)}
-                            className="btn-secondary"
-                            style={{ padding: '6px 12px', fontSize: '11.5px', gap: '4px' }}
-                          >
-                            <Bot size={13} />
-                            <span>Edit / Regenerate</span>
-                          </button>
-                        </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: 'var(--radius-sm)',
+                                backgroundColor: quizItem.isBossBattle ? 'rgba(239, 68, 68, 0.15)' : 'rgba(79, 70, 229, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: quizItem.isBossBattle ? '#EF4444' : 'var(--primary)'
+                              }}>
+                                {quizItem.isBossBattle ? <Swords size={18} /> : <Award size={18} />}
+                              </div>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span className={`badge-pill ${quizItem.isBossBattle ? 'badge-danger' : 'badge-primary'}`} style={{ fontSize: '10px', fontWeight: '700' }}>
+                                    {quizItem.isBossBattle ? '👹 MODULE BOSS CHALLENGE' : '🧠 MODULE QUIZ'}
+                                  </span>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    {quizItem.questionsCount || quizItem.questions?.length || 5} Questions • {quizItem.timeLimitMinutes || quizItem.timeLimit || 15} Mins • Pass: {quizItem.passPercentage || quizItem.passingScorePercent || 70}%
+                                  </span>
+                                </div>
+                                <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', margin: '3px 0 1px' }}>
+                                  {quizItem.title}
+                                </h4>
+                                <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                                  Covers topics in {mod.title}. +{quizItem.xpReward || 50} XP reward upon completion.
+                                </p>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <button
+                                onClick={() => handleStartSlideQuestRunner(quizItem, mod)}
+                                className="btn-primary"
+                                style={{
+                                  padding: '5px 12px',
+                                  fontSize: '11.5px',
+                                  fontWeight: '700',
+                                  gap: '5px',
+                                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                                }}
+                              >
+                                <Play size={12} fill="currentColor" />
+                                <span>Take Quiz</span>
+                              </button>
+                              {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                                <button
+                                  onClick={() => handleOpenModuleAiQuiz(mod, quizItem.isBossBattle)}
+                                  className="btn-secondary"
+                                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                                >
+                                  <Bot size={13} />
+                                  <span>Edit / Regenerate</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -3174,7 +3260,7 @@ export default function Courses({ currentUser }) {
               <button onClick={() => setShowCourseModal(false)} className="btn-ghost" style={{ padding: '4px' }}>✕</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
                   Course Code
@@ -3213,6 +3299,32 @@ export default function Courses({ currentUser }) {
                     fontSize: '13px'
                   }}
                 />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                  Academic Term
+                </label>
+                <select
+                  value={newCourseTerm}
+                  onChange={e => setNewCourseTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    backgroundColor: 'var(--bg-canvas)',
+                    border: '1px solid var(--border-card)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-main)',
+                    fontSize: '13px'
+                  }}
+                >
+                  <option value="Fall 2026">Fall 2026</option>
+                  <option value="Spring 2026">Spring 2026</option>
+                  <option value="Summer 2026">Summer 2026</option>
+                  <option value="Fall 2025">Fall 2025</option>
+                  <option value="Term 1">Term 1</option>
+                  <option value="Term 2">Term 2</option>
+                </select>
               </div>
             </div>
 

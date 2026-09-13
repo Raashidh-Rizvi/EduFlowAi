@@ -257,6 +257,25 @@ public static class DbInitializer
                 context.SaveChanges();
             }
 
+            // Clean up any test/junk courses in DB and ensure real term is populated
+            var allCourses = context.Courses.ToList();
+            foreach (var c in allCourses)
+            {
+                if (string.IsNullOrWhiteSpace(c.Term))
+                {
+                    c.Term = "Fall 2026";
+                }
+                if (c.Code == "NVNGV" || c.Title == "nhvhhv")
+                {
+                    c.Code = "SE-302";
+                    c.Title = "Software Architecture & System Design";
+                    c.Category = "Software Engineering";
+                    c.Term = "Spring 2026";
+                    c.Description = "Enterprise architecture patterns, microservices decomposition, multi-agent orchestrations, and deterministic system safety.";
+                }
+            }
+            context.SaveChanges();
+
             // Ensure default course CS-301 exists
             var courseId = Guid.Parse("44444444-4444-4444-4444-444444444444");
             var course = context.Courses.FirstOrDefault(c => c.Code == "CS-301" || c.Id == courseId);
@@ -269,6 +288,7 @@ public static class DbInitializer
                     Title = "Advanced Database Architecture & EF Core",
                     Description = "Deep dive into relational storage engines, B-tree indexing, query plan analysis, ACID transactions, and distributed concurrency.",
                     Category = "Computer Science",
+                    Term = "Fall 2026",
                     InstructorId = instructorId,
                     IsPublished = true,
                     CreatedAt = DateTime.UtcNow,
@@ -303,6 +323,14 @@ public static class DbInitializer
 
                 context.Modules.AddRange(mod1, mod2);
                 context.SaveChanges();
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(course.Term))
+                {
+                    course.Term = "Fall 2026";
+                    context.SaveChanges();
+                }
             }
 
             // Ensure modules have valid PdfUrls populated if currently missing

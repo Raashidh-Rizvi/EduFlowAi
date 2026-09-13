@@ -14,7 +14,14 @@ public record CourseDto(
     Guid InstructorId,
     string? InstructorName,
     int ModulesCount,
-    int LessonsCount
+    int LessonsCount,
+    string Term = "Fall 2026",
+    int StudentsCount = 0,
+    int TopicsCount = 0,
+    int QuizzesCount = 0,
+    double CompletionRate = 0.0,
+    double AvgScore = 0.0,
+    double Engagement = 0.0
 );
 
 public record CourseDetailDto(
@@ -26,7 +33,9 @@ public record CourseDetailDto(
     string? ThumbnailUrl,
     Guid InstructorId,
     string? InstructorName,
-    List<ModuleDto> Modules
+    List<ModuleDto> Modules,
+    List<QuizDto>? Quizzes = null,
+    string Term = "Fall 2026"
 );
 
 public record ModuleDto(
@@ -36,7 +45,8 @@ public record ModuleDto(
     int OrderIndex,
     string? PdfUrl,
     string? AttachmentFileName,
-    List<LessonSummaryDto> Lessons
+    List<LessonSummaryDto> Lessons,
+    List<QuizDto>? Quizzes = null
 );
 
 public record LessonSummaryDto(
@@ -69,7 +79,8 @@ public record CreateCourseRequest(
     string Title,
     string Description,
     string Category,
-    string? ThumbnailUrl
+    string? ThumbnailUrl,
+    string? Term = "Fall 2026"
 );
 
 public record CreateModuleRequest(
@@ -133,7 +144,8 @@ public record EnrolledCourseDto(
     string Status,
     DateTime EnrolledAt,
     int TotalLessons,
-    int CompletedLessons
+    int CompletedLessons,
+    string Term = "Fall 2026"
 );
 
 public record AddStudentToCourseRequest(

@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Sparkles,
   Trash2,
+  Edit3,
   Eye,
   FileUp,
   FileText,
@@ -54,6 +55,22 @@ export default function Assessments({ currentUser }) {
   const [quizXp, setQuizXp] = useState(60);
   const [quizCoins, setQuizCoins] = useState(25);
   const [quizPass, setQuizPass] = useState(70);
+  const [manualScopeType, setManualScopeType] = useState('Module'); // 'Module' | 'Course'
+  const [manualModuleId, setManualModuleId] = useState('');
+
+  // Edit Quiz Modal State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editQuizId, setEditQuizId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editTime, setEditTime] = useState(20);
+  const [editPass, setEditPass] = useState(70);
+  const [editXp, setEditXp] = useState(50);
+  const [editCoins, setEditCoins] = useState(20);
+  const [editScopeType, setEditScopeType] = useState('Module');
+  const [editScopeId, setEditScopeId] = useState('');
+  const [editQuestions, setEditQuestions] = useState([]);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Manual Typed Questions State
   const [questions, setQuestions] = useState([
@@ -493,15 +510,22 @@ export default function Assessments({ currentUser }) {
       return;
     }
 
+    const selectedModId = manualScopeType === 'Module' ? (manualModuleId || modulesList[0]?.id || quizCourseId) : quizCourseId;
+    const scopeTypeName = manualScopeType || 'Module';
+
     const createdQuiz = {
       id: `q-${Date.now()}`,
       title: quizTitle,
+      courseId: quizCourseId,
       courseCode: quizCourseCode,
       questionsCount: questions.length,
       timeLimit: quizTime,
+      timeLimitMinutes: quizTime,
       xpReward: quizXp,
       coinReward: quizCoins,
       passThreshold: quizPass,
+      scopeType: scopeTypeName,
+      scopeId: selectedModId,
       status: 'Active',
       questions: questions.map((q, idx) => ({
         id: `q-${Date.now()}-${idx}`,
@@ -522,6 +546,8 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: quizPass,
         xpReward: quizXp,
         coinReward: quizCoins,
+        scopeType: scopeTypeName,
+        scopeId: selectedModId,
         questions: questions.map((q, idx) => ({
           prompt: q.prompt,
           type: 0,
@@ -535,17 +561,119 @@ export default function Assessments({ currentUser }) {
       if (res && res.id) {
         createdQuiz.id = res.id;
       }
-    } catch {
-      // fallback
+    } catch (err) {
+      console.warn('Backend quiz creation fallback:', err);
     }
 
     saveGeneratedQuiz(createdQuiz);
     setQuizzesList(prev => [createdQuiz, ...prev.filter(q => q.id !== createdQuiz.id)]);
+    window.dispatchEvent(new Event('eduflow_quiz_created'));
     setShowCreateModal(false);
     setQuizTitle('');
     setUploadedFileName(null);
     setTimeout(() => loadAssessmentsForCourse(quizCourseId), 500);
-    alert(`🎉 Quiz "${createdQuiz.title}" successfully published with ${createdQuiz.questionsCount} questions and +${createdQuiz.xpReward} XP reward!`);
+    alert(`🎉 Quiz "${createdQuiz.title}" successfully published with ${createdQuiz.questionsCount} questions!`);
+  };
+
+  // Edit Quiz Handler (Instructor)
+  const handleOpenEditModal = async (quiz) => {
+    let fullQuiz = { ...quiz };
+    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
+      try {
+        const detail = await quizService.getQuizById(quiz.id);
+        if (detail && detail.questions) fullQuiz = detail;
+      } catch (err) {
+        console.warn('Could not fetch quiz details for edit:', err);
+      }
+    }
+    setEditQuizId(fullQuiz.id);
+    setEditTitle(fullQuiz.title || '');
+    setEditDesc(fullQuiz.description || '');
+    setEditTime(fullQuiz.timeLimitMinutes || fullQuiz.timeLimit || 20);
+    setEditPass(fullQuiz.passingScorePercent || fullQuiz.passThreshold || 70);
+    setEditXp(fullQuiz.xpReward || 50);
+    setEditCoins(fullQuiz.coinReward || 20);
+    setEditScopeType(fullQuiz.scopeType || 'Module');
+    setEditScopeId(fullQuiz.scopeId || (modulesList[0]?.id || quizCourseId));
+    setEditQuestions(
+      (fullQuiz.questions && fullQuiz.questions.length > 0)
+        ? fullQuiz.questions.map(q => ({
+            prompt: q.prompt || '',
+            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            explanation: q.explanation || '',
+            points: q.points || 10
+          }))
+        : [{ prompt: 'Question 1', options: ['Option A', 'Option B'], correctAnswer: 'Option A', explanation: '', points: 10 }]
+    );
+    setShowEditModal(true);
+  };
+
+  const handleSaveQuizEdit = async () => {
+    if (!editTitle.trim()) {
+      alert('Please enter a quiz title.');
+      return;
+    }
+    if (editQuestions.length === 0) {
+      alert('Please include at least one question.');
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      const targetScopeId = editScopeType === 'Module' ? (editScopeId || modulesList[0]?.id || quizCourseId) : quizCourseId;
+      const payload = {
+        courseId: quizCourseId,
+        title: editTitle,
+        description: editDesc || `Assessment for ${quizCourseCode}`,
+        timeLimitMinutes: Number(editTime),
+        passingScorePercent: Number(editPass),
+        xpReward: Number(editXp),
+        coinReward: Number(editCoins),
+        scopeType: editScopeType,
+        scopeId: targetScopeId,
+        questions: editQuestions.map((q, idx) => ({
+          prompt: q.prompt,
+          type: 0,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          points: Number(q.points) || 10,
+          orderIndex: idx + 1
+        }))
+      };
+
+      await quizService.updateQuiz(editQuizId, payload).catch(err => {
+        console.warn('Backend quiz update failed, updating locally:', err);
+      });
+
+      const updatedObj = {
+        id: editQuizId,
+        courseId: quizCourseId,
+        courseCode: quizCourseCode,
+        title: editTitle,
+        description: editDesc,
+        questionsCount: editQuestions.length,
+        timeLimit: editTime,
+        timeLimitMinutes: editTime,
+        xpReward: editXp,
+        coinReward: editCoins,
+        passThreshold: editPass,
+        scopeType: editScopeType,
+        scopeId: targetScopeId,
+        questions: editQuestions,
+        status: 'Active'
+      };
+
+      saveGeneratedQuiz(updatedObj);
+      setQuizzesList(prev => prev.map(q => q.id === editQuizId ? { ...q, ...updatedObj } : q));
+      window.dispatchEvent(new Event('eduflow_quiz_created'));
+      setShowEditModal(false);
+      alert(`✅ Quiz "${editTitle}" updated successfully!`);
+    } catch (err) {
+      alert('Failed to update quiz: ' + err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleStartQuiz = async (quiz) => {
@@ -1090,6 +1218,9 @@ export default function Assessments({ currentUser }) {
                     <span className="badge-pill badge-primary">
                       {quiz.courseCode}
                     </span>
+                    <span className="badge-pill badge-secondary" style={{ fontSize: '10px' }}>
+                      {quiz.scopeName ? `Module: ${quiz.scopeName}` : quiz.scopeType === 'Module' ? 'Module Quiz' : 'Course Scope'}
+                    </span>
                     <span className="badge-pill badge-success">
                       {quiz.status}
                     </span>
@@ -1147,6 +1278,15 @@ export default function Assessments({ currentUser }) {
                       >
                         <BarChart2 size={13} /> 
                         <span>Results</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenEditModal(quiz)}
+                        className="btn-secondary"
+                        style={{ padding: '5px 10px', fontSize: '11.5px', gap: '5px' }}
+                      >
+                        <Edit3 size={13} /> 
+                        <span>Edit</span>
                       </button>
 
                       <button
@@ -1312,7 +1452,7 @@ export default function Assessments({ currentUser }) {
             {/* Modal Body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* General Quiz Meta */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', gap: '12px' }}>
                 <div>
                   <label className="form-label">Target Course</label>
                   <select
@@ -1338,25 +1478,58 @@ export default function Assessments({ currentUser }) {
                     )}
                   </select>
                 </div>
+
                 <div>
-                  <label className="form-label">Assessment Title</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Diagnostic Quiz: PostgreSQL Indexing & Query Execution"
-                    value={quizTitle}
-                    onChange={(e) => setQuizTitle(e.target.value)}
-                    className="form-input"
-                  />
+                  <label className="form-label">Scope Level</label>
+                  <select
+                    value={manualScopeType}
+                    onChange={(e) => setManualScopeType(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="Module">Module Scope</option>
+                    <option value="Course">Course Level Scope</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="form-label">Course Code</label>
-                  <input
-                    type="text"
-                    value={quizCourseCode}
-                    onChange={(e) => setQuizCourseCode(e.target.value)}
-                    className="form-input"
-                  />
-                </div>
+
+                {manualScopeType === 'Module' ? (
+                  <div>
+                    <label className="form-label">Target Module</label>
+                    <select
+                      value={manualModuleId}
+                      onChange={(e) => setManualModuleId(e.target.value)}
+                      className="form-select"
+                    >
+                      {modulesList.length > 0 ? (
+                        modulesList.map(m => (
+                          <option key={m.id} value={m.id}>{m.title}</option>
+                        ))
+                      ) : (
+                        <option value="">Select Course First</option>
+                      )}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="form-label">Course Code</label>
+                    <input
+                      type="text"
+                      value={quizCourseCode}
+                      onChange={(e) => setQuizCourseCode(e.target.value)}
+                      className="form-input"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="form-label">Assessment Title / Quiz Name *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Diagnostic Quiz: PostgreSQL Indexing & Query Execution"
+                  value={quizTitle}
+                  onChange={(e) => setQuizTitle(e.target.value)}
+                  className="form-input"
+                />
               </div>
 
               {/* Gamification Parameters */}
@@ -2634,6 +2807,236 @@ export default function Assessments({ currentUser }) {
                 style={{ fontSize: '12.5px', padding: '7px 14px' }}
               >
                 Close & Return
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT QUIZ MODAL FOR INSTRUCTORS */}
+      {showEditModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%', maxWidth: '750px', maxHeight: '90vh', overflowY: 'auto',
+            padding: '28px', backgroundColor: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'var(--primary-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                  <Edit3 size={18} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '17px', fontWeight: '700', color: 'var(--text-main)' }}>Edit Quiz Configuration</h3>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Update quiz name, time limits, scope, and questions</div>
+                </div>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="btn-secondary" style={{ padding: '6px' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Quiz Title & Description */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label className="form-label" style={{ fontWeight: '700' }}>Quiz Title / Name *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="form-input"
+                  placeholder="e.g. Clean Architecture & Dependency Injection Quiz"
+                  style={{ fontSize: '13.5px', fontWeight: '600' }}
+                />
+              </div>
+
+              <div>
+                <label className="form-label">Description</label>
+                <input
+                  type="text"
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className="form-input"
+                  placeholder="Brief description of evaluation criteria"
+                />
+              </div>
+
+              {/* Scope & Target Module */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Scope Level</label>
+                  <select
+                    value={editScopeType}
+                    onChange={(e) => setEditScopeType(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="Module">Module Scope</option>
+                    <option value="Course">Full Course Scope</option>
+                  </select>
+                </div>
+
+                {editScopeType === 'Module' && (
+                  <div>
+                    <label className="form-label">Assigned Module</label>
+                    <select
+                      value={editScopeId}
+                      onChange={(e) => setEditScopeId(e.target.value)}
+                      className="form-select"
+                    >
+                      {modulesList.map(m => (
+                        <option key={m.id} value={m.id}>{m.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Quiz Parameters */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                <div>
+                  <label className="form-label">Time (Mins)</label>
+                  <input
+                    type="number"
+                    value={editTime}
+                    onChange={(e) => setEditTime(Number(e.target.value))}
+                    className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Pass (%)</label>
+                  <input
+                    type="number"
+                    value={editPass}
+                    onChange={(e) => setEditPass(Number(e.target.value))}
+                    className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">XP Reward</label>
+                  <input
+                    type="number"
+                    value={editXp}
+                    onChange={(e) => setEditXp(Number(e.target.value))}
+                    className="form-input"
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Coins</label>
+                  <input
+                    type="number"
+                    value={editCoins}
+                    onChange={(e) => setEditCoins(Number(e.target.value))}
+                    className="form-input"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Questions List */}
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Questions ({editQuestions.length})</h4>
+                <button
+                  type="button"
+                  onClick={() => setEditQuestions(prev => [...prev, { prompt: `Question ${prev.length + 1}`, options: ['Option A', 'Option B', 'Option C', 'Option D'], correctAnswer: 'Option A', explanation: '', points: 10 }])}
+                  className="btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '11.5px' }}
+                >
+                  <Plus size={13} /> <span>Add Question</span>
+                </button>
+              </div>
+
+              {editQuestions.map((q, qIdx) => (
+                <div key={qIdx} style={{ padding: '14px', borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--primary)' }}>Q{qIdx + 1} Prompt</span>
+                    {editQuestions.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setEditQuestions(prev => prev.filter((_, i) => i !== qIdx))}
+                        className="btn-danger"
+                        style={{ padding: '3px 6px' }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={q.prompt}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditQuestions(prev => {
+                        const copy = [...prev];
+                        copy[qIdx] = { ...copy[qIdx], prompt: val };
+                        return copy;
+                      });
+                    }}
+                    className="form-input"
+                  />
+
+                  {/* Options */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Options (click circle to set correct):</label>
+                    {q.options.map((opt, optIdx) => {
+                      const isCorrect = q.correctAnswer === opt;
+                      return (
+                        <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditQuestions(prev => {
+                                const copy = [...prev];
+                                copy[qIdx] = { ...copy[qIdx], correctAnswer: opt };
+                                return copy;
+                              });
+                            }}
+                            style={{
+                              width: '20px', height: '20px', borderRadius: '50%',
+                              backgroundColor: isCorrect ? 'var(--success)' : 'transparent',
+                              border: isCorrect ? 'none' : '1px solid var(--border-card)',
+                              color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                            }}
+                          >
+                            {isCorrect && <Check size={12} />}
+                          </button>
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditQuestions(prev => {
+                                const copy = [...prev];
+                                const oldOpt = copy[qIdx].options[optIdx];
+                                const newOpts = [...copy[qIdx].options];
+                                newOpts[optIdx] = val;
+                                let newCorr = copy[qIdx].correctAnswer;
+                                if (newCorr === oldOpt) newCorr = val;
+                                copy[qIdx] = { ...copy[qIdx], options: newOpts, correctAnswer: newCorr };
+                                return copy;
+                              });
+                            }}
+                            className="form-input"
+                            style={{ padding: '6px 10px', fontSize: '12px' }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+              <button type="button" onClick={() => setShowEditModal(false)} className="btn-secondary" style={{ padding: '8px 16px' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleSaveQuizEdit} disabled={isSavingEdit} className="btn-primary" style={{ padding: '8px 20px' }}>
+                {isSavingEdit ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

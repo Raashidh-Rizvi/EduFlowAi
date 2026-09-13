@@ -57,6 +57,7 @@ public class Course : BaseEntity
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Category { get; set; } = "Computer Science";
+    public string Term { get; set; } = "Fall 2026";
     public string? ThumbnailUrl { get; set; }
     public bool IsPublished { get; set; } = true;
     public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
@@ -194,8 +195,11 @@ public class Assessment : BaseEntity
     public DateTime? DueDate { get; set; }
 
     // Navigation properties for hierarchy scopes
+    public Guid? TopicScopeId { get; set; }
     public Topic? TopicScope { get; set; }
+    public Guid? ContentItemScopeId { get; set; }
     public ContentItem? ContentItemScope { get; set; }
+    public Guid? ModuleScopeId { get; set; }
     public Module? ModuleScope { get; set; }
     public QuizConfiguration? Configuration { get; set; }
     public ICollection<Question> Questions { get; set; } = new List<Question>();

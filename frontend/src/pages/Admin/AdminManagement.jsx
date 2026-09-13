@@ -18,19 +18,47 @@ import {
   Lock,
   Sliders,
   SlidersHorizontal,
-  Server
+  Server,
+  Brain,
+  DollarSign,
+  Zap,
+  BarChart3,
+  Clock,
+  ArrowUpRight,
+  Eye,
+  FileText,
+  Bot,
+  Layers,
+  CheckCircle,
+  AlertCircle,
+  TrendingUp,
+  X
 } from 'lucide-react';
 
 export default function AdminManagement() {
-  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'config' | 'system'
+  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'config' | 'system' | 'ai-telemetry'
   const [searchFilter, setSearchFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
 
   const [usersList, setUsersList] = useState([]);
 
+  // AI Telemetry State
+  const [aiTelemetry, setAiTelemetry] = useState(null);
+  const [loadingAiTelemetry, setLoadingAiTelemetry] = useState(false);
+  const [aiUserSearch, setAiUserSearch] = useState('');
+  const [aiRoleFilter, setAiRoleFilter] = useState('All');
+  const [aiSortKey, setAiSortKey] = useState('TotalTokens'); // 'TotalTokens' | 'TotalCostUsd' | 'TotalRequests'
+  const [selectedWorkflowModal, setSelectedWorkflowModal] = useState(null);
+
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (activeSubTab === 'ai-telemetry') {
+      fetchAiTelemetry();
+    }
+  }, [activeSubTab]);
 
   const fetchUsers = async () => {
     try {
@@ -48,6 +76,18 @@ export default function AdminManagement() {
       setUsersList(mapped);
     } catch (err) {
       console.warn('Failed to fetch users:', err);
+    }
+  };
+
+  const fetchAiTelemetry = async () => {
+    setLoadingAiTelemetry(true);
+    try {
+      const response = await api.get('/admin/ai-telemetry');
+      setAiTelemetry(response.data);
+    } catch (err) {
+      console.warn('Failed to fetch AI telemetry:', err);
+    } finally {
+      setLoadingAiTelemetry(false);
     }
   };
 
@@ -85,6 +125,16 @@ export default function AdminManagement() {
     return matchesSearch && matchesRole;
   });
 
+  // Filtered AI User Usage list
+  const filteredAiUserUsage = (aiTelemetry?.userUsage || [])
+    .filter(u => {
+      const matchesSearch = (u.fullName || '').toLowerCase().includes(aiUserSearch.toLowerCase()) ||
+                            (u.email || '').toLowerCase().includes(aiUserSearch.toLowerCase());
+      const matchesRole = aiRoleFilter === 'All' || u.role === aiRoleFilter;
+      return matchesSearch && matchesRole;
+    })
+    .sort((a, b) => (b[aiSortKey] || 0) - (a[aiSortKey] || 0));
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Top Banner */}
@@ -108,7 +158,7 @@ export default function AdminManagement() {
             Platform Governance & Administration
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-            Manage identity directory, elevate role scopes, enforce deterministic safety constraints, and observe microservice health telemetry.
+            Manage identity directory, elevate role scopes, monitor AI model token usage & costs, observe multi-agent workflows, and enforce deterministic safety constraints.
           </p>
         </div>
 
@@ -119,7 +169,8 @@ export default function AdminManagement() {
           padding: '4px',
           borderRadius: 'var(--radius-sm)',
           border: '1px solid var(--border-subtle)',
-          gap: '4px'
+          gap: '4px',
+          flexWrap: 'wrap'
         }}>
           <button
             onClick={() => setActiveSubTab('users')}
@@ -139,6 +190,27 @@ export default function AdminManagement() {
           >
             <Users size={14} /> 
             <span>Directory ({usersList.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('ai-telemetry')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: activeSubTab === 'ai-telemetry' ? 'var(--bg-card)' : 'transparent',
+              color: activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'var(--text-muted)',
+              fontSize: '12.5px',
+              fontWeight: activeSubTab === 'ai-telemetry' ? '700' : '500',
+              border: activeSubTab === 'ai-telemetry' ? '1px solid var(--primary)' : '1px solid transparent',
+              cursor: 'pointer',
+              boxShadow: activeSubTab === 'ai-telemetry' ? '0 0 10px rgba(99, 102, 241, 0.15)' : 'none'
+            }}
+          >
+            <Brain size={14} color={activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'currentColor'} /> 
+            <span>AI & Agent Telemetry</span>
+            <span className="badge-pill badge-primary" style={{ fontSize: '10px', padding: '1px 5px' }}>NEW</span>
           </button>
           <button
             onClick={() => setActiveSubTab('config')}
@@ -304,7 +376,432 @@ export default function AdminManagement() {
         </div>
       )}
 
-      {/* 2. Global Config View */}
+      {/* 2. AI & Agent Telemetry View */}
+      {activeSubTab === 'ai-telemetry' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {loadingAiTelemetry ? (
+            <div className="card-premium" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <RefreshCw size={24} className="spin" style={{ marginBottom: '8px' }} />
+              <p style={{ fontSize: '14px' }}>Loading real-time AI cost, token usage, and multi-agent workflow telemetry...</p>
+            </div>
+          ) : aiTelemetry ? (
+            <>
+              {/* Top Metrics Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+                <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Total Estimated Cost
+                    </span>
+                    <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <DollarSign size={18} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--success)', letterSpacing: '-0.03em' }}>
+                    ${aiTelemetry.summary.totalCostUsd?.toFixed(4)} <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-muted)' }}>USD</span>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <TrendingUp size={13} color="var(--success)" />
+                    <span>Real-time model metering active</span>
+                  </div>
+                </div>
+
+                <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Total Tokens Consumed
+                    </span>
+                    <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Zap size={18} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--primary)', letterSpacing: '-0.03em' }}>
+                    {(aiTelemetry.summary.totalTokens / 1000)?.toFixed(1)}k
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                    Prompt: <strong style={{ color: 'var(--text-main)' }}>{(aiTelemetry.summary.totalPromptTokens / 1000)?.toFixed(1)}k</strong> | Completion: <strong style={{ color: 'var(--text-main)' }}>{(aiTelemetry.summary.totalCompletionTokens / 1000)?.toFixed(1)}k</strong>
+                  </div>
+                </div>
+
+                <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Agent Invocations
+                    </span>
+                    <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(236, 72, 153, 0.1)', color: 'var(--secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Bot size={18} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.03em' }}>
+                    {aiTelemetry.summary.totalInvocations}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                    <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>
+                      {aiTelemetry.summary.activeAgentsCount} Agents Operational
+                    </span>
+                  </div>
+                </div>
+
+                <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Avg Agent Latency
+                    </span>
+                    <div style={{ width: '32px', height: '32px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'var(--warning)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Clock size={18} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.03em' }}>
+                    {aiTelemetry.summary.avgLatencyMs} <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-muted)' }}>ms</span>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="status-dot-active" style={{ width: '6px', height: '6px' }}></span>
+                    <span style={{ color: 'var(--success)', fontWeight: '600' }}>FastAPI Gateway :8000 Healthy</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* LLM Model Cost & Token Metering Breakdown */}
+              <div className="card-premium" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>
+                      LLM Model Pricing & Consumption Breakdown
+                    </h3>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Cost allocation, token volume distribution, and pricing meters per foundation model.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={fetchAiTelemetry}
+                    className="btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: '12px', gap: '6px' }}
+                  >
+                    <RefreshCw size={12} /> Refresh Telemetry
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+                  {aiTelemetry.modelCosts.map((m, idx) => (
+                    <div key={idx} style={{
+                      backgroundColor: 'var(--bg-canvas)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '16px',
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>{m.modelName}</div>
+                          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Provider: {m.provider}</div>
+                        </div>
+                        <span className="badge-pill badge-primary" style={{ fontSize: '11px' }}>
+                          {m.usagePercent}% Share
+                        </span>
+                      </div>
+
+                      {/* Token progress bar */}
+                      <div>
+                        <div style={{ height: '6px', backgroundColor: 'var(--border-subtle)', borderRadius: '3px', overflow: 'hidden' }}>
+                          <div style={{
+                            height: '100%',
+                            width: `${m.usagePercent}%`,
+                            backgroundColor: idx === 0 ? 'var(--primary)' : idx === 1 ? 'var(--secondary)' : idx === 2 ? 'var(--success)' : 'var(--warning)',
+                            borderRadius: '3px'
+                          }}></div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Prompt Tokens</div>
+                          <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{(m.promptTokens / 1000)?.toFixed(1)}k</div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Completion Tokens</div>
+                          <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{(m.completionTokens / 1000)?.toFixed(1)}k</div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Rate / 1k Prompt</div>
+                          <div style={{ fontWeight: '500', color: 'var(--text-secondary)' }}>${m.pricePer1kPrompt}</div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Est. Model Cost</div>
+                          <div style={{ fontWeight: '700', color: 'var(--success)' }}>${m.estimatedCost?.toFixed(4)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Who's Using What: User AI Usage & Token Directory */}
+              <div className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>
+                      User AI Usage & Token Metering Directory ("Who's Using What")
+                    </h3>
+                    <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Per-user prompt/completion token consumption, cost breakdown, and top AI features utilized.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '7px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: 'var(--bg-input)',
+                      border: '1px solid var(--border-card)',
+                      width: '260px'
+                    }}>
+                      <Search size={14} color="var(--text-muted)" />
+                      <input
+                        type="text"
+                        placeholder="Search by user or email..."
+                        value={aiUserSearch}
+                        onChange={(e) => setAiUserSearch(e.target.value)}
+                        style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: '12.5px', width: '100%' }}
+                      />
+                    </div>
+
+                    <select
+                      value={aiRoleFilter}
+                      onChange={(e) => setAiRoleFilter(e.target.value)}
+                      className="form-select"
+                      style={{ width: 'auto', padding: '7px 12px', fontSize: '12.5px' }}
+                    >
+                      <option value="All">All Roles</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Instructor">Instructor</option>
+                      <option value="Student">Student</option>
+                    </select>
+
+                    <select
+                      value={aiSortKey}
+                      onChange={(e) => setAiSortKey(e.target.value)}
+                      className="form-select"
+                      style={{ width: 'auto', padding: '7px 12px', fontSize: '12.5px' }}
+                    >
+                      <option value="TotalTokens">Sort by Total Tokens</option>
+                      <option value="TotalCostUsd">Sort by Total Cost ($)</option>
+                      <option value="TotalRequests">Sort by Requests Count</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <th style={{ padding: '10px 12px' }}>User Details</th>
+                        <th style={{ padding: '10px 12px' }}>Requests</th>
+                        <th style={{ padding: '10px 12px' }}>Prompt Tokens</th>
+                        <th style={{ padding: '10px 12px' }}>Completion Tokens</th>
+                        <th style={{ padding: '10px 12px' }}>Total Tokens</th>
+                        <th style={{ padding: '10px 12px' }}>Est. Cost ($ USD)</th>
+                        <th style={{ padding: '10px 12px' }}>Top Feature Used</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Last Activity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAiUserUsage.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                            No user AI token records matched your filter criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAiUserUsage.map((usr) => (
+                          <tr key={usr.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{usr.fullName}</div>
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{usr.email}</div>
+                              <span className={`badge-pill ${usr.role === 'Admin' ? 'badge-danger' : usr.role === 'Instructor' ? 'badge-warning' : 'badge-primary'}`} style={{ fontSize: '10px', marginTop: '4px', display: 'inline-block' }}>
+                                {usr.role}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px' }}>
+                              <span className="badge-pill badge-secondary" style={{ fontWeight: '600' }}>
+                                {usr.totalRequests} reqs
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '12.5px' }}>
+                              {(usr.promptTokens / 1000)?.toFixed(1)}k
+                            </td>
+
+                            <td style={{ padding: '12px', color: 'var(--text-secondary)', fontSize: '12.5px' }}>
+                              {(usr.completionTokens / 1000)?.toFixed(1)}k
+                            </td>
+
+                            <td style={{ padding: '12px', fontWeight: '700', color: 'var(--primary)' }}>
+                              {(usr.totalTokens / 1000)?.toFixed(1)}k
+                            </td>
+
+                            <td style={{ padding: '12px' }}>
+                              <span style={{
+                                padding: '4px 8px',
+                                borderRadius: 'var(--radius-xs)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                color: 'var(--success)',
+                                fontWeight: '700',
+                                fontSize: '12.5px'
+                              }}>
+                                ${usr.totalCostUsd?.toFixed(4)}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px' }}>
+                              <span className="badge-pill badge-primary" style={{ fontSize: '11px' }}>
+                                {usr.topFeature}
+                              </span>
+                            </td>
+
+                            <td style={{ padding: '12px', textAlign: 'right', color: 'var(--text-muted)', fontSize: '12px' }}>
+                              {new Date(usr.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Interconnected 7-Agent Microservice Topology Grid */}
+              <div className="card-premium" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>
+                    Interconnected Multi-Agent Topology & Health Monitoring
+                  </h3>
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Real-time status, foundation model assignments, latency, and success metrics for all 7 LangGraph microservice agents.
+                  </p>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                  {aiTelemetry.agents.map((agent, i) => (
+                    <div key={i} style={{
+                      backgroundColor: 'var(--bg-canvas)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '16px',
+                      border: '1px solid var(--border-card)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Bot size={16} color="var(--primary)" />
+                          <span style={{ fontWeight: '700', fontSize: '13.5px', color: 'var(--text-main)' }}>
+                            {agent.name}
+                          </span>
+                        </div>
+                        <span className="badge-pill badge-success" style={{ fontSize: '10.5px' }}>
+                          <span className="status-dot-active" style={{ width: '5px', height: '5px' }}></span>
+                          {agent.status}
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0, minHeight: '32px' }}>
+                        {agent.role}
+                      </p>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', fontSize: '11.5px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Model: <strong>{agent.model}</strong></span>
+                        <span style={{ color: 'var(--secondary)', fontWeight: '600' }}>{agent.invocations} calls</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        <span>Avg Latency: <strong style={{ color: 'var(--text-main)' }}>{agent.avgLatencyMs}ms</strong></span>
+                        <span>Success: <strong style={{ color: 'var(--success)' }}>{agent.successRatePercent}%</strong></span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Live Multi-Agent LangGraph Workflow Execution Traces */}
+              <div className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>
+                    Live LangGraph Blackboard Workflow Execution Traces
+                  </h3>
+                  <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Observe active and recent state transitions, HITL approval states, step latency, and token consumption details.
+                  </p>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <th style={{ padding: '10px 12px' }}>Workflow ID & Feature</th>
+                        <th style={{ padding: '10px 12px' }}>User</th>
+                        <th style={{ padding: '10px 12px' }}>Pipeline Transitions</th>
+                        <th style={{ padding: '10px 12px' }}>Tokens & Latency</th>
+                        <th style={{ padding: '10px 12px' }}>Status</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiTelemetry.recentWorkflows.map((wf) => (
+                        <tr key={wf.workflowId} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: '700', color: 'var(--primary)', fontFamily: 'monospace' }}>{wf.workflowId}</div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-main)', marginTop: '2px' }}>{wf.feature}</div>
+                          </td>
+
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{wf.userName}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{wf.userEmail}</div>
+                          </td>
+
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontSize: '11.5px', fontFamily: 'monospace', color: 'var(--secondary)', backgroundColor: 'var(--bg-canvas)', padding: '4px 8px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', display: 'inline-block' }}>
+                              {wf.pipeline}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{wf.totalTokens} tokens</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{wf.executionTimeMs} ms | ${wf.costUsd?.toFixed(4)}</div>
+                          </td>
+
+                          <td style={{ padding: '12px' }}>
+                            <span className={`badge-pill ${wf.status === 'COMPLETED' ? 'badge-success' : 'badge-warning'}`}>
+                              {wf.status}
+                            </span>
+                          </td>
+
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            <button
+                              onClick={() => setSelectedWorkflowModal(wf)}
+                              className="btn-secondary"
+                              style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                            >
+                              <Eye size={12} /> Inspect State
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {/* 3. Global Config View */}
       {activeSubTab === 'config' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div className="card-premium" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -386,7 +883,7 @@ export default function AdminManagement() {
         </div>
       )}
 
-      {/* 3. Infrastructure & System Health */}
+      {/* 4. Infrastructure & System Health */}
       {activeSubTab === 'system' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           {[
@@ -427,6 +924,100 @@ export default function AdminManagement() {
           })}
         </div>
       )}
+
+      {/* Interactive Workflow State Inspector Modal */}
+      {selectedWorkflowModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999,
+          padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: '28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="badge-pill badge-primary" style={{ fontSize: '11px' }}>
+                    LANGGRAPH STATE MACHINE INSPECTOR
+                  </span>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Workflow ID: {selectedWorkflowModal.workflowId}</span>
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', marginTop: '6px' }}>
+                  {selectedWorkflowModal.feature}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedWorkflowModal(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px', backgroundColor: 'var(--bg-canvas)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Initiating User</div>
+                <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{selectedWorkflowModal.userName}</div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{selectedWorkflowModal.userEmail}</div>
+              </div>
+              <div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Execution Metrics</div>
+                <div style={{ fontWeight: '600', color: 'var(--primary)' }}>{selectedWorkflowModal.totalTokens} Tokens ({selectedWorkflowModal.promptTokens} p / {selectedWorkflowModal.completionTokens} c)</div>
+                <div style={{ fontSize: '11.5px', color: 'var(--success)' }}>Cost: ${selectedWorkflowModal.costUsd?.toFixed(4)} | {selectedWorkflowModal.executionTimeMs}ms</div>
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>State Machine Transition Pipeline</h4>
+              <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--secondary)', backgroundColor: 'var(--bg-canvas)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-card)' }}>
+                {selectedWorkflowModal.pipeline}
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>Input Objective Payload</h4>
+              <pre style={{ fontSize: '11.5px', backgroundColor: 'var(--bg-canvas)', padding: '12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', overflowX: 'auto', margin: 0 }}>
+                {JSON.stringify(JSON.parse(selectedWorkflowModal.inputPayloadJson || '{}'), null, 2)}
+              </pre>
+            </div>
+
+            <div>
+              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)', marginBottom: '6px' }}>State Result Output Payload</h4>
+              <pre style={{ fontSize: '11.5px', backgroundColor: 'var(--bg-canvas)', padding: '12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', color: 'var(--success)', overflowX: 'auto', margin: 0 }}>
+                {JSON.stringify(JSON.parse(selectedWorkflowModal.outputPayloadJson || '{}'), null, 2)}
+              </pre>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+              <button
+                onClick={() => setSelectedWorkflowModal(null)}
+                className="btn-primary"
+                style={{ padding: '8px 16px' }}
+              >
+                Close Inspector
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

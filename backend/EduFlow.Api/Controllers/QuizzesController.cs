@@ -269,6 +269,9 @@ public class QuizzesController : ControllerBase
             CourseId = courseId,
             ScopeType = request.ScopeType,
             ScopeId = request.ScopeId ?? courseId,
+            ModuleScopeId = request.ScopeType == QuizScopeType.Module ? (request.ScopeId ?? courseId) : null,
+            TopicScopeId = request.ScopeType == QuizScopeType.Topic ? request.ScopeId : null,
+            ContentItemScopeId = request.ScopeType == QuizScopeType.ContentItem ? request.ScopeId : null,
             Title = request.Title,
             Description = request.Description,
             Type = AssessmentType.Quiz,
@@ -369,6 +372,18 @@ public class QuizzesController : ControllerBase
         quiz.Description = request.Description;
         quiz.ScopeType = request.ScopeType;
         quiz.ScopeId = request.ScopeId ?? quiz.ScopeId;
+        if (quiz.ScopeType == QuizScopeType.Module && quiz.ScopeId.HasValue)
+        {
+            quiz.ModuleScopeId = quiz.ScopeId.Value;
+        }
+        else if (quiz.ScopeType == QuizScopeType.Topic && quiz.ScopeId.HasValue)
+        {
+            quiz.TopicScopeId = quiz.ScopeId.Value;
+        }
+        else if (quiz.ScopeType == QuizScopeType.ContentItem && quiz.ScopeId.HasValue)
+        {
+            quiz.ContentItemScopeId = quiz.ScopeId.Value;
+        }
         quiz.Difficulty = request.Difficulty;
         quiz.TimeLimitSeconds = request.TimeLimitSeconds > 0 ? request.TimeLimitSeconds : (request.TimeLimitMinutes * 60);
         quiz.TimeLimitMinutes = Math.Max(1, quiz.TimeLimitSeconds / 60);
