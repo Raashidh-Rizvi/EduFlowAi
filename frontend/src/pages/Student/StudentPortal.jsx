@@ -34,6 +34,7 @@ import {
   HelpCircle,
   Sparkles
 } from 'lucide-react';
+import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import RoleSwitcher from '../../components/common/RoleSwitcher';
@@ -330,26 +331,26 @@ function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
 
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
-                              onClick={() => onOpenPdf({
-                                title: `${mod.title} – PDF Material`,
-                                url: mod.pdfUrl,
-                                fileName: mod.attachmentFileName || 'module_syllabus.pdf'
-                              })}
+                              onClick={async () => {
+                                const doc = await preparePdfForViewing(
+                                  mod.pdfUrl,
+                                  `${mod.title} – PDF Material`,
+                                  mod.attachmentFileName || 'module_syllabus.pdf'
+                                );
+                                onOpenPdf(doc);
+                              }}
                               className="btn-secondary"
                               style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px' }}
                             >
                               <Eye size={12} /> View PDF
                             </button>
-                            <a
-                              href={mod.pdfUrl}
-                              download={mod.attachmentFileName || 'material.pdf'}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              onClick={() => downloadPdf(mod.pdfUrl, mod.attachmentFileName || 'material.pdf', mod.title)}
                               className="btn-ghost"
-                              style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px' }}
+                              style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px', border: 'none', background: 'transparent', cursor: 'pointer' }}
                             >
                               <Download size={12} /> Download
-                            </a>
+                            </button>
                           </div>
                         </div>
                       )}
@@ -388,11 +389,14 @@ function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               {les.pdfUrl && (
                                 <button
-                                  onClick={() => onOpenPdf({
-                                    title: les.title,
-                                    url: les.pdfUrl,
-                                    fileName: les.attachmentFileName || 'lesson_attachment.pdf'
-                                  })}
+                                  onClick={async () => {
+                                    const doc = await preparePdfForViewing(
+                                      les.pdfUrl,
+                                      les.title,
+                                      les.attachmentFileName || 'lesson_attachment.pdf'
+                                    );
+                                    onOpenPdf(doc);
+                                  }}
                                   className="badge-pill badge-secondary"
                                   style={{ cursor: 'pointer', fontSize: '10.5px' }}
                                 >
@@ -1539,31 +1543,47 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
 
   useEffect(() => {
     async function loadStudentData() {
-      // 1. Load Courses
+      // 1. Load Enrolled Courses with Full Modules & Syllabus
       try {
-        const data = await courseService.getCourses();
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map(c => ({
+        let rawCourses = [];
+        try {
+          rawCourses = await courseService.getMyCourses();
+        } catch {
+          rawCourses = await courseService.getCourses();
+        }
+        if (Array.isArray(rawCourses) && rawCourses.length > 0) {
+          const fullCoursesDetails = await Promise.all(
+            rawCourses.map(async c => {
+              const targetId = c.courseId || c.id;
+              const detail = await courseService.getCourseById(targetId);
+              return detail || c;
+            })
+          );
+
+          const mapped = fullCoursesDetails.map(c => ({
             id: c.id,
             code: c.code || 'CS-301',
             title: c.title,
+            description: c.description || '',
             modules: (c.modules || []).map((m, idx) => ({
               id: m.id || `m_${idx}`,
               title: m.title,
+              description: m.description || '',
               pdfUrl: m.pdfUrl || null,
-              attachmentFileName: m.attachmentFileName || 'Course Notes.pdf',
+              attachmentFileName: m.attachmentFileName || 'Module Syllabus.pdf',
               lessons: (m.lessons || []).map((l, lIdx) => ({
                 id: l.id || `l_${lIdx}`,
                 title: l.title,
                 duration: `${l.estimatedMinutes || 30} mins`,
                 xp: l.xpReward || 40,
-                completed: l.isCompleted || false
+                completed: l.isCompleted || false,
+                pdfUrl: l.pdfUrl || null,
+                attachmentFileName: l.attachmentFileName || null
               }))
             }))
           }));
-          const validCourses = mapped.filter(c => c.modules && c.modules.length > 0);
-          if (validCourses.length > 0) {
-            setCourses(validCourses);
+          if (mapped.length > 0) {
+            setCourses(mapped);
           }
         }
       } catch (err) {
@@ -1914,16 +1934,13 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <a
-                  href={pdfDoc.url}
-                  download={pdfDoc.fileName}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  onClick={() => downloadPdf(pdfDoc.rawUrl || pdfDoc.url, pdfDoc.fileName, pdfDoc.title)}
                   className="btn-primary"
-                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px', border: 'none', cursor: 'pointer' }}
                 >
                   <Download size={12} /> Download
-                </a>
+                </button>
                 <button
                   onClick={() => setPdfDoc(null)}
                   className="btn-ghost"

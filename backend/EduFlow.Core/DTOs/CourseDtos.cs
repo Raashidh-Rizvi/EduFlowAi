@@ -136,6 +136,27 @@ public record EnrolledCourseDto(
     int CompletedLessons
 );
 
+public record AddStudentToCourseRequest(
+    Guid? StudentId,
+    string? Email
+);
+
+public record EnrolledStudentDto(
+    Guid StudentId,
+    string FullName,
+    string Email,
+    DateTime EnrolledAt,
+    double ProgressPercentage,
+    string Status
+);
+
+public record AvailableStudentDto(
+    Guid StudentId,
+    string FullName,
+    string Email,
+    bool IsActive
+);
+
 // -----------------------------------------------------------------------------
 // Hierarchical Content DTOs: Course -> Module -> Topic -> ContentItem
 // -----------------------------------------------------------------------------

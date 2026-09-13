@@ -11,6 +11,7 @@ namespace EduFlow.Infrastructure.Services;
 
 public interface IAiGatewayClient
 {
+    Task<string> GetAiStatusAsync(CancellationToken ct = default);
     Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateAdaptiveChallengeAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default);
@@ -44,6 +45,35 @@ public class AiGatewayClient : IAiGatewayClient
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+        }
+    }
+
+    public async Task<string> GetAiStatusAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/ai/status", ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+            return JsonSerializer.Serialize(new
+            {
+                status = "rate_limited",
+                status_color = "yellow",
+                message = "AI Token Usage Limit Reached (429 RateLimit). Generation is temporarily paused.",
+                can_generate = false
+            });
+        }
+        catch
+        {
+            return JsonSerializer.Serialize(new
+            {
+                status = "unreachable",
+                status_color = "red",
+                message = $"AI Microservice Unreachable at {_baseUrl}. Please check server connectivity.",
+                can_generate = false
+            });
         }
     }
 
@@ -88,22 +118,32 @@ public class AiGatewayClient : IAiGatewayClient
         try
         {
             var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/generate-quiz", requestPayload, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode)
             {
-                return await response.Content.ReadAsStringAsync(ct);
+                return body;
             }
             else
             {
-                var errBody = await response.Content.ReadAsStringAsync(ct);
-                _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, errBody);
+                _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, body);
+                return JsonSerializer.Serialize(new
+                {
+                    status = "error",
+                    status_code = (int)response.StatusCode,
+                    message = !string.IsNullOrWhiteSpace(body) ? body : $"AI Microservice returned error status {(int)response.StatusCode}"
+                });
             }
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", $"{_baseUrl}/generate-quiz");
+            return JsonSerializer.Serialize(new
+            {
+                status = "error",
+                status_code = 503,
+                message = $"Unable to connect to AI Microservice at {_baseUrl}. Please verify Python service is running."
+            });
         }
-
-        return FallbackQuizJson();
     }
 
     public async Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default)

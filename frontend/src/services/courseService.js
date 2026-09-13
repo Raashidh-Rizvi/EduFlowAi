@@ -111,5 +111,25 @@ export const courseService = {
   async completeLesson(lessonId) {
     const response = await api.post(`/courses/lessons/${lessonId}/complete`);
     return response.data;
+  },
+
+  async addStudentToCourse(courseId, data) {
+    const response = await api.post(`/courses/${courseId}/students`, data);
+    return response.data;
+  },
+
+  async getEnrolledStudents(courseId) {
+    const response = await api.get(`/courses/${courseId}/enrolled-students`);
+    return response.data;
+  },
+
+  async getAvailableStudents() {
+    const response = await api.get('/courses/students/available');
+    return response.data;
+  },
+
+  async removeStudentFromCourse(courseId, studentId) {
+    const response = await api.delete(`/courses/${courseId}/students/${studentId}`);
+    return response.data;
   }
 };

@@ -26,6 +26,11 @@ export const quizService = {
     return response.data;
   },
 
+  async getAiStatus() {
+    const response = await api.get('/quizzes/ai-status');
+    return response.data;
+  },
+
   async generateAiQuiz(data) {
     const response = await api.post('/quizzes/generate-ai', data);
     return response.data;

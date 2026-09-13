@@ -244,4 +244,11 @@ public record SubmissionFeedbackRequest(
     string Feedback
 );
 
+public record UpdateStudyPlanRequest(
+    string? TargetGoal = null,
+    int? TotalWeeks = null,
+    double? EstimatedHoursPerWeek = null,
+    string? MilestoneTitle = null
+);
+
 

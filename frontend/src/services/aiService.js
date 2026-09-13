@@ -66,6 +66,11 @@ export const aiService = {
     return response.data;
   },
 
+  async updateProposal(proposalId, data) {
+    const response = await api.put(`/aireview/proposals/${proposalId}`, data);
+    return response.data;
+  },
+
   async chatWithCoach(message, studentId = '33333333-3333-3333-3333-333333333333', courseId = '44444444-4444-4444-4444-444444444444') {
     const response = await api.post('/aireview/coach/chat', { student_id: studentId, course_id: courseId, message });
     return response.data;

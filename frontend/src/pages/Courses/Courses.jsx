@@ -39,8 +39,11 @@ import {
   Trophy,
   CheckSquare,
   FileSpreadsheet,
-  ListChecks
+  ListChecks,
+  UserPlus,
+  Search
 } from 'lucide-react';
+import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
 
@@ -192,6 +195,7 @@ export default function Courses({ currentUser }) {
   const [generatedDraft, setGeneratedDraft] = useState(null);
   const [validationReport, setValidationReport] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [quizNotification, setQuizNotification] = useState(null);
 
   // ── SLIDEQUEST AI: TOPIC DISCOVERY & RAG ENGINE STATE ─────────────────────
   const [detectedSlideTopics, setDetectedSlideTopics] = useState([]);
@@ -231,6 +235,65 @@ export default function Courses({ currentUser }) {
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // ── ADD & MANAGE STUDENTS MODAL STATE ──────────────────────────────────────
+  const [showAddStudentsModal, setShowAddStudentsModal] = useState(false);
+  const [availableStudentsList, setAvailableStudentsList] = useState([]);
+  const [enrolledStudentsList, setEnrolledStudentsList] = useState([]);
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [enrollingStudentId, setEnrollingStudentId] = useState(null);
+
+  const handleOpenAddStudentsModal = async () => {
+    if (!currentCourse?.id) return;
+    setShowAddStudentsModal(true);
+    setIsLoadingStudents(true);
+    try {
+      const [avail, enrolled] = await Promise.all([
+        courseService.getAvailableStudents(),
+        courseService.getEnrolledStudents(currentCourse.id)
+      ]);
+      setAvailableStudentsList(avail || []);
+      setEnrolledStudentsList(enrolled || []);
+    } catch (err) {
+      console.error('Failed to load students', err);
+      showToast('⚠️ Failed to load students list.');
+    } finally {
+      setIsLoadingStudents(false);
+    }
+  };
+
+  const handleEnrollStudent = async (studentId) => {
+    if (!currentCourse?.id) return;
+    setEnrollingStudentId(studentId);
+    try {
+      const res = await courseService.addStudentToCourse(currentCourse.id, { studentId });
+      showToast(`✅ ${res.message || 'Student enrolled successfully!'}`);
+      const enrolled = await courseService.getEnrolledStudents(currentCourse.id);
+      setEnrolledStudentsList(enrolled || []);
+      setCoursesList(prev => prev.map(c => c.id === currentCourse.id ? { ...c, studentsCount: (enrolled || []).length } : c));
+    } catch (err) {
+      console.error('Failed to add student', err);
+      showToast(`❌ ${err.response?.data?.message || 'Failed to add student.'}`);
+    } finally {
+      setEnrollingStudentId(null);
+    }
+  };
+
+  const handleRemoveStudent = async (studentId) => {
+    if (!currentCourse?.id) return;
+    if (!window.confirm('Are you sure you want to remove this student from the course?')) return;
+    try {
+      await courseService.removeStudentFromCourse(currentCourse.id, studentId);
+      showToast('✅ Student removed from course.');
+      const enrolled = await courseService.getEnrolledStudents(currentCourse.id);
+      setEnrolledStudentsList(enrolled || []);
+      setCoursesList(prev => prev.map(c => c.id === currentCourse.id ? { ...c, studentsCount: (enrolled || []).length } : c));
+    } catch (err) {
+      console.error('Failed to remove student', err);
+      showToast('❌ Failed to remove student from course.');
+    }
   };
 
   // ── Open Handlers for different Hierarchy Levels ─────────────────────────
@@ -491,6 +554,10 @@ export default function Courses({ currentUser }) {
   // ── SlideQuest AI Generation Logic with Strict RAG & Marking Schemes ───────
   const handleGenerateAiQuizDraft = async () => {
     setIsGeneratingQuiz(true);
+    setShowAiQuizModal(false); // Non-blocking UX: close modal so user can use the app freely
+    setQuizNotification(null);
+    showToast(`⚡ AI Quiz synthesis started for "${aiQuizScope.moduleTitle}". You can continue using EduFlow freely!`);
+
     try {
       const module = currentCourse?.modules?.find(m => m.id === aiQuizScope.moduleId || m.title === aiQuizScope.moduleTitle);
 
@@ -551,7 +618,12 @@ export default function Courses({ currentUser }) {
         sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
       });
 
-      showToast(`Generated ${questions.length} SlideQuest questions grounded in slides!`);
+      setQuizNotification({
+        title: '🎉 SlideQuest Assessment Draft Ready!',
+        message: `Successfully synthesized ${questions.length} RAG-grounded questions for "${aiQuizScope.moduleTitle}". Click to review & publish.`,
+        count: questions.length,
+        moduleTitle: aiQuizScope.moduleTitle
+      });
     } catch {
       const fallbackQuestions = createFallbackGroundedQuestions(
         aiQuizScope.moduleTitle,
@@ -570,7 +642,13 @@ export default function Courses({ currentUser }) {
         safetyPassed: true,
         sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
       });
-      showToast(`Synthesized ${fallbackQuestions.length} SlideQuest questions grounded in lecture slides!`);
+
+      setQuizNotification({
+        title: '⚡ SlideQuest Assessment Draft Ready!',
+        message: `Synthesized ${fallbackQuestions.length} SlideQuest questions grounded in lecture slides. Click to review.`,
+        count: fallbackQuestions.length,
+        moduleTitle: aiQuizScope.moduleTitle
+      });
     } finally {
       setIsGeneratingQuiz(false);
     }
@@ -1217,6 +1295,191 @@ export default function Courses({ currentUser }) {
         </div>
       )}
 
+      {/* ── FLOATING BACKGROUND QUIZ GENERATOR LOADER WIDGET ── */}
+      {isGeneratingQuiz && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: '#0F172A',
+          border: '1px solid rgba(99, 102, 241, 0.5)',
+          borderRadius: '16px',
+          padding: '14px 18px',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5), 0 0 24px rgba(99, 102, 241, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          zIndex: 1100,
+          maxWidth: '420px',
+          color: '#F8FAFC'
+        }}>
+          <div style={{
+            width: '38px',
+            height: '38px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(99, 102, 241, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <RefreshCw size={18} className="spin" color="#818CF8" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#F8FAFC' }}>
+                Synthesizing Strict RAG Questions...
+              </span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: '800',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                backgroundColor: 'rgba(99, 102, 241, 0.25)',
+                color: '#A5B4FC',
+                textTransform: 'uppercase'
+              }}>
+                RAG Active
+              </span>
+            </div>
+            <p style={{ fontSize: '11px', color: '#94A3B8', margin: '2px 0 0 0' }}>
+              Grounded in lecture slides • {aiQuizScope.moduleTitle || 'Module'}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAiQuizModal(true)}
+            style={{
+              padding: '6px 12px',
+              fontSize: '11.5px',
+              fontWeight: '700',
+              borderRadius: '8px',
+              backgroundColor: 'rgba(99, 102, 241, 0.3)',
+              color: '#FFFFFF',
+              border: '1px solid rgba(129, 140, 248, 0.4)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Open Modal
+          </button>
+        </div>
+      )}
+
+      {/* ── QUIZ GENERATION COMPLETE NOTIFICATION TOAST ── */}
+      {quizNotification && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: '#0F172A',
+          border: '1px solid #10B981',
+          borderRadius: '16px',
+          padding: '16px 20px',
+          boxShadow: '0 12px 32px rgba(16, 185, 129, 0.3)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+          zIndex: 1200,
+          maxWidth: '440px',
+          color: '#F8FAFC'
+        }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(16, 185, 129, 0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <Sparkles size={20} color="#34D399" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: '800', fontSize: '14px', color: '#34D399' }}>
+              {quizNotification.title}
+            </div>
+            <div style={{ fontSize: '12px', color: '#CBD5E1', marginTop: '4px', lineHeight: '1.4' }}>
+              {quizNotification.message}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <button
+                onClick={() => {
+                  setShowAiQuizModal(true);
+                  setQuizNotification(null);
+                }}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  borderRadius: '8px',
+                  backgroundColor: '#10B981',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.4)'
+                }}
+              >
+                <Eye size={14} />
+                <span>Review Draft & Publish</span>
+              </button>
+              <button
+                onClick={() => setQuizNotification(null)}
+                style={{
+                  padding: '8px 12px',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  color: '#94A3B8',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => setQuizNotification(null)}
+            style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', padding: '2px' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* ── PERSISTENT FLOATING BADGE FOR GENERATED DRAFT UNTIL APPROVED ── */}
+      {generatedDraft && !showAiQuizModal && !isGeneratingQuiz && !quizNotification && (
+        <button
+          onClick={() => setShowAiQuizModal(true)}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: '#4F46E5',
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '30px',
+            padding: '11px 20px',
+            boxShadow: '0 8px 24px rgba(79, 70, 229, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            zIndex: 1100,
+            fontSize: '12.5px',
+            fontWeight: '700',
+            cursor: 'pointer'
+          }}
+        >
+          <Sparkles size={16} />
+          <span>1 AI Quiz Draft Ready for Review</span>
+        </button>
+      )}
+
       {/* ── 1. COURSE SWITCHER & TOP ACTIONS ──────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1361,6 +1624,25 @@ export default function Courses({ currentUser }) {
               <Sparkles size={14} />
               <span>⚡ Generate Course Final Assessment</span>
             </button>
+
+            {currentUser?.role === 'Instructor' || currentUser?.role === 'Admin' ? (
+              <button
+                onClick={() => handleOpenAddStudentsModal()}
+                className="btn-secondary"
+                style={{
+                  padding: '9px 16px',
+                  fontSize: '12.5px',
+                  fontWeight: '700',
+                  gap: '6px',
+                  borderColor: 'var(--primary)',
+                  color: 'var(--primary)',
+                  backgroundColor: 'rgba(79, 70, 229, 0.08)'
+                }}
+              >
+                <UserPlus size={14} />
+                <span>Add Students</span>
+              </button>
+            ) : null}
 
             <button
               onClick={() => setShowModuleModal(true)}
@@ -1621,28 +1903,28 @@ export default function Courses({ currentUser }) {
 
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
-                            onClick={() => setPdfViewerDoc({
-                              title: `${mod.title} – Reading Material`,
-                              url: mod.pdfUrl,
-                              fileName: mod.attachmentFileName || 'syllabus.pdf'
-                            })}
+                            onClick={async () => {
+                              const doc = await preparePdfForViewing(
+                                mod.pdfUrl,
+                                `${mod.title} – Reading Material`,
+                                mod.attachmentFileName || 'syllabus.pdf'
+                              );
+                              setPdfViewerDoc(doc);
+                            }}
                             className="btn-secondary"
                             style={{ padding: '5px 12px', fontSize: '11.5px', gap: '4px' }}
                           >
                             <Eye size={13} />
                             <span>Preview Document</span>
                           </button>
-                          <a
-                            href={mod.pdfUrl}
-                            download={mod.attachmentFileName || 'material.pdf'}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            onClick={() => downloadPdf(mod.pdfUrl, mod.attachmentFileName || 'material.pdf', mod.title)}
                             className="btn-ghost"
-                            style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                            style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px', border: 'none', background: 'transparent', cursor: 'pointer' }}
                           >
                             <Download size={13} />
                             <span>Download</span>
-                          </a>
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1967,6 +2249,39 @@ export default function Courses({ currentUser }) {
                 {aiQuizType} Mode
               </span>
             </div>
+
+            {/* Background Generation Active Alert inside Modal */}
+            {isGeneratingQuiz && (
+              <div style={{
+                padding: '14px 18px',
+                backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                border: '1px solid rgba(79, 70, 229, 0.3)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <RefreshCw size={20} className="spin" color="var(--primary)" />
+                  <div>
+                    <strong style={{ fontSize: '13px', color: 'var(--text-main)', display: 'block' }}>
+                      Strict RAG Question Generation in Progress...
+                    </strong>
+                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                      You can close this window and continue using the app freely. A notification will appear when ready!
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAiQuizModal(false)}
+                  className="btn-primary"
+                  style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                >
+                  Run in Background ✕
+                </button>
+              </div>
+            )}
 
             {/* Generator Configuration Form */}
             {!generatedDraft && (
@@ -2527,16 +2842,13 @@ export default function Courses({ currentUser }) {
                 </h3>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <a
-                  href={pdfViewerDoc.url}
-                  download={pdfViewerDoc.fileName || 'document.pdf'}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  onClick={() => downloadPdf(pdfViewerDoc.rawUrl || pdfViewerDoc.url, pdfViewerDoc.fileName || 'document.pdf', pdfViewerDoc.title)}
                   className="btn-primary"
-                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px', border: 'none', cursor: 'pointer' }}
                 >
                   <Download size={12} /> Download
-                </a>
+                </button>
                 <button onClick={() => setPdfViewerDoc(null)} className="btn-ghost" style={{ padding: '4px' }}>✕</button>
               </div>
             </div>
@@ -3693,6 +4005,234 @@ export default function Courses({ currentUser }) {
                 style={{ padding: '8px 22px', fontSize: '12.5px', fontWeight: '700' }}
               >
                 Return to Curriculum
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 8. ADD & MANAGE STUDENTS MODAL ─────────────────────────────────────── */}
+      {showAddStudentsModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(10, 15, 30, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '680px',
+            maxHeight: '90vh',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: 'linear-gradient(90deg, rgba(79, 70, 229, 0.1) 0%, rgba(14, 165, 233, 0.05) 100%)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  padding: '10px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(79, 70, 229, 0.15)',
+                  color: 'var(--primary)'
+                }}>
+                  <UserPlus size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-main)' }}>
+                    Add & Manage Course Students
+                  </h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {currentCourse?.title} • {enrolledStudentsList.length} Students Enrolled
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAddStudentsModal(false)}
+                className="btn-ghost"
+                style={{ padding: '6px', borderRadius: '50%' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Search Bar */}
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  placeholder="Search available students by name or email..."
+                  value={studentSearchQuery}
+                  onChange={(e) => setStudentSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px 10px 38px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    backgroundColor: 'var(--bg-surface)',
+                    color: 'var(--text-main)',
+                    fontSize: '13px'
+                  }}
+                />
+              </div>
+
+              {isLoadingStudents ? (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  Loading students...
+                </div>
+              ) : (
+                <>
+                  {/* Available Students to Add */}
+                  <div>
+                    <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                      Available Registered Students ({availableStudentsList.filter(s =>
+                        !enrolledStudentsList.some(e => e.studentId === s.studentId) &&
+                        (s.fullName.toLowerCase().includes(studentSearchQuery.toLowerCase()) || s.email.toLowerCase().includes(studentSearchQuery.toLowerCase()))
+                      ).length})
+                    </h3>
+
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      paddingRight: '4px'
+                    }}>
+                      {availableStudentsList
+                        .filter(s => !enrolledStudentsList.some(e => e.studentId === s.studentId))
+                        .filter(s => s.fullName.toLowerCase().includes(studentSearchQuery.toLowerCase()) || s.email.toLowerCase().includes(studentSearchQuery.toLowerCase()))
+                        .map(st => (
+                          <div
+                            key={st.studentId}
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: 'var(--radius-sm)',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: '1px solid var(--border-subtle)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>
+                                {st.fullName}
+                              </div>
+                              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                                {st.email}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleEnrollStudent(st.studentId)}
+                              disabled={enrollingStudentId === st.studentId}
+                              className="btn-primary"
+                              style={{ padding: '5px 12px', fontSize: '12px', gap: '4px' }}
+                            >
+                              <UserPlus size={13} />
+                              <span>{enrollingStudentId === st.studentId ? 'Enrolling...' : 'Enroll'}</span>
+                            </button>
+                          </div>
+                        ))}
+                      {availableStudentsList.filter(s => !enrolledStudentsList.some(e => e.studentId === s.studentId)).length === 0 && (
+                        <div style={{ padding: '14px', fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)' }}>
+                          No un-enrolled students match your search.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Currently Enrolled Students */}
+                  <div>
+                    <h3 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                      Enrolled Students Roster ({enrolledStudentsList.length})
+                    </h3>
+
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      paddingRight: '4px'
+                    }}>
+                      {enrolledStudentsList.map(es => (
+                        <div
+                          key={es.studentId}
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: 'var(--radius-sm)',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px solid var(--border-subtle)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>
+                              {es.fullName}
+                            </div>
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                              {es.email} • Enrolled {new Date(es.enrolledAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveStudent(es.studentId)}
+                            className="btn-ghost"
+                            style={{ padding: '4px 10px', fontSize: '11.5px', color: 'var(--danger)', gap: '4px' }}
+                          >
+                            <Trash2 size={13} />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      ))}
+                      {enrolledStudentsList.length === 0 && (
+                        <div style={{ padding: '14px', fontSize: '12.5px', color: 'var(--text-muted)', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)' }}>
+                          No students currently enrolled in this course.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: '14px 24px',
+              borderTop: '1px solid var(--border-subtle)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              backgroundColor: 'var(--bg-surface)'
+            }}>
+              <button
+                onClick={() => setShowAddStudentsModal(false)}
+                className="btn-primary"
+                style={{ padding: '8px 20px', fontSize: '12.5px' }}
+              >
+                Done
               </button>
             </div>
           </div>

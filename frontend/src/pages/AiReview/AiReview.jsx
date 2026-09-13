@@ -107,28 +107,28 @@ export default function AiReview() {
   const loadBackendProposals = async () => {
     setLoading(true);
     try {
-      const data = await aiService.getPendingProposals();
+      const data = await aiService.getWorkflows();
       if (Array.isArray(data) && data.length > 0) {
         // Map backend entities to UI schema
         const mapped = data.map(sp => ({
           id: sp.id || `wf-${Math.random().toString(36).substring(2, 8)}`,
-          studentId: sp.student?.email || sp.studentId || 'IT22104500',
-          student: sp.student?.fullName || sp.studentName || 'Student Learner',
-          avatar: (sp.student?.fullName || 'ST').split(' ').map(n => n[0]).join('').toUpperCase(),
+          studentId: sp.student?.email || sp.studentId || 'student@eduflow.ai',
+          student: sp.student?.fullName || sp.studentName || 'Alex Rivera',
+          avatar: (sp.student?.fullName || 'Alex Rivera').split(' ').map(n => n[0]).join('').toUpperCase(),
           courseId: sp.course?.code || 'CS-301',
-          course: sp.course?.title || sp.courseId || 'Advanced Database Architecture',
+          course: sp.course?.title || sp.courseId || 'Advanced Database Architecture & EF Core',
           priority: 'Remediation Quest',
           priorityType: 'warning',
-          goal: sp.targetGoal || 'Personalized AI Study Objectives',
+          goal: sp.targetGoal || 'Remediate deadlock prevention, transaction isolation levels, and preparation for Midterm 2.',
           targetWeeks: sp.targetWeeks || 2,
           hoursPerWeek: sp.hoursPerWeek || 8.0,
           status: sp.status || 'PendingInstructorApproval',
           confidenceScore: 98.5,
-          createdAt: sp.createdAt ? new Date(sp.createdAt).toLocaleDateString() : 'Recent',
+          createdAt: sp.createdAt ? new Date(sp.createdAt).toLocaleDateString() : '9/13/2026',
           instructorNotes: sp.instructorNotes || '',
           approvedBy: sp.approvedByInstructor?.fullName || null,
           approvedAt: sp.approvedAt || null,
-          cryptographicHash: `0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`,
+          cryptographicHash: `0x${(sp.id || '117c2f5939beaed5').toString().replaceAll('-', '').substring(0, 16)}`,
           xpMultiplier: 1.0,
           streakProtection: true,
           gapAnalysis: {
@@ -143,9 +143,9 @@ export default function AiReview() {
             id: item.id || `q_${idx}`,
             day: `Day ${item.dayNumber || idx + 1}`,
             title: item.activityTitle || 'Interactive Module',
-            type: item.activityType || 'Lesson',
+            type: (item.activityTitle || '').toLowerCase().includes('lab') ? 'Lab' : (item.activityTitle || '').toLowerCase().includes('challenge') || (item.activityTitle || '').toLowerCase().includes('boss') ? 'Boss Fight' : 'Lesson',
             duration: `${item.estimatedMinutes || 60} mins`,
-            xp: 50,
+            xp: item.estimatedMinutes ? Math.round(item.estimatedMinutes * 0.8) : 50,
             desc: item.description || 'Curated study activity'
           })) : [
             { id: 'q1', day: 'Day 1', title: 'Conceptual Diagnostic Review', type: 'Lesson', duration: '60 mins', xp: 40, desc: 'Study baseline concepts.' },
@@ -166,10 +166,8 @@ export default function AiReview() {
         }));
 
         setProposals(mapped);
-        if (!selectedProposalId && mapped.length > 0) {
-          setSelectedProposalId(mapped[0].id);
-        }
-        showToast(`Loaded ${mapped.length} proposals from server.`, 'info');
+        setSelectedProposalId(prev => prev || mapped[0].id);
+        showToast(`Loaded ${mapped.length} proposals from database.`, 'info');
       }
     } catch (e) {
       console.warn('Backend proposals fetch error, keeping dynamic state', e);

@@ -22,7 +22,8 @@ import {
   X,
   Play,
   Trophy,
-  ArrowRight
+  ArrowRight,
+  BarChart2
 } from 'lucide-react';
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
@@ -93,30 +94,81 @@ export default function Assessments({ currentUser }) {
   const [newBossName, setNewBossName] = useState('');
   const [newBossXp, setNewBossXp] = useState(500);
 
+  // Live AI API Status & Error Modal State
+  const [aiApiStatus, setAiApiStatus] = useState({
+    color: 'green',
+    status: 'healthy',
+    message: 'AI Agent API Operational',
+    canGenerate: true
+  });
+  const [isCheckingAiStatus, setIsCheckingAiStatus] = useState(false);
+  const [showAiErrorModal, setShowAiErrorModal] = useState(false);
+  const [aiErrorDetails, setAiErrorDetails] = useState({
+    title: '',
+    message: '',
+    color: 'red'
+  });
+
+  const fetchAiStatus = async () => {
+    setIsCheckingAiStatus(true);
+    try {
+      const data = await quizService.getAiStatus();
+      if (data) {
+        setAiApiStatus({
+          color: data.status_color || (data.status === 'healthy' ? 'green' : data.status === 'rate_limited' ? 'yellow' : 'red'),
+          status: data.status || 'healthy',
+          message: data.message || 'AI Microservice status fetched.',
+          canGenerate: data.can_generate !== false
+        });
+      }
+    } catch {
+      setAiApiStatus({
+        color: 'red',
+        status: 'unreachable',
+        message: 'AI Microservice Unreachable at http://localhost:8000. Please verify Python service is active.',
+        canGenerate: false
+      });
+    } finally {
+      setIsCheckingAiStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAiStatus();
+  }, []);
+
   const [quizzesList, setQuizzesList] = useState([]);
   const [bossEncounters, setBossEncounters] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    async function loadAssessments() {
-      setIsLoading(true);
-      try {
-        const [data, courses] = await Promise.all([
-          quizService.getQuizzes('44444444-4444-4444-4444-444444444444'),
-          courseService.getCourses()
-        ]);
-        setQuizzesList(data || []);
-        if (courses && courses.length > 0) {
-          setCoursesList(courses);
+  const loadAssessmentsForCourse = async (targetCourseId) => {
+    const cId = targetCourseId || quizCourseId || '44444444-4444-4444-4444-444444444444';
+    setIsLoading(true);
+    try {
+      const [data, courses] = await Promise.all([
+        quizService.getQuizzes(cId),
+        courseService.getCourses()
+      ]);
+      setQuizzesList(data || []);
+      if (courses && courses.length > 0) {
+        setCoursesList(courses);
+        // If current course is not in list, auto-select first course
+        const activeCourse = courses.find(c => c.id === cId) || courses[0];
+        if (activeCourse && activeCourse.id !== quizCourseId) {
+          setQuizCourseId(activeCourse.id);
+          setQuizCourseCode(activeCourse.courseCode || activeCourse.code || 'SE3090');
         }
-      } catch (err) {
-        console.warn('Unable to load assessments:', err);
-      } finally {
-        setIsLoading(false);
       }
+    } catch (err) {
+      console.warn('Unable to load assessments:', err);
+    } finally {
+      setIsLoading(false);
     }
-    loadAssessments();
-  }, []);
+  };
+
+  useEffect(() => {
+    loadAssessmentsForCourse(quizCourseId);
+  }, [quizCourseId]);
 
   // Fetch modules whenever selected course changes
   useEffect(() => {
@@ -127,8 +179,12 @@ export default function Assessments({ currentUser }) {
         setModulesList(modules || []);
         if (modules && modules.length > 0) {
           setAiSelectedModuleId(modules[0].id || '');
-          if (modules[0].pdfUrl) {
-            setAiSelectedPdfUrl(modules[0].pdfUrl);
+          const modWithPdf = modules.find(m => m.pdfUrl) || modules[0];
+          if (modWithPdf && modWithPdf.pdfUrl) {
+            setAiSelectedPdfUrl(modWithPdf.pdfUrl);
+          }
+          if (modules[0].title) {
+            setAiTopic(modules[0].title);
           }
         }
       } catch (err) {
@@ -225,6 +281,29 @@ export default function Assessments({ currentUser }) {
       ? ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'FILL_IN_THE_BLANK', 'MATCHING']
       : [aiQuestionTypePref];
 
+    // Pre-check status before launching call
+    if (aiApiStatus.color === 'yellow') {
+      setAiErrorDetails({
+        title: 'AI Token Usage Limit Reached (429 RateLimit)',
+        message: aiApiStatus.message || 'Token quota limit reached for the configured AI provider. Please upgrade your API plan or wait a few moments before retrying.',
+        color: 'yellow'
+      });
+      setShowAiErrorModal(true);
+      setIsAiGenerating(false);
+      return;
+    }
+
+    if (aiApiStatus.color === 'red') {
+      setAiErrorDetails({
+        title: 'AI Microservice Unreachable / Offline',
+        message: aiApiStatus.message || 'Unable to connect to the EduFlow AI Microservice at http://localhost:8000. Please verify the Python service is active.',
+        color: 'red'
+      });
+      setShowAiErrorModal(true);
+      setIsAiGenerating(false);
+      return;
+    }
+
     setAiGenToast({ status: 'generating', timeElapsed: 0, topic: moduleTitle || aiTopic });
     setShowCreateModal(false);
 
@@ -248,84 +327,55 @@ export default function Assessments({ currentUser }) {
         questionTypes: qTypesList
       });
 
-      if (res && res.questions && res.questions.length > 0) {
-        setQuestions(res.questions.map(q => ({
-          prompt: q.prompt,
-          type: q.type || 'MultipleChoice',
-          options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-          correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-          explanation: q.explanation || 'Synthesized with deterministic RAG schema validation by EduFlow AI.',
-          points: q.points || 10,
-          metadataJson: q.metadataJson || '{}'
-        })));
-        setQuizTitle(res.title || `${aiQuizType} Quiz: ${moduleTitle || aiTopic} (${aiDifficulty})`);
-      }
-    } catch {
-      // Offline fallback heuristic generation
-      const count = Number(aiCount);
-      const generated = [];
-      for (let i = 0; i < count; i++) {
-        const typeIndex = i % 4;
-        if (typeIndex === 0) {
-          generated.push({
-            prompt: `AI Calibrated ${aiDifficulty} Single Choice ${i + 1}: What is the primary benefit of ${aiTopic}?`,
-            type: 'MultipleChoice',
-            options: [
-              `Deterministic schema guards and atomic state validation for ${aiTopic}`,
-              'Ignoring database rollback safeguards and skipping transactional bounds',
-              'Unchecked concurrent mutations without optimistic locking tokens',
-              'Synchronous blocking operations on the primary thread'
-            ],
-            correctAnswer: `Deterministic schema guards and atomic state validation for ${aiTopic}`,
-            explanation: 'Deterministic validation ensures state integrity and auditability.',
-            points: 10
-          });
-        } else if (typeIndex === 1) {
-          generated.push({
-            prompt: `AI Calibrated ${aiDifficulty} Multiple Answer ${i + 1}: Which of the following features are supported by ${aiTopic}? (Select ALL that apply)`,
-            type: 'MultipleSelect',
-            options: [
-              `Atomic state rollbacks`,
-              `Immutable XP transactions`,
-              `Arbitrary unvalidated state overrides`,
-              `Real-time multi-agent observability`
-            ],
-            correctAnswer: `Atomic state rollbacks, Immutable XP transactions, Real-time multi-agent observability`,
-            explanation: 'Multi-select question requires selecting all valid architecture properties.',
-            points: 10
-          });
-        } else if (typeIndex === 2) {
-          generated.push({
-            prompt: `AI Calibrated ${aiDifficulty} Dropdown Select ${i + 1}: Select the correct design pattern for ${aiTopic} state management.`,
-            type: 'FillInBlank',
-            options: [
-              'Transactional Outbox Pattern',
-              'Global Shared Mutable Singleton',
-              'Blocking Synchronous Mutex',
-              'Stateless Monad Trap'
-            ],
-            correctAnswer: 'Transactional Outbox Pattern',
-            explanation: 'Transactional Outbox pattern guarantees eventual consistency.',
-            points: 10
-          });
-        } else {
-          generated.push({
-            prompt: `AI Calibrated ${aiDifficulty} Drag & Drop Matching ${i + 1}: Match each architectural component of ${aiTopic} to its responsibility.`,
-            type: 'Matching',
-            options: [
-              'CommandHandler -> Processes state write operations',
-              'QueryHandler -> Returns read-only projections',
-              'EventStore -> Maintains append-only audit trail',
-              'SagaOrchestrator -> Coordinates distributed workflows'
-            ],
-            correctAnswer: 'CommandHandler -> Processes state write operations; QueryHandler -> Returns read-only projections',
-            explanation: 'Matching pairs test architectural component separation.',
-            points: 10
-          });
+      if (res) {
+        const createdTitle = res.title || `${aiQuizType} Quiz: ${moduleTitle || aiTopic} (${aiDifficulty})`;
+        const newQuizItem = {
+          id: res.id || res.quizId || `q-${Date.now()}`,
+          courseId: quizCourseId,
+          courseCode: quizCourseCode,
+          title: createdTitle,
+          questionsCount: (res.questions && res.questions.length > 0) ? res.questions.length : Number(aiCount),
+          timeLimit: quizTime,
+          xpReward: targetXp,
+          coinReward: targetCoins,
+          passThreshold: quizPass,
+          status: 'Published',
+          questions: (res.questions && res.questions.length > 0) ? res.questions.map(q => ({
+            id: q.id || `q-${Date.now()}`,
+            prompt: q.prompt,
+            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            explanation: q.explanation || 'Synthesized with deterministic RAG schema validation by EduFlow AI.',
+            points: q.points || 10
+          })) : questions
+        };
+
+        setQuizzesList(prev => [newQuizItem, ...prev.filter(q => q.id !== newQuizItem.id)]);
+        setQuizTitle(createdTitle);
+        if (res.questions && res.questions.length > 0) {
+          setQuestions(res.questions.map(q => ({
+            prompt: q.prompt,
+            type: q.type || 'MultipleChoice',
+            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            explanation: q.explanation || 'Synthesized with deterministic RAG schema validation by EduFlow AI.',
+            points: q.points || 10,
+            metadataJson: q.metadataJson || '{}'
+          })));
         }
+        // Sync with backend DB
+        setTimeout(() => loadAssessmentsForCourse(quizCourseId), 600);
       }
-      setQuestions(generated);
-      setQuizTitle(`${aiQuizType} Quiz: ${moduleTitle || aiTopic} (${aiDifficulty})`);
+    } catch (err) {
+      setAiGenToast(null);
+      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed: Unable to connect to AI Agent API microservice.';
+      const isRateLimit = errMsg.includes('429') || errMsg.toLowerCase().includes('token') || errMsg.toLowerCase().includes('quota');
+      setAiErrorDetails({
+        title: isRateLimit ? 'AI Token Limit Reached (429 RateLimit)' : 'AI Generation Error',
+        message: errMsg,
+        color: isRateLimit ? 'yellow' : 'red'
+      });
+      setShowAiErrorModal(true);
     } finally {
       setIsAiGenerating(false);
       setAiGenToast(prev => prev ? { ...prev, status: 'completed' } : null);
@@ -419,7 +469,7 @@ export default function Assessments({ currentUser }) {
     };
 
     try {
-      await quizService.createQuiz({
+      const res = await quizService.createQuiz({
         courseId: quizCourseId,
         title: quizTitle,
         description: `Authoritative assessment for ${quizCourseCode}.`,
@@ -437,14 +487,18 @@ export default function Assessments({ currentUser }) {
           orderIndex: idx + 1
         }))
       });
+      if (res && res.id) {
+        createdQuiz.id = res.id;
+      }
     } catch {
       // fallback
     }
 
-    setQuizzesList(prev => [createdQuiz, ...prev]);
+    setQuizzesList(prev => [createdQuiz, ...prev.filter(q => q.id !== createdQuiz.id)]);
     setShowCreateModal(false);
     setQuizTitle('');
     setUploadedFileName(null);
+    setTimeout(() => loadAssessmentsForCourse(quizCourseId), 500);
     alert(`🎉 Quiz "${createdQuiz.title}" successfully published with ${createdQuiz.questionsCount} questions and +${createdQuiz.xpReward} XP reward!`);
   };
 
@@ -759,27 +813,94 @@ export default function Assessments({ currentUser }) {
           </button>
         </div>
 
-        {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
-          activeSubTab === 'quizzes' ? (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
-              style={{ padding: '8px 16px', fontSize: '13px' }}
+        {/* Active Course Filter Selector */}
+        {coursesList && coursesList.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-muted)' }}>Course:</span>
+            <select
+              value={quizCourseId}
+              onChange={(e) => {
+                const selectedId = e.target.value;
+                setQuizCourseId(selectedId);
+                const matched = coursesList.find(c => c.id === selectedId);
+                if (matched) {
+                  setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                }
+              }}
+              className="form-select"
+              style={{ padding: '4px 8px', fontSize: '12px', width: 'auto', minWidth: '220px' }}
             >
-              <Plus size={15} /> 
-              <span>Create Assessment</span>
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowBossModal(true)}
-              className="btn-danger"
-              style={{ padding: '8px 16px', fontSize: '13px' }}
-            >
-              <Plus size={15} /> 
-              <span>Author Boss Raid</span>
-            </button>
-          )
+              {coursesList.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Live API Status Button */}
+          <button
+            onClick={fetchAiStatus}
+            disabled={isCheckingAiStatus}
+            title="Click to ping and refresh Live AI API status"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              backgroundColor: aiApiStatus.color === 'green' ? 'rgba(34, 197, 94, 0.12)' : aiApiStatus.color === 'yellow' ? 'rgba(234, 179, 8, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+              border: `1px solid ${aiApiStatus.color === 'green' ? '#22c55e' : aiApiStatus.color === 'yellow' ? '#eab308' : '#ef4444'}`,
+              color: aiApiStatus.color === 'green' ? '#15803d' : aiApiStatus.color === 'yellow' ? '#a16207' : '#b91c1c',
+              fontSize: '12px',
+              fontWeight: '700',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <span style={{
+              width: '9px',
+              height: '9px',
+              borderRadius: '50%',
+              backgroundColor: aiApiStatus.color === 'green' ? '#22c55e' : aiApiStatus.color === 'yellow' ? '#eab308' : '#ef4444',
+              boxShadow: `0 0 8px ${aiApiStatus.color === 'green' ? '#22c55e' : aiApiStatus.color === 'yellow' ? '#eab308' : '#ef4444'}`,
+              animation: isCheckingAiStatus ? 'spin 1s linear infinite' : 'pulse 2s infinite'
+            }} />
+            <span>
+              {isCheckingAiStatus
+                ? 'Ping API...'
+                : aiApiStatus.color === 'green'
+                ? 'Live API: Active 🟢'
+                : aiApiStatus.color === 'yellow'
+                ? 'Live API: Token Limit Reached 🟡'
+                : 'Live API: Offline 🔴'}
+            </span>
+          </button>
+
+          {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+            activeSubTab === 'quizzes' ? (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary"
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                <Plus size={15} /> 
+                <span>Create Assessment</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowBossModal(true)}
+                className="btn-danger"
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                <Plus size={15} /> 
+                <span>Author Boss Raid</span>
+              </button>
+            )
+          )}
+        </div>
       </div>
 
       {/* Gamification Interconnection Summary Banner */}
@@ -1087,7 +1208,32 @@ export default function Assessments({ currentUser }) {
             {/* Modal Body */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {/* General Quiz Meta */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Target Course</label>
+                  <select
+                    value={quizCourseId}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      setQuizCourseId(selectedId);
+                      const matched = coursesList.find(c => c.id === selectedId);
+                      if (matched) {
+                        setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                      }
+                    }}
+                    className="form-select"
+                  >
+                    {coursesList.length > 0 ? (
+                      coursesList.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={quizCourseId}>{quizCourseCode}: Database Architecture</option>
+                    )}
+                  </select>
+                </div>
                 <div>
                   <label className="form-label">Assessment Title</label>
                   <input
@@ -1333,7 +1479,7 @@ export default function Assessments({ currentUser }) {
                             </option>
                           ))
                         ) : (
-                          <option value="">Module 1: Architecture Core & Patterns</option>
+                          <option value="">No modules found for course</option>
                         )}
                       </select>
                     </div>
@@ -1348,11 +1494,15 @@ export default function Assessments({ currentUser }) {
                         onChange={(e) => setAiSelectedPdfUrl(e.target.value)}
                         className="form-select"
                       >
-                        <option value="/uploads/syllabus_se3090_module1.pdf">📄 SE3090_Module1_Architecture.pdf</option>
-                        <option value="/uploads/syllabus_se3090_module2.pdf">📄 SE3090_Module2_DatabaseIndexing.pdf</option>
-                        {modulesList.filter(m => m.pdfUrl).map(m => (
-                          <option key={m.id} value={m.pdfUrl}>📄 {m.attachmentFileName || `${m.title}.pdf`}</option>
-                        ))}
+                        {modulesList.filter(m => m.pdfUrl).length > 0 ? (
+                          modulesList.filter(m => m.pdfUrl).map(m => (
+                            <option key={m.id} value={m.pdfUrl}>
+                              📄 {m.attachmentFileName || `${m.title}.pdf`}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">📄 Course Syllabus / General Curriculum PDF</option>
+                        )}
                       </select>
                     </div>
 
@@ -1389,7 +1539,19 @@ export default function Assessments({ currentUser }) {
                       <label className="form-label">Target Difficulty Level</label>
                       <select
                         value={aiDifficulty}
-                        onChange={(e) => setAiDifficulty(e.target.value)}
+                        onChange={(e) => {
+                          const diff = e.target.value;
+                          setAiDifficulty(diff);
+                          let xp = 100, coins = 30, time = 20, pass = 70;
+                          if (diff === 'Easy') { xp = 50; coins = 15; time = 15; pass = 60; }
+                          else if (diff === 'Medium') { xp = 100; coins = 30; time = 20; pass = 70; }
+                          else if (diff === 'Hard') { xp = 140; coins = 50; time = 25; pass = 80; }
+                          else if (diff === 'Boss') { xp = 150; coins = 80; time = 30; pass = 85; }
+                          setQuizXp(xp);
+                          setQuizCoins(coins);
+                          setQuizTime(time);
+                          setQuizPass(pass);
+                        }}
                         className="form-select"
                       >
                         <option value="Easy">Easy (Recall & Foundations - 50 XP)</option>
@@ -2236,6 +2398,93 @@ export default function Assessments({ currentUser }) {
             <div style={{ padding: '12px 24px', background: 'var(--bg-surface)', borderTop: '1px solid var(--border-subtle)', textAlign: 'right' }}>
               <button onClick={() => setViewingSubmissionsQuiz(null)} className="btn-secondary">
                 Close Results
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI API Error Notice Popup Modal */}
+      {showAiErrorModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 10000, padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: `2px solid ${aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444'}`,
+            borderRadius: 'var(--radius-lg)',
+            width: '100%', maxWidth: '520px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-popover)',
+            display: 'flex', flexDirection: 'column', gap: '16px',
+            animation: 'fadeIn 0.2s ease-out'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '44px', height: '44px', borderRadius: '50%',
+                backgroundColor: aiErrorDetails.color === 'yellow' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                color: aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+              }}>
+                <ShieldAlert size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'var(--text-main)' }}>
+                  {aiErrorDetails.title || (aiErrorDetails.color === 'yellow' ? 'AI Token Limit Reached' : 'AI Microservice Unreachable')}
+                </h3>
+                <span style={{
+                  fontSize: '11px', fontWeight: '700', textTransform: 'uppercase',
+                  color: aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444',
+                  letterSpacing: '0.5px'
+                }}>
+                  {aiErrorDetails.color === 'yellow' ? '🟡 STATUS: YELLOW (TOKEN LIMIT REACHED)' : '🔴 STATUS: RED (UNREACHABLE)'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              backgroundColor: 'var(--bg-canvas)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '14px 16px',
+              fontSize: '13px',
+              lineHeight: '1.5',
+              color: 'var(--text-main)',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              {aiErrorDetails.message}
+            </div>
+
+            <div style={{
+              fontSize: '11.5px',
+              color: 'var(--text-muted)',
+              backgroundColor: 'var(--bg-surface)',
+              padding: '10px 12px',
+              borderRadius: 'var(--radius-xs)',
+              borderLeft: `3px solid ${aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444'}`
+            }}>
+              <strong>Strict Quality Policy:</strong> Fallback/garbage question generation has been prevented. No ungrounded or empty draft entries were created.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+              <button
+                onClick={async () => {
+                  await fetchAiStatus();
+                  setShowAiErrorModal(false);
+                }}
+                className="btn-secondary"
+                style={{ fontSize: '12.5px', padding: '7px 14px' }}
+              >
+                Re-Check API Status
+              </button>
+              <button
+                onClick={() => setShowAiErrorModal(false)}
+                className="btn-primary"
+                style={{ fontSize: '12.5px', padding: '7px 14px' }}
+              >
+                Close & Return
               </button>
             </div>
           </div>

@@ -645,6 +645,137 @@ public class CoursesController : ControllerBase
         return Ok(myCourses);
     }
 
+    /// <summary>
+    /// Instructor or Admin adds/enrolls a student into a course.
+    /// </summary>
+    [HttpPost("{courseId:guid}/students")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> AddStudentToCourse(Guid courseId, [FromBody] AddStudentToCourseRequest request)
+    {
+        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == courseId);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        User? student = null;
+        if (request.StudentId.HasValue && request.StudentId.Value != Guid.Empty)
+        {
+            student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.StudentId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var targetEmail = request.Email.Trim().ToLower();
+            student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == targetEmail);
+        }
+
+        if (student == null)
+        {
+            return NotFound(new { message = "Student not found with provided ID or Email." });
+        }
+
+        var existingEnrollment = await _dbContext.Enrollments
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == student.Id);
+
+        if (existingEnrollment != null)
+        {
+            if (existingEnrollment.Status == EnrollmentStatus.Active)
+            {
+                return Ok(new { message = $"{student.FullName} is already enrolled in this course.", enrollmentId = existingEnrollment.Id });
+            }
+
+            existingEnrollment.Status = EnrollmentStatus.Active;
+            existingEnrollment.UpdatedAt = DateTime.UtcNow;
+            await _dbContext.SaveChangesAsync();
+            return Ok(new { message = $"Re-activated enrollment for {student.FullName} in {course.Title}.", enrollmentId = existingEnrollment.Id });
+        }
+
+        var enrollment = new Enrollment
+        {
+            CourseId = courseId,
+            StudentId = student.Id,
+            ProgressPercentage = 0.0,
+            Status = EnrollmentStatus.Active
+        };
+
+        await _dbContext.Enrollments.AddAsync(enrollment);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = $"Successfully added {student.FullName} to {course.Title}.", enrollmentId = enrollment.Id });
+    }
+
+    /// <summary>
+    /// Gets all enrolled active students for a specific course.
+    /// </summary>
+    [HttpGet("{courseId:guid}/enrolled-students")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetEnrolledStudents(Guid courseId)
+    {
+        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
+        if (!courseExists)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var enrolledStudents = await _dbContext.Enrollments
+            .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
+            .Include(e => e.Student)
+            .Select(e => new EnrolledStudentDto(
+                e.StudentId,
+                e.Student != null ? e.Student.FullName : "Student",
+                e.Student != null ? e.Student.Email : string.Empty,
+                e.CreatedAt,
+                e.ProgressPercentage,
+                e.Status.ToString()
+            ))
+            .ToListAsync();
+
+        return Ok(enrolledStudents);
+    }
+
+    /// <summary>
+    /// Gets all active students available in the system for enrollment.
+    /// </summary>
+    [HttpGet("students/available")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetAvailableStudents()
+    {
+        var students = await _dbContext.Users
+            .Where(u => u.Role == UserRole.Student && u.IsActive)
+            .OrderBy(u => u.FullName)
+            .Select(u => new AvailableStudentDto(
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.IsActive
+            ))
+            .ToListAsync();
+
+        return Ok(students);
+    }
+
+    /// <summary>
+    /// Instructor or Admin removes/unenrolls a student from a course.
+    /// </summary>
+    [HttpDelete("{courseId:guid}/students/{studentId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> RemoveStudentFromCourse(Guid courseId, Guid studentId)
+    {
+        var enrollment = await _dbContext.Enrollments
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == studentId);
+
+        if (enrollment == null)
+        {
+            return NotFound(new { message = "Enrollment record not found." });
+        }
+
+        enrollment.Status = EnrollmentStatus.Dropped;
+        enrollment.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Student successfully unenrolled from course." });
+    }
+
     // -------------------------------------------------------------------------
     // LESSON COMPLETION (with XP award)
     // -------------------------------------------------------------------------

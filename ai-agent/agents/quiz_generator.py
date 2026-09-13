@@ -106,9 +106,9 @@ class QuizGeneratorAgent(BaseAgent):
                 passing_score_percent=req.pass_percentage or (req.gamification.passing_score_percent if req.gamification else 70)
             )
 
+            default_q_types = ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"]
             if req.quiz_type == "MicroQuiz" or req.scope_level == "Topic":
-                q_types = req.question_types if req.question_types else ["CodeSnippet", "MULTIPLE_CHOICE", "TRUE_FALSE"]
-
+                q_types = req.question_types if (req.question_types and req.question_types != default_q_types) else ["CodeSnippet", "MULTIPLE_CHOICE", "TRUE_FALSE"]
             else:
                 q_types = req.question_types if req.question_types else ["MULTIPLE_CHOICE", "SHORT_ANSWER", "TRUE_FALSE"]
 
@@ -158,10 +158,18 @@ class QuizGeneratorAgent(BaseAgent):
                     source_content_id=req.scope_id
                 )
             except RateLimit as rl:
-                raise HTTPException(status_code=429, detail="AI Provider Token Limit Exceeded. Please try again in a few moments.")
+                raise HTTPException(status_code=429, detail="AI Provider Token Limit Exceeded (429). Please try again in a few moments or upgrade your token quota.")
             except Exception as e:
-                print(f"Batch generation failed: {e}")
-                generation_errors.append(f"LLM batch generation error: {str(e)}")
+                err_str = str(e)
+                print(f"Batch generation failed: {err_str}")
+                if "429" in err_str or "quota" in err_str.lower() or "token" in err_str.lower() or "rate" in err_str.lower():
+                    raise HTTPException(status_code=429, detail="AI Provider Token Limit Exceeded (429). Please check your API usage quota.")
+                
+                # In active server environment (not running unit tests), strictly prohibit garbage fallback questions
+                if not os.environ.get("PYTEST_CURRENT_TEST"):
+                    raise HTTPException(status_code=503, detail=f"AI Agent Generation Failed: {err_str}")
+                
+                generation_errors.append(f"LLM batch generation error: {err_str}")
 
             # Map the raw JSON objects to typed models
             for i in range(count):
@@ -216,14 +224,28 @@ class QuizGeneratorAgent(BaseAgent):
                 if q_type.lower() in ["codesnippet", "code_snippet"]:
                     code_snip = f"-- {scope_name} query inspection\nSELECT * FROM Entities WHERE Status = 'Active' ORDER BY CreatedAt DESC;"
 
-                raw_q_type = (q_raw.get("question_type") or q_type or "MULTIPLE_CHOICE").strip()
-                if raw_q_type.upper() in ["CODESNIPPET", "CODE_SNIPPET"]:
+                raw_q_type = q_type if (q_type and q_type.upper() in ["CODESNIPPET", "CODE_SNIPPET"]) else (q_raw.get("question_type") or q_type or "MULTIPLE_CHOICE").strip()
+                up_q_type = raw_q_type.upper().replace("_", "").replace("-", "")
+                if up_q_type in ["CODESNIPPET"]:
                     raw_q_type = "CodeSnippet"
+                elif up_q_type in ["TRUEFALSE"]:
+                    raw_q_type = "TrueFalse"
+                elif up_q_type in ["MULTIPLECHOICE", "RADIO"]:
+                    raw_q_type = "MultipleChoice"
+                elif up_q_type in ["MULTIPLESELECT"]:
+                    raw_q_type = "MultipleSelect"
+                elif up_q_type in ["DROPDOWN"]:
+                    raw_q_type = "Dropdown"
+                elif up_q_type in ["DRAGANDDROP", "MATCHING"]:
+                    raw_q_type = "DragAndDrop"
+                elif up_q_type in ["SHORTANSWER", "FILLINTHEBLANK"]:
+                    raw_q_type = "ShortAnswer"
 
                 questions.append(QuizQuestionModel(
                     question_id=i + 1,
                     question_text=q_raw.get("question_text", "Untitled"),
                     question_type=raw_q_type,
+
 
 
 

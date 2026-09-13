@@ -160,6 +160,35 @@ public class AiReviewController : ControllerBase
             Status = StudyPlanStatus.PendingInstructorApproval
         };
 
+        // Parse AI schedule output into database items
+        try
+        {
+            using var doc = JsonDocument.Parse(aiJson);
+            if (doc.RootElement.TryGetProperty("schedule", out var scheduleEl) && scheduleEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var itemEl in scheduleEl.EnumerateArray())
+                {
+                    var dayNum = itemEl.TryGetProperty("day_number", out var dVal) ? dVal.GetInt32() : (studyPlan.Items.Count + 1);
+                    var title = itemEl.TryGetProperty("activity_title", out var tVal) ? tVal.GetString() : "Interactive Module";
+                    var desc = itemEl.TryGetProperty("description", out var descVal) ? descVal.GetString() : "Curated study activity";
+                    var minutes = itemEl.TryGetProperty("estimated_minutes", out var mVal) ? mVal.GetInt32() : 60;
+
+                    studyPlan.Items.Add(new StudyPlanItem
+                    {
+                        DayNumber = dayNum,
+                        ActivityTitle = title ?? "Interactive Module",
+                        Description = desc ?? "Curated study activity",
+                        EstimatedMinutes = minutes,
+                        IsCompleted = false
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse schedule items from AI JSON into StudyPlanItems.");
+        }
+
         await _dbContext.StudyPlans.AddAsync(studyPlan);
 
         // Record AI workflow execution audit log
@@ -178,6 +207,54 @@ public class AiReviewController : ControllerBase
         await _dbContext.SaveChangesAsync();
 
         return Ok(JsonDocument.Parse(aiJson).RootElement);
+    }
+
+    /// <summary>
+    /// Updates study plan proposal target goal, workload parameters, or quest schedule items.
+    /// </summary>
+    [HttpPut("proposals/{id}")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UpdateProposal(Guid id, [FromBody] UpdateStudyPlanRequest request)
+    {
+        var plan = await _dbContext.StudyPlans.Include(sp => sp.Items).FirstOrDefaultAsync(sp => sp.Id == id);
+        if (plan == null)
+        {
+            return NotFound(new { message = "Study plan proposal not found." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.TargetGoal))
+        {
+            plan.TargetGoal = request.TargetGoal;
+        }
+        if (request.HoursPerWeek.HasValue && request.HoursPerWeek.Value > 0)
+        {
+            plan.HoursPerWeek = request.HoursPerWeek.Value;
+        }
+        if (request.TargetWeeks.HasValue && request.TargetWeeks.Value > 0)
+        {
+            plan.TargetWeeks = request.TargetWeeks.Value;
+        }
+
+        if (request.Items != null)
+        {
+            _dbContext.StudyPlanItems.RemoveRange(plan.Items);
+            foreach (var itemDto in request.Items)
+            {
+                plan.Items.Add(new StudyPlanItem
+                {
+                    DayNumber = itemDto.DayNumber,
+                    ActivityTitle = itemDto.ActivityTitle,
+                    Description = itemDto.Description,
+                    EstimatedMinutes = itemDto.EstimatedMinutes,
+                    IsCompleted = itemDto.IsCompleted
+                });
+            }
+        }
+
+        plan.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(plan);
     }
 
     /// <summary>
@@ -394,4 +471,19 @@ public record RetentionInsightsApiRequest(
     int days_inactive,
     float recent_quiz_accuracy,
     int xp_velocity_7d
+);
+
+public record UpdateStudyPlanRequest(
+    string? TargetGoal,
+    double? HoursPerWeek,
+    int? TargetWeeks,
+    List<StudyPlanItemDto>? Items
+);
+
+public record StudyPlanItemDto(
+    int DayNumber,
+    string ActivityTitle,
+    string Description,
+    int EstimatedMinutes,
+    bool IsCompleted
 );

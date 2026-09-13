@@ -473,4 +473,97 @@ public class UserCourseManagementTests
         Assert.Equal("btree_indexes_lecture_notes.pdf", retrieved.AttachmentFileName);
         Assert.Equal(30, retrieved.XpReward);
     }
+
+    [Fact]
+    public async Task Instructor_AddStudentToCourse_CreatesActiveEnrollment()
+    {
+        await using var db = CreateDb();
+        var student = SeedUser(db, UserRole.Student);
+        var instructor = SeedUser(db, UserRole.Instructor);
+        var course = SeedCourse(db, instructor.Id);
+
+        var enrollment = new Enrollment
+        {
+            CourseId = course.Id,
+            StudentId = student.Id,
+            ProgressPercentage = 0.0,
+            Status = EnrollmentStatus.Active
+        };
+        await db.Enrollments.AddAsync(enrollment);
+        await db.SaveChangesAsync();
+
+        var enrolled = await db.Enrollments
+            .Include(e => e.Student)
+            .FirstOrDefaultAsync(e => e.CourseId == course.Id && e.StudentId == student.Id);
+
+        Assert.NotNull(enrolled);
+        Assert.Equal(EnrollmentStatus.Active, enrolled!.Status);
+        Assert.Equal(student.Id, enrolled.StudentId);
+    }
+
+    [Fact]
+    public async Task Instructor_AddStudentToCourse_ReactivatesDroppedEnrollment()
+    {
+        await using var db = CreateDb();
+        var student = SeedUser(db, UserRole.Student);
+        var instructor = SeedUser(db, UserRole.Instructor);
+        var course = SeedCourse(db, instructor.Id);
+
+        var enrollment = new Enrollment
+        {
+            CourseId = course.Id,
+            StudentId = student.Id,
+            Status = EnrollmentStatus.Dropped
+        };
+        await db.Enrollments.AddAsync(enrollment);
+        await db.SaveChangesAsync();
+
+        // Reactivate
+        var existing = await db.Enrollments.FirstAsync(e => e.CourseId == course.Id && e.StudentId == student.Id);
+        existing.Status = EnrollmentStatus.Active;
+        await db.SaveChangesAsync();
+
+        var updated = await db.Enrollments.FirstAsync(e => e.CourseId == course.Id && e.StudentId == student.Id);
+        Assert.Equal(EnrollmentStatus.Active, updated.Status);
+    }
+
+    [Fact]
+    public async Task Student_GetMyCourses_ReturnsCourseWithModulesAndSyllabus()
+    {
+        await using var db = CreateDb();
+        var student = SeedUser(db, UserRole.Student);
+        var instructor = SeedUser(db, UserRole.Instructor);
+        var course = SeedCourse(db, instructor.Id);
+
+        var module = new Module
+        {
+            CourseId = course.Id,
+            Title = "Module 1: Advanced Relational Systems",
+            Description = "Syllabus for Relational Databases",
+            PdfUrl = "/uploads/pdfs/syllabus_m1.pdf",
+            AttachmentFileName = "syllabus_m1.pdf"
+        };
+        db.Modules.Add(module);
+
+        var enrollment = new Enrollment
+        {
+            CourseId = course.Id,
+            StudentId = student.Id,
+            Status = EnrollmentStatus.Active
+        };
+        db.Enrollments.Add(enrollment);
+        await db.SaveChangesAsync();
+
+        var activeEnrollments = await db.Enrollments
+            .Where(e => e.StudentId == student.Id && e.Status == EnrollmentStatus.Active)
+            .Include(e => e.Course)
+                .ThenInclude(c => c!.Modules)
+            .ToListAsync();
+
+        Assert.Single(activeEnrollments);
+        var courseModules = activeEnrollments[0].Course!.Modules;
+        Assert.Single(courseModules);
+        Assert.Equal("Module 1: Advanced Relational Systems", courseModules.First().Title);
+        Assert.Equal("syllabus_m1.pdf", courseModules.First().AttachmentFileName);
+    }
 }

@@ -680,8 +680,17 @@ public class QuizzesController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
-    // 4. AI QUIZ GENERATION & QUESTION REGENERATION
+    // 4. AI QUIZ GENERATION & QUESTION REGENERATION & STATUS
     // -------------------------------------------------------------------------
+
+    [HttpGet("ai-status")]
+    [HttpGet("/api/v1/ai/status")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAiStatus()
+    {
+        var json = await _aiGatewayClient.GetAiStatusAsync();
+        return Content(json, "application/json");
+    }
 
     [HttpPost("generate-ai")]
     [HttpPost("/api/v1/ai/quiz-generation")]
@@ -725,7 +734,7 @@ public class QuizzesController : ControllerBase
             PassingScorePercent = request.PassingScorePercent,
             XpReward = request.XpReward > 0 ? request.XpReward : defaultXp,
             CoinReward = request.CoinReward,
-            Status = QuizStatus.ReadyForReview, // State machine: READY_FOR_REVIEW
+            Status = QuizStatus.Published, // State machine: Published (active for enrolled students)
             GeneratedByAI = true,
             GenerationWorkflowId = workflowId,
             CreatedAt = DateTime.UtcNow
@@ -787,15 +796,28 @@ public class QuizzesController : ControllerBase
         };
 
         bool usedPython = false;
+        string? aiErrorDetail = null;
         try
         {
             var responseString = await _aiGatewayClient.GenerateQuizAsync(pythonPayload);
             var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
 
+            if (aiResult.TryGetProperty("status", out var stProp) && string.Equals(stProp.GetString(), "error", StringComparison.OrdinalIgnoreCase))
+            {
+                if (aiResult.TryGetProperty("message", out var msgProp))
+                {
+                    aiErrorDetail = msgProp.GetString();
+                }
+            }
+            else if (aiResult.TryGetProperty("detail", out var detailProp))
+            {
+                aiErrorDetail = detailProp.GetString();
+            }
+
             bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
                 && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
 
-            if (!isGatewayFallback && aiResult.TryGetProperty("questions", out var questionsArray))
+            if (!isGatewayFallback && string.IsNullOrEmpty(aiErrorDetail) && aiResult.TryGetProperty("questions", out var questionsArray))
             {
                 int i = 0;
                 foreach (var qToken in questionsArray.EnumerateArray())
@@ -873,40 +895,25 @@ public class QuizzesController : ControllerBase
         catch (Exception ex)
         {
             Console.WriteLine($"[AI Agent] Python service error: {ex.Message}");
+            aiErrorDetail = ex.Message;
         }
 
         // -------------------------------------------------------------------------
-        // FALLBACK: If Python fails, use C# hardcoded fallback
+        // STRICT POLICY: If AI generation fails, DO NOT create fallback questions!
+        // Return clear error message to frontend to show error popup modal.
         // -------------------------------------------------------------------------
         if (!usedPython)
         {
-            var questionTypes = request.QuestionTypes ?? new List<string> { "MultipleChoice", "TrueFalse", "MultipleSelect" };
-            for (int i = 0; i < count; i++)
+            var errMessage = "AI Quiz Generation failed. The AI Microservice is currently offline, rate-limited, or unavailable.";
+            if (!string.IsNullOrWhiteSpace(aiErrorDetail))
             {
-                var prompt = $"Generated fallback question {i + 1} for {request.Topic}";
-                var options = new List<string> { "A", "B", "C", "D" };
-                var correct = "A";
-
-                var question = new Question
-                {
-                    Prompt = prompt,
-                    Type = QuestionType.MultipleChoice,
-                    OptionsJson = JsonSerializer.Serialize(options),
-                    CorrectAnswer = correct,
-                    Explanation = "Fallback generated.",
-                    Difficulty = quiz.Difficulty,
-                    Points = 10,
-                    OrderIndex = i + 1,
-                    MetadataJson = "{}"
-                };
-
-                int optIdx = 1;
-                foreach (var opt in options)
-                {
-                    question.Options.Add(new QuestionOption { OptionText = opt, IsCorrect = opt == correct, DisplayOrder = optIdx++ });
-                }
-                quiz.Questions.Add(question);
+                errMessage = aiErrorDetail;
             }
+            return BadRequest(new { 
+                message = errMessage,
+                status = "error",
+                code = "AI_GENERATION_FAILED"
+            });
         }
 
         quiz.QuestionCount = quiz.Questions.Count;

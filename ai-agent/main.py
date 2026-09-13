@@ -102,16 +102,55 @@ app.add_middleware(
 
 
 # =============================================================================
+import os
+
+# =============================================================================
 # 1. System Health & Agent Topology Endpoints
 # =============================================================================
 
+def get_ai_provider_status() -> Dict[str, Any]:
+    has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
+    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+    has_azure = bool(os.environ.get("AZURE_OPENAI_API_KEY"))
+    
+    rate_limited = os.environ.get("AI_RATE_LIMITED", "false").lower() == "true"
+    if rate_limited:
+        return {
+            "status_color": "yellow",
+            "status": "rate_limited",
+            "message": "AI Provider Token Usage Limit Reached (429 RateLimit). Throttled.",
+            "can_generate": False
+        }
+
+    if not (has_gemini or has_openai or has_azure):
+        return {
+            "status_color": "red",
+            "status": "unreachable",
+            "message": "No valid LLM provider credentials configured. AI API Unreachable.",
+            "can_generate": False
+        }
+
+    return {
+        "status_color": "green",
+        "status": "healthy",
+        "message": "AI Agent & LLM Provider API fully operational.",
+        "can_generate": True
+    }
+
+
 @app.get("/health")
+@app.get("/api/v1/ai/status")
+@app.get("/ai-status")
 def health_check():
     """
-    Health check endpoint returning system status, active agents count, and tool counts.
+    Health check endpoint returning system status, live API color indicator, active agents count, and tool counts.
     """
+    st = get_ai_provider_status()
     return {
-        "status": "healthy",
+        "status": st["status"],
+        "status_color": st["status_color"],
+        "message": st["message"],
+        "can_generate": st["can_generate"],
         "service": "EduFlow Agentic AI Microservice",
         "version": "2.0.0",
         "active_agents_count": 7,
