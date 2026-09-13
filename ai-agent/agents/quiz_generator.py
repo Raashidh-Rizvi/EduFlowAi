@@ -320,11 +320,23 @@ class QuizGeneratorAgent(BaseAgent):
     ) -> List[Dict[str, Any]]:
         """
         Generates an array of `count` quiz questions in ONE single LLM invocation.
-        This prevents free-tier rate limits (429 Too Many Requests) caused by looping.
+        This prevents free-tier rate limits (429 Too Many Requests) caused by looping,
+        and automatically falls back across verified Gemini models if the primary model is throttled.
         """
-        llm = get_gemini_llm(temperature=0.4)
-        
-        # We use a JSON schema expecting a JSON array of objects.
+        model_candidates = []
+        configured = os.environ.get("GEMINI_MODEL")
+        if configured:
+            model_candidates.append(configured)
+        for fallback_m in ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-flash-lite-latest"]:
+            if fallback_m not in model_candidates:
+                model_candidates.append(fallback_m)
+
+        grounding_block = (
+            f"Ground your questions STRICTLY in the following curriculum text where possible:\n{grounding_text}\n"
+            if grounding_text else
+            "No curriculum excerpt is available -- generate rigorous, factually sound questions from general subject-matter expertise on the scope.\n"
+        )
+
         prompt = PromptTemplate(
             template='''You are an expert AI educator generating a rigorous quiz assessment.
 
@@ -361,36 +373,42 @@ Output STRICT JSON containing a SINGLE flat array of question objects, matching 
 STRICT JSON Array Output:''',
             input_variables=["grounding_block", "scope_name", "count", "difficulty", "target_topics", "q_types"]
         )
-        
         parser = JsonOutputParser()
-        chain = prompt | llm | parser
 
-        grounding_block = (
-            f"Ground your questions STRICTLY in the following curriculum text where possible:\n{grounding_text}\n"
-            if grounding_text else
-            "No curriculum excerpt is available -- generate rigorous, factually sound questions from general subject-matter expertise on the scope.\n"
-        )
+        last_err = None
+        for cand_model in model_candidates:
+            try:
+                llm = get_gemini_llm(temperature=0.4, model_name=cand_model)
+                chain = prompt | llm | parser
 
-        result = invoke_structured(chain, {
-            "grounding_block": grounding_block,
-            "scope_name": scope_name,
-            "count": count,
-            "difficulty": difficulty,
-            "target_topics": ", ".join(target_topics) if target_topics else scope_name,
-            "q_types": ", ".join(q_types)
-        })
+                result = invoke_structured(chain, {
+                    "grounding_block": grounding_block,
+                    "scope_name": scope_name,
+                    "count": count,
+                    "difficulty": difficulty,
+                    "target_topics": ", ".join(target_topics) if target_topics else scope_name,
+                    "q_types": ", ".join(q_types)
+                })
 
-        if not isinstance(result, list):
-            # Sometimes models wrap the array in a dict like {"questions": [...]}
-            if isinstance(result, dict) and "questions" in result:
-                result = result["questions"]
-            else:
-                raise ModelFailure(f"Gemini batch generation returned a non-list payload: {type(result).__name__}")
+                if not isinstance(result, list):
+                    # Sometimes models wrap the array in a dict like {"questions": [...]}
+                    if isinstance(result, dict) and "questions" in result:
+                        result = result["questions"]
+                    else:
+                        raise ModelFailure(f"Gemini batch generation ({cand_model}) returned a non-list payload: {type(result).__name__}")
 
-        if len(result) == 0:
-            raise ValidationError("Gemini batch generation returned an empty array.")
-            
-        return result
+                if len(result) == 0:
+                    raise ValidationError(f"Gemini batch generation ({cand_model}) returned an empty array.")
+
+                return result
+            except (RateLimit, ModelFailure, Exception) as e:
+                last_err = e
+                print(f"[QuizGeneratorAgent] Model '{cand_model}' failed during batch generation: {e}. Trying next fallback...")
+                continue
+
+        if last_err:
+            raise last_err
+        raise ModelFailure("All Gemini batch generation model candidates exhausted.")
 
     def regenerate_single_question(self, request: SingleQuestionRegenerateRequest) -> SingleQuestionRegenerateResponse:
         focus = request.focus_topic or "Relational Indexing & Architecture"

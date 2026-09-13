@@ -31,6 +31,7 @@ yarn-error.log*
 **/playwright-report/
 **/test-results/
 **/e2e/screenshots/
+.playwright-mcp/
 
 # Flutter / Dart
 **/mobile/build/

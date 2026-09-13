@@ -198,7 +198,8 @@ public record GenerateAiQuizRequest(
     List<string>? QuestionTypes = null,
     Dictionary<string, int>? QuestionTypeDistribution = null,
     Dictionary<string, int>? DifficultyDistribution = null,
-    List<string>? LearningObjectives = null
+    List<string>? LearningObjectives = null,
+    string? ModuleTitle = null
 );
 
 public record UploadQuizRequest(

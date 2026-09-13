@@ -740,19 +740,46 @@ public class QuizzesController : ControllerBase
         string? physicalSlidePath = null;
         if (!string.IsNullOrEmpty(slideRelativeUrl))
         {
-            physicalSlidePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", slideRelativeUrl.TrimStart('/'));
+            physicalSlidePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", slideRelativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
             if (!System.IO.File.Exists(physicalSlidePath))
             {
                 physicalSlidePath = null;
             }
         }
 
+        // Fallback: if slide not found in request, check module in database
+        if (string.IsNullOrEmpty(physicalSlidePath))
+        {
+            var dbModule = await _dbContext.Modules.FirstOrDefaultAsync(m =>
+                m.CourseId == request.CourseId &&
+                ((request.ScopeId != null && m.Id == request.ScopeId) ||
+                 (!string.IsNullOrWhiteSpace(request.ModuleTitle) && m.Title == request.ModuleTitle)));
+            if (dbModule != null && !string.IsNullOrEmpty(dbModule.PdfUrl))
+            {
+                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", dbModule.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                if (System.IO.File.Exists(candidatePath))
+                {
+                    physicalSlidePath = candidatePath;
+                }
+            }
+        }
+
+        string resolvedTopic = (!string.IsNullOrWhiteSpace(request.Topic) && request.Topic != "All Topics")
+            ? request.Topic
+            : (!string.IsNullOrWhiteSpace(request.ModuleTitle) ? request.ModuleTitle : (course.Title ?? "Curriculum Core"));
+
         var pythonPayload = new
         {
             course_id = request.CourseId.ToString(),
-            topic_title = request.Topic ?? "System Architecture",
+            topic_title = resolvedTopic,
+            module_title = request.ModuleTitle ?? resolvedTopic,
+            course_title = course.Title,
+            scope_type = request.ScopeType.ToString().ToUpperInvariant(),
+            scope_level = request.ScopeType.ToString(),
             difficulty = request.Difficulty,
             question_count = count,
+            time_limit_minutes = request.TimeLimitMinutes,
+            pass_percentage = request.PassingScorePercent > 0 ? request.PassingScorePercent : 70,
             pdf_path = physicalSlidePath,
             slide_path = physicalSlidePath,
             selected_topics = request.SelectedTopics,
@@ -778,7 +805,7 @@ public class QuizzesController : ControllerBase
                     var correct = qToken.TryGetProperty("correct_answer", out var ca) ? ca.GetString() ?? "A" : "A";
                     var explanation = qToken.TryGetProperty("explanation", out var exp) ? exp.GetString() ?? "AI Explanation" : "AI Explanation";
                     var markingScheme = qToken.TryGetProperty("marking_scheme", out var ms) ? ms.GetString() ?? explanation : explanation;
-                    var slideCitation = qToken.TryGetProperty("slide_citation", out var sc) ? sc.GetString() ?? $"Curriculum for {request.Topic}" : $"Curriculum for {request.Topic}";
+                    var slideCitation = qToken.TryGetProperty("slide_citation", out var sc) ? sc.GetString() ?? $"Curriculum for {resolvedTopic}" : $"Curriculum for {resolvedTopic}";
 
                     var qType = QuestionType.MultipleChoice;
                     var upperType = qTypeStr.ToUpperInvariant();
@@ -827,7 +854,9 @@ public class QuizzesController : ControllerBase
                     int optIdx = 1;
                     foreach (var opt in options)
                     {
-                        bool isCorrect = correct.Contains(opt, StringComparison.OrdinalIgnoreCase);
+                        bool isCorrect = string.Equals(opt.Trim(), correct.Trim(), StringComparison.OrdinalIgnoreCase)
+                            || correct.Split(new[] { ',', ';' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                                      .Any(c => string.Equals(c, opt.Trim(), StringComparison.OrdinalIgnoreCase));
                         question.Options.Add(new QuestionOption
                         {
                             OptionText = opt,

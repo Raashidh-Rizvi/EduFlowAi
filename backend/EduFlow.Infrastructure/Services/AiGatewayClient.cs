@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace EduFlow.Infrastructure.Services;
 
@@ -30,11 +31,14 @@ public class AiGatewayClient : IAiGatewayClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
+    private readonly ILogger<AiGatewayClient>? _logger;
 
-    public AiGatewayClient(HttpClient httpClient, IConfiguration configuration)
+    public AiGatewayClient(HttpClient httpClient, IConfiguration configuration, ILogger<AiGatewayClient>? logger = null)
     {
         _httpClient = httpClient;
+        _httpClient.Timeout = TimeSpan.FromSeconds(120);
         _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+        _logger = logger;
 
         var apiKey = configuration["AiService:ApiKey"];
         if (!string.IsNullOrWhiteSpace(apiKey))
@@ -88,10 +92,15 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
+            else
+            {
+                var errBody = await response.Content.ReadAsStringAsync(ct);
+                _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, errBody);
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback
+            _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", $"{_baseUrl}/generate-quiz");
         }
 
         return FallbackQuizJson();
