@@ -27,6 +27,7 @@ import {
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
+import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
 import api from '../../services/api';
 
 export default function Dashboard({ onNavigateTo, currentUser }) {
@@ -205,79 +206,37 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
           }))
         });
       } else {
-        generateFallbackRemediationDraft();
+        alert('AI Quiz Generator failed to produce questions. Please try again.');
       }
-    } catch {
-      generateFallbackRemediationDraft();
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed.';
+      alert(`AI Quiz Generator Error: ${errMsg}`);
     } finally {
       setGeneratingRemediation(false);
     }
   };
 
-  const generateFallbackRemediationDraft = () => {
-    const topic = remediationScope?.topicTitle || 'Recursion';
-    setRemediationDraft({
-      title: `🎯 ${topic} Diagnostic & Mastery Recovery Quiz`,
-      scope: `${remediationScope?.courseCode || 'PY101'} → ${remediationScope?.moduleTitle || 'Functions'} → ${topic}`,
-      targetWeakness: `Common student errors in ${topic} base cases, state unwinding, and recursion limits.`,
-      questionsCount: 4,
-      timeLimit: '15 mins',
-      xpReward: 80,
-      passMark: '70%',
-      questions: [
-        {
-          id: 1,
-          prompt: `In a recursive algorithm for computing factorials, what is the critical consequence of omitting the base case (n <= 1)?`,
-          type: 'MultipleChoice',
-          options: [
-            'Maximum recursion depth is exceeded causing a RecursionError / StackOverflow',
-            'The function immediately returns 0 deterministically',
-            'The return value is automatically cast to an integer float',
-            'The operating system suspends execution for 30 seconds'
-          ],
-          correctAnswer: 'Maximum recursion depth is exceeded causing a RecursionError / StackOverflow',
-          explanation: 'Without a stopping condition, the call stack grows indefinitely until the runtime recursion ceiling is hit.'
-        },
-        {
-          id: 2,
-          prompt: `Trace the return value of mystery(3) where mystery(n) = if n == 0 return 1 else return n * mystery(n-1):`,
-          type: 'MultipleChoice',
-          options: [
-            '6 (3 * 2 * 1 * 1)',
-            '0',
-            '3',
-            'Infinite loop'
-          ],
-          correctAnswer: '6 (3 * 2 * 1 * 1)',
-          explanation: '3 * mystery(2) = 3 * (2 * mystery(1)) = 3 * 2 * (1 * mystery(0)) = 3 * 2 * 1 * 1 = 6.'
-        },
-        {
-          id: 3,
-          prompt: `True or False: Every recursive function can be reformulated iteratively using an explicit stack data structure.`,
-          type: 'TrueFalse',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          explanation: 'Church-Turing thesis and compiler theory establish that recursion and iteration with stack are computationally equivalent.'
-        },
-        {
-          id: 4,
-          prompt: `Which memory segment stores local variables and return addresses for each recursive function invocation?`,
-          type: 'MultipleChoice',
-          options: [
-            'Call Stack (Activation Record Frames)',
-            'Heap Allocation Segment',
-            'Static Global Data Segment',
-            'Read-Only Text / Bytecode Segment'
-          ],
-          correctAnswer: 'Call Stack (Activation Record Frames)',
-          explanation: 'Each function invocation allocates a stack frame containing arguments, local scope, and caller return PC.'
-        }
-      ]
-    });
-  };
-
   const handleApproveAndPublishRemediation = async () => {
     if (!remediationDraft) return;
+
+    const quizObj = {
+      id: `q-rem-${Date.now()}`,
+      courseId: '44444444-4444-4444-4444-444444444444',
+      courseCode: 'SE3090',
+      title: remediationDraft.title,
+      description: `Targeted remediation quiz for ${remediationScope?.topicTitle} to help students improve mastery.`,
+      questionsCount: remediationDraft.questions ? remediationDraft.questions.length : 4,
+      difficulty: 'Medium',
+      xpReward: 80,
+      coinReward: 25,
+      timeLimitMinutes: 15,
+      passPercentage: 70,
+      avgScore: 0,
+      status: 'Published',
+      questions: remediationDraft.questions
+    };
+
+    saveGeneratedQuiz(quizObj);
 
     try {
       await quizService.createQuiz({
@@ -299,7 +258,7 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
         }))
       });
     } catch {
-      // local sync
+      // local sync via saveGeneratedQuiz
     }
 
     // Remove the alert from list

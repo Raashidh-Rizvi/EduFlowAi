@@ -42,6 +42,7 @@ import { aiService } from '../../services/aiService';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
 import { gamificationService } from '../../services/gamificationService';
+import { getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
@@ -1590,13 +1591,26 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
         console.warn('Could not load courses, using seed:', err);
       }
 
-      // 2. Load Real Course Quizzes from PostgreSQL
+      // 2. Load Real Course Quizzes from PostgreSQL & Local Storage
       try {
-        const qList = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444');
-        if (Array.isArray(qList) && qList.length > 0) {
-          const detailedQuiz = await quizService.getQuizById(qList[0].id);
-          if (detailedQuiz && detailedQuiz.questions) {
-            setServerQuiz(detailedQuiz);
+        const qList = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444').catch(() => []);
+        const localList = getGeneratedQuizzes('44444444-4444-4444-4444-444444444444');
+        const combined = [...localList, ...(qList || [])];
+        if (combined.length > 0) {
+          const targetQuiz = combined[0];
+          if (targetQuiz.questions && targetQuiz.questions.length > 0) {
+            setServerQuiz(targetQuiz);
+          } else {
+            try {
+              const detailedQuiz = await quizService.getQuizById(targetQuiz.id);
+              if (detailedQuiz && detailedQuiz.questions) {
+                setServerQuiz(detailedQuiz);
+              } else {
+                setServerQuiz(targetQuiz);
+              }
+            } catch {
+              setServerQuiz(targetQuiz);
+            }
           }
         }
       } catch (err) {
@@ -1680,16 +1694,27 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   };
 
   const handleStartQuiz = async (quizToRun) => {
-    const target = quizToRun || serverQuiz;
+    let target = quizToRun || serverQuiz;
+    if (!target) {
+      const localList = getGeneratedQuizzes('44444444-4444-4444-4444-444444444444');
+      if (localList.length > 0) {
+        target = localList[0];
+      }
+    }
     if (target && (!target.questions || target.questions.length === 0)) {
-      try {
-        const detailed = await quizService.getQuizById(target.id);
-        if (detailed && detailed.questions) {
-          setActiveQuiz(detailed);
-          return;
+      const localMatches = getGeneratedQuizzes();
+      const foundLocal = localMatches.find(q => q.id === target.id || q.title === target.title);
+      if (foundLocal && foundLocal.questions && foundLocal.questions.length > 0) {
+        target = { ...target, ...foundLocal };
+      } else {
+        try {
+          const detailed = await quizService.getQuizById(target.id);
+          if (detailed && detailed.questions && detailed.questions.length > 0) {
+            target = detailed;
+          }
+        } catch (err) {
+          console.warn('Failed to load quiz detail:', err);
         }
-      } catch (err) {
-        console.warn('Failed to load quiz detail:', err);
       }
     }
     setActiveQuiz(target);

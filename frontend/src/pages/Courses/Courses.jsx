@@ -46,6 +46,7 @@ import {
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
+import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
   const [coursesList, setCoursesList] = useState([]);
@@ -596,154 +597,36 @@ export default function Courses({ currentUser }) {
           slideCitation: q.metadataJson?.slideCitation || q.slideCitation || `Slide ${Math.min(idx * 2 + 1, 16)}-${Math.min(idx * 2 + 3, 18)}: ${aiQuizScope.moduleTitle}`,
           markingScheme: q.metadataJson?.markingScheme || q.markingScheme || 'Full Marks (10 pts): Accurate explanation citing core slide invariants. Partial Marks (5 pts): Correct concept with minor omission. 0 pts: Contradictory.'
         }));
+
+        setGeneratedDraft({
+          title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
+          description: `Strictly grounded in lecture slides (${topicsToInclude.join(', ')}) with transparent marking scheme & auto-evaluation.`,
+          questions
+        });
+
+        setValidationReport({
+          scopeVerified: true,
+          difficultyValid: true,
+          duplicatesFound: 0,
+          safetyPassed: true,
+          sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
+        });
+
+        setQuizNotification({
+          title: '🎉 SlideQuest Assessment Draft Ready!',
+          message: `Successfully synthesized ${questions.length} RAG-grounded questions for "${aiQuizScope.moduleTitle}". Click to review & publish.`,
+          count: questions.length,
+          moduleTitle: aiQuizScope.moduleTitle
+        });
       } else {
-        questions = createFallbackGroundedQuestions(
-          topicsToInclude.includes('All Topics') ? aiQuizScope.moduleTitle : topicsToInclude.join(' & '),
-          Number(aiQuestionCount),
-          selectedQuestionFormats
-        );
+        alert('AI Quiz Generator failed to produce questions. Please try again.');
       }
-
-      setGeneratedDraft({
-        title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
-        description: `Strictly grounded in lecture slides (${topicsToInclude.join(', ')}) with transparent marking scheme & auto-evaluation.`,
-        questions
-      });
-
-      setValidationReport({
-        scopeVerified: true,
-        difficultyValid: true,
-        duplicatesFound: 0,
-        safetyPassed: true,
-        sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
-      });
-
-      setQuizNotification({
-        title: '🎉 SlideQuest Assessment Draft Ready!',
-        message: `Successfully synthesized ${questions.length} RAG-grounded questions for "${aiQuizScope.moduleTitle}". Click to review & publish.`,
-        count: questions.length,
-        moduleTitle: aiQuizScope.moduleTitle
-      });
-    } catch {
-      const fallbackQuestions = createFallbackGroundedQuestions(
-        aiQuizScope.moduleTitle,
-        Number(aiQuestionCount),
-        selectedQuestionFormats
-      );
-      setGeneratedDraft({
-        title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
-        description: `Strictly grounded in lecture slides for ${aiQuizScope.moduleTitle} with auto-grading rubric.`,
-        questions: fallbackQuestions
-      });
-      setValidationReport({
-        scopeVerified: true,
-        difficultyValid: true,
-        duplicatesFound: 0,
-        safetyPassed: true,
-        sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
-      });
-
-      setQuizNotification({
-        title: '⚡ SlideQuest Assessment Draft Ready!',
-        message: `Synthesized ${fallbackQuestions.length} SlideQuest questions grounded in lecture slides. Click to review.`,
-        count: fallbackQuestions.length,
-        moduleTitle: aiQuizScope.moduleTitle
-      });
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed.';
+      alert(`AI Quiz Generator Error: ${errMsg}`);
     } finally {
       setIsGeneratingQuiz(false);
     }
-  };
-
-  // ── Multi-Format Fallback Question Generator Grounded in Slides ───────────
-  const createFallbackGroundedQuestions = (topicName, count, allowedFormats = ['MultipleChoice', 'Dropdown', 'FillInBlank', 'Matching', 'ShortAnswer']) => {
-    const list = [];
-    const formats = allowedFormats.length > 0 ? allowedFormats : ['MultipleChoice', 'Dropdown', 'FillInBlank', 'Matching', 'ShortAnswer'];
-
-    for (let i = 0; i < count; i++) {
-      const fmt = formats[i % formats.length];
-
-      if (fmt === 'Dropdown') {
-        list.push({
-          id: `q-gen-${i + 1}`,
-          prompt: `Based on the lecture slides for ${topicName}, choose the appropriate synchronization primitive from the dropdown menu to prevent race conditions:`,
-          type: 'Dropdown',
-          options: [
-            'Compare-And-Swap (CAS) Atomic Primitives',
-            'Unsynchronized Global Memory Pointer',
-            'Arbitrary Blocking Thread.Sleep Delay',
-            'Manual Context Switching in Kernel Mode'
-          ],
-          correctAnswer: 'Compare-And-Swap (CAS) Atomic Primitives',
-          explanation: 'Lecture slides state CAS atomic instructions guarantee lock-free progress without priority inversion.',
-          slideCitation: `Slide ${i * 2 + 2}-${i * 2 + 4}: Synchronization Primitives`,
-          markingScheme: 'Full Marks (10 pts): Selection of CAS atomic primitives guaranteeing lock-free progress. 0 pts: Any lock-hazardous choice.',
-          points: 10
-        });
-      } else if (fmt === 'FillInBlank') {
-        list.push({
-          id: `q-gen-${i + 1}`,
-          prompt: `In the ${topicName} slide deck, the guarantee that all non-faulty nodes decide upon the exact same sequence of state transitions is formally known as _________.`,
-          type: 'FillInBlank',
-          options: ['Linearizability', 'Consensus', 'Serializability', 'Eventual'],
-          correctAnswer: 'Consensus',
-          explanation: 'Slide 6 establishes that Distributed Consensus guarantees identical state machine transition ordering.',
-          slideCitation: `Slide ${i * 2 + 3}-${i * 2 + 5}: Replicated State Invariants`,
-          markingScheme: 'Full Marks (10 pts): Exact or case-insensitive match for "Consensus" or "State Machine Replication". Partial Marks (5 pts): "Agreement".',
-          points: 10
-        });
-      } else if (fmt === 'Matching') {
-        list.push({
-          id: `q-gen-${i + 1}`,
-          prompt: `Match each ${topicName} architectural role with its verified operational responsibility according to the lecture deck:`,
-          type: 'Matching',
-          options: [
-            'Leader Node: Coordinates log replication and client requests',
-            'Follower Node: Passively accepts log appends and heartbeats',
-            'Candidate Node: Solicits votes during leader election timeouts'
-          ],
-          matchingPairs: [
-            { left: 'Leader Node', right: 'Coordinates log replication and client requests' },
-            { left: 'Follower Node', right: 'Passively accepts log appends and heartbeats' },
-            { left: 'Candidate Node', right: 'Solicits votes during leader election timeouts' }
-          ],
-          correctAnswer: 'Leader Node: Coordinates log replication and client requests',
-          explanation: 'Slide 8 illustrates the three-state machine transitions for leader, follower, and candidate quorum nodes.',
-          slideCitation: `Slide ${i * 2 + 4}-${i * 2 + 6}: Quorum State Transitions`,
-          markingScheme: 'Full Marks (10 pts): All 3 pairs mapped correctly. Partial Marks (6 pts): 2 pairs mapped correctly. 0 pts: 1 or 0 pairs.',
-          points: 10
-        });
-      } else if (fmt === 'ShortAnswer') {
-        list.push({
-          id: `q-gen-${i + 1}`,
-          prompt: `According to the lecture slides for ${topicName}, explain the fundamental trade-off between strict consistency and request latency under network partitions:`,
-          type: 'ShortAnswer',
-          options: [],
-          correctAnswer: 'Achieving strict consistency requires synchronous round-trip coordination across a quorum of replicas, which inherently increases client latency under partitions.',
-          explanation: 'Lecture slide 12 emphasizes that quorum-based consistency trades off latency due to synchronous consensus round-trips.',
-          slideCitation: `Slide ${i * 2 + 5}-${i * 2 + 7}: Distributed CAP & Latency Trade-offs`,
-          markingScheme: 'Full Marks (10 pts): Identifies that synchronous quorum coordination guarantees consistency while penalizing latency. Partial Marks (5 pts): Mentions latency or consistency in isolation. 0 pts: Irrelevant or contradictory answer.',
-          points: 10
-        });
-      } else {
-        list.push({
-          id: `q-gen-${i + 1}`,
-          prompt: `In the provided slide material for ${topicName}, which design invariant is highlighted as mandatory for domain encapsulation?`,
-          type: 'MultipleChoice',
-          options: [
-            `Enforce deterministic invariants via bounded context contracts`,
-            `Expose internal relational tables directly over unauthenticated endpoints`,
-            `Bypass all unit tests and validation guards during compilation`,
-            `Maintain a single global shared mutable dictionary across threads`
-          ],
-          correctAnswer: `Enforce deterministic invariants via bounded context contracts`,
-          explanation: 'Slide 3 defines modular encapsulation as enforcing deterministic invariants through contract interfaces.',
-          slideCitation: `Slide ${i * 2 + 1}-${i * 2 + 3}: Domain Encapsulation`,
-          markingScheme: 'Full Marks (10 pts): Identifies bounded context contracts and deterministic invariants. 0 pts: Anti-pattern selections.',
-          points: 10
-        });
-      }
-    }
-    return list;
   };
 
   const handleUpdateDraftQuestion = (idx, field, val) => {
@@ -760,19 +643,30 @@ export default function Courses({ currentUser }) {
       return;
     }
 
+    const targetCourseId = (currentCourse?.id && currentCourse.id.length === 36) ? currentCourse.id : '44444444-4444-4444-4444-444444444444';
+    const courseCode = currentCourse?.courseCode || currentCourse?.code || 'SE3090';
+
     const newQuizObj = {
       id: `q-${Date.now()}`,
+      courseId: targetCourseId,
+      courseCode: courseCode,
       title: generatedDraft.title,
+      description: generatedDraft.description || `Strictly grounded assessment for ${aiQuizScope.moduleTitle || 'module'}`,
       questionsCount: generatedDraft.questions.length,
       difficulty: aiQuizDifficulty,
       xpReward: Number(aiXpReward),
       coinReward: Number(aiCoinReward),
+      timeLimit: Number(aiTimeLimit),
       timeLimitMinutes: Number(aiTimeLimit),
       passPercentage: Number(aiPassMark),
+      passThreshold: Number(aiPassMark),
       avgScore: 0,
       status: 'Published',
       questions: generatedDraft.questions
     };
+
+    // Persist to unified localStorage and broadcast window event for Assessments & Quizzes tab
+    saveGeneratedQuiz(newQuizObj);
 
     // Attach to course hierarchy in local state
     const updatedCourses = coursesList.map(c => {
@@ -817,24 +711,31 @@ export default function Courses({ currentUser }) {
 
     setCoursesList(updatedCourses);
     setShowAiQuizModal(false);
-    showToast(`🎉 "${generatedDraft.title}" approved & published to ${aiQuizScope.scopeLevel}! +${aiXpReward} XP.`);
+    showToast(`🎉 "${generatedDraft.title}" approved & published to ${aiQuizScope.scopeLevel}! Streamed to Assessments tab.`);
 
     // Sync with backend API in background
     try {
+      const scopeTypeEnum = aiQuizScope.scopeLevel === 'Course' ? 0 : aiQuizScope.scopeLevel === 'Topic' ? 1 : 2;
+      const scopeIdVal = (aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36)
+        ? aiQuizScope.moduleId
+        : targetCourseId;
+
       await quizService.createQuiz({
-        courseId: currentCourse.id,
+        courseId: targetCourseId,
         title: generatedDraft.title,
-        description: generatedDraft.description,
+        description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
         timeLimitMinutes: Number(aiTimeLimit),
         passingScorePercent: Number(aiPassMark),
         xpReward: Number(aiXpReward),
         coinReward: Number(aiCoinReward),
+        scopeType: scopeTypeEnum,
+        scopeId: scopeIdVal,
         questions: generatedDraft.questions.map((q, idx) => ({
           prompt: q.prompt,
           type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : 0,
-          options: q.options,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
+          options: q.options || [],
+          correctAnswer: q.correctAnswer || '',
+          explanation: q.explanation || '',
           points: q.points || 10,
           orderIndex: idx + 1,
           metadataJson: JSON.stringify({
@@ -845,19 +746,16 @@ export default function Courses({ currentUser }) {
         }))
       });
     } catch {
-      // safely preserved in state
+      // safely preserved in localStorage and component state
     }
   };
 
   // ── INTERACTIVE QUIZ QUEST RUNNER HANDLERS ────────────────────────────────
   const handleStartSlideQuestRunner = (assessmentObj, mod) => {
-    let questions = assessmentObj.questions;
-    if (!questions || questions.length === 0) {
-      questions = createFallbackGroundedQuestions(
-        mod?.title || currentCourse?.title || 'Lecture Topics',
-        assessmentObj.questionsCount || 5,
-        ['MultipleChoice', 'Dropdown', 'FillInBlank', 'Matching', 'ShortAnswer']
-      );
+    let questions = assessmentObj.questions || [];
+    if (questions.length === 0) {
+      alert('No AI generated questions are available for this assessment.');
+      return;
     }
 
     setActiveRunnerQuiz({
@@ -1181,17 +1079,19 @@ export default function Courses({ currentUser }) {
   };
 
   const handleDeleteModule = (moduleId) => {
-    if (confirm('Are you sure you want to delete this module and its assessments?')) {
+    if (window.confirm('Are you sure you want to delete this module and its assessments?')) {
       const updated = coursesList.map(c => {
         if (c.id === currentCourse.id) {
           return {
             ...c,
-            modules: c.modules.filter(m => m.id !== moduleId)
+            modules: (c.modules || []).filter(m => m.id !== moduleId)
           };
         }
         return c;
       });
       setCoursesList(updated);
+      courseService.deleteModule(moduleId).catch(e => console.warn('Backend delete module error ignored:', e));
+      showToast('🗑️ Module deleted successfully.');
     }
   };
 
@@ -2177,30 +2077,36 @@ export default function Courses({ currentUser }) {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.65)',
-          backdropFilter: 'blur(4px)',
+          backgroundColor: 'rgba(10, 15, 30, 0.85)',
+          backdropFilter: 'blur(8px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000,
-          padding: '20px'
+          padding: '16px'
         }}>
           <div style={{
             backgroundColor: 'var(--bg-card)',
             border: '1px solid var(--border-card)',
             borderRadius: 'var(--radius-lg)',
-            width: '100%',
-            maxWidth: '820px',
-            maxHeight: '92vh',
-            overflowY: 'auto',
-            padding: '26px',
+            width: '96vw',
+            height: '94vh',
+            maxWidth: '1400px',
             boxShadow: 'var(--shadow-popover)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '20px'
+            overflow: 'hidden'
           }}>
             {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{
                   width: '44px',
@@ -2218,586 +2124,756 @@ export default function Courses({ currentUser }) {
                   <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
                     AI Assessment Generator & Reviewer
                   </h3>
-                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', margin: 0 }}>
                     Grounded in Course Hierarchy: <strong>{aiQuizScope.courseTitle} → {aiQuizScope.moduleTitle} → {aiQuizScope.topicTitle}</strong>
                   </p>
                 </div>
               </div>
 
-              <button onClick={() => setShowAiQuizModal(false)} className="btn-ghost" style={{ padding: '6px' }}>✕</button>
+              <button onClick={() => setShowAiQuizModal(false)} className="btn-ghost" style={{ padding: '8px', fontSize: '16px' }}>✕</button>
             </div>
 
-            {/* Scope Summary Box */}
-            <div style={{
-              padding: '12px 16px',
-              backgroundColor: 'var(--bg-surface)',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: '10px',
-              fontSize: '12px'
-            }}>
-              <div>
-                <span style={{ color: 'var(--text-muted)' }}>Hierarchy Scope: </span>
-                <strong style={{ color: 'var(--text-main)' }}>{aiQuizScope.scopeLevel} Level</strong>
-                <span style={{ color: 'var(--text-muted)', marginLeft: '8px' }}>({aiQuizScope.topicTitle})</span>
-              </div>
-              <span className="badge-pill badge-primary" style={{ fontWeight: '700' }}>
-                {aiQuizType} Mode
-              </span>
-            </div>
+            {/* Modal Scrollable Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-            {/* Background Generation Active Alert inside Modal */}
-            {isGeneratingQuiz && (
+              {/* Scope Summary Box */}
               <div style={{
-                padding: '14px 18px',
-                backgroundColor: 'rgba(79, 70, 229, 0.08)',
-                border: '1px solid rgba(79, 70, 229, 0.3)',
+                padding: '12px 16px',
+                backgroundColor: 'var(--bg-surface)',
                 borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
                 display: 'flex',
-                alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: '12px'
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '10px',
+                fontSize: '12px'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <RefreshCw size={20} className="spin" color="var(--primary)" />
-                  <div>
-                    <strong style={{ fontSize: '13px', color: 'var(--text-main)', display: 'block' }}>
-                      Strict RAG Question Generation in Progress...
-                    </strong>
-                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                      You can close this window and continue using the app freely. A notification will appear when ready!
-                    </span>
-                  </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>Hierarchy Scope: </span>
+                  <strong style={{ color: 'var(--text-main)' }}>{aiQuizScope.scopeLevel} Level</strong>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: '8px' }}>({aiQuizScope.topicTitle})</span>
                 </div>
-                <button
-                  onClick={() => setShowAiQuizModal(false)}
-                  className="btn-primary"
-                  style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                >
-                  Run in Background ✕
-                </button>
+                <span className="badge-pill badge-primary" style={{ fontWeight: '700' }}>
+                  {aiQuizType} Mode
+                </span>
               </div>
-            )}
 
-            {/* Generator Configuration Form */}
-            {!generatedDraft && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-                {/* ── SlideQuest Topic Discovery & RAG Filter ── */}
-                {isAnalyzingTopics ? (
-                  <div style={{
-                    padding: '20px',
-                    borderRadius: 'var(--radius-md)',
-                    backgroundColor: 'rgba(79, 70, 229, 0.06)',
-                    border: '1px solid var(--primary-border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px'
-                  }}>
-                    <RefreshCw size={24} className="spin" color="var(--primary)" />
+              {/* Background Generation Active Alert inside Modal */}
+              {isGeneratingQuiz && (
+                <div style={{
+                  padding: '14px 18px',
+                  backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                  border: '1px solid rgba(79, 70, 229, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <RefreshCw size={20} className="spin" color="var(--primary)" />
                     <div>
-                      <strong style={{ fontSize: '13.5px', color: 'var(--text-main)', display: 'block' }}>
-                        SlideQuest AI Agent: Analyzing Slide Structure & Extracting Learning Invariants...
+                      <strong style={{ fontSize: '13px', color: 'var(--text-main)', display: 'block' }}>
+                        Strict RAG Question Generation in Progress...
                       </strong>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        Scanning {analyzedSlideDeckName || 'lecture slides'} to categorize subtopics and calibrate Bloom taxonomy levels.
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        You can close this window and continue using the app freely. A notification will appear when ready!
                       </span>
                     </div>
                   </div>
-                ) : detectedSlideTopics.length > 0 ? (
-                  <div style={{
-                    padding: '16px',
-                    backgroundColor: 'rgba(79, 70, 229, 0.04)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--primary-border)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Sparkles size={16} color="var(--primary)" />
-                        <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-main)' }}>
-                          ⚡ SlideQuest Agent: {detectedSlideTopics.length} Subtopics Discovered in "{analyzedSlideDeckName}"
+                  <button
+                    onClick={() => setShowAiQuizModal(false)}
+                    className="btn-primary"
+                    style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  >
+                    Run in Background ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Generator Configuration Form */}
+              {!generatedDraft && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                  {/* ── SlideQuest Topic Discovery & RAG Filter ── */}
+                  {isAnalyzingTopics ? (
+                    <div style={{
+                      padding: '20px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'rgba(79, 70, 229, 0.06)',
+                      border: '1px solid var(--primary-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px'
+                    }}>
+                      <RefreshCw size={24} className="spin" color="var(--primary)" />
+                      <div>
+                        <strong style={{ fontSize: '13.5px', color: 'var(--text-main)', display: 'block' }}>
+                          SlideQuest AI Agent: Analyzing Slide Structure & Extracting Learning Invariants...
+                        </strong>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Scanning {analyzedSlideDeckName || 'lecture slides'} to categorize subtopics and calibrate Bloom taxonomy levels.
                         </span>
                       </div>
-                      <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: '700' }}>
-                        ✓ Grounded in Slide Material
-                      </span>
                     </div>
+                  ) : detectedSlideTopics.length > 0 ? (
+                    <div style={{
+                      padding: '16px',
+                      backgroundColor: 'rgba(79, 70, 229, 0.04)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--primary-border)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <Sparkles size={16} color="var(--primary)" />
+                          <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-main)' }}>
+                            ⚡ SlideQuest Agent: {detectedSlideTopics.length} Subtopics Discovered in "{analyzedSlideDeckName}"
+                          </span>
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: '700' }}>
+                          ✓ Grounded in Slide Material
+                        </span>
+                      </div>
 
-                    {/* Master "All Topics" Toggle */}
-                    <div
-                      onClick={handleToggleSelectAllTopics}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: 'var(--radius-sm)',
-                        backgroundColor: selectAllTopics ? 'rgba(79, 70, 229, 0.12)' : 'var(--bg-canvas)',
-                        border: selectAllTopics ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                      {/* Master "All Topics" Toggle */}
+                      <div
+                        onClick={handleToggleSelectAllTopics}
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-sm)',
+                          backgroundColor: selectAllTopics ? 'rgba(79, 70, 229, 0.12)' : 'var(--bg-canvas)',
+                          border: selectAllTopics ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectAllTopics}
+                            onChange={() => {}}
+                            style={{ accentColor: 'var(--primary)', cursor: 'pointer', width: '16px', height: '16px' }}
+                          />
+                          <div>
+                            <strong style={{ fontSize: '12.5px', color: selectAllTopics ? 'var(--primary)' : 'var(--text-main)' }}>
+                              Select All Topics (Full Slide Deck - Recommended)
+                            </strong>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                              Synthesizes a comprehensive assessment spanning all {detectedSlideTopics.length} discovered subtopics.
+                            </span>
+                          </div>
+                        </div>
+                        <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>
+                          Full Deck RAG
+                        </span>
+                      </div>
+
+                      {/* Individual Subtopics Cards Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '220px', overflowY: 'auto' }}>
+                        {detectedSlideTopics.map((t, idx) => {
+                          const isSelected = selectAllTopics || selectedTopicIds.includes(t.id);
+                          return (
+                            <div
+                              key={t.id || idx}
+                              onClick={() => handleToggleSingleTopic(t.id)}
+                              style={{
+                                padding: '10px 12px',
+                                borderRadius: 'var(--radius-xs)',
+                                backgroundColor: isSelected ? 'var(--bg-card)' : 'var(--bg-surface)',
+                                border: isSelected ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
+                                boxShadow: isSelected ? '0 2px 8px rgba(79, 70, 229, 0.08)' : 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                                  />
+                                  <strong style={{ fontSize: '12px', color: isSelected ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                                    {t.title}
+                                  </strong>
+                                </div>
+                                <span className="badge-pill badge-secondary" style={{ fontSize: '9px', whiteSpace: 'nowrap' }}>
+                                  {t.slide_range || `Part ${idx + 1}`}
+                                </span>
+                              </div>
+
+                              {t.summary && (
+                                <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0, lineHeight: '1.4' }}>
+                                  {t.summary}
+                                </p>
+                              )}
+
+                              {t.key_concepts && t.key_concepts.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                                  {t.key_concepts.slice(0, 3).map((kc, kIdx) => (
+                                    <span key={kIdx} style={{ fontSize: '9.5px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                                      #{kc}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    aiQuizScope.scopeLevel === 'Module' && (
+                      <div style={{
+                        padding: '12px 16px',
+                        borderRadius: 'var(--radius-md)',
+                        backgroundColor: 'var(--bg-surface)',
+                        border: '1px dashed var(--border-card)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectAllTopics}
-                          onChange={() => {}}
-                          style={{ accentColor: 'var(--primary)', cursor: 'pointer', width: '16px', height: '16px' }}
-                        />
-                        <div>
-                          <strong style={{ fontSize: '12.5px', color: selectAllTopics ? 'var(--primary)' : 'var(--text-main)' }}>
-                            Select All Topics (Full Slide Deck - Recommended)
-                          </strong>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                            Synthesizes a comprehensive assessment spanning all {detectedSlideTopics.length} discovered subtopics.
-                          </span>
+                        fontSize: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
+                          <FileText size={16} color="var(--primary)" />
+                          <span>No slides attached yet. Uploading a PDF or PowerPoint deck allows SlideQuest to categorize subtopics and strictly ground questions via RAG.</span>
                         </div>
                       </div>
-                      <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>
-                        Full Deck RAG
-                      </span>
-                    </div>
+                    )
+                  )}
 
-                    {/* Individual Subtopics Cards Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', maxHeight: '220px', overflowY: 'auto' }}>
-                      {detectedSlideTopics.map((t, idx) => {
-                        const isSelected = selectAllTopics || selectedTopicIds.includes(t.id);
+                  {/* ── Multi-Format Question Type Selection ── */}
+                  <div>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
+                      Interactive Question Types (Multi-Format Gamification)
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {[
+                        { key: 'MultipleChoice', label: '🔘 Multiple Choice' },
+                        { key: 'Dropdown', label: '🔽 Dropdown Selection' },
+                        { key: 'FillInBlank', label: '✍️ Fill in the Blanks' },
+                        { key: 'Matching', label: '🔄 Matching Concepts' },
+                        { key: 'ShortAnswer', label: '💬 Typing / Short Answer' }
+                      ].map(fmt => {
+                        const isActive = selectedQuestionFormats.includes(fmt.key);
                         return (
-                          <div
-                            key={t.id || idx}
-                            onClick={() => handleToggleSingleTopic(t.id)}
+                          <button
+                            key={fmt.key}
+                            type="button"
+                            onClick={() => handleToggleQuestionFormat(fmt.key)}
                             style={{
-                              padding: '10px 12px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: isSelected ? 'var(--bg-card)' : 'var(--bg-surface)',
-                              border: isSelected ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
-                              boxShadow: isSelected ? '0 2px 8px rgba(79, 70, 229, 0.08)' : 'none',
+                              padding: '6px 12px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: '11.5px',
+                              fontWeight: '700',
                               cursor: 'pointer',
+                              backgroundColor: isActive ? 'var(--primary-soft)' : 'var(--bg-canvas)',
+                              color: isActive ? 'var(--primary-text)' : 'var(--text-muted)',
+                              border: isActive ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
                               display: 'flex',
-                              flexDirection: 'column',
-                              gap: '4px',
-                              transition: 'all 0.15s ease'
+                              alignItems: 'center',
+                              gap: '4px'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => {}}
-                                  style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
-                                />
-                                <strong style={{ fontSize: '12px', color: isSelected ? 'var(--text-main)' : 'var(--text-muted)' }}>
-                                  {t.title}
-                                </strong>
-                              </div>
-                              <span className="badge-pill badge-secondary" style={{ fontSize: '9px', whiteSpace: 'nowrap' }}>
-                                {t.slide_range || `Part ${idx + 1}`}
-                              </span>
-                            </div>
-
-                            {t.summary && (
-                              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0, lineHeight: '1.4' }}>
-                                {t.summary}
-                              </p>
-                            )}
-
-                            {t.key_concepts && t.key_concepts.length > 0 && (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
-                                {t.key_concepts.slice(0, 3).map((kc, kIdx) => (
-                                  <span key={kIdx} style={{ fontSize: '9.5px', padding: '1px 6px', borderRadius: '4px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-                                    #{kc}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                            {isActive && <Check size={13} strokeWidth={3} />}
+                            <span>{fmt.label}</span>
+                          </button>
                         );
                       })}
                     </div>
                   </div>
-                ) : (
-                  aiQuizScope.scopeLevel === 'Module' && (
-                    <div style={{
-                      padding: '12px 16px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1px dashed var(--border-card)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '12px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
-                        <FileText size={16} color="var(--primary)" />
-                        <span>No slides attached yet. Uploading a PDF or PowerPoint deck allows SlideQuest to categorize subtopics and strictly ground questions via RAG.</span>
-                      </div>
-                    </div>
-                  )
-                )}
 
-                {/* ── Multi-Format Question Type Selection ── */}
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>
-                    Interactive Question Types (Multi-Format Gamification)
-                  </label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {[
-                      { key: 'MultipleChoice', label: '🔘 Multiple Choice' },
-                      { key: 'Dropdown', label: '🔽 Dropdown Selection' },
-                      { key: 'FillInBlank', label: '✍️ Fill in the Blanks' },
-                      { key: 'Matching', label: '🔄 Matching Concepts' },
-                      { key: 'ShortAnswer', label: '💬 Typing / Short Answer' }
-                    ].map(fmt => {
-                      const isActive = selectedQuestionFormats.includes(fmt.key);
-                      return (
-                        <button
-                          key={fmt.key}
-                          type="button"
-                          onClick={() => handleToggleQuestionFormat(fmt.key)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: '11.5px',
-                            fontWeight: '700',
-                            cursor: 'pointer',
-                            backgroundColor: isActive ? 'var(--primary-soft)' : 'var(--bg-canvas)',
-                            color: isActive ? 'var(--primary-text)' : 'var(--text-muted)',
-                            border: isActive ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          {isActive && <Check size={13} strokeWidth={3} />}
-                          <span>{fmt.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  
-                  {/* Question Count */}
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Question Count
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={aiQuestionCount}
-                      onChange={e => setAiQuestionCount(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--text-main)',
-                        fontSize: '13px'
-                      }}
-                    />
-                  </div>
-
-                  {/* Difficulty */}
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Difficulty Level
-                    </label>
-                    <select
-                      value={aiQuizDifficulty}
-                      onChange={e => setAiQuizDifficulty(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--text-main)',
-                        fontSize: '13px'
-                      }}
-                    >
-                      <option value="Easy">Easy (Knowledge / Comprehension)</option>
-                      <option value="Medium">Medium (Application / Analysis)</option>
-                      <option value="Hard">Hard (Synthesis / Evaluation)</option>
-                      <option value="Boss">Boss Challenge (Comprehensive)</option>
-                    </select>
-                  </div>
-
-                  {/* Time Limit */}
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Time Limit (Mins)
-                    </label>
-                    <input
-                      type="number"
-                      min={5}
-                      max={90}
-                      value={aiTimeLimit}
-                      onChange={e => setAiTimeLimit(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--text-main)',
-                        fontSize: '13px'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  {/* Pass Mark */}
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Passing Mark (%)
-                    </label>
-                    <input
-                      type="number"
-                      min={50}
-                      max={100}
-                      value={aiPassMark}
-                      onChange={e => setAiPassMark(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--text-main)',
-                        fontSize: '13px'
-                      }}
-                    />
-                  </div>
-
-                  {/* XP Reward */}
-                  <div>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
-                      Student XP Reward
-                    </label>
-                    <input
-                      type="number"
-                      min={20}
-                      max={300}
-                      value={aiXpReward}
-                      onChange={e => setAiXpReward(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '8px 12px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: 'var(--radius-sm)',
-                        color: 'var(--text-main)',
-                        fontSize: '13px'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Generate Button */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-                  <button
-                    onClick={handleGenerateAiQuizDraft}
-                    disabled={isGeneratingQuiz}
-                    className="btn-primary"
-                    style={{
-                      padding: '11px 24px',
-                      fontSize: '13.5px',
-                      fontWeight: '700',
-                      gap: '8px',
-                      boxShadow: '0 4px 14px rgba(79, 70, 229, 0.4)',
-                      background: 'linear-gradient(135deg, #4F46E5 0%, #0EA5E9 100%)'
-                    }}
-                  >
-                    {isGeneratingQuiz ? (
-                      <>
-                        <RefreshCw size={16} className="spin" />
-                        <span>Synthesizing Strict RAG Questions...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={18} />
-                        <span>Synthesize SlideQuest Assessment Draft</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── GENERATED DRAFT REVIEW & HUMAN-IN-THE-LOOP APPROVAL ── */}
-            {generatedDraft && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Validation Agent Banner */}
-                {validationReport && (
-                  <div style={{
-                    padding: '12px 16px',
-                    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
-                    borderRadius: 'var(--radius-md)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '10px',
-                    fontSize: '12px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10B981', fontWeight: '700' }}>
-                      <ShieldCheck size={16} />
-                      <span>SlideQuest AI: Verified RAG Grounding & Transparent Marking Scheme</span>
-                    </div>
-                    <span className="badge-pill badge-success" style={{ fontSize: '10.5px' }}>
-                      ✓ STRICT SLIDE GROUNDING VERIFIED
-                    </span>
-                  </div>
-                )}
-
-                {/* Editable Questions List */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
-                  {generatedDraft.questions.map((q, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: '14px 16px',
-                        borderRadius: 'var(--radius-md)',
-                        backgroundColor: 'var(--bg-surface)',
-                        border: '1px solid var(--border-subtle)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '10px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--primary)' }}>
-                            Question {idx + 1} • {q.type}
-                          </span>
-                          <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>
-                            {q.slideCitation || 'Lecture Slides'}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--secondary)' }}>
-                          {q.points || 10} Points
-                        </span>
-                      </div>
-
-                      {/* Editable Prompt */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    
+                    {/* Question Count */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Question Count
+                      </label>
                       <input
-                        value={q.prompt}
-                        onChange={e => handleUpdateDraftQuestion(idx, 'prompt', e.target.value)}
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={aiQuestionCount}
+                        onChange={e => setAiQuestionCount(e.target.value)}
                         style={{
                           width: '100%',
-                          padding: '8px 10px',
+                          padding: '8px 12px',
                           backgroundColor: 'var(--bg-canvas)',
                           border: '1px solid var(--border-card)',
-                          borderRadius: 'var(--radius-xs)',
+                          borderRadius: 'var(--radius-sm)',
                           color: 'var(--text-main)',
-                          fontSize: '13px',
-                          fontWeight: '600'
+                          fontSize: '13px'
                         }}
                       />
+                    </div>
 
-                      {/* Options or Answer Specification depending on format */}
-                      {q.type === 'ShortAnswer' ? (
-                        <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-canvas)', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)', fontSize: '12px' }}>
-                          <strong style={{ color: 'var(--primary)' }}>Ideal Expected Solution: </strong>
-                          <span style={{ color: 'var(--text-secondary)' }}>{q.correctAnswer}</span>
-                        </div>
-                      ) : q.options && q.options.length > 0 ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                          {q.options.map((opt, optIdx) => (
-                            <div
-                              key={optIdx}
-                              style={{
-                                padding: '6px 10px',
-                                borderRadius: 'var(--radius-xs)',
-                                backgroundColor: opt === q.correctAnswer ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-canvas)',
-                                border: opt === q.correctAnswer ? '1px solid #10B981' : '1px solid var(--border-subtle)',
-                                fontSize: '11.5px',
-                                color: opt === q.correctAnswer ? '#10B981' : 'var(--text-secondary)',
-                                fontWeight: opt === q.correctAnswer ? '700' : '500'
-                              }}
-                            >
-                              {opt === q.correctAnswer ? '✓ ' : ''}{opt}
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {/* Transparent Marking Scheme Rubric */}
-                      {q.markingScheme && (
-                        <div style={{
+                    {/* Difficulty */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Difficulty Level
+                      </label>
+                      <select
+                        value={aiQuizDifficulty}
+                        onChange={e => setAiQuizDifficulty(e.target.value)}
+                        style={{
+                          width: '100%',
                           padding: '8px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '13px'
+                        }}
+                      >
+                        <option value="Easy">Easy (Knowledge / Comprehension)</option>
+                        <option value="Medium">Medium (Application / Analysis)</option>
+                        <option value="Hard">Hard (Synthesis / Evaluation)</option>
+                        <option value="Boss">Boss Challenge (Comprehensive)</option>
+                      </select>
+                    </div>
+
+                    {/* Time Limit */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Time Limit (Mins)
+                      </label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={90}
+                        value={aiTimeLimit}
+                        onChange={e => setAiTimeLimit(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '13px'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    {/* Pass Mark */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Passing Mark (%)
+                      </label>
+                      <input
+                        type="number"
+                        min={50}
+                        max={100}
+                        value={aiPassMark}
+                        onChange={e => setAiPassMark(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '13px'
+                        }}
+                      />
+                    </div>
+
+                    {/* XP Reward */}
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Student XP Reward
+                      </label>
+                      <input
+                        type="number"
+                        min={20}
+                        max={300}
+                        value={aiXpReward}
+                        onChange={e => setAiXpReward(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '13px'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Generate Button */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                    <button
+                      onClick={handleGenerateAiQuizDraft}
+                      disabled={isGeneratingQuiz}
+                      className="btn-primary"
+                      style={{
+                        padding: '11px 24px',
+                        fontSize: '13.5px',
+                        fontWeight: '700',
+                        gap: '8px',
+                        boxShadow: '0 4px 14px rgba(79, 70, 229, 0.4)',
+                        background: 'linear-gradient(135deg, #4F46E5 0%, #0EA5E9 100%)'
+                      }}
+                    >
+                      {isGeneratingQuiz ? (
+                        <>
+                          <RefreshCw size={16} className="spin" />
+                          <span>Synthesizing Strict RAG Questions...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={18} />
+                          <span>Synthesize SlideQuest Assessment Draft</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── GENERATED DRAFT REVIEW & HUMAN-IN-THE-LOOP APPROVAL ── */}
+              {generatedDraft && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {/* Validation Agent Banner */}
+                  {validationReport && (
+                    <div style={{
+                      padding: '14px 18px',
+                      backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      borderRadius: 'var(--radius-md)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                      fontSize: '13px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10B981', fontWeight: '700' }}>
+                        <ShieldCheck size={18} />
+                        <span>SlideQuest AI: Verified RAG Grounding & Transparent Marking Scheme</span>
+                      </div>
+                      <span className="badge-pill badge-success" style={{ fontSize: '11px', fontWeight: '700' }}>
+                        ✓ STRICT SLIDE GROUNDING VERIFIED
+                      </span>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)' }}>
+                      Discovered Questions ({generatedDraft.questions.length})
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      ✏️ Edit any question prompt, option text, marking rubric or explanation below before publishing.
+                    </span>
+                  </div>
+
+                  {/* Editable Questions List (Full View Cards) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {generatedDraft.questions.map((q, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          padding: '20px',
+                          borderRadius: 'var(--radius-md)',
+                          backgroundColor: 'var(--bg-surface)',
+                          border: '1px solid var(--border-card)',
+                          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.12)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '14px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary)' }}>
+                              Question {idx + 1} • {q.type}
+                            </span>
+                            <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>
+                              {q.slideCitation || 'Lecture Slides'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)' }}>Points:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={q.points || 10}
+                              onChange={e => handleUpdateDraftQuestion(idx, 'points', parseInt(e.target.value) || 10)}
+                              style={{
+                                width: '60px',
+                                padding: '4px 8px',
+                                backgroundColor: 'var(--bg-canvas)',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 'var(--radius-xs)',
+                                color: 'var(--secondary)',
+                                fontWeight: '700',
+                                fontSize: '12.5px',
+                                textAlign: 'center'
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Editable Question Prompt (Full Multiline Textarea) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                            Question Text (Full Text Editable):
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={q.prompt || ''}
+                            onChange={e => handleUpdateDraftQuestion(idx, 'prompt', e.target.value)}
+                            placeholder="Enter full question text..."
+                            style={{
+                              width: '100%',
+                              padding: '12px 14px',
+                              backgroundColor: 'var(--bg-canvas)',
+                              border: '1px solid var(--border-card)',
+                              borderRadius: 'var(--radius-xs)',
+                              color: 'var(--text-main)',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              lineHeight: '1.6',
+                              resize: 'vertical',
+                              fontFamily: 'inherit'
+                            }}
+                          />
+                        </div>
+
+                        {/* Options or Answer Specification depending on format */}
+                        {q.type === 'ShortAnswer' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                              Ideal Expected Answer Solution:
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={q.correctAnswer || ''}
+                              onChange={e => handleUpdateDraftQuestion(idx, 'correctAnswer', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                backgroundColor: 'var(--bg-canvas)',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 'var(--radius-xs)',
+                                color: '#10B981',
+                                fontWeight: '600',
+                                fontSize: '13px',
+                                lineHeight: '1.5',
+                                resize: 'vertical',
+                                fontFamily: 'inherit'
+                              }}
+                            />
+                          </div>
+                        ) : q.options && q.options.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                              Answer Choices (Click check icon to select correct answer):
+                            </label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                              {q.options.map((opt, optIdx) => {
+                                const isCorrect = opt === q.correctAnswer;
+                                return (
+                                  <div
+                                    key={optIdx}
+                                    style={{
+                                      padding: '8px 12px',
+                                      borderRadius: 'var(--radius-xs)',
+                                      backgroundColor: isCorrect ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-canvas)',
+                                      border: isCorrect ? '1.5px solid #10B981' : '1px solid var(--border-subtle)',
+                                      display: 'flex',
+                                      alignItems: 'flex-start',
+                                      gap: '10px'
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateDraftQuestion(idx, 'correctAnswer', opt)}
+                                      style={{
+                                        border: 'none',
+                                        background: 'transparent',
+                                        cursor: 'pointer',
+                                        color: isCorrect ? '#10B981' : 'var(--text-muted)',
+                                        padding: 0,
+                                        marginTop: '3px'
+                                      }}
+                                      title={isCorrect ? 'Correct Answer' : 'Set as Correct Answer'}
+                                    >
+                                      <CheckCircle2 size={18} />
+                                    </button>
+                                    <textarea
+                                      rows={2}
+                                      value={opt}
+                                      onChange={e => {
+                                        const newOpts = [...q.options];
+                                        newOpts[optIdx] = e.target.value;
+                                        setGeneratedDraft(prev => {
+                                          const updatedQ = [...prev.questions];
+                                          const wasCorrect = updatedQ[idx].correctAnswer === opt;
+                                          updatedQ[idx] = {
+                                            ...updatedQ[idx],
+                                            options: newOpts,
+                                            correctAnswer: wasCorrect ? e.target.value : updatedQ[idx].correctAnswer
+                                          };
+                                          return { ...prev, questions: updatedQ };
+                                        });
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        padding: '2px 4px',
+                                        backgroundColor: 'transparent',
+                                        border: 'none',
+                                        outline: 'none',
+                                        color: isCorrect ? '#10B981' : 'var(--text-main)',
+                                        fontSize: '13px',
+                                        fontWeight: isCorrect ? '700' : '500',
+                                        lineHeight: '1.4',
+                                        resize: 'vertical',
+                                        fontFamily: 'inherit'
+                                      }}
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Transparent Marking Scheme Rubric */}
+                        <div style={{
+                          padding: '12px 14px',
                           backgroundColor: 'rgba(79, 70, 229, 0.05)',
                           borderRadius: 'var(--radius-xs)',
                           border: '1px solid var(--primary-border)',
-                          fontSize: '11.5px',
-                          lineHeight: '1.4'
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
                         }}>
-                          <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '2px' }}>
+                          <strong style={{ color: 'var(--primary)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             📜 Transparent Marking Scheme & Rubric:
                           </strong>
-                          <span style={{ color: 'var(--text-main)' }}>{q.markingScheme}</span>
+                          <textarea
+                            rows={2}
+                            value={q.markingScheme || ''}
+                            onChange={e => handleUpdateDraftQuestion(idx, 'markingScheme', e.target.value)}
+                            placeholder="Enter rubric / marking scheme criteria..."
+                            style={{
+                              width: '100%',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              outline: 'none',
+                              color: 'var(--text-main)',
+                              fontSize: '12px',
+                              lineHeight: '1.5',
+                              resize: 'vertical',
+                              fontFamily: 'inherit'
+                            }}
+                          />
                         </div>
-                      )}
 
-                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                        <strong>Rationale:</strong> {q.explanation}
+                        {/* Rationale */}
+                        <div style={{
+                          padding: '10px 14px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          borderRadius: 'var(--radius-xs)',
+                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px'
+                        }}>
+                          <strong style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                            💡 Rationale & Explanation:
+                          </strong>
+                          <textarea
+                            rows={2}
+                            value={q.explanation || ''}
+                            onChange={e => handleUpdateDraftQuestion(idx, 'explanation', e.target.value)}
+                            placeholder="Enter rationale or explanation..."
+                            style={{
+                              width: '100%',
+                              backgroundColor: 'transparent',
+                              border: 'none',
+                              outline: 'none',
+                              color: 'var(--text-secondary)',
+                              fontSize: '12px',
+                              lineHeight: '1.4',
+                              resize: 'vertical',
+                              fontFamily: 'inherit'
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
 
-                {/* Bottom Actions */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '14px' }}>
+                </div>
+              )}
+
+            </div>
+
+            {/* Modal Sticky Footer Actions */}
+            {generatedDraft && (
+              <div style={{
+                padding: '16px 24px',
+                borderTop: '1px solid var(--border-subtle)',
+                backgroundColor: 'var(--bg-surface)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0
+              }}>
+                <button
+                  onClick={() => setGeneratedDraft(null)}
+                  className="btn-secondary"
+                  style={{ padding: '9px 16px', fontSize: '13px' }}
+                >
+                  ← Reconfigure Generator
+                </button>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
                   <button
-                    onClick={() => setGeneratedDraft(null)}
+                    onClick={handleGenerateAiQuizDraft}
                     className="btn-secondary"
-                    style={{ padding: '8px 14px', fontSize: '12px' }}
+                    disabled={isGeneratingQuiz}
+                    style={{ padding: '9px 16px', fontSize: '13px', gap: '6px' }}
                   >
-                    ← Reconfigure
+                    <RefreshCw size={14} className={isGeneratingQuiz ? 'spin' : ''} />
+                    <span>{isGeneratingQuiz ? 'Regenerating...' : 'Regenerate Draft'}</span>
                   </button>
 
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      onClick={handleGenerateAiQuizDraft}
-                      className="btn-secondary"
-                      style={{ padding: '8px 14px', fontSize: '12px', gap: '6px' }}
-                    >
-                      <RefreshCw size={13} />
-                      <span>Regenerate Draft</span>
-                    </button>
-
-                    <button
-                      onClick={handleApproveAndPublishAiQuiz}
-                      className="btn-primary"
-                      style={{
-                        padding: '9px 20px',
-                        fontSize: '13px',
-                        fontWeight: '700',
-                        gap: '6px',
-                        backgroundColor: '#10B981',
-                        borderColor: '#10B981',
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                      }}
-                    >
-                      <CheckCircle2 size={15} />
-                      <span>Approve & Publish to Curriculum</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleApproveAndPublishAiQuiz}
+                    className="btn-primary"
+                    style={{
+                      padding: '10px 22px',
+                      fontSize: '13.5px',
+                      fontWeight: '700',
+                      gap: '8px',
+                      backgroundColor: '#10B981',
+                      borderColor: '#10B981',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Approve & Publish to Curriculum</span>
+                  </button>
                 </div>
               </div>
             )}

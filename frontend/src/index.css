@@ -607,3 +607,98 @@ input, select, textarea {
   background-color: var(--bg-card-hover) !important;
   border-color: var(--border-hover) !important;
 }
+
+/* Loading Spinner Animations */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.spin,
+.animate-spin,
+.spin-icon,
+.spinning {
+  animation: spin 1s linear infinite !important;
+  display: inline-block;
+  transform-origin: center;
+}
+
+/* ── Fullscreen & Mobile Responsive Modal Utilities ── */
+.quiz-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(5, 5, 18, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  padding: 16px;
+  transition: all 0.2s ease-in-out;
+}
+
+.quiz-modal-container {
+  width: 96vw;
+  max-width: 1100px;
+  height: 92vh;
+  max-height: 92vh;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-popover);
+  transition: all 0.2s ease-in-out;
+}
+
+.quiz-modal-container.is-fullscreen {
+  max-width: 100vw !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+@media (max-width: 768px) {
+  .quiz-modal-overlay {
+    padding: 0 !important;
+  }
+  .quiz-modal-container {
+    max-width: 100vw !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+  }
+  .quiz-modal-header {
+    padding: 12px 14px !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  .quiz-modal-body {
+    padding: 12px 14px !important;
+  }
+  .quiz-modal-footer {
+    padding: 10px 14px !important;
+  }
+  .quiz-question-card {
+    padding: 12px !important;
+  }
+  .quiz-option-pill {
+    font-size: 11.5px !important;
+    padding: 8px 10px !important;
+  }
+}
+
+
