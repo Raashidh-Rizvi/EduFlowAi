@@ -1,4 +1,8 @@
+> **LEGACY — NOT CURRENT INSTRUCTIONS.** This historical architecture/implementation reference is retained for historical/reference purposes only and is not a current source of truth or roadmap. Read the [current ownership matrix](../../responsibilities/RESPONSIBILITY_MATRIX.md), [architecture decisions](../../project/14_ARCHITECTURE_DECISIONS.md), [implementation status](../../project/17_IMPLEMENTATION_STATUS.md) and [current plan](../../project/16_IMPLEMENTATION_PLAN.md). Historical narrative is preserved; link destinations are rebased for this archive location.
+
 # Architecture Decision Record (ADR)
+
+> **Reconciliation note:** Read the [current responsibility matrix](../../responsibilities/RESPONSIBILITY_MATRIX.md) for ownership and audited status. The React Query/Provider choices recorded below conflict with Zustand/BLoC in [docs/ADR.md](../../project/14_ARCHITECTURE_DECISIONS.md); this reconciliation does not invent a new approved decision. Audited clients use React hooks/context/storage and Flutter setState prototypes, so neither ADR proves those proposed stacks are integrated. Durable AI recovery, approval enforcement and deployed environments are not established; framework capability alone does not satisfy the assessed workflow.
 
 ## Context
 This document captures the key architectural decisions made by our group for the EduHub/EduFlow Integrated Full-Stack and Agentic AI application, as required by the SE3090 Assignment 1 Specification.

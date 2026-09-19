@@ -1,5 +1,9 @@
 # EduFlow AI – Roles & Permissions
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** This matrix describes intended permissions, not verified enforcement. The [current responsibility audit](../responsibilities/RESPONSIBILITY_MATRIX.md) records caller-selected registration roles, incomplete token/suspension behavior, missing resource checks and unprotected reward/team mutations. Student 1 owns access/global course governance; Student 2 owns academic content, publishing and review even where Admin has permission; Student 3 owns learner participation. Runtime access roles are not exclusive code ownership.
+
 > This document defines the complete Role-Based Access Control (RBAC) model for EduFlow AI, covering all three user roles: **Admin**, **Instructor**, and **Student**.
 
 ---

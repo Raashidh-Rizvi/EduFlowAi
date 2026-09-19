@@ -203,29 +203,30 @@ Student 1 needs real governance/reporting and mobile functionality, not only com
 
 ## 13. Legacy Responsibility Documents
 
-Preserve these files unchanged:
+These files are archived with legacy notices; their historical bodies are preserved:
 
-- [Previous user/course allocation](../02_MEMBER1_USER_COURSE.md)
-- [Previous assessment allocation](../03_MEMBER2_ASSESSMENTS.md)
-- [Previous gamification allocation](../04_MEMBER3_GAMIFICATION.md)
-- [Previous analytics/validation allocation](../05_MEMBER4_ANALYTICS.md)
+- [Previous user/course allocation](../legacy/responsibilities/02_MEMBER1_USER_COURSE.md)
+- [Previous assessment allocation](../legacy/responsibilities/03_MEMBER2_ASSESSMENTS.md)
+- [Previous gamification allocation](../legacy/responsibilities/04_MEMBER3_GAMIFICATION.md)
+- [Previous analytics/validation allocation](../legacy/responsibilities/05_MEMBER4_ANALYTICS.md)
 
-They represent the previous four-person allocation. Once the new three-person structure is formally approved, they must not be treated as the current ownership source. For current team planning, use this matrix and individual trackers, with lecturer approval still TO CONFIRM. Historical records must not be rewritten to imply different authorship.
+They represent the previous four-person allocation and are not the current working ownership source. For current team planning, use this matrix and individual trackers, with lecturer approval still TO CONFIRM. Historical records must not be rewritten to imply different authorship.
 
-### Reconciliation inventory: identify only, do not edit in this task
+### Canonical documentation navigation
 
-- Root `README.md`, `EduFlow_AI_SE3090_FULL_IMPLEMENTATION.md`, `HOW_TO_RUN.md` and `ADR.md`.
-- `docs/README.md`, `docs/INDEX.md`, `docs/EduFlow_AI_FULL_IMPLEMENTATION.md`, `docs/ADR.md`.
-- `docs/01_ARCHITECTURE.md`, `06_API_CONTRACTS.md`, `07_AI_ORCHESTRATION.md`, `08_DATABASE_ER.md`, `09_GIT_CI_CD_TESTING.md`.
-- `docs/10_GAMIFICATION_RULEBOOK.md`, `11_COMPONENT_INTEGRATION_MATRIX.md`, `12_SYSTEM_WORKFLOW.md`, `13_RAG_ARCHITECTURE.md`, `14_QUIZ_PIPELINE.md`, `15_ROLES_AND_PERMISSIONS.md`, `16_MOBILE_APP_GUIDE.md`, `17_SECURITY_AND_PRIVACY.md`.
-- `backend/README.md`, `frontend/README.md`, `mobile/README.md`, `ai-agent/README.md`.
-- Code ownership labels in agent constructors/topology and any UI ownership descriptions need a later source-code task.
-- API diagrams, component/agent counts, permissions, state management, framework versions, implementation-complete claims and contribution sections need reconciliation.
-- Official files in `docs/reference/` remain authoritative references, not documents to rewrite to fit the allocation.
+- [Documentation start guide](../README.md) and [complete catalog](../INDEX.md).
+- [Project overview](../project/01_PROJECT_OVERVIEW.md), [architecture](../project/03_ARCHITECTURE.md), [decision register](../project/14_ARCHITECTURE_DECISIONS.md).
+- [Current implementation plan](../project/16_IMPLEMENTATION_PLAN.md), [project-wide status/evidence](../project/17_IMPLEMENTATION_STATUS.md), [run/setup](../project/18_RUN_AND_SETUP.md).
+- All current technical/workflow documents are in [docs/project/](../project/); the catalog lists them in reading order.
+- [Archived ADR](../legacy/adrs/ROOT_ADR.md), [blueprints](../legacy/blueprints/) and [original plan](../legacy/plans/ORIGINAL_IMPLEMENTATION_PLAN.md) are historical references only.
+- Official files in [docs/reference/](../reference/) remain authoritative assignment references; they are not rewritten to fit the allocation.
+- Agent constructor/topology ownership labels and any application UI ownership descriptions still require a separately authorized source-code task.
+- Project-wide evidence is maintained in the status summary; detailed personal tasks remain in the trackers. The original audit rows here retain their stated baseline.
+
 
 ## 14. Rules for future coding agents
 
-1. Read this matrix first, then the relevant individual tracker.
+1. Read the [documentation start guide](../README.md), then this matrix, the relevant individual tracker and task-relevant canonical project documents. Never treat legacy material as current instructions.
 2. Verify branch/current source before relying on baseline statuses.
 3. Respect method-level boundaries; do not unnecessarily modify another student's ownership.
 4. Shared changes require cross-component awareness, compatible contracts and relevant verification.
@@ -236,4 +237,4 @@ They represent the previous four-person allocation. Once the new three-person st
 9. Preserve lecturer-approval caveats until actual evidence is recorded.
 10. Track real AI assistance and preserve each student's responsibility to explain, modify and debug their work.
 11. Keep at least four core demonstrable agent roles unless the lecturer confirms an adjustment in writing.
-12. Scope future changes to the user's authorization; this restructuring task changes only the four responsibility documents.
+12. Scope future changes to the user's authorization; ownership reconciliation does not authorize application-code changes.

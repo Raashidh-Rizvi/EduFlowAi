@@ -1,6 +1,6 @@
 # EduFlow AI – Application Run & Deployment Guide 🚀
 
-This guide provides end-to-end instructions for running the complete **EduFlow AI** ecosystem, including the **ASP.NET Core Backend API**, **Python LangGraph Multi-Agent Microservice**, **React Web Frontend**, and **Flutter Mobile Application**.
+This guide describes local startup for the repository, not a verified deployment or completed end-to-end workflow. Run each terminal from the repository root unless a step explicitly changes directory. Source paths in commands are repository-relative, not relative to this document. See [implementation status](17_IMPLEMENTATION_STATUS.md) and [Start here](../README.md).
 
 ---
 
@@ -8,35 +8,35 @@ This guide provides end-to-end instructions for running the complete **EduFlow A
 
 | Subsystem | Technology | Default Port / URL | Documentation / UI |
 |---|---|---|---|
-| **Backend API** | ASP.NET Core (.NET 10), EF Core, PostgreSQL | `http://localhost:5000`<br>`https://localhost:5001` | `http://localhost:5000/swagger` |
+| **Backend API** | ASP.NET Core (.NET 10), EF Core, PostgreSQL | HTTP launch profile: `http://localhost:5204`; HTTPS profile additionally uses port 7009 | `http://localhost:5204/swagger` |
 | **Agentic AI Microservice** | Python 3.11+, FastAPI, LangGraph | `http://localhost:8000` | `http://localhost:8000/docs` |
 | **Web Application** | React 18, Vite, Lucide Icons | `http://localhost:2174` | Web Dashboard & Portals |
-| **Mobile App (Optional)** | Flutter 3.x, Dart | Device / Emulator | Student Mobile Interface |
+| **Mobile App** | Flutter 3.x, Dart | Device / Emulator | Student Mobile Interface |
 
 ---
 
 ## 2. Prerequisites
 
 Ensure the following tools are installed on your machine:
-- **.NET SDK** (v8.0 or v10.0+): `dotnet --version`
+- **.NET SDK** compatible with the net10.0 target (a .NET 8 SDK is insufficient): `dotnet --version`
 - **Node.js** (v18.0+ or v20.0+) and npm: `node -v` & `npm -v`
-- **Python** (v3.10, v3.11, or v3.12+): `python --version`
+- **Python** (3.11 is used by the CI configuration; verify provider/dependency compatibility for other versions): `python --version`
 - **Git**: `git --version`
 - **Flutter SDK** *(optional, only for mobile app)*: `flutter --version`
 
 > [!NOTE]
-> The backend is already pre-configured to connect to an active PostgreSQL database instance via `backend/EduFlow.Api/appsettings.json`. Database migrations and initial seed data are applied automatically on startup.
+> Verify actual database/service settings in startup and configuration before running. The audit found hardcoded startup configuration, migration drift and demo initialization that can reset credentials/progress; do not assume a working or production-safe database from this guide. Keep secrets out of committed configuration.
 
 ---
 
 ## 3. Step-by-Step Execution Guide
 
-To run the complete system locally, open **3 separate terminal windows** (one for each subsystem):
+Use separate terminals for Python, backend and web; use a fourth for Flutter when exercising the mobile application. Launching all processes does not prove cross-platform integration:
 
 ```mermaid
 flowchart LR
     T1["Terminal 1: Python AI Service\n(Port 8000)"]
-    T2["Terminal 2: .NET Backend API\n(Port 5000)"]
+    T2["Terminal 2: .NET Backend API\n(Port 5204)"]
     T3["Terminal 3: React Frontend\n(Port 2174)"]
 
     T1 <--> T2
@@ -47,7 +47,7 @@ flowchart LR
 
 ### Terminal 1: Python AI Multi-Agent Microservice
 
-The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlannerAgent`, `DomainAnalysisAgent`, `ActionToolAgent`, `ValidationGuardAgent`, `QuizGeneratorAgent`, `RetentionBehaviorAgent`, `AiCoachAgent`).
+The retained core workflow roles are Planner → Domain Analysis → Action/Tool → Validation/Safety, with authorized human approval where required. Supporting agents are described in [AI orchestration](09_AI_ORCHESTRATION.md) and the [AI service README](../../ai-agent/README.md); do not equate class count with a complete assessed workflow.
 
 1. Navigate to the `ai-agent` directory:
    ```powershell
@@ -70,7 +70,7 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
    ```env
    OPENAI_API_KEY=your_openai_api_key_here
    ```
-   *(If omitted, the service runs in intelligent pedagogical heuristic fallback mode with deterministic reasoning).*
+   Provider configuration depends on the selected path. Missing configuration can cause a fallback or error; neither is proof of grounded AI execution. Coordinate internal-service credentials on both sides and do not rely on fail-open defaults.
 
 4. Start the FastAPI server:
    ```powershell
@@ -86,21 +86,23 @@ The AI microservice orchestrates the 7 interconnected agents (`CoordinatorPlanne
 
 The backend serves the REST API, JWT authentication, gamification engine, database persistence, and AI gateway forwarding.
 
-1. Navigate to the API project directory:
-   # powershell
-   cd backend\EduFlow.Api
+Run from the repository root:
 
+~~~powershell
+dotnet restore backend/EduFlow.slnx
+dotnet run --project backend/EduFlow.Api --launch-profile http
+~~~
 
-#2. Restore and run the application with **Build Reload / Recompile on Save**:
-  
-   # Clean rebuild and restart on save (no flaky delta hot-reload)
-   dotnet watch --no-hot-reload run --non-interactive
+For watch/restart during development:
 
-   # Or standard delta watch
-   dotnet watch run
+~~~powershell
+dotnet watch --project backend/EduFlow.Api run --launch-profile http
+~~~
 
-   - **Swagger UI**: [http://localhost:5204/swagger](http://localhost:5204/swagger) or [http://localhost:5000/swagger](http://localhost:5000/swagger)
-   - **API Base URL**: `http://localhost:5204/api`
+- Checked-in HTTP profile: [http://localhost:5204/swagger](http://localhost:5204/swagger).
+- React API default is localhost:5204/api; override VITE_API_BASE_URL consistently if needed.
+- Runtime URLs can be overridden; verify startup output rather than assuming the older 5000/5001 examples.
+
 
 ---
 
@@ -126,7 +128,9 @@ The frontend provides the interactive **Instructor AI Review & Governance Worksp
 
 ---
 
-### Terminal 4: Flutter Mobile App *(Optional)*
+### Terminal 4: Flutter Mobile App
+
+Flutter can be omitted for a web-only local session, but it is required for the assignment and each student’s end-to-end contribution. The [current responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) records mobile API integration as incomplete; launching the prototype does not demonstrate the assessed cross-platform workflow.
 
 1. Navigate to the mobile directory:
    ```powershell
@@ -159,7 +163,7 @@ The database comes pre-seeded with 3 authorized role-based user accounts:
 - Navigate to: **[http://localhost:2174](http://localhost:2174)** $\to$ Click **"AI Review"** in the sidebar.
 - Click **"+ Orchestrate AI Proposal"** to trigger the 4-agent LangGraph workflow.
 - Inspect the **Multi-Agent Audit Trail**, deterministic validation results, and milestone schedule.
-- Click **"Approve & Dispatch"** to sign and publish the study plan to the student.
+- Inspect **"Approve & Dispatch"**, but do not treat the button label or a status update as proof of publication/delivery. Workflow identity, validation enforcement and protected execution remain PARTIAL in the current responsibility audit.
 
 ### 2. Live Student Learning Portal & AI Coach
 - Navigate to: **[http://localhost:2174](http://localhost:2174)** $\to$ Click **"Student Portal"** in the navigation bar.
@@ -234,4 +238,4 @@ npm run dev:backend:build-reload# dotnet watch run with clean rebuild on save
   ```
 
 ### Q: OpenAI API Key missing warning
-- An OpenAI API key is optional. When no key is provided in `ai-agent/.env`, the system automatically activates its built-in pedagogical heuristic engine to generate accurate, deterministic responses for all course topics.
+- Missing provider configuration may produce a fallback or an error, depending on the path. Fallback output is not proof of grounded Agentic AI execution or accurate coverage of every topic; record its provenance and verify the configured workflow.

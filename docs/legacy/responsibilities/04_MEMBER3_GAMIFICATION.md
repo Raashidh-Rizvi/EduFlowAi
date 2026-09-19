@@ -1,3 +1,5 @@
+> **LEGACY — former four-member allocation.** Retained only for historical/reference purposes; this is **NOT** the current responsibility source. Current ownership is defined in [RESPONSIBILITY_MATRIX.md](../../responsibilities/RESPONSIBILITY_MATRIX.md). This archived body does not establish current ownership or change historical authorship.
+
 # Member 3 – Gamification & Engagement
 
 > **Component Owner**: Member 3  

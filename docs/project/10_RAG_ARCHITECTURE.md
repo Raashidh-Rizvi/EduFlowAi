@@ -1,5 +1,9 @@
 # EduFlow AI – RAG Architecture
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** The vector/chunk retrieval architecture below is DOCUMENTED ONLY in the [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md). Existing document parsing and scope-based generation do not prove this full retrieval pipeline is operational. Student 2 owns academic document/topic/generation behavior, Student 3 learner guidance consumers and Student 1 shared access/safety governance. Database, storage and service contracts remain shared.
+
 > The Retrieval-Augmented Generation (RAG) pipeline powers three core features:
 > 1. **Document Summaries** – instructors and students get AI-generated summaries of uploaded materials
 > 2. **AI Quiz Generation** – questions are grounded in actual course content
@@ -210,7 +214,7 @@ AI generates structured summary:
 
 ## 6. Quiz Generation RAG Flow
 
-> Full detail in [14_QUIZ_PIPELINE.md](./14_QUIZ_PIPELINE.md).
+> Full detail in [11_QUIZ_PIPELINE.md](11_QUIZ_PIPELINE.md).
 
 ```mermaid
 flowchart TD

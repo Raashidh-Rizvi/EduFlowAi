@@ -1,5 +1,7 @@
 # EduFlow AI – Database Entity Relationships & Rules
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
 > This document defines the complete PostgreSQL 16 database schema, entity relationships, integrity rules, indexing strategy, and concurrency handling for EduFlow AI.
 
 ---
@@ -56,20 +58,24 @@ erDiagram
 
 ## 2. Schema Owner Map
 
-| Table(s) | Owned by | Component |
-|----------|----------|-----------|
-| users, roles, user_roles | Member 1 | User & Course |
-| courses, modules, lessons | Member 1 | User & Course |
-| enrollments | Member 1 | User & Course |
-| course_documents, document_chunks | Member 1 | User & Course / RAG |
-| quizzes, questions, question_options | Member 2 | Assessment |
-| quiz_submissions, submission_answers | Member 2 | Assessment |
-| xp_transactions, user_points | Member 3 | Gamification |
-| badges, user_badges, streaks | Member 3 | Gamification |
-| challenges, student_challenges | Member 3 | Gamification |
-| study_plans, study_plan_items | Member 4 | Analytics |
-| ai_workflows, ai_workflow_steps, ai_approvals | Member 4 | Analytics |
-| audit_logs, notifications | Member 4 | Analytics |
+Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first. Names below are the existing design vocabulary, not a migration inventory or proof of implemented tables. The audited model/migration drift remains PARTIAL.
+
+| Table(s) / data area | Current responsibility |
+|---|---|
+| users, roles, user_roles | Shared identity; Student 1 coordinates platform access |
+| courses, modules, lessons | Student 2 academic content; Student 1 global course governance |
+| enrollments | Student 3 participation; Student 2 teaching roster; Student 1 eligibility policy |
+| course_documents, document_chunks | Student 2 academic content; vector/chunk retrieval remains DOCUMENTED ONLY |
+| quizzes, questions, question_options | Student 2 definitions/grading contracts |
+| quiz_submissions, submission_answers | Student 3 attempts/results with Student 2 grading |
+| xp_transactions, user_points | Student 3 |
+| badges, user_badges, streaks | Student 3 |
+| challenges, student_challenges | Student 3 participation/rewards; Student 2 academic definitions |
+| study_plans, study_plan_items | Student 1 lifecycle, Student 2 academic review, Student 3 objective/status |
+| ai_workflows, ai_workflow_steps, ai_approvals | Shared workflow design; Student 1 coordinates lifecycle/safety |
+| reports, audit_logs, notifications | Student 1 platform lifecycle; Student 2 academic scope; Student 3 consumption |
+
+DbContext, relationships, migrations and integrity rules remain shared infrastructure. Course governance does not transfer academic authoring to Student 1.
 
 ---
 
@@ -78,7 +84,7 @@ erDiagram
 ### 3.1 Core User Tables
 
 ```sql
--- Users (Member 1)
+-- Users (shared identity; Student 1 coordinates governance)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(320) UNIQUE NOT NULL,
@@ -548,15 +554,15 @@ Solution:
 dotnet ef migrations add {MigrationName} --project EduFlow.Infrastructure
 dotnet ef database update --project EduFlow.Infrastructure
 
-# Each member creates migrations for their own tables
+# Each student proposes migrations for their owned behavior; shared entities stay shared
 # Shared/cross-component FK migrations require team coordination
 
-# Migration naming convention:
-M001_CreateUserAndRoleTables        (Member 1)
-M002_CreateCoursesAndEnrollments    (Member 1)
-M003_CreateAssessmentTables         (Member 2)
-M004_CreateGamificationTables       (Member 3)
-M005_CreateAnalyticsTables          (Member 4)
-M006_AddPgvectorExtension           (Member 1 / shared)
-M007_CreateDocumentChunkTable       (Member 1 / shared)
+# Illustrative migration names, not the current migration inventory:
+M001_CreateUserAndRoleTables        (shared; Student 1 coordinates)
+M002_CreateCoursesAndEnrollments    (Student 2 curriculum + Student 3 participation)
+M003_CreateAssessmentTables         (Student 2 + Student 3 submission contract)
+M004_CreateGamificationTables       (Student 3)
+M005_CreateAnalyticsTables          (Student 1 platform + Student 2 academic analytics)
+M006_AddPgvectorExtension           (shared; documented-only proposal)
+M007_CreateDocumentChunkTable       (Student 2 / shared; documented-only proposal)
 ```

@@ -1,37 +1,31 @@
 # EduFlow AI – Git, Testing, CI/CD & Delivery
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results. The [actual CI workflow](../../.github/workflows/ci.yml) controls current execution; illustrative YAML below must not override it.
+
 > This document defines the branching strategy, commit conventions, test pyramid, CI/CD pipeline, and quality gates for EduFlow AI.
 
 ---
 
 ## 1. Branching Strategy
 
-```
-main           ← Production-ready code only. Merge via PR. Protected branch.
-develop        ← Integration branch. All features merge here first.
-    │
-    ├── feature/m1-user-course-management   (Member 1)
-    ├── feature/m1-enrollment-flow          (Member 1)
-    ├── feature/m2-quiz-engine              (Member 2)
-    ├── feature/m2-ai-quiz-review           (Member 2)
-    ├── feature/m3-xp-ledger               (Member 3)
-    ├── feature/m3-leaderboard             (Member 3)
-    ├── feature/m4-analytics-dashboard     (Member 4)
-    ├── feature/m4-hitl-approval           (Member 4)
-    ├── fix/quiz-timer-server-side         (any member)
-    └── hotfix/auth-token-expiry           (critical prod fix → merge to main + develop)
+Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first. The current integration branch is dev; IT24103352_Ahamed is Student 1's personal branch. Other feature names below are examples, not evidence of existing branches or authorship.
+
+```text
+main
+dev
+    ├── IT24103352_Ahamed                  (Student 1: administration/governance/safety)
+    ├── feature/instructor-curriculum      (Student 2 example)
+    ├── feature/instructor-ai-content      (Student 2 example)
+    ├── feature/student-progress           (Student 3 example)
+    └── feature/student-adaptive-guidance  (Student 3 example)
 ```
 
 ### Branch Rules
 
-```text
-✅ main:     Protected. PRs require 1 reviewer + all CI checks green.
-✅ develop:  PRs require build + unit tests green.
-✅ feature:  Prefixed with m1/m2/m3/m4 for traceability.
-✅ hotfix:   Branched from main, merged to main AND develop.
-❌ Never commit directly to main or develop.
-❌ Never merge a feature branch with failing tests.
-```
+- Propose reviewed PRs into dev; verify CI before merging. Protection settings must be checked on the remote, not inferred from this guide.
+- Use descriptive personal/feature branches and genuine changes for traceability.
+- Do not manufacture commit counts, backfill history or attribute inherited code to the new owner.
+- Shared changes require compatible contracts and review across affected students.
 
 ---
 
@@ -94,7 +88,11 @@ chore: update .NET SDK to 8.0.7
 
 ## 4. Unit Tests
 
-### 4.1 Member 1 — User & Course
+The checkmarked cases below are test requirements/design examples, not recorded passing results. Existing test source has gaps identified in the [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md); some tests persist expected values without exercising production behavior.
+
+### 4.1 Identity, Curriculum and Participation
+
+Student 1: auth/access governance. Student 2: curriculum, publication, documents and teaching roster. Student 3: self-enrollment/completion. Shared integration tests cross these boundaries.
 
 ```text
 AuthService:
@@ -122,7 +120,9 @@ DocumentService:
 ✓ Upload invalid MIME type → rejected
 ```
 
-### 4.2 Member 2 — Assessment
+### 4.2 Assessment and Attempts
+
+Student 2: authoring and grading contracts. Student 3: attempts, time/attempt enforcement and reward integration.
 
 ```text
 GradingEngine:
@@ -151,7 +151,7 @@ AttemptLimits:
 ✓ Concurrent submissions → second fails (UNIQUE constraint)
 ```
 
-### 4.3 Member 3 — Gamification
+### 4.3 Student 3 — Gamification
 
 ```text
 XpEngine:
@@ -186,7 +186,9 @@ LeaderboardService:
 ✓ Tiebreak: lower last_activity_at wins (achieved earlier)
 ```
 
-### 4.4 Member 4 — Analytics & AI Validation
+### 4.4 Governance, Academic Review and Learner Status
+
+Student 1: validation/safety, platform reporting, lifecycle and audit. Student 2: academic review decisions and analytics. Student 3: objective/status delivery. The four core AI roles remain distinct.
 
 ```text
 ValidationAgent:

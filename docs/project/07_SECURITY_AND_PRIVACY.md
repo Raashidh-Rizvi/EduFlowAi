@@ -1,5 +1,9 @@
 # EduFlow AI – Security & Privacy
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** Treat the controls below as requirements/design examples, not a security certification. The [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md) records missing authorization/resource checks, caller-selected registration roles, incomplete token revocation, hardcoded startup configuration and internal-service authentication that fails open without a secret. Student 1 coordinates shared identity/safety; Students 2 and 3 enforce their own academic/learner resource boundaries. No complete mitigation or passing security-test result is asserted.
+
 > This document defines the security architecture, OWASP mitigation strategies, data privacy rules, and compliance requirements for EduFlow AI.
 
 ---

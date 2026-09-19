@@ -1,9 +1,13 @@
+> **LEGACY — NOT CURRENT INSTRUCTIONS.** This historical architecture/implementation reference is retained for historical/reference purposes only and is not a current source of truth or roadmap. Read the [current ownership matrix](../../responsibilities/RESPONSIBILITY_MATRIX.md), [architecture decisions](../../project/14_ARCHITECTURE_DECISIONS.md), [implementation status](../../project/17_IMPLEMENTATION_STATUS.md) and [current plan](../../project/16_IMPLEMENTATION_PLAN.md). Historical narrative is preserved; link destinations are rebased for this archive location.
+
 # EduFlow AI – SE3090 Assignment 1
 ## Integrated Gamified Education Platform with Agentic AI
 
 > **Project vision:** EduFlow AI transforms traditional course delivery into an engaging, game-like learning experience. Students learn through lessons, quizzes, missions and challenges; earn XP, badges and achievements; maintain streaks; compete on leaderboards; and receive adaptive AI-generated learning challenges.
 
-This implementation blueprint is organized around four business components owned by four members. Authentication/authorization and shared platform infrastructure are mandatory cross-cutting capabilities and should not be counted as one of the four main business components.
+This technical blueprint spans several subsystems; current work is allocated to three role-based business components in [RESPONSIBILITY_MATRIX.md](../../responsibilities/RESPONSIBILITY_MATRIX.md). Read that matrix first and use the [official assignment references](../../reference) for assessment requirements. Authentication and shared infrastructure alone are not a primary business component.
+
+> **Status reconciliation:** The older completion badges and test names retained in this technical catalogue are superseded by the current responsibility audit. They do not establish passing tests, complete integration, deployment, personal authorship or lecturer approval. Flutter API integration, approval enforcement and durable AI recovery remain incomplete; Redis/SignalR/vector retrieval remain DOCUMENTED ONLY.
 
 ---
 
@@ -35,12 +39,17 @@ The AI layer should make the loop adaptive rather than replacing deterministic p
 
 # 2. Team Ownership
 
-| Member | Business Component | Main Ownership | Agentic AI Role |
-|---|---|---|---|
-| Member 1 | User & Course Management | Users, roles, courses, modules, enrollments, profiles | Coordinator / Planner Agent |
-| Member 2 | Assessments & Quizzes | Quizzes, questions, submissions, grading | Action / Tool Agent |
-| Member 3 | Gamification & Engagement | XP, badges, streaks, achievements, leaderboards | Domain Analysis Agent |
-| Member 4 | Analytics & Reporting | Analytics, reporting, external integration, audit/validation | Validation / Safety Agent |
+| Student / identity | Primary component | Agentic AI contribution |
+|---|---|---|
+| Student 1 — Ahamed M.A. / IT24103352 / System Admin | System Administration, User & Course Governance, Reporting and AI Safety | Primary: Validation / Safety. Supporting: Coordinator / Planner, workflow lifecycle, approval safety, auditability and observability |
+| Student 2 — Raashidh M.R. / IT24104191 / Instructor | Instructor Curriculum, Assessment and AI Content Management | Primary: Action / Tool. Supporting: Quiz Generator, Slide Topic, Quiz Evaluator |
+| Student 3 — Atheek M.F. / IT24103933 / Student | Student Learning, Progress, Gamification and Adaptive Guidance | Primary: Domain Analysis. Supporting: AI Coach, Retention Behaviour, Next Best Action |
+
+Student 1 owns global user/course administration, access governance, platform reporting, auditing and configuration. Student 2 owns academic course content, modules, lessons, topics, documents, assessments, quizzes, grading contracts, academic publishing and academic AI review. Admin access to an Instructor operation does not transfer implementation ownership. Student 3 owns learner participation, attempts, progress, rewards and adaptive guidance.
+
+Each student contributes backend, PostgreSQL, React, Flutter, testing, security/integration and genuine documentation/Git evidence. Shared authentication, database context/migrations, client infrastructure, AI gateway/state and CI remain shared.
+
+The four core demonstrable roles remain **Planner → Domain Analysis → Action / Tool → Validation / Safety → authorized human approval where required**. Group-size approval and any proportional assignment adjustment remain **TO CONFIRM**. This allocation guides future work; it does not prove past contribution.
 
 ### Shared mandatory responsibilities
 
@@ -131,7 +140,7 @@ flowchart TB
 
 # 4. Integration Principle
 
-The four components should behave as a **modular monolith first** unless the assignment specifically requires microservices.
+The technical subsystems should behave as a **modular monolith first** unless the assignment specifically requires microservices.
 
 Recommended internal structure:
 
@@ -307,11 +316,13 @@ Never implement authorization only in React/Flutter. It must be enforced by ASP.
 
 # 8. Database Ownership
 
-Each member owns the schema objects for their component, but cross-component foreign keys and shared audit conventions are agreed by the team.
+Each student owns behavior within the shared model; DbContext, migrations, cross-component foreign keys and audit conventions are coordinated by the team. The names below are a design inventory, not a claim that all proposed tables exist.
 
-Suggested ownership:
+Current responsibility by data area:
 
-### Member 1
+### Identity, Curriculum and Participation
+
+Student 1 coordinates user/access and global course governance; Student 2 owns academic curriculum, modules, lessons, documents and publication; Student 3 owns learner enrollment/completion. Auth, models and infrastructure are shared.
 
 ```text
 users
@@ -324,7 +335,9 @@ lessons
 enrollments
 ```
 
-### Member 2
+### Assessment Definitions and Results
+
+Student 2 owns assessment definitions, grading contracts, generation and academic review; Student 3 owns attempt/submission/results and reward integration.
 
 ```text
 quizzes
@@ -335,7 +348,9 @@ submission_answers
 grades
 ```
 
-### Member 3
+### Gamification and Learner Progress
+
+Student 3 owns these rules/data, with shared policy and academic input contracts.
 
 ```text
 badges
@@ -348,7 +363,9 @@ leaderboard_entries
 gamification_rules
 ```
 
-### Member 4
+### Reporting and Shared AI Lifecycle
+
+Student 1 owns platform reports, audit/notification governance, validation/safety and workflow lifecycle; Student 2 owns academic analytics and review decisions; Student 3 owns learner analysis, objectives, coach and status. Shared graph/state/gateway infrastructure remains shared.
 
 ```text
 analytics_snapshots
@@ -710,11 +727,13 @@ Do not expose PostgreSQL directly to clients.
 
 ---
 
-# Member 1 – User & Course Management
+# Identity, Course and Participation Technical Area
+
+Student 1 coordinates user/access and global course governance; Student 2 owns academic curriculum, modules, lessons, documents and publication; Student 3 owns learner enrollment/completion. Auth, models and infrastructure are shared.
 
 ## Business Component
 
-Owns:
+Technical scope:
 - Students
 - Instructors
 - Admins
@@ -724,7 +743,7 @@ Owns:
 - lessons
 - enrollments
 
-Its Agentic AI responsibility is the **Coordinator / Planner Agent**.
+The **Coordinator / Planner Agent** is a supporting contribution of Student 1, whose primary AI contribution is **Validation / Safety**. Academic Action / Tool work belongs to Student 2 and learner Domain Analysis to Student 3.
 
 > **Completion Status Legend:** ✅ DONE | ⚠️ PARTIAL | ❌ MISSING
 
@@ -733,7 +752,7 @@ Its Agentic AI responsibility is the **Coordinator / Planner Agent**.
 # 1. Database
 
 > **Overall DB Schema Status: ✅ DONE**
-> All Member 1 tables are implemented as EF Core entities in `EduFlow.Core/Entities/Entities.cs` and mapped in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`.
+> The user/course schema inventory is described as EF Core entities in `EduFlow.Core/Entities/Entities.cs` and mapped in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`.
 
 ## Users ✅ DONE
 
@@ -1078,11 +1097,13 @@ The agent must never fabricate missing progress. ✅ Fallback returns a safe def
 
 ---
 
-# Member 2 – Assessments & Quizzes
+# Assessment & Quiz Technical Area
+
+Student 2 owns assessment definitions, grading contracts, generation and academic review; Student 3 owns attempt/submission/results and reward integration.
 
 ## Business Component
 
-Owns:
+Technical scope:
 - quizzes
 - questions
 - answer options
@@ -1303,13 +1324,15 @@ Must test:
 
 ---
 
-# Member 3 – Gamification & Engagement
+# Gamification & Engagement Technical Area
+
+Student 3 owns learner progress and adaptive guidance; Student 2 owns academic definitions and Student 1 platform policy.
 
 ## Business Component
 
 This is the **core product differentiator**.
 
-Owns:
+Technical scope:
 - XP & point accounting
 - Levels & progression curves
 - Badges & achievement evaluation
@@ -1351,7 +1374,7 @@ Maintain consecutive daily study = Streak progression + Freeze shield protection
 # 2. Database
 
 > **Overall DB Schema Status: ✅ DONE**  
-> All Member 3 tables are implemented as EF Core entities in `EduFlow.Core/Entities/Entities.cs`, configured with indexes/foreign keys in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`, and seeded with realistic demo data.
+> The gamification schema inventory is described as EF Core entities in `EduFlow.Core/Entities/Entities.cs`, configured with indexes/foreign keys in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`, and seeded with realistic demo data.
 
 ## XP Transactions ✅ DONE
 
@@ -1672,11 +1695,13 @@ Implemented in `backend/EduFlow.Tests/GamificationServiceTests.cs`:
 
 ---
 
-# Member 4 – Analytics & Reporting
+# Reporting, Academic Analytics and AI Governance Technical Area
+
+Student 1 owns platform reports, audit/notification governance, validation/safety and workflow lifecycle; Student 2 owns academic analytics and review decisions; Student 3 owns learner analysis, objectives, coach and status. Shared graph/state/gateway infrastructure remains shared.
 
 ## Business Component
 
-Owns:
+Technical scope:
 - System analytics & platform KPI dashboard
 - Performance, pass rates & engagement aggregation
 - At-risk student early-warning identification
@@ -1725,14 +1750,14 @@ flowchart LR
 - ✅ **At-Risk Detection**: Identifies students with multiple failed quiz submissions or low completion rates.
 - ✅ **Topic Mastery Heatmap**: Tracks comprehension percentages across SE3090 curriculum modules.
 - ✅ **Remedial Recommendations**: Suggests calibrated micro-challenges targeting specific failed concepts.
-- ✅ **AI Validation Rate**: 100% adherence to deterministic safety rules (workload limits, objective length, milestone constraints).
+- **AI Validation Rate (PARTIAL)**: Deterministic checks exist, but acceptance/publication can bypass outcomes; 100% enforced validation is not established.
 
 ---
 
 # 3. Database Schema Status ✅ DONE
 
 > **Overall DB Schema Status: ✅ DONE**  
-> All Member 4 tables are implemented as EF Core entities in `EduFlow.Core/Entities/Entities.cs`, mapped in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`, and seeded with demo data.
+> The analytics/governance schema inventory is described as EF Core entities in `EduFlow.Core/Entities/Entities.cs`, mapped in `EduFlow.Infrastructure/Data/ApplicationDbContext.cs`, and seeded with demo data.
 
 ## Study Plans (AI HITL Proposals) ✅ DONE
 
@@ -2009,7 +2034,9 @@ Error:
 
 # 2. Endpoint Ownership
 
-## Member 1 ✅ DONE
+## Identity, Curriculum and Participation APIs
+
+Student 1 coordinates user/access and global course governance; Student 2 owns academic curriculum, modules, lessons, documents and publication; Student 3 owns learner enrollment/completion. Auth, models and infrastructure are shared.
 
 ```text
 POST   /api/auth/register                 ✅ AuthController.Register
@@ -2047,7 +2074,9 @@ POST   /api/courses/lessons/{id}/complete ✅ CoursesController.CompleteLesson
 ```
 
 
-## Member 2 ✅ DONE
+## Assessment and Attempt APIs
+
+Student 2 owns assessment definitions, grading contracts, generation and academic review; Student 3 owns attempt/submission/results and reward integration.
 
 ```text
 POST   /api/quizzes                       ✅ QuizzesController.CreateQuiz
@@ -2063,7 +2092,9 @@ POST   /api/quizzes/{id}/submit           ✅ QuizzesController.SubmitQuiz
 GET    /api/quizzes/submissions/me        ✅ QuizzesController.GetMySubmissions
 ```
 
-## Member 3 ✅ DONE
+## Gamification and Learner Progress APIs
+
+Student 3 owns learner transactions; Student 2 owns academic challenge definitions.
 
 ```text
 GET    /api/gamification/students/me/profile   ✅ GamificationController.GetMyProfile
@@ -2084,7 +2115,9 @@ DELETE /api/challenges/{id}                    ✅ ChallengesController.DeleteCh
 POST   /api/challenges/{id}/submit             ✅ ChallengesController.SubmitChallenge
 ```
 
-## Member 4 ✅ DONE
+## Reports, Review, Guidance and Notification APIs
+
+Student 1 owns platform reports, audit/notification governance, validation/safety and workflow lifecycle; Student 2 owns academic analytics and review decisions; Student 3 owns learner analysis, objectives, coach and status. Shared graph/state/gateway infrastructure remains shared.
 
 ```text
 GET    /api/analytics/dashboard-summary        ✅ AnalyticsController.GetDashboardSummary
@@ -2172,10 +2205,10 @@ Use an idempotency key where repeated requests could create duplicate effects.
 
 | Agent | Ownership | Responsibility |
 |---|---|---|
-| Coordinator / Planner | Member 1 | Understand objective, build multi-step plan and delegate |
-| Action / Tool | Member 2 | Execute controlled education/assessment tools |
-| Domain Analysis | Member 3 | Analyze performance and engagement and recommend next action |
-| Validation / Safety | Member 4 | Validate, enforce constraints and manage approval gate |
+| Coordinator / Planner | Student 1 (supporting) | Understand objective, build multi-step plan and delegate |
+| Action / Tool | Student 2 (primary) | Execute controlled education/assessment tools |
+| Domain Analysis | Student 3 (primary) | Analyze performance and engagement and recommend next action |
+| Validation / Safety | Student 1 (primary) | Validate, enforce constraints and manage approval gate |
 
 ---
 
@@ -2556,11 +2589,13 @@ Use:
 
 ```text
 main
-develop
-feature/member1-course-management
-feature/member2-assessment
-feature/member3-gamification
-feature/member4-analytics
+dev
+IT24103352_Ahamed
+# Examples for future task branches; not historical contribution evidence:
+feature/instructor-curriculum
+feature/instructor-ai-content
+feature/student-progress
+feature/student-adaptive-guidance
 ```
 
 Pull requests are mandatory.
@@ -2596,7 +2631,9 @@ feat(gamification): add XP transaction service
 
 ---
 
-### Member 1 ✅ DONE
+### Identity, Curriculum and Participation Test Sources
+
+Student 1 coordinates user/access and global course governance; Student 2 owns academic curriculum, modules, lessons, documents and publication; Student 3 owns learner enrollment/completion. Auth, models and infrastructure are shared. Level/reward tests belong to Student 3. Listed test names are not proof of production-boundary coverage or a passing run.
 - ✅ Enrollment rules — `UserCourseManagementTests.EnrollStudent_NewEnrollment_CreatesActiveRecord`, `EnrollStudent_DuplicateEnrollment_ExistingRecordIsReturned` (idempotency check), `UnenrollStudent_SetsStatusToDropped_NotHardDeleted` (soft delete for audit trail), `GetMyCourses_OnlyReturnsActiveEnrollments`
 - ✅ Course publishing workflow — `UserCourseManagementTests.CreateCourse_StartsAsUnpublished`, `PublishCourse_SetsIsPublishedTrue`, `UnpublishCourse_SetsIsPublishedFalse`, `GetCourses_ReturnsOnlyPublishedCourses`
 - ✅ Role & status checks — `UserCourseManagementTests.UserRole_Student_CannotBeAssignedInstructorPrivileges_ByDefault`, `ChangeRole_UpdatesUserRoleCorrectly`, `ToggleUserStatus_DeactivatesActiveUser`
@@ -2604,19 +2641,25 @@ feat(gamification): add XP transaction service
 - ✅ Progression & level rules — `GamificationServiceTests.CalculateLevel_ReturnsCorrectLevel_BasedOnTotalXp`
 
 
-### Member 2 ✅ DONE
+### Assessment and Grading Test Sources
+
+Student 2 owns assessment definitions, grading contracts, generation and academic review; Student 3 owns attempt/submission/results and reward integration. Verify production grading; storing a precomputed score does not test the grader.
 - ✅ Quiz Creation & Questions — `AssessmentQuizTests.CreateQuiz_PersistsAssessmentWithQuestions`
 - ✅ Auto-Grading & Passing Thresholds — `AssessmentQuizTests.QuizSubmission_AutoGrading_CalculatesScoreAndPassingCorrectly`
 - ✅ Perfect Score Detection — `AssessmentQuizTests.QuizSubmission_PerfectScore_GrantsFullMarksAndPassedStatus`
 
-### Member 3 ✅ DONE
+### Learner Reward Test Sources
+
+Student 3 owns these tests. A listed test is not passing-run evidence.
 - ✅ Progression & Level Calculation — `GamificationServiceTests.CalculateLevel_ReturnsCorrectLevel_BasedOnTotalXp`
 - ✅ XP Ledger & Level Ups — `GamificationServiceTests.AwardXpAsync_CreatesImmutableTransaction_AndUpdatesTotalXp`
 - ✅ Automated Badge Unlocking — `GamificationServiceTests.AwardXpAsync_UnlocksFirstLessonBadge_OnFirstLessonCompletion`
 - ✅ Non-Positive XP Invariant — `GamificationServiceTests.AwardXpAsync_ThrowsException_WhenXpIsNegativeOrZero`
 - ✅ Streak Freeze Token Protection — `GamificationServiceTests.UseStreakFreezeAsync_DecrementsFreezeToken_AndSavesStatus`
 
-### Member 4 ✅ DONE
+### Reporting and AI Review Test Sources
+
+Student 1 owns platform reports, audit/notification governance, validation/safety and workflow lifecycle; Student 2 owns academic analytics and review decisions; Student 3 owns learner analysis, objectives, coach and status. Shared graph/state/gateway infrastructure remains shared. Manually setting approval status does not verify authorized endpoint transitions.
 - ✅ Analytics Dashboard Summary — `AnalyticsAiReviewTests.Analytics_DashboardSummary_ComputesTotalMetricsCorrectly`
 - ✅ Platform Metrics Aggregation & Pass Rates — `AnalyticsAiReviewTests.Analytics_PlatformMetrics_CalculatesPassRateAndAggregates`
 - ✅ Student Performance Query — `AnalyticsAiReviewTests.Analytics_StudentMetrics_ReturnsAccurateStudentStats`
@@ -2879,20 +2922,21 @@ This allows students who dislike direct competition to remain engaged.
 
 # EduFlow AI – Component Integration Matrix
 
-## 1. Member-to-Member Dependencies
+## 1. Current Cross-Student Dependencies
 
-| Producer | Event / API | Consumer | Purpose |
+| Producer / responsible behavior | Event / API | Consumer / responsible behavior | Purpose |
 |---|---|---|---|
-| Member 1 | StudentEnrolled | Member 3 | Initialize gamification profile |
-| Member 1 | CoursePublished | Member 4 | Update course analytics |
-| Member 1 | LessonCompleted | Member 3 | Award XP / update streak |
-| Member 2 | QuizCompleted | Member 3 | Award XP / achievements |
-| Member 2 | QuizCompleted | Member 4 | Update performance analytics |
-| Member 3 | XPGranted | Member 4 | Update engagement analytics |
-| Member 3 | LevelUp | Member 4 | Track progression |
-| Member 4 | AI Recommendation | Member 3 | Trigger suitable challenge |
-| Member 4 | ApprovalCompleted | Member 2/3 | Publish approved AI content |
-| Member 4 | NotificationRequested | External provider | Deliver email/SMS/push |
+| Student 3 enrollment; Student 2 roster | StudentEnrolled | Student 3 rewards | Initialize learner progress |
+| Student 2 curriculum | CoursePublished | Student 2 academic / Student 1 platform analytics | Update scoped reporting |
+| Student 3 learning | LessonCompleted | Student 3 rewards | Award eligible XP / update streak |
+| Student 2 grading + Student 3 submission | QuizCompleted | Student 3 rewards | Apply the agreed grading-to-reward contract |
+| Student 3 learner outcomes | QuizCompleted | Student 2 academic / Student 1 platform analytics | Update performance reporting |
+| Student 3 rewards | XPGranted / LevelUp | Student 1 platform / Student 2 academic analytics | Track scoped engagement and progression |
+| Student 3 Domain Analysis | AI Recommendation | Student 2 Action / Tool + Student 3 learner delivery | Propose suitable academic action |
+| Student 2 academic decision + Student 1 lifecycle/safety | ApprovalCompleted | Student 2 publication + Student 3 status | Apply authorized approved content |
+| Student 1 notification lifecycle | NotificationRequested | External provider / Student 3 learner inbox | Deliver actual notifications when integrated |
+
+These are required handoffs, not evidence that every event is wired or that approval currently triggers protected execution.
 
 ---
 
@@ -3011,3 +3055,83 @@ Every owner is responsible for its local tests.
 The team jointly owns cross-component tests.
 
 The final submission should demonstrate the system as **one integrated product**, not four unrelated modules.
+
+---
+
+# EduFlow AI – Full Integration & Feature Implementation Specification
+
+## 1. Course & Module PDF Upload, Storage & In-App Retrieval
+
+### 1.1 Architecture & Storage Pipeline
+- **Upload Flow:** Instructors can attach PDF documents (curriculum syllabi, lecture slides, study guides) during Module and Lesson creation/editing.
+- **Backend Storage:** Uploaded files are validated for MIME type (`application/pdf`) and size (max 25MB), uniquely hashed (`{Guid}_{OriginalFilename}`), and persisted to `wwwroot/uploads/pdfs/`.
+- **Static File Serving:** Enabled in `Program.cs` via `app.UseStaticFiles()`, allowing direct access and streaming over HTTP.
+- **Relational Schema Integration:**
+  - `Module`: `PdfUrl` (`string?`), `AttachmentFileName` (`string?`)
+  - `Lesson`: `PdfUrl` (`string?`), `AttachmentFileName` (`string?`)
+- **Student In-App Retrieval:** Enrolled students can click into any module, view attached PDF badges, read documents in an embedded in-app reader modal, and download files directly.
+
+```mermaid
+flowchart LR
+    A[Instructor PDF Upload] -->|POST /api/courses/upload-pdf| B[ASP.NET Core API]
+    B -->|Persist File| C[wwwroot/uploads/pdfs/]
+    B -->|Save Metadata| D[(PostgreSQL)]
+    D -->|Query Modules & Lessons| E[Student Portal / Web App]
+    E -->|Embedded Preview & Download| F[In-App PDF Viewer]
+```
+
+---
+
+## 2. Multi-Mode Quiz Authoring & Release Engine
+
+### 2.1 Three Authoring Pathways
+1. **Mode 1: Typed / Manual Question Builder:**
+   - Instructor defines title, time limit, passing threshold, XP/Coin bounty.
+   - Interactive question authoring: prompt, multiple choice options (A, B, C, D), radio selector for correct answer, points, and explanation.
+2. **Mode 2: File Upload (PDF / JSON Question Sheet):**
+   - Import question banks from structured JSON or curriculum PDF documents.
+   - Automated parser populates the question editor for instructor review prior to release.
+3. **Mode 3: AI-Generated Adaptive Quiz:**
+   - Multi-Agent synthesis calibrated on topic, target difficulty (Easy, Medium, Hard, Boss Raid), and question count.
+   - Deterministic schema validation guarantees valid options, correct answers, and rich explanations.
+
+```mermaid
+flowchart TD
+    subgraph Authoring["3 Quiz Authoring Modes"]
+        M1[1. Manual Typed Builder]
+        M2[2. Upload JSON / PDF]
+        M3[3. AI Adaptive Generator]
+    end
+
+    subgraph Core["Assessment Engine"]
+        M1 --> P[Validate Question Schema]
+        M2 --> P
+        M3 --> P
+        P --> DB[(PostgreSQL Assessment & Questions)]
+    end
+
+    subgraph Client["Student Experience"]
+        DB --> QR[Interactive Quiz Runner]
+        QR --> SUB[Submit Answers]
+        SUB --> GRD[Auto-Grading & Gamification Engine]
+    end
+```
+
+---
+
+## 3. End-to-End Gamification Interconnection Engine
+
+### 3.1 Mathematical Determinism & Reward Triggers
+- **Immutable Ledger:** Every earned reward creates an immutable `XpTransaction` record with source type (`QuizCompleted`, `PerfectScore`, `LessonCompleted`, `DailyMission`).
+- **Level Recalculation:** `CurrentLevel = floor(TotalXp / 1000) + 1` calculated deterministically.
+- **Streak & Freeze Shield:** Daily active submissions increment streak count; freeze shields prevent streak resets.
+- **Badges Unlocked:** Automatic unlocks for milestones (*First Step*, *Quiz Ace* on 100% score, *Unstoppable* on 7-day streak, *Boss Slayer*).
+- **Weekly Sprint Leaderboard:** Ranks dynamically updated and displayed with top-3 podium and real-time student position reflection.
+
+---
+
+## 4. Verification Suite & Quality Assurance
+
+- **48 Automated Backend Tests:** Covering User & Course Management, Assessment Quiz Engine, Gamification XP Ledgers, and Analytics AI Review.
+- **End-to-End Interconnection:** Verified across React Web console, Student Learning Arena, and ASP.NET Core API Gateway.
+

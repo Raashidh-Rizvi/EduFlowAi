@@ -1,5 +1,7 @@
 # EduFlow AI – API Contract Blueprint
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
 > This document defines the shared API standards, conventions, and cross-component endpoint contracts used across all four business components.
 
 ---
@@ -66,9 +68,13 @@ All API responses use a consistent wrapper:
 
 ---
 
-## 2. Endpoint Ownership
+## 2. Endpoint Responsibility by Workflow
 
-### 2.1 Member 1 — User & Course Management
+Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first. The routes below are contract/design references, not proof that every route or permission is implemented. Use the individual trackers and current controllers for audited routes and gaps.
+
+### 2.1 Identity, Course and Participation APIs
+
+Student 1 coordinates shared auth, user access and global course governance. Student 2 owns academic course/module/lesson/document authoring and publication, plus teaching roster administration. Student 3 owns self-enrollment, own-course access and lesson completion. Admin access does not transfer academic implementation ownership.
 
 ```http
 # Auth
@@ -124,7 +130,9 @@ GET    /api/courses/{courseId}/documents/{docId}/status
 POST   /api/courses/{courseId}/documents/{docId}/summary
 ```
 
-### 2.2 Member 2 — Assessment & Quizzes
+### 2.2 Assessment & Quiz APIs
+
+Student 2 owns definitions, grading contracts, academic review and publication. Student 3 owns learner attempt/submission/result handling and rewards against those contracts.
 
 ```http
 # Quiz Management [Instructor, Admin]
@@ -161,7 +169,9 @@ GET    /api/submissions/{id}/result
 GET    /api/quizzes/{id}/history
 ```
 
-### 2.3 Member 3 — Gamification & Engagement
+### 2.3 Gamification & Engagement APIs
+
+Student 3 owns learner rewards/progress and analysis; Student 2 owns course-scoped academic insights; Student 1 owns platform policy and audited administrative controls.
 
 ```http
 # Student (Flutter)
@@ -186,7 +196,9 @@ GET    /api/analytics/at-risk
 PATCH  /api/admin/users/{id}/xp         [Admin only]
 ```
 
-### 2.4 Member 4 — Analytics, Reporting & AI Validation
+### 2.4 Reporting, AI Review and Notification APIs
+
+Student 1 owns platform reports, workflow lifecycle/validation and notification governance. Student 2 owns academic analytics and approve/reject/revise decisions. Student 3 owns learner objectives, coach/retention/next-action consumers and status. Gateway, state and contracts are shared.
 
 ```http
 # Analytics [Instructor, Admin]

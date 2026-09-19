@@ -1,6 +1,17 @@
 # EduFlow AI – Component Integration Matrix
 
-> This document defines exactly how the four business components communicate with each other, what events they publish and consume, and what boundaries must never be crossed.
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> This document describes technical subsystem contracts and event-based integration design. C1–C4 are subsystem identifiers, not student numbers or four personal allocations. Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first.
+
+| Technical identifier | Scope | Current workflow owners |
+|---|---|---|
+| C1 | Identity, courses and participation | Student 1 access/global governance; Student 2 academic curriculum/roster; Student 3 enrollment/completion |
+| C2 | Assessments | Student 2 definitions/grading/review; Student 3 attempts/results |
+| C3 | Gamification | Student 3 rewards/progress; Student 2 academic challenge content |
+| C4 | Analytics and AI lifecycle | Student 1 platform reports/safety/lifecycle; Student 2 academic analytics/review; Student 3 learner analysis/status |
+
+These are intended contract boundaries, not a claim that an event bus, Redis/SignalR, separate DbContexts or full approval recovery is implemented. The current ApplicationDbContext, migrations, gateway, client infrastructure and graph/state are shared. Do not duplicate them merely to divide ownership. Group-size approval remains **TO CONFIRM**.
 
 ---
 
@@ -334,17 +345,19 @@ public interface IRagService
 
 | Test | Owner | Description |
 |------|-------|-------------|
-| Quiz → XP flow | C2 + C3 jointly | Submit quiz, verify XP ledger updated |
-| XP → Level Up | C3 internally | Crossing threshold triggers LevelUp |
-| Quiz → Badge | C2 + C3 jointly | Submit first quiz, verify FIRST_QUIZ badge |
-| AI Generation → Review → Publish | C2 + C4 jointly | Full HITL workflow |
-| At-Risk Detection → Instructor Alert | C4 + C1 jointly | Detection triggers notification |
-| Leaderboard Redis sync | C3 internally | XP award reflects in Redis within 1s |
+| Quiz → XP flow | Students 2 + 3 | Submit quiz, verify XP ledger updated |
+| XP → Level Up | Student 3 | Crossing threshold triggers LevelUp |
+| Quiz → Badge | Students 2 + 3 | Submit first quiz, verify FIRST_QUIZ badge |
+| AI Generation → Review → Publish | Students 1 + 2; Student 3 delivery | Full HITL workflow |
+| At-Risk Detection → Instructor Alert | Student 3 analysis, Student 2 review, Student 1 delivery | Detection triggers notification |
+| Leaderboard Redis sync (documented-only target) | Student 3 / shared infrastructure | XP award reflects in Redis within 1s |
 | Event replay idempotency | All components | Replay same event → no duplicate effects |
 
 ---
 
 ## 10. Boundary Enforcement in Code
+
+The separate-context example below is a design alternative, not the current shared ApplicationDbContext or a requirement to split schemas by student.
 
 ```csharp
 // Each component's DbContext should ONLY have access to its own tables

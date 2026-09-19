@@ -1,5 +1,9 @@
 # EduFlow AI – Flutter Student Mobile App Guide
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** The [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md) found local setState screens with simulated login, quizzes/rewards and coach responses, not operational shared API services. Network/state architecture below is a target; offline sync, certificates and live push are DOCUMENTED ONLY. Mobile work is shared: Student 1 governed notifications/session/status, Student 2 academic content/assessment presentation, Student 3 learner transactions/progress/guidance. A learner-facing screen is not automatically owned entirely by Student 3.
+
 > The Flutter student mobile app is the **primary interface for students**. It is designed as a gamified, AI-powered learning experience that makes studying engaging, self-directed, and effective.
 
 ---

@@ -1,5 +1,9 @@
 # EduFlow AI – System Workflow
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** These diagrams specify intended role workflows; the [current matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) records what is PARTIAL, missing or DOCUMENTED ONLY. Student 1 owns global user/course governance and platform reporting; Student 2 owns academic curriculum, assessments, publishing and AI review; Student 3 owns participation, progress and guidance. Admin permission does not transfer academic implementation ownership. Enrollment approval, delivered notifications and the complete Flutter-to-React approval loop are not established implementations.
+
 > This document describes the complete real-world workflows for each of the three user roles: **Admin**, **Instructor**, and **Student**. It also covers the cross-role workflows that involve collaboration between roles.
 
 ---

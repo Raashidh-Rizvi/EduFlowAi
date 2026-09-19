@@ -1,5 +1,9 @@
 # EduFlow AI – Quiz Pipeline
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** The [current matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) assigns academic definitions, grading contracts, generation/review and publishing to Student 2; learner attempts/results and rewards to Student 3; and lifecycle/validation safeguards to Student 1. The lifecycle below is a target: current AI generation can publish without review, attempts/timers are incomplete, and normal .NET submission does not invoke the Python AI evaluator. Do not claim this complete pipeline or its anti-cheat controls are implemented.
+
 > This document describes the complete lifecycle of a quiz in EduFlow AI — from AI-assisted generation through instructor review to student delivery and grading.
 
 ---

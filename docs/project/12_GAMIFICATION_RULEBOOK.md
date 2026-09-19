@@ -1,5 +1,9 @@
 # EduFlow AI – Gamification Rulebook
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** This is a design rulebook, not a verified inventory of enforced rules. The [current matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) assigns learner rewards/progress to Student 3, grading contracts to Student 2 and platform policy governance to Student 1. The audit found a fixed-tier LevelCurve, incomplete reward idempotency/concurrency, ungraded challenge rewards and DOCUMENTED ONLY Redis/SignalR; the formulas, limits and delivery targets below must not be treated as completed implementation.
+
 > This document defines the complete, deterministic rules governing all gamification mechanics: XP, levels, badges, streaks, challenges, and leaderboards. These rules are enforced by the backend — AI can recommend but cannot override them.
 
 ---

@@ -1,5 +1,7 @@
 # EduFlow AI – System Architecture
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
 > This document describes the complete architectural design of the EduFlow AI platform: its layers, components, data flow, and design decisions.
 
 ---
@@ -81,7 +83,9 @@ flowchart TB
 
 ---
 
-## 3. Logical Architecture — The 4 Components
+## 3. Logical Architecture — Technical Subsystems
+
+C1–C4 label technical subsystems, not individual students. Their architecture can remain separate while three students own end-to-end business workflows. This is a design view; Redis/SignalR/vector retrieval are not established implementations in the current audit.
 
 ```mermaid
 flowchart TB
@@ -90,10 +94,10 @@ flowchart TB
 
     subgraph API["ASP.NET Core API"]
         Auth["🔐 Auth & RBAC"]
-        C1["Component 1\nUser & Course\nManagement"]
-        C2["Component 2\nAssessment &\nQuiz Engine"]
-        C3["Component 3\nGamification &\nEngagement"]
-        C4["Component 4\nAnalytics, Reporting\n& AI Validation"]
+        C1["User & Course\nManagement"]
+        C2["Assessment &\nQuiz Engine"]
+        C3["Gamification &\nEngagement"]
+        C4["Analytics, Reporting\n& AI Validation"]
         Notify["🔔 Notifications"]
         AIGw["🤖 AI Gateway"]
     end
@@ -125,14 +129,21 @@ flowchart TB
     Notify --> External
 ```
 
-### Component Ownership Summary
+### Current Ownership Summary
 
-| Component | Team Member | Core Responsibilities | AI Agent Role |
-|-----------|------------|----------------------|---------------|
-| **C1 – User & Course** | Member 1 | Users, roles, courses, modules, lessons, enrollments, document uploads | Coordinator / Planner Agent |
-| **C2 – Assessment** | Member 2 | Quizzes, question types, submissions, grading, attempts, question bank | Action / Tool Agent |
-| **C3 – Gamification** | Member 3 | XP ledger, levels, badges, streaks, challenges, leaderboards | Domain Analysis Agent |
-| **C4 – Analytics** | Member 4 | Analytics, reporting, AI HITL approval queue, audit logs, notifications | Validation / Safety Agent |
+Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first.
+
+| Student / identity | Primary component | Agentic AI contribution |
+|---|---|---|
+| Student 1 — Ahamed M.A. / IT24103352 / System Admin | System Administration, User & Course Governance, Reporting and AI Safety | Primary: Validation / Safety. Supporting: Coordinator / Planner, workflow lifecycle, approval safety, auditability and observability |
+| Student 2 — Raashidh M.R. / IT24104191 / Instructor | Instructor Curriculum, Assessment and AI Content Management | Primary: Action / Tool. Supporting: Quiz Generator, Slide Topic, Quiz Evaluator |
+| Student 3 — Atheek M.F. / IT24103933 / Student | Student Learning, Progress, Gamification and Adaptive Guidance | Primary: Domain Analysis. Supporting: AI Coach, Retention Behaviour, Next Best Action |
+
+Student 1 owns global user/course administration, access governance, platform reporting, auditing and configuration. Student 2 owns academic course content, modules, lessons, topics, documents, assessments, quizzes, grading contracts, academic publishing and academic AI review. Admin access to an Instructor operation does not transfer implementation ownership. Student 3 owns learner participation, attempts, progress, rewards and adaptive guidance.
+
+Each student contributes backend, PostgreSQL, React, Flutter, testing, security/integration and genuine documentation/Git evidence. Shared authentication, database context/migrations, client infrastructure, AI gateway/state and CI remain shared.
+
+The four core demonstrable roles remain **Planner → Domain Analysis → Action / Tool → Validation / Safety → authorized human approval where required**. Group-size approval and any proportional assignment adjustment remain **TO CONFIRM**. This allocation guides future work; it does not prove past contribution.
 
 ---
 

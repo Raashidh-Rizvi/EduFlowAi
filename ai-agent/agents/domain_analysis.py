@@ -87,7 +87,7 @@ class DomainAnalysisAgent(BaseAgent):
           telemetry-derived context lines already available on `features`) and is
           explicitly instructed to never invent a number, date, or fact -- only to
           explain the numbers it is given. This matches this project's stated
-          anti-hallucination design principle (docs/07_AI_ORCHESTRATION.md): every
+          anti-hallucination design principle (docs/project/09_AI_ORCHESTRATION.md): every
           gap/strength must carry evidence traceable to real data, never invented
           evidence.
 

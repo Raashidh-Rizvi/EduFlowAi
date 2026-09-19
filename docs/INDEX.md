@@ -1,72 +1,76 @@
-# EduFlow AI – Documentation Index
+# Documentation Catalog
 
-> **EduFlow AI** — Learn. Play. Compete. Master.  
-> An AI-Powered Gamified Education Platform for adaptive, engaging, and effective learning.
+Read [Start here](README.md) before choosing a document. Canonical design does not mean completed implementation; current evidence is summarized in [implementation status](project/17_IMPLEMENTATION_STATUS.md).
 
----
+## Official assignment references
 
-## 📚 Documentation Map
+| Document | Authority |
+|---|---|
+| [Official assignment specification](reference/SEF-ASSINGMENT-01-%5BIntegrated-Full-Stack-and-Agentic-AI-Application-Development-Specification-With-Marking-Scheme%5D.md) | Authoritative requirements and marking scheme |
+| [Assignment notice](reference/SEF-ASSINGMENT-01-Notice.md) | Supporting notice; does not replace the specification |
+| [AutoCare AI guidance-only example](reference/SEF-ASSINGMENT-01-Sample-Scenario-Guidance-Only-%5BAutoCare-AI%5D.md) | Supporting example; prohibited as this project's chosen scenario |
 
-| # | File | Description |
-|---|------|-------------|
-| — | [INDEX.md](./INDEX.md) | **This file** – documentation navigator |
-| — | [README.md](./README.md) | Project overview, vision, team roles, and sprint plan |
-| 01 | [01_ARCHITECTURE.md](./01_ARCHITECTURE.md) | Modular monolith system architecture, layers, and data flow |
-| 02 | [02_MEMBER1_USER_COURSE.md](./02_MEMBER1_USER_COURSE.md) | User & Course Management component (Member 1) |
-| 03 | [03_MEMBER2_ASSESSMENTS.md](./03_MEMBER2_ASSESSMENTS.md) | Assessment & Quiz Engine component (Member 2) |
-| 04 | [04_MEMBER3_GAMIFICATION.md](./04_MEMBER3_GAMIFICATION.md) | Gamification & Engagement component (Member 3) |
-| 05 | [05_MEMBER4_ANALYTICS.md](./05_MEMBER4_ANALYTICS.md) | Analytics, Reporting & AI Validation component (Member 4) |
-| 06 | [06_API_CONTRACTS.md](./06_API_CONTRACTS.md) | Cross-component API contract standards |
-| 07 | [07_AI_ORCHESTRATION.md](./07_AI_ORCHESTRATION.md) | LangGraph multi-agent AI architecture & safety |
-| 08 | [08_DATABASE_ER.md](./08_DATABASE_ER.md) | PostgreSQL entity relationship diagram |
-| 09 | [09_GIT_CI_CD_TESTING.md](./09_GIT_CI_CD_TESTING.md) | Git workflow, CI/CD pipeline, and testing strategy |
-| 10 | [10_GAMIFICATION_RULEBOOK.md](./10_GAMIFICATION_RULEBOOK.md) | XP, badges, streaks, and challenge fairness rules |
-| 11 | [11_COMPONENT_INTEGRATION_MATRIX.md](./11_COMPONENT_INTEGRATION_MATRIX.md) | Integration touchpoints between all four components |
-| 12 | [12_SYSTEM_WORKFLOW.md](./12_SYSTEM_WORKFLOW.md) | End-to-end real-world workflows for all three user roles |
-| 13 | [13_RAG_ARCHITECTURE.md](./13_RAG_ARCHITECTURE.md) | Document ingestion, vector search, and RAG pipeline |
-| 14 | [14_QUIZ_PIPELINE.md](./14_QUIZ_PIPELINE.md) | AI quiz generation, HITL review, and delivery pipeline |
-| 15 | [15_ROLES_AND_PERMISSIONS.md](./15_ROLES_AND_PERMISSIONS.md) | Role-based access control matrix and capability map |
-| 16 | [16_MOBILE_APP_GUIDE.md](./16_MOBILE_APP_GUIDE.md) | Flutter student mobile app: screens, flows, and AI features |
-| 17 | [17_SECURITY_AND_PRIVACY.md](./17_SECURITY_AND_PRIVACY.md) | Security model, OWASP mitigations, data privacy |
-| — | [ADR.md](./ADR.md) | Architectural Decision Records |
-| — | [EduFlow_AI_FULL_IMPLEMENTATION.md](./EduFlow_AI_FULL_IMPLEMENTATION.md) | Complete SE3090 implementation blueprint (master reference) |
+Keep these supplied references unchanged. Written group-size approval remains **TO CONFIRM**.
 
----
+## Current responsibilities
 
-## 🗺️ Quick Navigation by Role
+| Document | Purpose |
+|---|---|
+| [RESPONSIBILITY_MATRIX.md](responsibilities/RESPONSIBILITY_MATRIX.md) | Read first: current ownership, shared boundaries and approval caveats |
+| [STUDENT_1_SYSTEM_ADMIN.md](responsibilities/STUDENT_1_SYSTEM_ADMIN.md) | Ahamed M.A. / IT24103352 — governance, reporting and AI safety |
+| [STUDENT_2_INSTRUCTOR.md](responsibilities/STUDENT_2_INSTRUCTOR.md) | Raashidh M.R. / IT24104191 — curriculum, assessments and AI content |
+| [STUDENT_3_STUDENT.md](responsibilities/STUDENT_3_STUDENT.md) | Atheek M.F. / IT24103933 — learning, gamification and adaptive guidance |
 
-### 👨‍💼 Admin
-- [Roles & Permissions](./15_ROLES_AND_PERMISSIONS.md)
-- [System Workflow – Admin](./12_SYSTEM_WORKFLOW.md)
-- [Analytics & Reporting](./05_MEMBER4_ANALYTICS.md)
-- [Security Model](./17_SECURITY_AND_PRIVACY.md)
+## Current project documents
 
-### 👨‍🏫 Instructor / Teacher
-- [System Workflow – Instructor](./12_SYSTEM_WORKFLOW.md)
-- [Course & User Management](./02_MEMBER1_USER_COURSE.md)
-- [Quiz Pipeline (AI Generation + Review)](./14_QUIZ_PIPELINE.md)
-- [RAG Document Architecture](./13_RAG_ARCHITECTURE.md)
-- [AI Orchestration](./07_AI_ORCHESTRATION.md)
+The numbered sequence is a reading order, not a requirement to read every file before a task. Design references include unimplemented targets; the status summary and source distinguish them.
 
-### 🎓 Student
-- [System Workflow – Student](./12_SYSTEM_WORKFLOW.md)
-- [Mobile App Guide](./16_MOBILE_APP_GUIDE.md)
-- [Gamification Rules](./10_GAMIFICATION_RULEBOOK.md)
-- [Assessment Engine](./03_MEMBER2_ASSESSMENTS.md)
+| Order | Canonical document | Purpose |
+|---|---|---|
+| 01 | [01_PROJECT_OVERVIEW.md](project/01_PROJECT_OVERVIEW.md) | Product scope, roles, stack and system boundary |
+| 02 | [02_SYSTEM_WORKFLOWS.md](project/02_SYSTEM_WORKFLOWS.md) | User journeys and cross-role workflows |
+| 03 | [03_ARCHITECTURE.md](project/03_ARCHITECTURE.md) | Layers, technical subsystems and request flow |
+| 04 | [04_ROLES_AND_PERMISSIONS.md](project/04_ROLES_AND_PERMISSIONS.md) | Intended permissions and resource boundaries |
+| 05 | [05_DATABASE_SCHEMA.md](project/05_DATABASE_SCHEMA.md) | Data relationships, integrity and migration design |
+| 06 | [06_API_CONTRACTS.md](project/06_API_CONTRACTS.md) | API conventions and workflow contracts |
+| 07 | [07_SECURITY_AND_PRIVACY.md](project/07_SECURITY_AND_PRIVACY.md) | Security requirements, risks and data handling |
+| 08 | [08_COMPONENT_INTEGRATION.md](project/08_COMPONENT_INTEGRATION.md) | Producer/consumer contracts and shared boundaries |
+| 09 | [09_AI_ORCHESTRATION.md](project/09_AI_ORCHESTRATION.md) | Four core roles, tools, state, safety and approval |
+| 10 | [10_RAG_ARCHITECTURE.md](project/10_RAG_ARCHITECTURE.md) | Retrieval/ingestion design; documented-only infrastructure |
+| 11 | [11_QUIZ_PIPELINE.md](project/11_QUIZ_PIPELINE.md) | Academic generation/review, grading and learner delivery |
+| 12 | [12_GAMIFICATION_RULEBOOK.md](project/12_GAMIFICATION_RULEBOOK.md) | Reward/progress rules and design limitations |
+| 13 | [13_MOBILE_APPLICATION.md](project/13_MOBILE_APPLICATION.md) | Flutter experience and integration targets |
+| 14 | [14_ARCHITECTURE_DECISIONS.md](project/14_ARCHITECTURE_DECISIONS.md) | Decision register with explicit unresolved/proposed status |
+| 15 | [15_GIT_TESTING_CI_CD.md](project/15_GIT_TESTING_CI_CD.md) | Contribution, testing and delivery practices |
+| 16 | [16_IMPLEMENTATION_PLAN.md](project/16_IMPLEMENTATION_PLAN.md) | Six-phase remaining-work plan and acceptance criteria |
+| 17 | [17_IMPLEMENTATION_STATUS.md](project/17_IMPLEMENTATION_STATUS.md) | Project-wide audit baseline, gaps and evidence |
+| 18 | [18_RUN_AND_SETUP.md](project/18_RUN_AND_SETUP.md) | Local startup, verification commands and limitations |
 
----
+## Subsystem entry points
 
-## 🏗️ Quick Navigation by Topic
+| Document | Scope |
+|---|---|
+| [Backend README](../backend/README.md) | Backend purpose, commands, code entry points and central links |
+| [Frontend README](../frontend/README.md) | React purpose, commands, entry points and central links |
+| [Mobile README](../mobile/README.md) | Flutter prototype/integration limits, commands and entry points |
+| [AI README](../ai-agent/README.md) | Python service commands, agent entry points and central contracts |
+| [Repository README](../README.md) | Repository introduction and quick navigation |
 
-| Topic | Document |
-|-------|----------|
-| How does the whole system work? | [12_SYSTEM_WORKFLOW.md](./12_SYSTEM_WORKFLOW.md) |
-| How does AI generate quizzes? | [14_QUIZ_PIPELINE.md](./14_QUIZ_PIPELINE.md) |
-| How does document RAG work? | [13_RAG_ARCHITECTURE.md](./13_RAG_ARCHITECTURE.md) |
-| What can each role do? | [15_ROLES_AND_PERMISSIONS.md](./15_ROLES_AND_PERMISSIONS.md) |
-| How does XP / leveling work? | [10_GAMIFICATION_RULEBOOK.md](./10_GAMIFICATION_RULEBOOK.md) |
-| How do all 4 components connect? | [11_COMPONENT_INTEGRATION_MATRIX.md](./11_COMPONENT_INTEGRATION_MATRIX.md) |
-| What APIs exist? | [06_API_CONTRACTS.md](./06_API_CONTRACTS.md) |
-| What is the database schema? | [08_DATABASE_ER.md](./08_DATABASE_ER.md) |
-| How do I set up CI/CD? | [09_GIT_CI_CD_TESTING.md](./09_GIT_CI_CD_TESTING.md) |
-| What AI agents exist? | [07_AI_ORCHESTRATION.md](./07_AI_ORCHESTRATION.md) |
+[CI workflow configuration](../.github/workflows/ci.yml) is executable configuration, not evidence of a passing run.
+
+## Legacy — historical reference only
+
+**None of the following documents is a current source of instructions, ownership, roadmap or verified completion.** Their bodies preserve historical proposals; notices and links identify the canonical replacements.
+
+| Archive | Historical role |
+|---|---|
+| [ORIGINAL_IMPLEMENTATION_PLAN.md](legacy/plans/ORIGINAL_IMPLEMENTATION_PLAN.md) | Original pre-reorganization plan |
+| [ROOT_ADR.md](legacy/adrs/ROOT_ADR.md) | Competing root ADR proposals |
+| [ROOT_FULL_IMPLEMENTATION.md](legacy/blueprints/ROOT_FULL_IMPLEMENTATION.md) | Overlapping full-implementation blueprint |
+| [DOCS_FULL_IMPLEMENTATION.md](legacy/blueprints/DOCS_FULL_IMPLEMENTATION.md) | Overlapping full-implementation blueprint |
+| [02_MEMBER1_USER_COURSE.md](legacy/responsibilities/02_MEMBER1_USER_COURSE.md) | Former personal allocation |
+| [03_MEMBER2_ASSESSMENTS.md](legacy/responsibilities/03_MEMBER2_ASSESSMENTS.md) | Former personal allocation |
+| [04_MEMBER3_GAMIFICATION.md](legacy/responsibilities/04_MEMBER3_GAMIFICATION.md) | Former personal allocation |
+| [05_MEMBER4_ANALYTICS.md](legacy/responsibilities/05_MEMBER4_ANALYTICS.md) | Former personal allocation |
+
+Return to [Start here](README.md) for current authority and reading order.

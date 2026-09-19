@@ -1,5 +1,7 @@
 # EduFlow AI – Agentic AI Architecture
 
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
 > This document defines the multi-agent AI architecture, LangGraph workflow graph, agent responsibilities, tool registries, validation rules, HITL approval process, and safety boundaries for EduFlow AI.
 
 ---
@@ -29,12 +31,18 @@ flowchart TD
 
 ## 2. Agent Roles & Ownership
 
+Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first. Retain **Planner → Domain Analysis → Action / Tool → Validation / Safety → authorized human approval where required**. Three students do not imply three agents; group-size approval and any scope adjustment remain **TO CONFIRM**. This is future maintainership, not historical authorship.
+
 | Agent | Team Member | Primary Responsibility |
 |-------|------------|----------------------|
-| **Coordinator / Planner** | Member 1 | Understand objective → build multi-step plan → delegate to specialists |
-| **Action / Tool Agent** | Member 2 | Execute controlled education tools (quiz gen, summaries, content fetch) |
-| **Domain Analysis Agent** | Member 3 | Analyze student performance → recommend difficulty, challenge type, next action |
-| **Validation / Safety Agent** | Member 4 | Validate AI output → enforce business rules → manage HITL approval gate |
+| **Coordinator / Planner** | Student 1 (supporting) | Understand objective → build multi-step plan → delegate to specialists |
+| **Action / Tool Agent** | Student 2 (primary) | Execute controlled education tools (quiz gen, summaries, content fetch) |
+| **Domain Analysis Agent** | Student 3 (primary) | Analyze student performance → recommend difficulty, challenge type, next action |
+| **Validation / Safety Agent** | Student 1 (primary) | Validate AI output → enforce business rules → manage HITL approval gate |
+
+Student 2 also maintains Quiz Generator, Slide Topic and Quiz Evaluator; Student 3 maintains AI Coach, Retention Behaviour and Next Best Action. Student 1 coordinates workflow lifecycle, approval safety, auditability and observability. Academic approve/reject/revise decisions remain Student 2’s implementation responsibility; shared state/graph/registry/gateway work remains shared.
+
+**Current status: PARTIAL.** The diagrams describe target behavior. MemorySaver/ACTIVE_WORKFLOWS are not durable restart recovery; workflow IDs, validation enforcement and approval execution are not consistently integrated. Study-plan/log persistence alone does not demonstrate the complete assessed workflow.
 
 ---
 
