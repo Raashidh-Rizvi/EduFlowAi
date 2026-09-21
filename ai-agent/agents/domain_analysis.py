@@ -356,3 +356,60 @@ class DomainAnalysisAgent(BaseAgent):
             return result, summary, True
 
         return self.execute_with_trace(None, _execute)
+
+    def analyze(
+        self,
+        student_id: str,
+        quiz_results: Optional[List[Dict[str, Any]]] = None,
+        lesson_completions: Optional[List[Dict[str, Any]]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Evaluates student quiz results and lesson progress to identify
+        weak areas, strengths, and recommended focus topics.
+        Never directly mutates student XP or awards rewards.
+        """
+        quizzes = quiz_results or []
+        lessons = lesson_completions or []
+
+        if not quizzes:
+            avg_score = 0.0
+            weak_topics = []
+            strong_topics = []
+        else:
+            normalized_scores = []
+            weak_topics = []
+            strong_topics = []
+            for q in quizzes:
+                max_score = q.get("max_score", 1.0) or 1.0
+                score = q.get("score", 0.0)
+                pct = score / max_score
+                normalized_scores.append(pct)
+                topic = q.get("topic", "General")
+                if pct < 0.5:
+                    weak_topics.append(topic)
+                elif pct >= 0.8:
+                    strong_topics.append(topic)
+
+            avg_score = sum(normalized_scores) / len(normalized_scores) if normalized_scores else 0.0
+
+        mastery = "Novice" if avg_score < 0.5 else ("Intermediate" if avg_score < 0.8 else "Advanced")
+
+        if weak_topics:
+            rec = f"Focus on review and targeted exercises for: {', '.join(weak_topics)}"
+        elif strong_topics:
+            rec = f"High performance across: {', '.join(strong_topics)}. Ready for advanced challenges!"
+        else:
+            rec = "Explore introductory lessons and start your first practice quiz."
+
+        return {
+            "student_id": student_id,
+            "mastery_level": mastery,
+            "average_score": round(avg_score, 2),
+            "weak_topics": weak_topics,
+            "strong_topics": strong_topics,
+            "completed_lessons_count": len(lessons),
+            "recommendation": rec,
+            "status": "success"
+        }
+

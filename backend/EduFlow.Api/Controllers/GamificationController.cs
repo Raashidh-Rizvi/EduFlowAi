@@ -10,9 +10,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EduFlow.Api.Controllers;
 
+// Phase 1B fix: Removed duplicate [Route("api/v1/gamification")] — one route only
 [ApiController]
 [Route("api/[controller]")]
-[Route("api/v1/gamification")]
 public class GamificationController : ControllerBase
 {
     private readonly IGamificationService _gamificationService;
@@ -22,37 +22,67 @@ public class GamificationController : ControllerBase
         _gamificationService = gamificationService;
     }
 
+    // Phase 1A: Self-only guard — student can only see their own dashboard
     [HttpGet("dashboard/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<StudentGameDashboardDto>> GetDashboard(Guid studentId, CancellationToken ct)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         var dashboard = await _gamificationService.GetStudentDashboardAsync(studentId, ct);
         return Ok(dashboard);
     }
 
+    // Phase 1A: Self-only guard — student can only see their own profile
     [HttpGet("profile/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<GamificationProfileDto>> GetProfile(Guid studentId, CancellationToken ct)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         var profile = await _gamificationService.GetStudentProfileAsync(studentId, ct);
         return Ok(profile);
     }
 
+    // Phase 1A: Self-only guard — student can only see their own XP ledger
     [HttpGet("ledger/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<List<XpTransactionDto>>> GetLedger(Guid studentId, [FromQuery] int limit = 50, CancellationToken ct = default)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         var ledger = await _gamificationService.GetStudentXpLedgerAsync(studentId, limit, ct);
         return Ok(ledger);
     }
 
+    // Phase 1A: Self-only guard — student can only see their own mastery
     [HttpGet("mastery/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<TopicMasteryMatrixDto>> GetMasteryMatrix(Guid studentId, CancellationToken ct)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         var mastery = await _gamificationService.GetSkillMasteryMatrixAsync(studentId, ct);
         return Ok(mastery);
     }
 
+    // Phase 1A: Self-only guard — student can only claim their own mission reward
     [HttpPost("missions/claim-grand/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<ClaimDailyGrandMissionResponseDto>> ClaimGrandReward(Guid studentId, CancellationToken ct)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         var res = await _gamificationService.ClaimDailyMissionGrandRewardAsync(studentId, ct);
         if (!res.Success)
         {
@@ -61,9 +91,15 @@ public class GamificationController : ControllerBase
         return Ok(res);
     }
 
+    // Phase 1A: Self-only guard — student can only use their own streak freeze
     [HttpPost("streak/freeze/{studentId:guid}")]
+    [Authorize]
     public async Task<ActionResult<bool>> UseStreakFreeze(Guid studentId, CancellationToken ct)
     {
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+            return Forbid();
+
         bool success = await _gamificationService.UseStreakFreezeAsync(studentId, ct);
         if (!success)
         {
@@ -72,6 +108,7 @@ public class GamificationController : ControllerBase
         return Ok(true);
     }
 
+    // Public: badges list is not private (any authenticated user can view)
     [HttpGet("badges")]
     public async Task<ActionResult<List<BadgeDto>>> GetAllBadges([FromQuery] Guid? studentId, CancellationToken ct)
     {
@@ -79,6 +116,7 @@ public class GamificationController : ControllerBase
         return Ok(badges);
     }
 
+    // Public: leaderboard is intentionally visible to all
     [HttpGet("leaderboard")]
     public async Task<ActionResult<List<LeaderboardEntryDto>>> GetLeaderboard(
         [FromQuery] string type = "weekly", 
