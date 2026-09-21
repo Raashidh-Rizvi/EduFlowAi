@@ -6,6 +6,11 @@ export const quizService = {
     return response.data;
   },
 
+  async getQuizzesByScope(scopeType, scopeId) {
+    const response = await api.get(`/quizzes/scope/${scopeType}/${scopeId}`);
+    return response.data;
+  },
+
   async getQuizById(quizId) {
     const response = await api.get(`/quizzes/${quizId}`);
     return response.data;
@@ -26,6 +31,26 @@ export const quizService = {
     return response.data;
   },
 
+  async validateQuiz(quizId) {
+    const response = await api.post(`/quizzes/${quizId}/validate`);
+    return response.data;
+  },
+
+  async publishQuiz(quizId) {
+    const response = await api.post(`/quizzes/${quizId}/publish`);
+    return response.data;
+  },
+
+  async unpublishQuiz(quizId) {
+    const response = await api.post(`/quizzes/${quizId}/unpublish`);
+    return response.data;
+  },
+
+  async duplicateQuiz(quizId) {
+    const response = await api.post(`/quizzes/${quizId}/duplicate`);
+    return response.data;
+  },
+
   async getAiStatus() {
     const response = await api.get('/quizzes/ai-status');
     return response.data;
@@ -33,6 +58,11 @@ export const quizService = {
 
   async generateAiQuiz(data) {
     const response = await api.post('/quizzes/generate-ai', data);
+    return response.data;
+  },
+
+  async regenerateQuestion(questionId, data) {
+    const response = await api.post(`/quizzes/questions/${questionId}/regenerate`, data);
     return response.data;
   },
 
@@ -61,4 +91,3 @@ export const quizService = {
     return response.data;
   }
 };
-

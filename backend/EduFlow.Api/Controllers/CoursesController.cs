@@ -20,9 +20,8 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CoursesController : ControllerBase
+public class CoursesController : BaseApiController
 {
-    private readonly ApplicationDbContext _dbContext;
     private readonly IGamificationService _gamificationService;
     private readonly IWebHostEnvironment? _environment;
     private readonly IAiGatewayClient? _aiGatewayClient;
@@ -32,8 +31,8 @@ public class CoursesController : ControllerBase
         IGamificationService gamificationService,
         IWebHostEnvironment? environment = null,
         IAiGatewayClient? aiGatewayClient = null)
+        : base(dbContext)
     {
-        _dbContext = dbContext;
         _gamificationService = gamificationService;
         _environment = environment;
         _aiGatewayClient = aiGatewayClient;
@@ -46,7 +45,7 @@ public class CoursesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetCourses()
     {
-        var dbCourses = await _dbContext.Courses
+        var dbCourses = await DbContext.Courses
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
                 .ThenInclude(m => m.Lessons)
@@ -55,20 +54,20 @@ public class CoursesController : ControllerBase
             .AsNoTracking()
             .ToListAsync();
 
-        var enrollments = await _dbContext.Enrollments
+        var enrollments = await DbContext.Enrollments
             .AsNoTracking()
             .Where(e => e.Status == EnrollmentStatus.Active)
             .ToListAsync();
 
-        var assessments = await _dbContext.Assessments
+        var assessments = await DbContext.Assessments
             .AsNoTracking()
             .ToListAsync();
 
-        var completions = await _dbContext.LessonCompletions
+        var completions = await DbContext.LessonCompletions
             .AsNoTracking()
             .ToListAsync();
 
-        var submissions = await _dbContext.Submissions
+        var submissions = await DbContext.Submissions
             .AsNoTracking()
             .ToListAsync();
 
@@ -149,7 +148,7 @@ public class CoursesController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCourseById(Guid id)
     {
-        var course = await _dbContext.Courses
+        var course = await DbContext.Courses
             .Include(c => c.Instructor)
             .Include(c => c.Modules.OrderBy(m => m.OrderIndex))
                 .ThenInclude(m => m.Lessons.OrderBy(l => l.OrderIndex))
@@ -174,7 +173,7 @@ public class CoursesController : ControllerBase
 
         var courseLessonIds = course.Modules.SelectMany(m => m.Lessons).Select(l => l.Id).ToList();
         var completedLessonIds = currentStudentId.HasValue && courseLessonIds.Count > 0
-            ? (await _dbContext.LessonCompletions
+            ? (await DbContext.LessonCompletions
                 .Where(lc => lc.StudentId == currentStudentId.Value
                     && lc.LessonId != null
                     && courseLessonIds.Contains(lc.LessonId.Value))
@@ -183,7 +182,7 @@ public class CoursesController : ControllerBase
             : new HashSet<Guid>();
 
         // Load all assessments / quizzes associated with this course
-        var courseAssessments = await _dbContext.Assessments
+        var courseAssessments = await DbContext.Assessments
             .Where(a => a.CourseId == id)
             .Include(a => a.Questions)
             .Include(a => a.TopicScope)
@@ -287,20 +286,41 @@ public class CoursesController : ControllerBase
             IsPublished = false   // Courses start as drafts; use /publish to make live
         };
 
-        await _dbContext.Courses.AddAsync(course);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Courses.AddAsync(course);
+        await DbContext.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, course);
+        var dto = new CourseDto(
+            course.Id,
+            course.Code,
+            course.Title,
+            course.Description,
+            course.Category,
+            course.ThumbnailUrl,
+            course.IsPublished,
+            course.InstructorId,
+            null,
+            0,
+            0,
+            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term
+        );
+
+        return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, dto);
     }
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateCourse(Guid id, [FromBody] CreateCourseRequest request)
     {
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
+        }
+
+        // Ownership check: only course owner or Admin may update
+        if (!await IsCourseOwnerOrAdmin(id))
+        {
+            return Forbid();
         }
 
         course.Code = request.Code;
@@ -314,22 +334,44 @@ public class CoursesController : ControllerBase
         course.ThumbnailUrl = request.ThumbnailUrl;
         course.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
-        return Ok(course);
+        await DbContext.SaveChangesAsync();
+
+        var dto = new CourseDto(
+            course.Id,
+            course.Code,
+            course.Title,
+            course.Description,
+            course.Category,
+            course.ThumbnailUrl,
+            course.IsPublished,
+            course.InstructorId,
+            null,
+            0,
+            0,
+            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term
+        );
+
+        return Ok(dto);
     }
 
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteCourse(Guid id)
     {
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
         }
 
-        _dbContext.Courses.Remove(course);
-        await _dbContext.SaveChangesAsync();
+        // Ownership check: only course owner or Admin may delete
+        if (!await IsCourseOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
+        DbContext.Courses.Remove(course);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Course deleted successfully." });
     }
 
@@ -341,7 +383,7 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> PublishCourse(Guid id, [FromBody] PublishCourseRequest request)
     {
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == id);
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
@@ -359,7 +401,7 @@ public class CoursesController : ControllerBase
 
         course.IsPublished = request.IsPublished;
         course.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new
         {
@@ -375,13 +417,13 @@ public class CoursesController : ControllerBase
     [HttpGet("{courseId:guid}/modules")]
     public async Task<IActionResult> GetModules(Guid courseId)
     {
-        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
+        var courseExists = await DbContext.Courses.AnyAsync(c => c.Id == courseId);
         if (!courseExists)
         {
             return NotFound(new { message = "Course not found." });
         }
 
-        var modules = await _dbContext.Modules
+        var modules = await DbContext.Modules
             .Where(m => m.CourseId == courseId)
             .OrderBy(m => m.OrderIndex)
             .Include(m => m.Lessons)
@@ -407,10 +449,16 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateModule(Guid courseId, [FromBody] CreateModuleRequest request)
     {
-        var course = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
-        if (!course)
+        var courseExists = await DbContext.Courses.AnyAsync(c => c.Id == courseId);
+        if (!courseExists)
         {
             return NotFound(new { message = "Course not found." });
+        }
+
+        // Ownership check
+        if (!await IsCourseOwnerOrAdmin(courseId))
+        {
+            return Forbid();
         }
 
         var module = new Module
@@ -423,8 +471,8 @@ public class CoursesController : ControllerBase
             AttachmentFileName = request.AttachmentFileName
         };
 
-        await _dbContext.Modules.AddAsync(module);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Modules.AddAsync(module);
+        await DbContext.SaveChangesAsync();
         return Ok(module);
     }
 
@@ -432,10 +480,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateModule(Guid moduleId, [FromBody] UpdateModuleRequest request)
     {
-        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        var module = await DbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
         if (module == null)
         {
             return NotFound(new { message = "Module not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(moduleId))
+        {
+            return Forbid();
         }
 
         module.Title = request.Title;
@@ -445,7 +498,7 @@ public class CoursesController : ControllerBase
         if (request.AttachmentFileName != null) module.AttachmentFileName = request.AttachmentFileName;
         module.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(module);
     }
 
@@ -453,7 +506,7 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteModule(Guid moduleId)
     {
-        var module = await _dbContext.Modules
+        var module = await DbContext.Modules
             .Include(m => m.Lessons)
             .FirstOrDefaultAsync(m => m.Id == moduleId);
 
@@ -462,8 +515,13 @@ public class CoursesController : ControllerBase
             return NotFound(new { message = "Module not found." });
         }
 
-        _dbContext.Modules.Remove(module);
-        await _dbContext.SaveChangesAsync();
+        if (!await IsModuleOwnerOrAdmin(moduleId))
+        {
+            return Forbid();
+        }
+
+        DbContext.Modules.Remove(module);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Module and its lessons deleted successfully." });
     }
 
@@ -478,13 +536,13 @@ public class CoursesController : ControllerBase
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
         var studentId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
 
-        var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
         }
 
-        var isCompleted = studentId != Guid.Empty && await _dbContext.LessonCompletions
+        var isCompleted = studentId != Guid.Empty && await DbContext.LessonCompletions
             .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
 
         var dto = new LessonDetailDto(
@@ -508,10 +566,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateLesson(Guid moduleId, [FromBody] CreateLessonRequest request)
     {
-        var module = await _dbContext.Modules.AnyAsync(m => m.Id == moduleId);
-        if (!module)
+        var moduleExists = await DbContext.Modules.AnyAsync(m => m.Id == moduleId);
+        if (!moduleExists)
         {
             return NotFound(new { message = "Module not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(moduleId))
+        {
+            return Forbid();
         }
 
         var lesson = new Lesson
@@ -527,8 +590,8 @@ public class CoursesController : ControllerBase
             OrderIndex = request.OrderIndex
         };
 
-        await _dbContext.Lessons.AddAsync(lesson);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Lessons.AddAsync(lesson);
+        await DbContext.SaveChangesAsync();
         return Ok(lesson);
     }
 
@@ -536,10 +599,16 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateLesson(Guid lessonId, [FromBody] UpdateLessonRequest request)
     {
-        var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
+        }
+
+        // Ownership check via module chain
+        if (!await IsModuleOwnerOrAdmin(lesson.ModuleId))
+        {
+            return Forbid();
         }
 
         lesson.Title = request.Title;
@@ -552,7 +621,7 @@ public class CoursesController : ControllerBase
         lesson.OrderIndex = request.OrderIndex;
         lesson.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(lesson);
     }
 
@@ -574,9 +643,9 @@ public class CoursesController : ControllerBase
         }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext != ".pdf" && ext != ".pptx" && ext != ".ppt")
+        if (ext != ".pdf" && ext != ".pptx" && ext != ".ppt" && ext != ".docx" && ext != ".doc")
         {
-            return BadRequest(new { message = "Only PDF documents (.pdf) and PowerPoint presentations (.pptx, .ppt) are allowed." });
+            return BadRequest(new { message = "Only PDF documents (.pdf), Word documents (.docx, .doc) and PowerPoint presentations (.pptx, .ppt) are allowed." });
         }
 
         if (file.Length > 50 * 1024 * 1024) // 50MB limit
@@ -585,7 +654,7 @@ public class CoursesController : ControllerBase
         }
 
         var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var folderName = (ext == ".pptx" || ext == ".ppt") ? "slides" : "pdfs";
+        var folderName = (ext == ".pptx" || ext == ".ppt") ? "slides" : (ext == ".docx" || ext == ".doc") ? "docs" : "pdfs";
         var uploadDir = Path.Combine(webRoot, "uploads", folderName);
         if (!Directory.Exists(uploadDir))
         {
@@ -616,10 +685,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CategorizeModuleSlideTopics(Guid moduleId)
     {
-        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        var module = await DbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
         if (module == null)
         {
             return NotFound(new { message = "Module not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(moduleId))
+        {
+            return Forbid();
         }
 
         if (string.IsNullOrEmpty(module.PdfUrl))
@@ -675,13 +749,13 @@ public class CoursesController : ControllerBase
             return Unauthorized();
         }
 
-        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == id && c.IsPublished);
+        var courseExists = await DbContext.Courses.AnyAsync(c => c.Id == id && c.IsPublished);
         if (!courseExists)
         {
             return NotFound(new { message = "Course not found or is not published." });
         }
 
-        var existingEnrollment = await _dbContext.Enrollments
+        var existingEnrollment = await DbContext.Enrollments
             .FirstOrDefaultAsync(e => e.CourseId == id && e.StudentId == studentId);
 
         if (existingEnrollment != null)
@@ -697,8 +771,8 @@ public class CoursesController : ControllerBase
             Status = EnrollmentStatus.Active
         };
 
-        await _dbContext.Enrollments.AddAsync(enrollment);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Enrollments.AddAsync(enrollment);
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Successfully enrolled in course!", enrollmentId = enrollment.Id });
     }
@@ -717,7 +791,7 @@ public class CoursesController : ControllerBase
             return Unauthorized();
         }
 
-        var enrollment = await _dbContext.Enrollments
+        var enrollment = await DbContext.Enrollments
             .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == studentId);
 
         if (enrollment == null)
@@ -728,7 +802,7 @@ public class CoursesController : ControllerBase
         // Soft delete — mark as Dropped to preserve audit trail
         enrollment.Status = EnrollmentStatus.Dropped;
         enrollment.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Successfully unenrolled from course." });
     }
@@ -747,7 +821,7 @@ public class CoursesController : ControllerBase
             return Unauthorized();
         }
 
-        var enrollments = await _dbContext.Enrollments
+        var enrollments = await DbContext.Enrollments
             .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active)
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Instructor)
@@ -759,7 +833,7 @@ public class CoursesController : ControllerBase
         var myCourses = enrollments.Select(e =>
         {
             var totalLessons = e.Course?.Modules.SelectMany(m => m.Lessons).Count() ?? 0;
-            var completedLessons = _dbContext.LessonCompletions
+            var completedLessons = DbContext.LessonCompletions
                 .Count(lc => lc.StudentId == studentId &&
                              (e.Course != null && e.Course.Modules.Any(m => m.Lessons.Any(l => l.Id == lc.LessonId))));
 
@@ -790,21 +864,27 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> AddStudentToCourse(Guid courseId, [FromBody] AddStudentToCourseRequest request)
     {
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == courseId);
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == courseId);
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
         }
 
+        // Ownership check: only course owner or Admin may manage roster
+        if (!await IsCourseOwnerOrAdmin(courseId))
+        {
+            return Forbid();
+        }
+
         User? student = null;
         if (request.StudentId.HasValue && request.StudentId.Value != Guid.Empty)
         {
-            student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.StudentId.Value);
+            student = await DbContext.Users.FirstOrDefaultAsync(u => u.Id == request.StudentId.Value);
         }
         else if (!string.IsNullOrWhiteSpace(request.Email))
         {
             var targetEmail = request.Email.Trim().ToLower();
-            student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == targetEmail);
+            student = await DbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == targetEmail);
         }
 
         if (student == null)
@@ -812,7 +892,7 @@ public class CoursesController : ControllerBase
             return NotFound(new { message = "Student not found with provided ID or Email." });
         }
 
-        var existingEnrollment = await _dbContext.Enrollments
+        var existingEnrollment = await DbContext.Enrollments
             .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == student.Id);
 
         if (existingEnrollment != null)
@@ -824,7 +904,7 @@ public class CoursesController : ControllerBase
 
             existingEnrollment.Status = EnrollmentStatus.Active;
             existingEnrollment.UpdatedAt = DateTime.UtcNow;
-            await _dbContext.SaveChangesAsync();
+            await DbContext.SaveChangesAsync();
             return Ok(new { message = $"Re-activated enrollment for {student.FullName} in {course.Title}.", enrollmentId = existingEnrollment.Id });
         }
 
@@ -836,8 +916,8 @@ public class CoursesController : ControllerBase
             Status = EnrollmentStatus.Active
         };
 
-        await _dbContext.Enrollments.AddAsync(enrollment);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Enrollments.AddAsync(enrollment);
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = $"Successfully added {student.FullName} to {course.Title}.", enrollmentId = enrollment.Id });
     }
@@ -849,13 +929,13 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetEnrolledStudents(Guid courseId)
     {
-        var courseExists = await _dbContext.Courses.AnyAsync(c => c.Id == courseId);
+        var courseExists = await DbContext.Courses.AnyAsync(c => c.Id == courseId);
         if (!courseExists)
         {
             return NotFound(new { message = "Course not found." });
         }
 
-        var enrolledStudents = await _dbContext.Enrollments
+        var enrolledStudents = await DbContext.Enrollments
             .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
             .Include(e => e.Student)
             .Select(e => new EnrolledStudentDto(
@@ -878,7 +958,7 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetAvailableStudents()
     {
-        var students = await _dbContext.Users
+        var students = await DbContext.Users
             .Where(u => u.Role == UserRole.Student && u.IsActive)
             .OrderBy(u => u.FullName)
             .Select(u => new AvailableStudentDto(
@@ -899,7 +979,13 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> RemoveStudentFromCourse(Guid courseId, Guid studentId)
     {
-        var enrollment = await _dbContext.Enrollments
+        // Ownership check: only course owner or Admin may remove students
+        if (!await IsCourseOwnerOrAdmin(courseId))
+        {
+            return Forbid();
+        }
+
+        var enrollment = await DbContext.Enrollments
             .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == studentId);
 
         if (enrollment == null)
@@ -909,7 +995,7 @@ public class CoursesController : ControllerBase
 
         enrollment.Status = EnrollmentStatus.Dropped;
         enrollment.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Student successfully unenrolled from course." });
     }
@@ -928,13 +1014,13 @@ public class CoursesController : ControllerBase
             return Unauthorized();
         }
 
-        var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
         }
 
-        var alreadyCompleted = await _dbContext.LessonCompletions
+        var alreadyCompleted = await DbContext.LessonCompletions
             .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
 
         if (!alreadyCompleted)
@@ -945,8 +1031,8 @@ public class CoursesController : ControllerBase
                 StudentId = studentId,
                 CompletedAt = DateTime.UtcNow
             };
-            await _dbContext.LessonCompletions.AddAsync(completion);
-            await _dbContext.SaveChangesAsync();
+            await DbContext.LessonCompletions.AddAsync(completion);
+            await DbContext.SaveChangesAsync();
 
             // Award XP for lesson completion
             var gamificationResult = await _gamificationService.AwardXpAsync(
@@ -970,7 +1056,7 @@ public class CoursesController : ControllerBase
     [HttpGet("{courseId:guid}/hierarchy")]
     public async Task<IActionResult> GetCourseHierarchy(Guid courseId)
     {
-        var course = await _dbContext.Courses
+        var course = await DbContext.Courses
             .Include(c => c.Modules.OrderBy(m => m.OrderIndex))
                 .ThenInclude(m => m.Topics.OrderBy(t => t.DisplayOrder))
                     .ThenInclude(t => t.ContentItems.OrderBy(ci => ci.DisplayOrder))
@@ -982,7 +1068,7 @@ public class CoursesController : ControllerBase
             return NotFound(new { message = "Course not found." });
         }
 
-        var allQuizzes = await _dbContext.Assessments
+        var allQuizzes = await DbContext.Assessments
             .Where(a => a.CourseId == courseId)
             .Include(a => a.Questions)
             .ToListAsync();
@@ -1001,13 +1087,13 @@ public class CoursesController : ControllerBase
                 : null;
 
         var moduleIds = course.Modules.Select(m => m.Id).ToList();
-        var courseContentItemIds = await _dbContext.ContentItems
+        var courseContentItemIds = await DbContext.ContentItems
             .Where(ci => moduleIds.Contains(ci.ModuleId))
             .Select(ci => ci.Id)
             .ToListAsync();
 
         var completedContentItemIds = currentStudentId.HasValue && courseContentItemIds.Count > 0
-            ? (await _dbContext.LessonCompletions
+            ? (await DbContext.LessonCompletions
                 .Where(lc => lc.StudentId == currentStudentId.Value
                     && lc.ContentItemId != null
                     && courseContentItemIds.Contains(lc.ContentItemId.Value))
@@ -1058,7 +1144,7 @@ public class CoursesController : ControllerBase
                 );
             }).ToList();
 
-            var directItems = _dbContext.ContentItems
+            var directItems = DbContext.ContentItems
                 .Where(ci => ci.ModuleId == m.Id && ci.TopicId == null && ci.ParentContentId == null)
                 .Select(ci => new ContentItemDto(
                     ci.Id, ci.ModuleId, null, null, ci.Title, ci.Content, ci.ContentType,
@@ -1100,10 +1186,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateTopic(Guid moduleId, [FromBody] CreateTopicRequest request)
     {
-        var module = await _dbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
+        var module = await DbContext.Modules.FirstOrDefaultAsync(m => m.Id == moduleId);
         if (module == null)
         {
             return NotFound(new { message = "Module not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(moduleId))
+        {
+            return Forbid();
         }
 
         var topic = new Topic
@@ -1118,8 +1209,8 @@ public class CoursesController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        await _dbContext.Topics.AddAsync(topic);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Topics.AddAsync(topic);
+        await DbContext.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetCourseHierarchy), new { courseId = module.CourseId }, topic);
     }
@@ -1128,10 +1219,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateTopic(Guid topicId, [FromBody] UpdateTopicRequest request)
     {
-        var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId);
+        var topic = await DbContext.Topics.Include(t => t.Module).FirstOrDefaultAsync(t => t.Id == topicId);
         if (topic == null)
         {
             return NotFound(new { message = "Topic not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(topic.ModuleId))
+        {
+            return Forbid();
         }
 
         topic.Title = request.Title;
@@ -1142,7 +1238,7 @@ public class CoursesController : ControllerBase
         topic.Status = request.Status;
         topic.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(topic);
     }
 
@@ -1150,14 +1246,19 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteTopic(Guid topicId)
     {
-        var topic = await _dbContext.Topics.FirstOrDefaultAsync(t => t.Id == topicId);
+        var topic = await DbContext.Topics.Include(t => t.Module).FirstOrDefaultAsync(t => t.Id == topicId);
         if (topic == null)
         {
             return NotFound(new { message = "Topic not found." });
         }
 
-        _dbContext.Topics.Remove(topic);
-        await _dbContext.SaveChangesAsync();
+        if (!await IsModuleOwnerOrAdmin(topic.ModuleId))
+        {
+            return Forbid();
+        }
+
+        DbContext.Topics.Remove(topic);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Topic deleted successfully." });
     }
 
@@ -1165,10 +1266,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateContentItem(Guid topicId, [FromBody] CreateContentItemRequest request)
     {
-        var topic = await _dbContext.Topics.Include(t => t.Module).FirstOrDefaultAsync(t => t.Id == topicId);
+        var topic = await DbContext.Topics.Include(t => t.Module).FirstOrDefaultAsync(t => t.Id == topicId);
         if (topic == null)
         {
             return NotFound(new { message = "Topic not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(topic.ModuleId))
+        {
+            return Forbid();
         }
 
         var contentItem = new ContentItem
@@ -1189,8 +1295,8 @@ public class CoursesController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
-        await _dbContext.ContentItems.AddAsync(contentItem);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.ContentItems.AddAsync(contentItem);
+        await DbContext.SaveChangesAsync();
 
         return Ok(contentItem);
     }
@@ -1199,10 +1305,15 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateContentItem(Guid contentItemId, [FromBody] UpdateContentItemRequest request)
     {
-        var item = await _dbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
+        var item = await DbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
         if (item == null)
         {
             return NotFound(new { message = "Content item not found." });
+        }
+
+        if (!await IsModuleOwnerOrAdmin(item.ModuleId))
+        {
+            return Forbid();
         }
 
         item.Title = request.Title;
@@ -1217,7 +1328,7 @@ public class CoursesController : ControllerBase
         item.Status = request.Status;
         item.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(item);
     }
 
@@ -1225,14 +1336,19 @@ public class CoursesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteContentItem(Guid contentItemId)
     {
-        var item = await _dbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
+        var item = await DbContext.ContentItems.FirstOrDefaultAsync(ci => ci.Id == contentItemId);
         if (item == null)
         {
             return NotFound(new { message = "Content item not found." });
         }
 
-        _dbContext.ContentItems.Remove(item);
-        await _dbContext.SaveChangesAsync();
+        if (!await IsModuleOwnerOrAdmin(item.ModuleId))
+        {
+            return Forbid();
+        }
+
+        DbContext.ContentItems.Remove(item);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Content item deleted successfully." });
     }
 }

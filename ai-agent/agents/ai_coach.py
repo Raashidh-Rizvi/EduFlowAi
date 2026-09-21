@@ -30,9 +30,6 @@ from typing import Tuple, Optional
 from .base import BaseAgent, AgentExecutionLog
 # Import Pydantic models for coach chat requests and responses
 from models.schemas import CoachChatRequest, CoachChatResponse
-# Import Domain Analysis and Content Tool agents for sub-agent collaboration
-from .domain_analysis import DomainAnalysisAgent
-from .content_action import ActionToolAgent
 
 
 class AiCoachAgent(BaseAgent):
@@ -51,9 +48,6 @@ class AiCoachAgent(BaseAgent):
             role_description="Context-aware student tutor interconnected with diagnostic and action tools.",
             member_owner="Interactive Guidance & Tutoring"
         )
-        # Sub-agent instances for interconnected multi-agent collaboration
-        self.domain_agent = DomainAnalysisAgent()
-        self.action_agent = ActionToolAgent()
 
     def respond_to_student(self, request: CoachChatRequest) -> Tuple[CoachChatResponse, AgentExecutionLog]:
         """

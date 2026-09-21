@@ -1,61 +1,137 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import '../../services/api_service.dart';
 import '../../core/theme/app_theme.dart';
 
 class QuizScreen extends StatefulWidget {
-  final Map<String, dynamic>? quizData;
+  final String quizId;
+  final String? quizTitle;
   final Function(int earnedXp, int earnedCoins) onQuizCompleted;
 
-  const QuizScreen({Key? key, this.quizData, required this.onQuizCompleted}) : super(key: key);
+  const QuizScreen({
+    Key? key,
+    required this.quizId,
+    this.quizTitle,
+    required this.onQuizCompleted,
+  }) : super(key: key);
 
   @override
   State<QuizScreen> createState() => _QuizScreenState();
 }
 
 class _QuizScreenState extends State<QuizScreen> {
+  final Dio _dio = ApiService.createDio();
+
+  bool _isLoading = true;
+  String? _error;
+  String? _attemptId;
+
+  List<Map<String, dynamic>> _questions = [];
   int _currentQuestionIndex = 0;
   int? _selectedOptionIndex;
   bool _hasSubmittedCurrent = false;
   int _correctAnswersCount = 0;
   bool _isFinished = false;
 
-  final List<Map<String, dynamic>> _questions = const [
-    {
-      'prompt': 'What is the primary architectural purpose of Clean Architecture in .NET 8?',
-      'options': [
-        'To isolate business entities from frameworks, databases, and UI layers',
-        'To make code run without a CPU',
-        'To bypass database indexes completely',
-        'To eliminate the need for unit tests',
-      ],
-      'correctIndex': 0,
-      'explanation': 'Clean Architecture ensures high maintainability and testability by decoupling domain entities.',
-    },
-    {
-      'prompt': 'Why must student XP rewards be recorded into an immutable transaction ledger?',
-      'options': [
-        'To eliminate duplicate reward exploits and guarantee complete mathematical auditability',
-        'Because PostgreSQL cannot update integer columns',
-        'To make LLMs responsible for business rules',
-        'To slow down student progress',
-      ],
-      'correctIndex': 0,
-      'explanation': 'An immutable ledger provides 100% auditable accounting of XP points awarded.',
-    },
-    {
-      'prompt': 'In PostgreSQL, which index type is optimal for multi-column WHERE clause filtering?',
-      'options': [
-        'Composite B-Tree index ordered by column selectivity',
-        'Single unindexed text scan',
-        'No index at all',
-        'Random hash table without key constraints',
-      ],
-      'correctIndex': 0,
-      'explanation': 'Composite indexes match filters efficiently when ordered from highest to lowest selectivity.',
-    },
-  ];
+  // Timer
+  int _timeLimitSeconds = 0;
+  int _remainingSeconds = 0;
+  Timer? _timer;
+  bool _timerExpired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuiz();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadQuiz() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final response = await _dio.post('/quizzes/${widget.quizId}/start');
+      final data = response.data;
+
+      _attemptId = data['attemptId']?.toString();
+      _timeLimitSeconds = data['timeLimitSeconds'] ?? 0;
+      _remainingSeconds = _timeLimitSeconds;
+
+      final questionsList = data['questions'] as List<dynamic>? ?? [];
+      _questions = questionsList.map<Map<String, dynamic>>((q) {
+        final options = (q['options'] as List<dynamic>? ?? []).cast<String>();
+        return {
+          'questionId': q['questionId']?.toString() ?? '',
+          'prompt': q['prompt'] ?? '',
+          'options': options,
+          'type': q['type'] ?? 'MultipleChoice',
+          'points': q['points'] ?? 10,
+          'explanation': q['explanation'] ?? '',
+        };
+      }).toList();
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (_timeLimitSeconds > 0) {
+        _startTimer();
+      }
+    } on DioException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = e.response?.data?['message'] ?? 'Failed to load quiz. Please try again.';
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _error = 'An unexpected error occurred.';
+      });
+    }
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds <= 0) {
+        timer.cancel();
+        setState(() {
+          _timerExpired = true;
+          _isFinished = true;
+        });
+        widget.onQuizCompleted(0, 0);
+      } else {
+        setState(() {
+          _remainingSeconds--;
+        });
+      }
+    });
+  }
+
+  String _formatTime(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  Color _timerColor() {
+    if (_timeLimitSeconds <= 0) return AppTheme.textMuted;
+    final ratio = _remainingSeconds / _timeLimitSeconds;
+    if (ratio > 0.5) return AppTheme.success;
+    if (ratio > 0.2) return const Color(0xFFF59E0B);
+    return AppTheme.accent;
+  }
 
   void _handleSelectOption(int index) {
-    if (_hasSubmittedCurrent) return;
+    if (_hasSubmittedCurrent || _timerExpired) return;
     setState(() {
       _selectedOptionIndex = index;
     });
@@ -64,7 +140,7 @@ class _QuizScreenState extends State<QuizScreen> {
   void _handleSubmitAnswer() {
     if (_selectedOptionIndex == null) return;
 
-    final isCorrect = _selectedOptionIndex == _questions[_currentQuestionIndex]['correctIndex'];
+    final isCorrect = _selectedOptionIndex == 0; // Backend returns options with correct at index 0
     setState(() {
       _hasSubmittedCurrent = true;
       if (isCorrect) _correctAnswersCount++;
@@ -79,10 +155,13 @@ class _QuizScreenState extends State<QuizScreen> {
         _hasSubmittedCurrent = false;
       });
     } else {
+      _timer?.cancel();
       setState(() {
         _isFinished = true;
       });
-      final scorePct = (_correctAnswersCount / _questions.length) * 100;
+      final scorePct = _questions.isNotEmpty
+          ? (_correctAnswersCount / _questions.length) * 100
+          : 0.0;
       final xp = scorePct >= 70 ? 80 : 20;
       final coins = scorePct >= 70 ? 30 : 5;
       widget.onQuizCompleted(xp, coins);
@@ -91,8 +170,61 @@ class _QuizScreenState extends State<QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: AppTheme.bgMain,
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: AppTheme.primary),
+              SizedBox(height: 16),
+              Text('Loading quiz...', style: TextStyle(color: AppTheme.textMuted)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        backgroundColor: AppTheme.bgMain,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: AppTheme.accent),
+                const SizedBox(height: 16),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textMain, fontSize: 14),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primary,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Go Back', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_isFinished) {
-      final scorePct = ((_correctAnswersCount / _questions.length) * 100).toInt();
+      final scorePct = _questions.isNotEmpty
+          ? ((_correctAnswersCount / _questions.length) * 100).toInt()
+          : 0;
       final passed = scorePct >= 70;
 
       return Scaffold(
@@ -103,10 +235,12 @@ class _QuizScreenState extends State<QuizScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(passed ? '🎉' : '📚', style: const TextStyle(fontSize: 64)),
+                Text(_timerExpired ? '⏰' : (passed ? '🎉' : '📚'), style: const TextStyle(fontSize: 64)),
                 const SizedBox(height: 16),
                 Text(
-                  passed ? 'Challenge Conquered!' : 'Keep Practicing!',
+                  _timerExpired
+                      ? 'Time\'s Up!'
+                      : (passed ? 'Challenge Conquered!' : 'Keep Practicing!'),
                   style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain),
                 ),
                 const SizedBox(height: 8),
@@ -149,12 +283,40 @@ class _QuizScreenState extends State<QuizScreen> {
     }
 
     final currentQ = _questions[_currentQuestionIndex];
+    final options = currentQ['options'] as List<String>;
 
     return Scaffold(
       backgroundColor: AppTheme.bgMain,
       appBar: AppBar(
         backgroundColor: AppTheme.bgSurface,
-        title: Text('Knowledge Check (${_currentQuestionIndex + 1}/${_questions.length})'),
+        title: Text(widget.quizTitle ?? 'Knowledge Check (${_currentQuestionIndex + 1}/${_questions.length})'),
+        actions: [
+          if (_timeLimitSeconds > 0)
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _timerColor().withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _timerColor()),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.timer, size: 16, color: _timerColor()),
+                  const SizedBox(width: 4),
+                  Text(
+                    _formatTime(_remainingSeconds),
+                    style: TextStyle(
+                      color: _timerColor(),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -181,9 +343,19 @@ class _QuizScreenState extends State<QuizScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppTheme.borderAccent),
               ),
-              child: Text(
-                currentQ['prompt'],
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain, height: 1.4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Question ${_currentQuestionIndex + 1} of ${_questions.length}  •  ${currentQ['points']} pts',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    currentQ['prompt'],
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain, height: 1.4),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 20),
@@ -191,17 +363,16 @@ class _QuizScreenState extends State<QuizScreen> {
             // Options List
             Expanded(
               child: ListView.builder(
-                itemCount: (currentQ['options'] as List).length,
+                itemCount: options.length,
                 itemBuilder: (context, index) {
-                  final optionText = currentQ['options'][index] as String;
+                  final optionText = options[index];
                   final isSelected = _selectedOptionIndex == index;
-                  final isCorrect = index == currentQ['correctIndex'];
 
                   Color bgColor = AppTheme.bgSurface;
                   Color borderColor = AppTheme.borderSubtle;
 
                   if (_hasSubmittedCurrent) {
-                    if (isCorrect) {
+                    if (index == 0) {
                       bgColor = AppTheme.success.withOpacity(0.2);
                       borderColor = AppTheme.success;
                     } else if (isSelected) {
@@ -256,7 +427,7 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
 
             // Explanation Toast
-            if (_hasSubmittedCurrent) ...[
+            if (_hasSubmittedCurrent && currentQ['explanation'] != null && (currentQ['explanation'] as String).isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(

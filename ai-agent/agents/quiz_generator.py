@@ -94,7 +94,8 @@ class QuizGeneratorAgent(BaseAgent):
                 "HARD": {"xp": 140, "coins": 50, "badge": "Optimization Specialist"},
                 "BOSS": {"xp": 150, "coins": 80, "badge": "Dungeon Architect Conqueror"}
             }
-            reward_spec = diff_rewards.get(req.difficulty.upper(), diff_rewards["MEDIUM"])
+            diff_upper = (req.difficulty or "MEDIUM").upper()
+            reward_spec = diff_rewards.get(diff_upper, diff_rewards["MEDIUM"])
             safe_xp = min(req.gamification.xp_reward if req.gamification else reward_spec["xp"], 250)
             safe_coins = min(req.gamification.coin_reward if req.gamification else reward_spec["coins"], 100)
 
@@ -144,7 +145,7 @@ class QuizGeneratorAgent(BaseAgent):
                     print(f"tool_get_content_by_scope lookup failed: {e}")
                     resolved_grounding = None
 
-            diff = req.difficulty.upper()
+            diff = (req.difficulty or "MEDIUM").upper()
             
             # Request all questions in a single LLM batch call
             try:
@@ -202,13 +203,18 @@ class QuizGeneratorAgent(BaseAgent):
                 else:
                     options = q_raw.get("options", [])
                     correct = q_raw.get("correct_answer", "")
+                    correct_list = [c.strip() for c in correct.split(",")] if correct else []
                     opt_models = [
-                        QuestionOptionModel(text=opt, isCorrect=(opt == correct), displayOrder=idx + 1)
+                        QuestionOptionModel(
+                            text=opt,
+                            isCorrect=(opt == correct or opt in correct_list or (len(correct_list) > 1 and opt.strip() in correct_list)),
+                            displayOrder=idx + 1
+                        )
                         for idx, opt in enumerate(options)
                     ]
 
                 code_snip = None
-                if q_type.lower() in ["codesnippet", "code_snippet"]:
+                if q_type and q_type.lower() in ["codesnippet", "code_snippet"]:
                     code_snip = f"-- {scope_name} query inspection\nSELECT * FROM Entities WHERE Status = 'Active' ORDER BY CreatedAt DESC;"
 
                 raw_q_type = q_type if (q_type and q_type.upper() in ["CODESNIPPET", "CODE_SNIPPET"]) else (q_raw.get("question_type") or q_type or "MULTIPLE_CHOICE").strip()
@@ -227,6 +233,14 @@ class QuizGeneratorAgent(BaseAgent):
                     raw_q_type = "DragAndDrop"
                 elif up_q_type in ["SHORTANSWER", "FILLINTHEBLANK"]:
                     raw_q_type = "ShortAnswer"
+                elif up_q_type in ["ORDERING"]:
+                    raw_q_type = "Ordering"
+                elif up_q_type in ["SCENARIOBASED"]:
+                    raw_q_type = "ScenarioBased"
+                elif up_q_type in ["TIMEDCHALLENGE"]:
+                    raw_q_type = "TimedChallenge"
+                elif up_q_type in ["MIXED"]:
+                    raw_q_type = "Mixed"
 
                 questions.append(QuizQuestionModel(
                     question_id=i + 1,

@@ -43,7 +43,8 @@ class QuizEvaluatorAgent(BaseAgent):
         
         answer_map = {}
         for ans in answers:
-            qid = str(ans.get("question_id") or ans.get("questionId") or "")
+            raw_qid = ans.get("question_id") or ans.get("questionId") or ""
+            qid = str(raw_qid) if raw_qid != "" else ""
             val = ans.get("selected_answer") or ans.get("selectedAnswer") or ans.get("answer") or ""
             answer_map[qid] = str(val).strip()
 
@@ -52,7 +53,8 @@ class QuizEvaluatorAgent(BaseAgent):
         earned_points = 0
 
         for idx, q in enumerate(questions):
-            qid = str(q.get("id") or idx + 1)
+            raw_qid = q.get("id") or q.get("question_id") or q.get("questionId") or idx + 1
+            qid = str(raw_qid)
             prompt = q.get("prompt") or q.get("question_text") or f"Question {idx + 1}"
             q_type = (q.get("type") or q.get("question_type") or "MultipleChoice").upper()
             max_pts = int(q.get("points") or q.get("marks") or 10)
@@ -229,12 +231,16 @@ Strictly return ONLY the JSON object.
         if s_clean == c_clean:
             return max_points, True, "All concept pairs matched correctly."
 
+        # Normalize delimiters: convert ->, =>, →, : to a consistent format
+        def normalize_pair(p: str) -> str:
+            return p.replace(" ", "").replace("->", "=").replace("=>", "=").replace("→", "=").replace(":", "=").lower()
+
         # Count matched pairs
         s_parts = [p.strip() for p in student_answer.split(",") if p.strip()]
         c_parts = [p.strip() for p in correct_answer.split(",") if p.strip()]
         matches = 0
         for sp in s_parts:
-            if any(sp.replace(" ", "").lower() == cp.replace(" ", "").lower() for cp in c_parts):
+            if any(normalize_pair(sp) == normalize_pair(cp) for cp in c_parts):
                 matches += 1
         
         awarded = round((matches / max(1, len(c_parts))) * max_points) if c_parts else 0

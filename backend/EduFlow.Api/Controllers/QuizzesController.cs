@@ -19,15 +19,14 @@ namespace EduFlow.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Route("api/v1/[controller]")]
-public class QuizzesController : ControllerBase
+public class QuizzesController : BaseApiController
 {
-    private readonly ApplicationDbContext _dbContext;
     private readonly IGamificationService _gamificationService;
     private readonly IAiGatewayClient _aiGatewayClient;
 
     public QuizzesController(ApplicationDbContext dbContext, IGamificationService gamificationService, IAiGatewayClient aiGatewayClient)
+        : base(dbContext)
     {
-        _dbContext = dbContext;
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
     }
@@ -39,7 +38,7 @@ public class QuizzesController : ControllerBase
     [HttpGet("course/{courseId:guid}")]
     public async Task<IActionResult> GetCourseQuizzes(Guid courseId)
     {
-        var quizzes = await _dbContext.Assessments
+        var quizzes = await DbContext.Assessments
             .Where(a => a.CourseId == courseId)
             .Include(a => a.Questions)
             .OrderByDescending(a => a.CreatedAt)
@@ -86,7 +85,7 @@ public class QuizzesController : ControllerBase
             return BadRequest(new { message = $"Invalid scope type: '{scopeType}'. Valid: Topic, ContentItem, Module, Course" });
         }
 
-        var quizzes = await _dbContext.Assessments
+        var quizzes = await DbContext.Assessments
             .Where(a => a.ScopeType == parsedScope && a.ScopeId == scopeId)
             .Include(a => a.Questions)
             .OrderByDescending(a => a.CreatedAt)
@@ -124,7 +123,7 @@ public class QuizzesController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetQuizById(Guid id)
     {
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Configuration)
             .Include(a => a.Questions.OrderBy(q => q.OrderIndex))
                 .ThenInclude(q => q.Options.OrderBy(o => o.DisplayOrder))
@@ -219,10 +218,18 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateQuiz([FromBody] CreateQuizRequest request)
     {
+        // Ownership check: instructor may only create quizzes on their own courses
+        if (!await IsCourseOwnerOrAdmin(request.CourseId))
+        {
+            // Graceful fallback: if course lookup with empty Guid is attempted, let it fail on course not found
+            if (request.CourseId != Guid.Empty)
+                return Forbid();
+        }
+
         // 1. Verify that Course exists with robust fallback
         var targetCourseId = request.CourseId != Guid.Empty ? request.CourseId : Guid.Parse("44444444-4444-4444-4444-444444444444");
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == targetCourseId)
-            ?? await _dbContext.Courses.FirstOrDefaultAsync();
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == targetCourseId)
+            ?? await DbContext.Courses.FirstOrDefaultAsync();
         if (course == null)
         {
             return BadRequest(new { message = "Selected Course does not exist." });
@@ -236,13 +243,13 @@ public class QuizzesController : ControllerBase
             switch (request.ScopeType)
             {
                 case QuizScopeType.Module:
-                    scopeValid = await _dbContext.Modules.AnyAsync(m => m.Id == request.ScopeId.Value && m.CourseId == request.CourseId);
+                    scopeValid = await DbContext.Modules.AnyAsync(m => m.Id == request.ScopeId.Value && m.CourseId == request.CourseId);
                     break;
                 case QuizScopeType.Topic:
-                    scopeValid = await _dbContext.Topics.Include(t => t.Module).AnyAsync(t => t.Id == request.ScopeId.Value && t.Module!.CourseId == request.CourseId);
+                    scopeValid = await DbContext.Topics.Include(t => t.Module).AnyAsync(t => t.Id == request.ScopeId.Value && t.Module!.CourseId == request.CourseId);
                     break;
                 case QuizScopeType.ContentItem:
-                    scopeValid = await _dbContext.ContentItems.Include(ci => ci.Module).AnyAsync(ci => ci.Id == request.ScopeId.Value && ci.Module!.CourseId == request.CourseId);
+                    scopeValid = await DbContext.ContentItems.Include(ci => ci.Module).AnyAsync(ci => ci.Id == request.ScopeId.Value && ci.Module!.CourseId == request.CourseId);
                     break;
             }
 
@@ -347,8 +354,8 @@ public class QuizzesController : ControllerBase
             quiz.Questions.Add(question);
         }
 
-        await _dbContext.Assessments.AddAsync(quiz);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Assessments.AddAsync(quiz);
+        await DbContext.SaveChangesAsync();
 
         return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, quiz);
     }
@@ -357,7 +364,7 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateQuiz(Guid id, [FromBody] CreateQuizRequest request)
     {
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
                 .ThenInclude(q => q.Options)
             .Include(a => a.Configuration)
@@ -366,6 +373,12 @@ public class QuizzesController : ControllerBase
         if (quiz == null)
         {
             return NotFound(new { message = "Quiz not found." });
+        }
+
+        // Ownership check: only course owner or Admin may update quizzes
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
         }
 
         quiz.Title = request.Title;
@@ -399,7 +412,7 @@ public class QuizzesController : ControllerBase
         quiz.UpdatedAt = DateTime.UtcNow;
 
         // Replace questions
-        _dbContext.Questions.RemoveRange(quiz.Questions);
+        DbContext.Questions.RemoveRange(quiz.Questions);
         quiz.Questions.Clear();
 
         int index = 1;
@@ -440,7 +453,7 @@ public class QuizzesController : ControllerBase
 
         quiz.QuestionCount = quiz.Questions.Count;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(quiz);
     }
 
@@ -448,14 +461,20 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteQuiz(Guid id)
     {
-        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        var quiz = await DbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
         if (quiz == null)
         {
             return NotFound(new { message = "Quiz not found." });
         }
 
-        _dbContext.Assessments.Remove(quiz);
-        await _dbContext.SaveChangesAsync();
+        // Ownership check: only course owner or Admin may delete
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
+        DbContext.Assessments.Remove(quiz);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Quiz deleted successfully." });
     }
 
@@ -467,7 +486,7 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> ValidateQuiz(Guid id)
     {
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
                 .ThenInclude(q => q.Options)
             .Include(a => a.Configuration)
@@ -578,7 +597,7 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> PublishQuiz(Guid id)
     {
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
             .FirstOrDefaultAsync(a => a.Id == id);
 
@@ -587,14 +606,32 @@ public class QuizzesController : ControllerBase
             return NotFound(new { message = "Quiz not found." });
         }
 
+        // Ownership check
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
         if (quiz.Questions.Count == 0)
         {
             return BadRequest(new { message = "Cannot publish an empty quiz with 0 questions." });
         }
 
+        // Validation gate: PassingScorePercent must be between 1-100
+        if (quiz.PassingScorePercent <= 0 || quiz.PassingScorePercent > 100)
+        {
+            return BadRequest(new { message = $"Passing score percent must be between 1 and 100. Current: {quiz.PassingScorePercent}." });
+        }
+
+        // Validation gate: XP must be within platform bounds
+        if (quiz.XpReward > 250)
+        {
+            return BadRequest(new { message = $"XP reward ({quiz.XpReward}) exceeds platform maximum of 250 XP. Adjust before publishing." });
+        }
+
         quiz.Status = QuizStatus.Published;
         quiz.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Quiz published successfully!", quizId = quiz.Id, status = quiz.Status.ToString() });
     }
@@ -603,15 +640,21 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UnpublishQuiz(Guid id)
     {
-        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        var quiz = await DbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
         if (quiz == null)
         {
             return NotFound(new { message = "Quiz not found." });
         }
 
+        // Ownership check
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
         quiz.Status = QuizStatus.Unpublished;
         quiz.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Quiz unpublished.", quizId = quiz.Id, status = quiz.Status.ToString() });
     }
@@ -620,7 +663,7 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DuplicateQuiz(Guid id)
     {
-        var original = await _dbContext.Assessments
+        var original = await DbContext.Assessments
             .Include(a => a.Questions)
                 .ThenInclude(q => q.Options)
             .Include(a => a.Configuration)
@@ -629,6 +672,11 @@ public class QuizzesController : ControllerBase
         if (original == null)
         {
             return NotFound(new { message = "Original quiz not found." });
+        }
+
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
         }
 
         var clone = new Assessment
@@ -686,8 +734,8 @@ public class QuizzesController : ControllerBase
             clone.Questions.Add(newQ);
         }
 
-        await _dbContext.Assessments.AddAsync(clone);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Assessments.AddAsync(clone);
+        await DbContext.SaveChangesAsync();
 
         return Ok(new DuplicateQuizResponse(
             OriginalQuizId: original.Id,
@@ -715,10 +763,16 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GenerateAiQuiz([FromBody] GenerateAiQuizRequest request)
     {
-        var course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
+        }
+
+        // Ownership check: instructor may only generate quizzes for their own courses
+        if (!await IsCourseOwnerOrAdmin(request.CourseId))
+        {
+            return Forbid();
         }
 
         var workflowId = $"wf-qz-{Guid.NewGuid().ToString("N")[..8]}";
@@ -752,7 +806,7 @@ public class QuizzesController : ControllerBase
             PassingScorePercent = request.PassingScorePercent,
             XpReward = request.XpReward > 0 ? request.XpReward : defaultXp,
             CoinReward = request.CoinReward,
-            Status = QuizStatus.Published, // State machine: Published (active for enrolled students)
+            Status = QuizStatus.Draft, // AI-generated quizzes start as Draft and require instructor review before publishing
             GeneratedByAI = true,
             GenerationWorkflowId = workflowId,
             CreatedAt = DateTime.UtcNow
@@ -777,7 +831,7 @@ public class QuizzesController : ControllerBase
         // Fallback: if slide not found in request, check module in database
         if (string.IsNullOrEmpty(physicalSlidePath))
         {
-            var dbModule = await _dbContext.Modules.FirstOrDefaultAsync(m =>
+            var dbModule = await DbContext.Modules.FirstOrDefaultAsync(m =>
                 m.CourseId == request.CourseId &&
                 ((request.ScopeId != null && m.Id == request.ScopeId) ||
                  (!string.IsNullOrWhiteSpace(request.ModuleTitle) && m.Title == request.ModuleTitle)));
@@ -936,8 +990,8 @@ public class QuizzesController : ControllerBase
 
         quiz.QuestionCount = quiz.Questions.Count;
 
-        await _dbContext.Assessments.AddAsync(quiz);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Assessments.AddAsync(quiz);
+        await DbContext.SaveChangesAsync();
 
         var questionsDto = quiz.Questions.Select(q => new QuizQuestionDto(
             q.Id,
@@ -988,7 +1042,7 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> RegenerateSingleQuestion(Guid questionId, [FromBody] SingleQuestionRegenerateRequest request)
     {
-        var question = await _dbContext.Questions
+        var question = await DbContext.Questions
             .Include(q => q.Options)
             .Include(q => q.Assessment)
             .FirstOrDefaultAsync(q => q.Id == questionId);
@@ -1118,7 +1172,7 @@ public class QuizzesController : ControllerBase
         });
         question.UpdatedAt = DateTime.UtcNow;
 
-        _dbContext.QuestionOptions.RemoveRange(question.Options);
+        DbContext.QuestionOptions.RemoveRange(question.Options);
         question.Options.Clear();
 
         int optIdx = 1;
@@ -1133,7 +1187,7 @@ public class QuizzesController : ControllerBase
             });
         }
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new QuizQuestionDto(
             question.Id,
@@ -1197,7 +1251,7 @@ public class QuizzesController : ControllerBase
     [Authorize]
     public async Task<IActionResult> StartQuizAttempt(Guid id)
     {
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Questions.OrderBy(q => q.OrderIndex))
             .FirstOrDefaultAsync(a => a.Id == id);
 
@@ -1255,7 +1309,7 @@ public class QuizzesController : ControllerBase
             studentId = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Default student
         }
 
-        var quiz = await _dbContext.Assessments
+        var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
             .FirstOrDefaultAsync(a => a.Id == request.QuizId);
 
@@ -1393,8 +1447,8 @@ public class QuizzesController : ControllerBase
         submission.PercentageScore = percent;
         submission.Passed = passed;
 
-        await _dbContext.Submissions.AddAsync(submission);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Submissions.AddAsync(submission);
+        await DbContext.SaveChangesAsync();
 
         // Multi-Factor Learning Game Reward Engine
         var rewardResult = await _gamificationService.CalculateAndAwardQuizRewardAsync(
@@ -1441,13 +1495,18 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetQuizSubmissions(Guid id)
     {
-        var quiz = await _dbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        var quiz = await DbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
         if (quiz == null)
         {
             return NotFound(new { message = "Quiz not found." });
         }
 
-        var submissions = await _dbContext.Submissions
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
+        var submissions = await DbContext.Submissions
             .Where(s => s.AssessmentId == id)
             .Include(s => s.Student)
             .Include(s => s.Answers)
@@ -1497,14 +1556,19 @@ public class QuizzesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> SendSubmissionFeedback(Guid submissionId, [FromBody] SubmissionFeedbackRequest request)
     {
-        var submission = await _dbContext.Submissions.FirstOrDefaultAsync(s => s.Id == submissionId);
+        var submission = await DbContext.Submissions.FirstOrDefaultAsync(s => s.Id == submissionId);
         if (submission == null)
         {
             return NotFound(new { message = "Submission not found." });
         }
 
+        if (!await IsSubmissionOwnerOrAdmin(submissionId))
+        {
+            return Forbid();
+        }
+
         submission.InstructorFeedback = request.Feedback;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Feedback saved successfully.", submissionId = submission.Id, feedback = submission.InstructorFeedback });
     }

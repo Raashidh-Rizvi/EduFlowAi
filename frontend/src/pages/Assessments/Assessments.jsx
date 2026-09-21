@@ -400,7 +400,7 @@ export default function Assessments({ currentUser }) {
           xpReward: targetXp,
           coinReward: targetCoins,
           passThreshold: quizPass,
-          status: 'Published',
+          status: res.status || 'Draft', // AI quizzes start as Draft requiring instructor review
           questions: (res.questions && res.questions.length > 0) ? res.questions.map(q => ({
             id: q.id || `q-${Date.now()}`,
             prompt: q.prompt,
@@ -427,6 +427,7 @@ export default function Assessments({ currentUser }) {
         }
         // Sync with backend DB
         setTimeout(() => loadAssessmentsForCourse(quizCourseId), 600);
+        setAiGenToast(prev => prev ? { ...prev, status: 'completed', note: 'AI quiz saved as Draft — validate and publish from the quiz list.' } : null);
       }
     } catch (err) {
       setAiGenToast(null);
@@ -911,6 +912,56 @@ export default function Assessments({ currentUser }) {
       quizService.deleteQuiz(id).catch(e => console.warn('Backend delete quiz fallback:', e));
     }
   };
+
+  // Toggle published/unpublished state for an existing quiz
+  const handleTogglePublishQuiz = async (quiz) => {
+    const isCurrentlyPublished = (quiz.status === 'Published' || quiz.status === 1);
+    try {
+      if (isCurrentlyPublished) {
+        await quizService.unpublishQuiz(quiz.id);
+        setQuizzesList(prev => prev.map(q => q.id === quiz.id ? { ...q, status: 'Unpublished' } : q));
+        alert(`Quiz "${quiz.title}" has been unpublished.`);
+      } else {
+        // Validate first
+        let validationOk = true;
+        try {
+          const validation = await quizService.validateQuiz(quiz.id);
+          if (!validation.isValid) {
+            const errList = validation.errors?.join('\n') || 'Validation failed.';
+            alert(`Cannot publish: validation failed\n\n${errList}`);
+            return;
+          }
+        } catch {
+          // If validation endpoint doesn't respond, still allow publish attempt
+          validationOk = true;
+        }
+        if (validationOk) {
+          await quizService.publishQuiz(quiz.id);
+          setQuizzesList(prev => prev.map(q => q.id === quiz.id ? { ...q, status: 'Published' } : q));
+          alert(`✅ Quiz "${quiz.title}" is now published and visible to enrolled students!`);
+        }
+      }
+      setTimeout(() => loadAssessmentsForCourse(quizCourseId), 500);
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Failed to update quiz status.';
+      alert(`Error: ${msg}`);
+    }
+  };
+
+  // Validate a quiz and show results
+  const handleValidateQuiz = async (quiz) => {
+    try {
+      const result = await quizService.validateQuiz(quiz.id);
+      const statusMsg = result.isValid ? '✅ Validation Passed' : '❌ Validation Failed';
+      const errSection = result.errors?.length > 0 ? `\n\nErrors:\n${result.errors.join('\n')}` : '';
+      const warnSection = result.warnings?.length > 0 ? `\n\nWarnings:\n${result.warnings.join('\n')}` : '';
+      alert(`${statusMsg} — ${result.validatedQuestionCount} questions, ${result.totalMarks} total marks${errSection}${warnSection}`);
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Validation request failed.';
+      alert(`Validation error: ${msg}`);
+    }
+  };
+
 
 
   const handleCreateBoss = () => {
