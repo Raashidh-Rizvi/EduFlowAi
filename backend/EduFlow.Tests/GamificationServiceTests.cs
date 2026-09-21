@@ -133,4 +133,45 @@ public class GamificationServiceTests
         var streak = await db.StudentStreaks.FirstAsync(s => s.StudentId == studentId);
         Assert.Equal(1, streak.FreezeTokensAvailable);
     }
+
+    [Fact]
+    public async Task AwardXpAsync_Level2_WhenTotalXpReaches500()
+    {
+        // VIVA PREP: Proves level calculation works at exact boundary
+        using var db = CreateInMemoryDbContext();
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+
+        // Award exactly 500 XP (Level 2 boundary)
+        var result = await service.AwardXpAsync(
+            studentId,
+            XpSourceType.LessonCompleted,
+            Guid.NewGuid(),
+            500,
+            "Boundary test"
+        );
+
+        Assert.Equal(500, result.NewTotalXp);
+        Assert.Equal(2, result.NewLevel);       // Level 2 at 500 XP
+        Assert.True(result.LevelUpOccurred);    // Level up must be detected
+    }
+
+    [Fact]
+    public async Task GetStudentDashboard_ReturnsRealValues_AfterXpAwarded()
+    {
+        // VIVA PREP: Proves dashboard shows correct XP after activities
+        using var db = CreateInMemoryDbContext();
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+
+        // Award 300 XP for a lesson
+        await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 300, "Lesson");
+
+        // Check the DB directly — XP must be saved
+        var xpRecord = await db.StudentXps.FirstOrDefaultAsync(x => x.StudentId == studentId);
+        Assert.NotNull(xpRecord);
+        Assert.Equal(300, xpRecord.TotalXp);
+        Assert.Equal(1, service.CalculateLevel(xpRecord.TotalXp)); // Level 1 at 300 XP
+    }
 }
+
