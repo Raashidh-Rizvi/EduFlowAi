@@ -1,90 +1,29 @@
-# EduFlow AI – React Web Application 🖥️
-> **Instructor & Administrator Dashboard built with React 18, Vite, and Zustand**
+# EduFlow AI — React Frontend
 
----
+The React/Vite application provides Admin, Instructor and Student web experiences. Existing code uses hooks/context and browser storage; dependency declarations do not establish working React Router or Zustand architecture. API fallback and approval/publication gaps remain PARTIAL.
 
-## 1. Subsystem Overview
+## Local commands
 
-The EduFlow AI Web Application serves as the comprehensive control center for instructors and administrators to manage curricula, construct quizzes, oversee student progress, launch gamified missions, and review AI-generated challenges via a **Human-in-the-Loop (HITL) Approval Portal**.
+Run from the frontend directory. Configure the backend connection using the [whole-system run guide](../docs/project/18_RUN_AND_SETUP.md).
 
-### Key Modules & Capabilities
-1. **Course & Curriculum Builder**: Create and organize modular courses, interactive lessons, video streams, and milestone checkpoints.
-2. **Interactive Assessment Author**: Build multi-format quizzes (MCQs, coding challenges, ordering puzzles) with custom scoring rubrics and time bounds.
-3. **Gamification & Challenge Manager**: Create daily and weekly challenges, boss encounters, configure XP rewards, and set difficulty tiers.
-4. **Student Analytics & At-Risk Early Warning**: Visual charts tracking completion velocity, score distributions, and flagging struggling students.
-5. **AI Challenge HITL Review & Approval Portal**: Review AI-generated adaptive challenges, inspect reasoning and schema compliance, edit questions or rewards, and click **Approve / Reject / Revise**.
-6. **Leaderboard & Competition Oversight**: Monitor live cohort rankings and manage student study teams.
-
----
-
-## 2. Directory Structure
-
-```text
-frontend/
-├── public/
-│   └── favicon.ico
-├── src/
-│   ├── assets/                # Icons, gamification badges, illustration assets
-│   ├── components/            # Reusable UI components
-│   │   ├── common/            # Buttons, Modal dialogs, DataTables, Badges, Loaders
-│   │   ├── layout/            # Sidebar, AppHeader, ProtectedRoute, DashboardShell
-│   │   ├── courses/           # CourseCard, ModuleTree, LessonEditor
-│   │   ├── assessments/       # QuizBuilder, QuestionForm, RubricMatrix
-│   │   ├── gamification/      # ChallengeForm, BadgeCard, RewardSelector
-│   │   └── ai-review/         # AiProposalDiff, SchemaInspector, ApprovalActions
-│   ├── store/                 # Zustand Stores (authStore, courseStore, aiStore, gamificationStore)
-│   ├── hooks/                 # Custom React hooks (useAuth, useSignalR, usePagination, useToast)
-│   ├── pages/                 # Route views
-│   │   ├── Auth/              # Login, Register, Forgot Password
-│   │   ├── Dashboard/         # Overview metrics, active challenges, urgent AI reviews
-│   │   ├── Courses/           # Course list, Curriculum builder, Enrolled students
-│   │   ├── Quizzes/           # Quiz management, Question banks, Gradebook
-│   │   ├── Challenges/        # Challenge creation, Daily missions, Boss battles
-│   │   ├── Leaderboards/      # Cohort rankings, Squad competitions
-│   │   ├── Analytics/         # Class progress, Velocity graphs, At-risk learners
-│   │   └── AiReview/          # Pending AI-generated challenges awaiting HITL decision
-│   ├── services/              # Axios API clients with JWT interceptors & SignalR listener
-│   │   ├── api.js             # Base Axios instance with refresh token rotation
-│   │   ├── authService.js     # Auth endpoints
-│   │   ├── courseService.js   # Course & Module endpoints
-│   │   ├── quizService.js     # Quiz & Question endpoints
-│   │   ├── challengeService.js# Gamification & Challenge endpoints
-│   │   └── aiReviewService.js # AI Proposal review & decision endpoints
-│   ├── App.jsx                # Router configuration & Role-based routes
-│   ├── main.jsx               # React DOM entry point
-│   └── index.css              # Custom styling, dark mode tokens & glassmorphism variables
-├── package.json
-└── README.md
-```
-
----
-
-## 3. Human-in-the-Loop (HITL) AI Approval Flow
-
-The React dashboard provides an intuitive interface for instructors to audit and approve AI-generated challenges:
-
-```text
-[AI Generates Challenge] ➔ [Deterministic Validation Pass] ➔ [Appears in Instructor Review Queue]
-                                                                        │
-                                   ┌────────────────────────────────────┼────────────────────────────────────┐
-                                   ▼                                    ▼                                    ▼
-                          [APPROVE]                           [MODIFY & APPROVE]                         [REJECT]
-                   Instantly published to               Instructor tunes questions / XP            Flagged with feedback
-                   target student / course                 before final publication                and sent back to AI
-```
-
----
-
-## 4. Local Setup & Development
-
-```bash
-# Navigate to frontend
-cd frontend
-
-# Install npm packages
-npm install
-
-# Start Vite development server
+~~~powershell
+npm ci
 npm run dev
-# Dashboard available at http://localhost:2174
-```
+npm run build
+npm run test:e2e
+~~~
+
+The development configuration uses port 2174. E2E tests require the relevant application/services and test data; no passing result is asserted here.
+
+## Key entry points
+
+- [Application shell](src/App.jsx) and [bootstrap](src/main.jsx)
+- [Pages](src/pages/)
+- [Shared API client](src/services/api.js) and [services](src/services/)
+- [Package scripts](package.json)
+
+Use server outcomes for authoritative academic/reward state. Shared shell/session/navigation/API infrastructure belongs to the integration effort; owned behavior is defined in the matrix.
+
+## Canonical documentation
+
+[Start here](../docs/README.md) · [Responsibility matrix](../docs/responsibilities/RESPONSIBILITY_MATRIX.md) · [Workflows](../docs/project/02_SYSTEM_WORKFLOWS.md) · [Permissions](../docs/project/04_ROLES_AND_PERMISSIONS.md) · [Quiz pipeline](../docs/project/11_QUIZ_PIPELINE.md) · [Status](../docs/project/17_IMPLEMENTATION_STATUS.md)
