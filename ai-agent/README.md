@@ -133,20 +133,48 @@ Code entry points: [FastAPI service](main.py), [workflow graph](graph/workflow.p
 
 ## 5. Local Setup & Testing
 
-```bash
+For full system installation details, see the **[Local Setup Guide](../LOCAL_SETUP_GUIDE.md)** or **[Application Run Guide](../docs/project/18_RUN_AND_SETUP.md)**.
+
+### 1. Virtual Environment & Dependencies
+
+```powershell
 # Navigate to AI agent directory
 cd ai-agent
 
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate # Windows: .venv\Scripts\activate
+python -m venv venv
+
+# Activate virtual environment
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Windows CMD:
+# .\venv\Scripts\activate.bat
+# Linux / macOS:
+# source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Run deterministic test suite
+### 2. Environment Configuration (Optional)
+Create a `.env` file inside `ai-agent/`:
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+### 3. Run Tests & FastAPI Microservice
+
+```powershell
+# Run deterministic test suite (graph topology, validations, agent schemas)
 pytest tests/
 
-# Run FastAPI server
+# Run FastAPI server with auto-reload
 python main.py
+# Or using uvicorn directly:
+# python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
+- **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Agent Topology**: [http://localhost:8000/agents/topology](http://localhost:8000/agents/topology)
+

@@ -32,6 +32,50 @@ docs/
   legacy/                Historical material; never current instructions
 ~~~
 
+## Quick Local Setup & How to Run 🚀
+
+For the step-by-step installation and environment configuration guide, read the **[Local Setup Guide](LOCAL_SETUP_GUIDE.md)** or the **[Application Run & Deployment Guide](docs/project/18_RUN_AND_SETUP.md)**.
+
+### Option A: Unified Dev Runner (Run All Services Concurrently)
+```powershell
+# From repository root:
+node dev-runner.js
+```
+*Starts React Frontend (port 2174), ASP.NET Core API (port 5204), and Python AI Agent (port 8000) simultaneously with live reloading.*
+
+---
+
+### Option B: Run Subsystems Individually
+
+#### 1. Python AI Agent Subsystem (`ai-agent`)
+```powershell
+cd ai-agent
+python -m venv venv
+.\venv\Scripts\Activate.ps1   # Linux/Mac: source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+- **Endpoints**: [http://localhost:8000/health](http://localhost:8000/health) | Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+#### 2. ASP.NET Core Backend API (`backend`)
+```powershell
+cd backend
+dotnet restore
+dotnet ef database update --project EduFlow.Infrastructure --startup-project EduFlow.Api
+dotnet run --project EduFlow.Api --launch-profile http
+```
+- **Endpoints**: [http://localhost:5204/swagger](http://localhost:5204/swagger)
+
+#### 3. React Web Frontend (`frontend`)
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+- **Web App**: [http://localhost:2174](http://localhost:2174)
+
+---
+
 ## Subsystem entry points
 
 - [Backend](backend/README.md)
@@ -40,3 +84,4 @@ docs/
 - [Agentic AI service](ai-agent/README.md)
 
 Use current source and reproducible evidence to establish actual behavior. Do not treat archived blueprints, example test outputs or dependency declarations as proof of implementation.
+
