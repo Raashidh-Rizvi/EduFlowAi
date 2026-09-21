@@ -384,21 +384,23 @@ public class CoursesController : ControllerBase
         var modules = await _dbContext.Modules
             .Where(m => m.CourseId == courseId)
             .OrderBy(m => m.OrderIndex)
-            .Include(m => m.Lessons.OrderBy(l => l.OrderIndex))
-            .Select(m => new ModuleDto(
+            .Include(m => m.Lessons)
+            .ToListAsync();
+
+        var moduleDtos = modules.Select(m => new ModuleDto(
                 m.Id,
                 m.Title,
                 m.Description,
                 m.OrderIndex,
                 m.PdfUrl,
                 m.AttachmentFileName,
-                m.Lessons.Select(l => new LessonSummaryDto(
+                m.Lessons.OrderBy(l => l.OrderIndex).Select(l => new LessonSummaryDto(
                     l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.OrderIndex, false, l.PdfUrl, l.AttachmentFileName
-                )).ToList()
-            ))
-            .ToListAsync();
+                )).ToList(),
+                null
+            )).ToList();
 
-        return Ok(modules);
+        return Ok(moduleDtos);
     }
 
     [HttpPost("{courseId:guid}/modules")]
