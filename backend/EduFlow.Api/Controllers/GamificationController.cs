@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
+using EduFlow.Core.DTOs;
 using EduFlow.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +12,7 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Route("api/v1/gamification")]
 public class GamificationController : ControllerBase
 {
     private readonly IGamificationService _gamificationService;
@@ -18,72 +22,104 @@ public class GamificationController : ControllerBase
         _gamificationService = gamificationService;
     }
 
-    [HttpGet("students/me/profile")]
-    [Authorize]
-    public async Task<IActionResult> GetMyProfile()
+    [HttpGet("dashboard/{studentId:guid}")]
+    public async Task<ActionResult<StudentGameDashboardDto>> GetDashboard(Guid studentId, CancellationToken ct)
     {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
-        {
-            return Unauthorized();
-        }
+        var dashboard = await _gamificationService.GetStudentDashboardAsync(studentId, ct);
+        return Ok(dashboard);
+    }
 
-        var profile = await _gamificationService.GetStudentProfileAsync(studentId);
+    [HttpGet("profile/{studentId:guid}")]
+    public async Task<ActionResult<GamificationProfileDto>> GetProfile(Guid studentId, CancellationToken ct)
+    {
+        var profile = await _gamificationService.GetStudentProfileAsync(studentId, ct);
         return Ok(profile);
     }
 
-    [HttpGet("students/{studentId}/profile")]
-    [Authorize]
-    public async Task<IActionResult> GetStudentProfile(Guid studentId)
+    [HttpGet("ledger/{studentId:guid}")]
+    public async Task<ActionResult<List<XpTransactionDto>>> GetLedger(Guid studentId, [FromQuery] int limit = 50, CancellationToken ct = default)
     {
-        var profile = await _gamificationService.GetStudentProfileAsync(studentId);
-        return Ok(profile);
-    }
-
-    [HttpGet("students/me/xp-ledger")]
-    [Authorize]
-    public async Task<IActionResult> GetMyXpLedger([FromQuery] int limit = 50)
-    {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
-        {
-            return Unauthorized();
-        }
-
-        var ledger = await _gamificationService.GetStudentXpLedgerAsync(studentId, limit);
+        var ledger = await _gamificationService.GetStudentXpLedgerAsync(studentId, limit, ct);
         return Ok(ledger);
     }
 
-    [HttpGet("badges")]
-    public async Task<IActionResult> GetAllBadges()
+    [HttpGet("mastery/{studentId:guid}")]
+    public async Task<ActionResult<TopicMasteryMatrixDto>> GetMasteryMatrix(Guid studentId, CancellationToken ct)
     {
-        Guid? studentId = null;
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (!string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsedId))
-        {
-            studentId = parsedId;
-        }
+        var mastery = await _gamificationService.GetSkillMasteryMatrixAsync(studentId, ct);
+        return Ok(mastery);
+    }
 
-        var badges = await _gamificationService.GetAllBadgesAsync(studentId);
+    [HttpPost("missions/claim-grand/{studentId:guid}")]
+    public async Task<ActionResult<ClaimDailyGrandMissionResponseDto>> ClaimGrandReward(Guid studentId, CancellationToken ct)
+    {
+        var res = await _gamificationService.ClaimDailyMissionGrandRewardAsync(studentId, ct);
+        if (!res.Success)
+        {
+            return BadRequest(res);
+        }
+        return Ok(res);
+    }
+
+    [HttpPost("streak/freeze/{studentId:guid}")]
+    public async Task<ActionResult<bool>> UseStreakFreeze(Guid studentId, CancellationToken ct)
+    {
+        bool success = await _gamificationService.UseStreakFreezeAsync(studentId, ct);
+        if (!success)
+        {
+            return BadRequest("No streak freeze tokens available or streak already active.");
+        }
+        return Ok(true);
+    }
+
+    [HttpGet("badges")]
+    public async Task<ActionResult<List<BadgeDto>>> GetAllBadges([FromQuery] Guid? studentId, CancellationToken ct)
+    {
+        var badges = await _gamificationService.GetAllBadgesAsync(studentId, ct);
         return Ok(badges);
     }
 
-    [HttpPost("streaks/freeze")]
-    [Authorize]
-    public async Task<IActionResult> UseStreakFreeze()
+    [HttpGet("leaderboard")]
+    public async Task<ActionResult<List<LeaderboardEntryDto>>> GetLeaderboard(
+        [FromQuery] string type = "weekly", 
+        [FromQuery] Guid? courseId = null, 
+        [FromQuery] int top = 20, 
+        CancellationToken ct = default)
     {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
+        if (type.Equals("course", StringComparison.OrdinalIgnoreCase) && courseId.HasValue)
         {
-            return Unauthorized();
+            return Ok(await _gamificationService.GetCourseLeaderboardAsync(courseId.Value, top, ct));
         }
 
-        var success = await _gamificationService.UseStreakFreezeAsync(studentId);
-        if (!success)
+        if (type.Equals("global", StringComparison.OrdinalIgnoreCase))
         {
-            return BadRequest(new { message = "No streak freeze tokens available or unable to freeze streak." });
+            return Ok(await _gamificationService.GetGlobalLeaderboardAsync(top, ct));
         }
 
-        return Ok(new { message = "Streak freeze successfully applied! Your streak is safe." });
+        return Ok(await _gamificationService.GetWeeklyLeaderboardAsync(top, ct));
+    }
+
+    [HttpPost("focus-session")]
+    public async Task<ActionResult<FocusSessionResponseDto>> RecordFocusSession([FromBody] FocusSessionRequestDto request, CancellationToken ct)
+    {
+        var result = await _gamificationService.AwardFocusSessionXpAsync(request, ct);
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+        return Ok(result);
+    }
+
+    [HttpGet("multiplier")]
+    public ActionResult<double> GetMultiplier()
+    {
+        return Ok(_gamificationService.GetXpMultiplier());
+    }
+
+    [HttpPost("multiplier")]
+    public ActionResult<double> SetMultiplier([FromBody] SetMultiplierRequest request)
+    {
+        _gamificationService.SetXpMultiplier(request.Multiplier);
+        return Ok(_gamificationService.GetXpMultiplier());
     }
 }

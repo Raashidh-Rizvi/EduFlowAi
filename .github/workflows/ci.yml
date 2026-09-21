@@ -2,30 +2,44 @@ name: EduFlow AI CI Pipeline
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "dev" ]
 
 jobs:
   backend-ci:
-    name: Backend CI (.NET 8 & PostgreSQL)
+    name: Backend CI (.NET 10 & PostgreSQL)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eduflow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      # CI-only throwaway values for config binding during build/test.
+      # These are NOT real secrets and must never be used in production.
+      ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=eduflow_test;Username=postgres;Password=postgres"
+      JwtSettings__Secret: "8f2e91ab4c3d7e6f1a0b5c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Restore Backend Dependencies
-        run: dotnet restore backend/EduFlow.sln || echo "Solution will be restored when projects are added"
+        run: dotnet restore backend/EduFlow.slnx
 
       - name: Build Backend
-        run: dotnet build backend/EduFlow.sln --no-restore --configuration Release || echo "Build step ready"
+        run: dotnet build backend/EduFlow.slnx --no-restore --configuration Release
 
       - name: Run Backend Tests
-        run: dotnet test backend/EduFlow.sln --no-build --configuration Release --verbosity normal || echo "Tests ready"
+        run: dotnet test backend/EduFlow.slnx --no-build --configuration Release --verbosity normal
 
   frontend-ci:
     name: Frontend CI (React 18 & Vite)
@@ -40,11 +54,11 @@ jobs:
 
       - name: Install Frontend Dependencies
         working-directory: ./frontend
-        run: npm ci || npm install || echo "Ready for package.json"
+        run: npm ci
 
       - name: Frontend Lint & Build
         working-directory: ./frontend
-        run: npm run build || echo "Ready for frontend build"
+        run: npm run build
 
   flutter-ci:
     name: Mobile CI (Flutter 3.x)
@@ -66,11 +80,11 @@ jobs:
 
       - name: Install Mobile Dependencies
         working-directory: ./mobile
-        run: flutter pub get || echo "Ready for Flutter project"
+        run: flutter pub get
 
       - name: Run Flutter Tests
         working-directory: ./mobile
-        run: flutter test || echo "Ready for Flutter tests"
+        run: flutter test
 
   ai-agent-ci:
     name: Agentic AI CI (LangGraph & Python 3.11)
@@ -87,8 +101,8 @@ jobs:
         working-directory: ./ai-agent
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || echo "Ready for requirements"
+          pip install -r requirements.txt
 
       - name: Run Agent Golden Evaluation Tests
         working-directory: ./ai-agent
-        run: pytest tests/ -v || echo "Ready for agent tests"
+        run: pytest tests/ -v

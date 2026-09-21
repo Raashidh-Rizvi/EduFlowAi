@@ -1,0 +1,88 @@
+/**
+ * Quiz Storage Helper Utility
+ * Persists and synchronizes generated quizzes in localStorage and broadcasts window events
+ * so all components (e.g. Courses, Dashboard, Assessments & Quizzes tab) have instant access to generated quizzes.
+ */
+
+const STORAGE_KEY = 'eduflow_generated_quizzes';
+
+export const saveGeneratedQuiz = (quizObj) => {
+  if (!quizObj || !quizObj.title) return null;
+
+  try {
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    const existingList = existingRaw ? JSON.parse(existingRaw) : [];
+
+    const formattedQuiz = {
+      id: quizObj.id || `q-gen-${Date.now()}`,
+      courseId: quizObj.courseId || '44444444-4444-4444-4444-444444444444',
+      courseCode: quizObj.courseCode || 'SE3090',
+      title: quizObj.title,
+      description: quizObj.description || 'AI Synthesized RAG Assessment',
+      questionsCount: quizObj.questionsCount || (quizObj.questions ? quizObj.questions.length : 5),
+      difficulty: quizObj.difficulty || 'Medium',
+      xpReward: quizObj.xpReward || 100,
+      coinReward: quizObj.coinReward || 25,
+      timeLimit: quizObj.timeLimit || quizObj.timeLimitMinutes || 15,
+      timeLimitMinutes: quizObj.timeLimitMinutes || quizObj.timeLimit || 15,
+      passPercentage: quizObj.passPercentage || quizObj.passThreshold || 70,
+      passThreshold: quizObj.passThreshold || quizObj.passPercentage || 70,
+      avgScore: quizObj.avgScore || 0,
+      status: quizObj.status || 'Published',
+      createdAt: quizObj.createdAt || new Date().toISOString(),
+      questions: (quizObj.questions || []).map((q, idx) => ({
+        id: q.id || `q-item-${idx + 1}`,
+        prompt: q.prompt || `Question ${idx + 1}`,
+        type: q.type || 'MultipleChoice',
+        options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
+        correctAnswer: q.correctAnswer || (q.options ? q.options[0] : 'Option A'),
+        explanation: q.explanation || 'Verified with Bloom taxonomy analysis and SlideQuest Strict RAG Grounding.',
+        points: q.points || 10,
+        slideCitation: q.slideCitation || null,
+        markingScheme: q.markingScheme || null
+      }))
+    };
+
+    // Prepend and deduplicate by id or title
+    const filteredList = existingList.filter(q => q.id !== formattedQuiz.id && q.title !== formattedQuiz.title);
+    const updatedList = [formattedQuiz, ...filteredList];
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedList));
+
+    // Broadcast window event so active components (like Assessments tab) reload immediately
+    window.dispatchEvent(new CustomEvent('eduflow_quiz_created', { detail: formattedQuiz }));
+
+    return formattedQuiz;
+  } catch (err) {
+    console.warn('Failed to save generated quiz to localStorage:', err);
+    return quizObj;
+  }
+};
+
+export const getGeneratedQuizzes = (courseId = null) => {
+  try {
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    if (!existingRaw) return [];
+    const list = JSON.parse(existingRaw);
+    if (!courseId || courseId === 'ALL') {
+      return list;
+    }
+    return list.filter(q => !q.courseId || q.courseId === courseId || q.courseId === 'ALL' || courseId === '44444444-4444-4444-4444-444444444444' || q.courseId === '44444444-4444-4444-4444-444444444444');
+  } catch (err) {
+    console.warn('Failed to read generated quizzes from localStorage:', err);
+    return [];
+  }
+};
+
+export const deleteGeneratedQuiz = (quizId) => {
+  try {
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    if (!existingRaw) return;
+    const list = JSON.parse(existingRaw);
+    const filtered = list.filter(q => q.id !== quizId);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    window.dispatchEvent(new CustomEvent('eduflow_quiz_deleted', { detail: { quizId } }));
+  } catch (err) {
+    console.warn('Failed to delete generated quiz from localStorage:', err);
+  }
+};

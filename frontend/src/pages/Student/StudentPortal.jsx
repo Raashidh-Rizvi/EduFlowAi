@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Map,
@@ -15,134 +15,40 @@ import {
   Award,
   LogOut,
   ChevronRight,
+  ChevronDown,
   Send,
   MessageCircle,
   ShieldCheck,
   Coins,
-  Target
+  Target,
+  FileText,
+  Eye,
+  Download,
+  X,
+  Play,
+  Pause,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+  Users,
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
+import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
+import ThemeToggle from '../../components/common/ThemeToggle';
+import { BrandLogo } from '../../components/common/BrandLogo';
+import RoleSwitcher from '../../components/common/RoleSwitcher';
+import { aiService } from '../../services/aiService';
+import { courseService } from '../../services/courseService';
+import { quizService } from '../../services/quizService';
+import { gamificationService } from '../../services/gamificationService';
+import { getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
-// ─── Static seed data for student portal ──────────────────────────────────────
-const STUDENT_DATA = {
-  'student@eduflow.ai': {
-    fullName: 'Alex Rivera',
-    level: 2,
-    levelName: 'Code Apprentice',
-    totalXp: 1250,
-    xpInLevel: 750,
-    xpToNext: 1000,
-    coins: 180,
-    streak: 5,
-    freezeTokens: 2,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day streak' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
-    ]
-  },
-  'maya@eduflow.ai': {
-    fullName: 'Maya Patel',
-    level: 6,
-    levelName: 'Architecture Master',
-    totalXp: 8420,
-    xpInLevel: 420,
-    xpToNext: 1500,
-    coins: 940,
-    streak: 18,
-    freezeTokens: 3,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: true, desc: '7-day streak achieved' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: true, desc: 'Defeated 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: true, desc: 'Completed 10 AI study plans' },
-    ]
-  },
-  'chen@eduflow.ai': {
-    fullName: 'Chen Wei',
-    level: 4,
-    levelName: 'Code Scholar',
-    totalXp: 4650,
-    xpInLevel: 150,
-    xpToNext: 1200,
-    coins: 520,
-    streak: 9,
-    freezeTokens: 1,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: true, desc: 'Scored 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: true, desc: '7-day streak achieved' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
-    ]
-  },
-  'elena@eduflow.ai': {
-    fullName: 'Elena Rostova',
-    level: 3,
-    levelName: 'Logic Learner',
-    totalXp: 2940,
-    xpInLevel: 440,
-    xpToNext: 1100,
-    coins: 310,
-    streak: 6,
-    freezeTokens: 2,
-    badges: [
-      { name: 'First Step', icon: '🌱', unlocked: true, desc: 'Completed first lesson' },
-      { name: 'Quiz Ace', icon: '🎯', unlocked: false, desc: 'Score 100% on a quiz' },
-      { name: 'Unstoppable', icon: '🔥', unlocked: false, desc: '7-day streak' },
-      { name: 'Boss Slayer', icon: '👹', unlocked: false, desc: 'Defeat 5 boss encounters' },
-      { name: 'Team Player', icon: '🤝', unlocked: true, desc: 'Joined a student squad' },
-      { name: 'AI Master', icon: '🤖', unlocked: false, desc: 'Complete 10 AI study plans' },
-    ]
-  }
-};
-
-const LEADERBOARD = [
-  { rank: 1, name: 'Maya Patel', email: 'maya@eduflow.ai', level: 6, xp: 8420, streak: 18 },
-  { rank: 2, name: 'Chen Wei', email: 'chen@eduflow.ai', level: 4, xp: 4650, streak: 9 },
-  { rank: 3, name: 'Alex Rivera', email: 'student@eduflow.ai', level: 2, xp: 1250, streak: 5 },
-  { rank: 4, name: 'Elena Rostova', email: 'elena@eduflow.ai', level: 3, xp: 2940, streak: 6 },
-  { rank: 5, name: 'Tariq Mansoor', email: 'tariq@eduflow.ai', level: 3, xp: 2810, streak: 5 },
-];
-
-const JOURNEY_NODES = [
-  { id: 1, title: 'Clean Architecture Domain Isolation', icon: '🌱', status: 'completed', xp: 150, duration: '25m', type: 'lesson', desc: 'Core entities, domain rules, dependency inversion in .NET 8.' },
-  { id: 2, title: 'PostgreSQL Relational Schemas & Indexes', icon: '🧩', status: 'completed', xp: 200, duration: '35m', type: 'lab', desc: 'Composite indexing, EXPLAIN ANALYZE, and table partitions.' },
-  { id: 3, title: 'EF Core Migrations & Transactions', icon: '⚔️', status: 'active', xp: 350, duration: '40m', type: 'challenge', desc: 'ACID boundaries, concurrency tokens, and optimistic locking.' },
-  { id: 4, title: 'Multi-Agent LangGraph Swarm Node', icon: '🤖', status: 'locked', xp: 400, duration: '45m', type: 'ai', desc: 'State machine graphs, deterministic schema guards, and audit trails.' },
-  { id: 5, title: 'Dungeon Boss: PostgreSQL Concurrency Raid', icon: '👹', status: 'locked', xp: 500, duration: '20m', type: 'boss', desc: 'Defeat the 15-scenario deadlock raid to unlock the Boss Slayer Trophy!' },
-];
-
-const QUIZ_QUESTIONS = [
-  {
-    prompt: 'In PostgreSQL, which index type best optimizes a multi-column WHERE clause?',
-    options: ['Composite B-Tree index ordered by column selectivity', 'Single unindexed text scan', 'No index at all', 'Random hash table'],
-    correct: 0,
-    explanation: 'Composite B-Tree indexes match filters efficiently when ordered from highest to lowest selectivity.'
-  },
-  {
-    prompt: 'What does EF Core SaveChangesAsync() guarantee about multiple entity modifications?',
-    options: ['All modifications are wrapped atomically — if any fails, all roll back', 'Each entity is saved in separate database connections', 'It never rolls back', 'It bypasses foreign key constraints'],
-    correct: 0,
-    explanation: 'SaveChangesAsync wraps all pending changes in a single ACID transaction boundary.'
-  },
-  {
-    prompt: 'Why is an Immutable XP Transaction Ledger required in EduFlow?',
-    options: ['To prevent duplicate reward exploits and guarantee mathematical auditability', 'Because PostgreSQL cannot update integers', 'To let LLMs modify business rules', 'To slow down student progress'], 
-    correct: 0,
-    explanation: 'An append-only ledger records every XP change atomically and is audit-safe.'
-  }
-];
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
 
-function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
-  const pct = Math.round((profile.xpInLevel / profile.xpToNext) * 100);
+function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz }) {
+  const pct = Math.min(100, Math.round((profile.xpInLevel / profile.xpToNext) * 100));
   const [claimed, setClaimed] = useState(false);
 
   const handleClaim = () => {
@@ -153,302 +59,519 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Level Progress Card */}
-      <div style={{
-        padding: '22px',
-        borderRadius: '18px',
-        background: 'linear-gradient(135deg, #1E1B4B 0%, #0F172A 100%)',
-        border: '1px solid rgba(99,102,241,0.4)',
-        boxShadow: '0 4px 24px rgba(99,102,241,0.15)'
+      <div className="card-premium glass-card-hover" style={{
+        padding: '28px',
+        backgroundColor: 'var(--bg-surface)'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
           <div>
-            <div style={{ fontSize: '11px', color: '#06B6D4', fontWeight: '800', letterSpacing: '0.07em', marginBottom: '4px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--secondary)', fontWeight: '800', letterSpacing: '0.04em', marginBottom: '4px' }}>
               LEVEL {profile.level} — {profile.levelName.toUpperCase()}
             </div>
-            <div style={{ fontSize: '26px', fontWeight: '900', color: '#FFFFFF' }}>
-              {profile.totalXp.toLocaleString()} <span style={{ fontSize: '14px', color: '#94A3B8' }}>Total XP</span>
+            <div className="metric-gradient" style={{ fontSize: '32px', fontWeight: '800', lineHeight: '1.1' }}>
+              {profile.totalXp.toLocaleString()} <span style={{ fontSize: '14px', color: 'var(--text-muted)', fontWeight: '600' }}>Total XP</span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '20px', fontWeight: '900', color: '#F59E0B' }}>{profile.coins}</div>
-              <div style={{ fontSize: '10px', color: '#94A3B8' }}>🪙 Coins</div>
+              <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--warning)' }}>{profile.coins}</div>
+              <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Coins</div>
             </div>
           </div>
         </div>
-        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '8px', height: '10px', overflow: 'hidden', marginBottom: '8px' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #6366F1, #06B6D4)', borderRadius: '8px', transition: 'width 0.6s ease' }} />
+
+        <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', height: '10px', overflow: 'hidden', marginBottom: '12px', border: '1px solid var(--border-subtle)', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)', borderRadius: 'var(--radius-full)', transition: 'width 0.4s ease', boxShadow: '0 0 10px rgba(139, 92, 246, 0.5)' }} />
         </div>
-        <div style={{ fontSize: '11px', color: '#94A3B8' }}>
-          {profile.xpInLevel.toLocaleString()} / {profile.xpToNext.toLocaleString()} XP to Level {profile.level + 1}
+        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', fontWeight: '500' }}>
+          {profile.xpInLevel.toLocaleString()} / {profile.xpToNext.toLocaleString()} XP to Level {profile.level + 1} ({pct}%)
         </div>
       </div>
 
       {/* Streak & Freeze Card */}
-      <div style={{
-        padding: '16px 20px',
-        borderRadius: '14px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-subtle)',
+      <div className="card-premium glass-card-hover" style={{
+        padding: '20px',
         display: 'flex',
         alignItems: 'center',
         gap: '16px'
       }}>
-        <span style={{ fontSize: '32px' }}>🔥</span>
+        <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+          <Flame size={20} />
+        </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: '800', color: 'var(--text-main)', fontSize: '15px' }}>{profile.streak} Day Streak!</div>
-          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{profile.freezeTokens} Freeze Shield{profile.freezeTokens !== 1 ? 's' : ''} in inventory</div>
+          <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '14px' }}>{profile.streak} Day Learning Streak</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{profile.freezeTokens} streak freeze protection available</div>
         </div>
         <button
           onClick={onFreezeUse}
-          style={{
-            padding: '7px 14px',
-            borderRadius: '10px',
-            background: 'rgba(6,182,212,0.12)',
-            border: '1px solid rgba(6,182,212,0.3)',
-            color: '#06B6D4',
-            fontSize: '12px',
-            fontWeight: '700',
-            cursor: 'pointer'
-          }}
+          className="btn-secondary"
+          style={{ padding: '6px 12px', fontSize: '11.5px' }}
         >
-          🛡️ Use Freeze
+          <Shield size={13} /> 
+          <span>Use Freeze</span>
         </button>
       </div>
 
       {/* Daily Mission */}
       <div>
-        <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-subtle)', letterSpacing: '0.07em', marginBottom: '10px' }}>
-          TODAY'S ADAPTIVE MISSION
+        <div style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '0.04em', marginBottom: '8px' }}>
+          RECOMMENDED STUDY MISSION
         </div>
-        <div style={{
-          padding: '20px',
-          borderRadius: '16px',
-          background: 'var(--bg-card)',
-          border: `1px solid ${claimed ? 'rgba(16,185,129,0.4)' : 'rgba(99,102,241,0.45)'}`,
+        <div className="card-premium glass-card-hover" style={{
+          padding: '24px',
+          borderColor: claimed ? 'var(--success-border)' : 'var(--primary-border)',
+          background: claimed ? 'rgba(16, 185, 129, 0.05)' : 'linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%)'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
-            <span style={{
-              fontSize: '10.5px',
-              padding: '3px 9px',
-              borderRadius: '5px',
-              background: 'rgba(99,102,241,0.2)',
-              color: '#818CF8',
-              fontWeight: '800'
-            }}>MEDIUM DIFFICULTY</span>
-            <span style={{ color: '#F59E0B', fontWeight: '800', fontSize: '13px' }}>+100 XP • +40 🪙</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+            <span className="badge-pill badge-primary">
+              Standard Objective
+            </span>
+            <span style={{ color: 'var(--warning)', fontWeight: '700', fontSize: '12.5px' }}>+100 XP • +40 Coins</span>
           </div>
-          <div style={{ fontWeight: '800', fontSize: '16px', color: 'var(--text-main)', marginBottom: '6px' }}>
-            Clean Architecture Deep Dive
+          <div style={{ fontWeight: '700', fontSize: '15px', color: 'var(--text-main)', marginBottom: '4px' }}>
+            Clean Architecture & PostgreSQL Indexing
           </div>
-          <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '16px' }}>
-            Complete 1 lesson on Dependency Inversion and score ≥ 75% on the adaptive quiz to claim your reward.
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '14px' }}>
+            Read the curriculum specification PDF, review composite index selectivity, and complete the diagnostic evaluation.
           </div>
-          <button
-            disabled={claimed}
-            onClick={handleClaim}
-            style={{
-              width: '100%',
-              padding: '11px',
-              borderRadius: '10px',
-              background: claimed ? 'rgba(16,185,129,0.25)' : 'linear-gradient(135deg, #6366F1, #06B6D4)',
-              color: claimed ? '#10B981' : '#FFFFFF',
-              border: claimed ? '1px solid rgba(16,185,129,0.4)' : 'none',
-              fontWeight: '800',
-              fontSize: '13.5px',
-              cursor: claimed ? 'default' : 'pointer',
-              transition: 'all 0.3s ease'
-            }}
-          >
-            {claimed ? '✓ Completed & Claimed' : 'Complete & Claim (+100 XP)'}
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => onStartQuiz(null)}
+              className="btn-primary hover-scale"
+              style={{ flex: 1, padding: '9px', fontSize: '12.5px', borderRadius: 'var(--radius-full)', background: 'linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%)', border: 'none' }}
+            >
+              Start Mission Assessment
+            </button>
+            <button
+              onClick={handleClaim}
+              disabled={claimed}
+              className={claimed ? "glass-badge" : "btn-secondary hover-scale"}
+              style={claimed ? { padding: '8px 16px', color: 'var(--success)' } : { padding: '8px 16px', borderRadius: 'var(--radius-full)' }}
+            >
+              {claimed ? '✓ Completed' : 'Claim Reward'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* AI Coach Shortcut */}
+      {/* Deep Work Focus Sprint Launcher */}
       <button
-        onClick={() => onNavigate('coach')}
+        onClick={() => onNavigate('focus')}
+        className="card-premium glass-card-hover"
         style={{
-          width: '100%',
           padding: '16px 20px',
-          borderRadius: '14px',
-          background: 'linear-gradient(135deg, #1E1B4B, #0F172A)',
-          border: '1px solid rgba(99,102,241,0.3)',
           display: 'flex',
           alignItems: 'center',
-          gap: '14px',
+          justifyContent: 'space-between',
+          background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(59, 130, 246, 0.08) 100%)',
+          border: '1px solid var(--primary-border)',
           cursor: 'pointer',
           textAlign: 'left'
         }}
       >
-        <span style={{ fontSize: '32px' }}>🤖</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: '800', color: '#FFFFFF', fontSize: '14px', marginBottom: '3px' }}>Ask AI Learning Coach</div>
-          <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Get personalized help or generate a 5-min practice quest.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--primary-soft)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--primary)'
+          }}>
+            <Zap size={20} />
+          </div>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: '13.5px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              Deep Work Focus Sprint <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>+35-75 XP</span>
+            </div>
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+              Lock in uninterrupted concentration, grow your Mind Garden, and preserve your streak.
+            </div>
+          </div>
         </div>
-        <ChevronRight size={18} color="#06B6D4" />
+        <ChevronRight size={18} color="var(--primary)" />
+      </button>
+
+      {/* AI Coach Shortcut */}
+      <button
+        onClick={() => onNavigate('coach')}
+        className="card-premium"
+        style={{
+          width: '100%',
+          padding: '14px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          cursor: 'pointer',
+          textAlign: 'left'
+        }}
+      >
+        <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'var(--secondary-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
+          <Bot size={20} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '13.5px', marginBottom: '2px' }}>AI Learning Assistant</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Get personalized tutoring or clarify complex topics.</div>
+        </div>
+        <ChevronRight size={16} color="var(--text-muted)" />
       </button>
     </div>
   );
 }
 
-function JourneyTab({ onStartQuiz }) {
+function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
+  const [expandedMods, setExpandedMods] = useState({ 'm1': true, 'm2': true });
+
+  const toggleMod = (id) => {
+    setExpandedMods(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>World Journey Map 🗺️</div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>Your personalized learning path — complete nodes to unlock boss encounters.</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div>
+        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>Curriculum Modules & Documents</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Inspect syllabus PDFs, study lecture materials, and complete units for progress.
+        </div>
       </div>
 
-      {JOURNEY_NODES.map((node, index) => {
-        const isCompleted = node.status === 'completed';
-        const isActive = node.status === 'active';
-        const isBoss = node.type === 'boss';
-
-        return (
-          <div key={node.id}>
-            <div
-              onClick={() => isActive && onStartQuiz(node)}
-              style={{
-                padding: '16px',
-                borderRadius: '14px',
-                background: isCompleted ? 'rgba(16,185,129,0.08)' : isActive ? 'rgba(99,102,241,0.12)' : 'var(--bg-surface)',
-                border: `1px solid ${isBoss ? 'rgba(244,63,94,0.45)' : isCompleted ? 'rgba(16,185,129,0.3)' : isActive ? 'rgba(99,102,241,0.5)' : 'var(--border-subtle)'}`,
-                cursor: isActive ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                transition: 'transform 0.2s ease',
-              }}
-            >
-              <div style={{
-                width: '46px',
-                height: '46px',
-                borderRadius: '50%',
-                background: isCompleted ? 'rgba(16,185,129,0.2)' : isActive ? 'rgba(99,102,241,0.22)' : 'rgba(255,255,255,0.04)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: isCompleted ? '20px' : '22px',
-                flexShrink: 0,
-                color: isCompleted ? '#10B981' : undefined
-              }}>
-                {isCompleted ? '✓' : node.icon}
-              </div>
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' }}>
-                  <div style={{
-                    fontWeight: '800',
-                    fontSize: '13.5px',
-                    color: isCompleted || isActive ? 'var(--text-main)' : 'var(--text-muted)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '320px'
-                  }}>{node.title}</div>
-                  <span style={{ fontWeight: '800', fontSize: '12px', color: isBoss ? '#F43F5E' : '#F59E0B', flexShrink: 0 }}>
-                    +{node.xp} XP
-                  </span>
-                </div>
-                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{node.desc}</div>
-                {isActive && (
-                  <div style={{ marginTop: '8px' }}>
-                    <button style={{
-                      padding: '5px 14px',
-                      borderRadius: '8px',
-                      background: 'var(--primary)',
-                      color: '#FFFFFF',
-                      fontSize: '11.5px',
-                      fontWeight: '700',
-                      border: 'none',
-                      cursor: 'pointer'
-                    }}>
-                      Start Challenge ⚔️
-                    </button>
-                  </div>
-                )}
-                {node.status === 'locked' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                    <Lock size={11} /> Complete previous node to unlock
-                  </div>
-                )}
-              </div>
-            </div>
-            {index < JOURNEY_NODES.length - 1 && (
-              <div style={{
-                width: '3px',
-                height: '20px',
-                background: isCompleted ? 'rgba(16,185,129,0.35)' : 'var(--border-subtle)',
-                margin: '0 auto',
-                borderRadius: '2px'
-              }} />
-            )}
+      {courses.length === 0 ? (
+        <div className="card-premium" style={{ padding: '60px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-sm)', background: 'var(--primary-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+            <BookOpen size={24} />
           </div>
-        );
-      })}
+          <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>No Enrolled Courses Found</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '380px', lineHeight: '1.5' }}>
+            When instructors publish courses and materials with attached PDFs, they will appear here.
+          </div>
+        </div>
+      ) : (
+        courses.map(course => (
+          <div key={course.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="badge-pill badge-primary">
+                {course.code}
+              </span>
+              <span style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{course.title}</span>
+            </div>
+
+            {course.modules.map((mod, modIdx) => {
+              const isExpanded = !!expandedMods[mod.id];
+              return (
+                <div
+                  key={mod.id}
+                  className="card-premium"
+                  style={{
+                    overflow: 'hidden',
+                    padding: 0
+                  }}
+                >
+                  {/* Module Header */}
+                  <div
+                    onClick={() => toggleMod(mod.id)}
+                    style={{
+                      padding: '12px 16px',
+                      background: isExpanded ? 'var(--primary-soft)' : 'var(--bg-surface)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ color: 'var(--text-muted)' }}>
+                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '10.5px', color: 'var(--secondary)', fontWeight: '700' }}>MODULE {modIdx + 1}</div>
+                        <div style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{mod.title}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {mod.pdfUrl && (
+                        <span className="badge-pill badge-secondary" style={{ fontSize: '10.5px' }}>
+                          <FileText size={11} /> PDF
+                        </span>
+                      )}
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {mod.lessons.length} Lessons
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {/* Attached Module PDF Material */}
+                      {mod.pdfUrl && (
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '8px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <FileText size={18} color="var(--secondary)" />
+                            <div>
+                              <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-main)' }}>
+                                {mod.attachmentFileName || 'Module Reading Material.pdf'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                Official module documentation
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={async () => {
+                                const doc = await preparePdfForViewing(
+                                  mod.pdfUrl,
+                                  `${mod.title} – PDF Material`,
+                                  mod.attachmentFileName || 'module_syllabus.pdf'
+                                );
+                                onOpenPdf(doc);
+                              }}
+                              className="btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px' }}
+                            >
+                              <Eye size={12} /> View PDF
+                            </button>
+                            <button
+                              onClick={() => downloadPdf(mod.pdfUrl, mod.attachmentFileName || 'material.pdf', mod.title)}
+                              className="btn-ghost"
+                              style={{ padding: '4px 10px', fontSize: '11.5px', gap: '4px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                            >
+                              <Download size={12} /> Download
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lessons List */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {mod.lessons.map(les => (
+                          <div
+                            key={les.id}
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: les.completed ? 'var(--success-soft)' : 'var(--bg-surface)',
+                              border: `1px solid ${les.completed ? 'var(--success-border)' : 'var(--border-subtle)'}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '8px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{
+                                width: '24px', height: '24px', borderRadius: '50%',
+                                background: les.completed ? 'var(--success-soft)' : 'var(--primary-soft)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                color: les.completed ? 'var(--success)' : 'var(--primary)'
+                              }}>
+                                {les.completed ? <CheckCircle2 size={14} /> : <BookOpen size={12} />}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-main)' }}>{les.title}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{les.content}</div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {les.pdfUrl && (
+                                <button
+                                  onClick={async () => {
+                                    const doc = await preparePdfForViewing(
+                                      les.pdfUrl,
+                                      les.title,
+                                      les.attachmentFileName || 'lesson_attachment.pdf'
+                                    );
+                                    onOpenPdf(doc);
+                                  }}
+                                  className="badge-pill badge-secondary"
+                                  style={{ cursor: 'pointer', fontSize: '10.5px' }}
+                                >
+                                  PDF
+                                </button>
+                              )}
+
+                              <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--warning)' }}>
+                                +{les.xp} XP
+                              </span>
+
+                              {!les.completed ? (
+                                <button
+                                  onClick={() => onCompleteLesson(les.id, les.xp, course.id, mod.id)}
+                                  className="btn-primary"
+                                  style={{ padding: '4px 10px', fontSize: '11px' }}
+                                >
+                                  Complete
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: '700' }}>
+                                  ✓ Done
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Module End Assessment Trigger */}
+                      <div style={{ paddingTop: '6px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Ready for evaluation?
+                        </span>
+                        <button
+                          onClick={() => onStartQuiz(null)}
+                          className="btn-primary"
+                          style={{ padding: '5px 12px', fontSize: '11.5px', gap: '4px' }}
+                        >
+                          <HelpCircle size={13} /> Take Quiz (+80 XP)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
-function QuizRunner({ node, onComplete }) {
+function QuizRunner({ quiz, onComplete, onCancel }) {
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
-  const [correct, setCorrect] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
   const [done, setDone] = useState(false);
+  const [answersPayload, setAnswersPayload] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [rewardResult, setRewardResult] = useState(null);
 
-  const q = QUIZ_QUESTIONS[qIdx];
+  if (!quiz || !quiz.questions || quiz.questions.length === 0) {
+    return (
+      <div className="card-premium" style={{ textAlign: 'center', padding: '40px 20px' }}>
+        <div style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>No Questions Available</div>
+        <button onClick={onCancel} className="btn-primary" style={{ marginTop: '12px' }}>
+          Back to Curriculum
+        </button>
+      </div>
+    );
+  }
+
+  const q = quiz.questions[qIdx];
+  const isSelectedCorrect = selected !== null && (
+    (q.correctAnswer && q.options && q.options[selected] === q.correctAnswer) ||
+    selected === q.correct
+  );
 
   const handleSubmit = () => {
-    const isCorrect = selected === q.correct;
-    if (isCorrect) setCorrect(c => c + 1);
+    if (isSelectedCorrect) setCorrectCount(c => c + 1);
     setSubmitted(true);
   };
 
-  const handleNext = () => {
-    if (qIdx < QUIZ_QUESTIONS.length - 1) {
+  const handleNext = async () => {
+    const currentAnswerObj = {
+      questionId: q.id,
+      selectedAnswer: q.options[selected] || ''
+    };
+    const updatedAnswers = [...answersPayload, currentAnswerObj];
+    setAnswersPayload(updatedAnswers);
+
+    if (qIdx < quiz.questions.length - 1) {
       setQIdx(i => i + 1);
       setSelected(null);
       setSubmitted(false);
     } else {
-      setDone(true);
-      const score = ((correct + (selected === q.correct ? 1 : 0)) / QUIZ_QUESTIONS.length) * 100;
-      onComplete(score >= 70 ? 80 : 20, score >= 70 ? 30 : 5);
+      setSubmitting(true);
+      const totalCorrect = correctCount + (isSelectedCorrect ? 1 : 0);
+      const score = Math.round((totalCorrect / quiz.questions.length) * 100);
+      const passed = score >= (quiz.passingScore || quiz.passingScorePercent || 70);
+
+      try {
+        const res = await onComplete(quiz, updatedAnswers, { totalCorrect, score, passed });
+        if (res) {
+          setRewardResult(res);
+        }
+      } catch (err) {
+        console.warn('Backend quiz submission fallback:', err);
+      } finally {
+        setSubmitting(false);
+        setDone(true);
+      }
     }
   };
 
   if (done) {
-    const score = Math.round(((correct) / QUIZ_QUESTIONS.length) * 100);
-    const passed = score >= 70;
+    const totalCorrect = correctCount;
+    const score = Math.round((totalCorrect / quiz.questions.length) * 100);
+    const passed = rewardResult ? rewardResult.passed : (score >= (quiz.passingScore || quiz.passingScorePercent || 70));
+    const finalScore = rewardResult ? Math.round(rewardResult.percentageScore) : score;
+    const xpWon = rewardResult ? rewardResult.xpEarned : (passed ? (finalScore === 100 ? (quiz.xpReward || 80) + 30 : (quiz.xpReward || 80)) : 20);
+    const coinsWon = rewardResult ? rewardResult.coinsEarned : (passed ? (quiz.coinReward || 25) : 5);
+    const feedbackMsg = rewardResult?.feedback || (passed ? 'Mastery confirmed! You demonstrated solid technical understanding.' : 'Targeted practice recommended.');
+    const badge = rewardResult?.badgeUnlocked;
+
     return (
-      <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-        <div style={{ fontSize: '64px', marginBottom: '16px' }}>{passed ? '🎉' : '📚'}</div>
-        <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--text-main)', marginBottom: '8px' }}>
-          {passed ? 'Challenge Conquered!' : 'Keep Practicing!'}
+      <div className="card-premium" style={{ textAlign: 'center', padding: '36px 20px' }}>
+        <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
+          {passed ? '🎉 Assessment Completed & Points Awarded!' : 'Assessment Finished'}
         </div>
-        <div style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '24px' }}>
-          You scored {score}% ({correct}/{QUIZ_QUESTIONS.length} correct)
+        <div style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '16px' }}>
+          Score: {finalScore}% • Required: {quiz.passingScore || quiz.passingScorePercent || 70}%
         </div>
         <div style={{
           display: 'inline-block',
-          padding: '12px 24px',
-          borderRadius: '14px',
-          background: passed ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)',
-          border: `1px solid ${passed ? 'rgba(16,185,129,0.4)' : 'rgba(99,102,241,0.4)'}`,
-          color: passed ? '#10B981' : '#818CF8',
-          fontWeight: '800',
-          fontSize: '16px',
-          marginBottom: '28px'
+          padding: '14px 28px',
+          borderRadius: 'var(--radius-md)',
+          background: passed ? 'var(--success-soft)' : 'var(--primary-soft)',
+          border: `1px solid ${passed ? 'var(--success-border)' : 'var(--primary-border)'}`,
+          color: passed ? 'var(--success)' : 'var(--text-main)',
+          fontWeight: '700',
+          fontSize: '15px',
+          marginBottom: '16px'
         }}>
-          {passed ? `🏆 Earned +80 XP • +30 Coins` : '+20 Effort XP'}
+          +{xpWon} XP • +{coinsWon} EduCoins Earned
+        </div>
+        {badge && (
+          <div style={{
+            margin: '0 auto 16px auto',
+            maxWidth: '380px',
+            padding: '10px 16px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--warning-soft)',
+            border: '1px solid var(--warning-border)',
+            color: 'var(--warning)',
+            fontWeight: '700',
+            fontSize: '13px'
+          }}>
+            🏆 New Badge Unlocked: {badge.replace(/_/g, ' ')}!
+          </div>
+        )}
+        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '440px', margin: '0 auto 24px auto', lineHeight: '1.5' }}>
+          {feedbackMsg}
         </div>
         <div>
           <button
-            onClick={() => setDone(false)}
-            style={{ padding: '10px 28px', borderRadius: '10px', background: 'var(--primary)', color: '#FFF', fontWeight: '800', cursor: 'pointer', border: 'none' }}
+            onClick={onCancel}
+            className="btn-primary"
+            style={{ padding: '10px 24px' }}
           >
-            Return to Journey
+            Return to Curriculum
           </button>
         </div>
       </div>
@@ -456,29 +579,36 @@ function QuizRunner({ node, onComplete }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-        <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>Knowledge Check</div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>Q{qIdx + 1} of {QUIZ_QUESTIONS.length}</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>{quiz.title}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Question {qIdx + 1} of {quiz.questions.length}</div>
+        </div>
+        <button onClick={onCancel} className="btn-ghost" style={{ padding: '4px' }}>
+          <X size={16} />
+        </button>
       </div>
 
-      <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '8px', height: '6px', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${((qIdx + 1) / QUIZ_QUESTIONS.length) * 100}%`, background: '#06B6D4', borderRadius: '8px', transition: 'width 0.4s ease' }} />
+      <div style={{ background: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', height: '6px', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+        <div style={{ height: '100%', width: `${((qIdx + 1) / quiz.questions.length) * 100}%`, background: 'var(--primary)', borderRadius: 'var(--radius-full)', transition: 'width 0.3s ease' }} />
       </div>
 
-      <div style={{ padding: '18px', borderRadius: '14px', background: 'var(--bg-card)', border: '1px solid rgba(99,102,241,0.4)' }}>
-        <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', lineHeight: '1.5' }}>{q.prompt}</div>
+      <div className="card-premium" style={{ padding: '16px', backgroundColor: 'var(--bg-surface)' }}>
+        <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)', lineHeight: '1.5' }}>{q.prompt}</div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {q.options.map((opt, i) => {
-          let bg = 'var(--bg-surface)';
-          let border = 'var(--border-subtle)';
+          let bg = 'var(--bg-card)';
+          let border = 'var(--border-card)';
+          let textColor = 'var(--text-main)';
+          const isOptionCorrect = (q.correctAnswer && opt === q.correctAnswer) || i === q.correct;
           if (submitted) {
-            if (i === q.correct) { bg = 'rgba(16,185,129,0.18)'; border = 'rgba(16,185,129,0.6)'; }
-            else if (i === selected) { bg = 'rgba(244,63,94,0.18)'; border = 'rgba(244,63,94,0.6)'; }
+            if (isOptionCorrect) { bg = 'var(--success-soft)'; border = 'var(--success-border)'; textColor = 'var(--success)'; }
+            else if (i === selected) { bg = 'var(--accent-soft)'; border = 'var(--accent-border)'; textColor = 'var(--accent)'; }
           } else if (i === selected) {
-            bg = 'rgba(99,102,241,0.18)'; border = 'rgba(99,102,241,0.7)';
+            bg = 'var(--primary-soft)'; border = 'var(--primary-border)';
           }
 
           return (
@@ -486,239 +616,832 @@ function QuizRunner({ node, onComplete }) {
               key={i}
               onClick={() => !submitted && setSelected(i)}
               style={{
-                padding: '14px 16px',
-                borderRadius: '12px',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-sm)',
                 background: bg,
-                border: `1.5px solid ${border}`,
+                border: `1px solid ${border}`,
                 cursor: submitted ? 'default' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                transition: 'all 0.2s ease'
+                gap: '10px',
+                transition: 'all 0.15s ease'
               }}
             >
               <div style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                background: i === selected ? 'var(--primary)' : 'rgba(255,255,255,0.06)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '12px',
-                fontWeight: '800',
-                color: '#FFFFFF',
-                flexShrink: 0
+                width: '24px', height: '24px', borderRadius: '50%',
+                background: i === selected ? 'var(--primary)' : 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '11.5px', fontWeight: '700', color: i === selected ? '#FFFFFF' : 'var(--text-main)', flexShrink: 0
               }}>
                 {String.fromCharCode(65 + i)}
               </div>
-              <span style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-main)' }}>{opt}</span>
+              <span style={{ fontSize: '12.5px', fontWeight: '500', color: textColor }}>{opt}</span>
             </div>
           );
         })}
       </div>
 
       {submitted && (
-        <div style={{ padding: '12px', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-          💡 <strong style={{ color: 'var(--text-main)' }}>Explanation:</strong> {q.explanation}
+        <div style={{ padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+          <strong style={{ color: 'var(--text-main)' }}>Explanation:</strong> {q.explanation || 'Evaluated by EduFlow AI.'}
         </div>
       )}
 
       <button
-        disabled={selected === null}
+        disabled={selected === null || submitting}
         onClick={submitted ? handleNext : handleSubmit}
+        className="btn-primary"
         style={{
           width: '100%',
-          padding: '14px',
-          borderRadius: '12px',
-          background: selected === null ? 'rgba(255,255,255,0.05)' : 'var(--primary)',
-          color: selected === null ? 'var(--text-subtle)' : '#FFFFFF',
-          fontWeight: '800',
-          fontSize: '14px',
-          border: 'none',
-          cursor: selected === null ? 'default' : 'pointer',
-          transition: 'all 0.2s ease'
+          padding: '11px',
+          opacity: selected === null || submitting ? 0.5 : 1,
+          cursor: selected === null || submitting ? 'default' : 'pointer'
         }}
       >
-        {submitted
-          ? (qIdx === QUIZ_QUESTIONS.length - 1 ? 'Finish & Claim XP 🏆' : 'Next Question →')
-          : 'Submit Answer'}
+        {submitting
+          ? 'Submitting & Recording Rewards...'
+          : submitted
+            ? (qIdx === quiz.questions.length - 1 ? 'Finish & Record XP' : 'Next Question →')
+            : 'Submit Answer'}
       </button>
     </div>
   );
 }
 
-function CoachTab() {
+function CoachTab({ studentId, courseId }) {
   const [messages, setMessages] = useState([
-    { sender: 'ai', text: 'Hello! I am your EduFlow AI Learning Coach 🤖. I analyze your quiz attempts to craft personalized learning quests. What concept would you like to master today?' }
+    { sender: 'ai', text: 'Hello. I am your AI Learning Assistant. I analyze curriculum progress and clarify technical concepts. What topic are you studying today?' }
   ]);
   const [input, setInput] = useState('');
 
   const PROMPTS = [
-    'Explain PostgreSQL Composite Indexes 🧩',
-    'How do ACID transactions work in EF Core? ⚡',
-    'Generate a 5-min practice challenge for me 🎯',
+    'Explain PostgreSQL Composite Indexes',
+    'How do ACID transactions work in EF Core?',
+    'What is Clean Architecture domain isolation?'
   ];
 
-  const sendMessage = (text) => {
-    if (!text.trim()) return;
+  const [isLoading, setIsLoading] = useState(false);
+
+  const sendMessage = async (text) => {
+    if (!text.trim() || isLoading) return;
     setMessages(m => [...m, { sender: 'user', text }]);
     setInput('');
+    setIsLoading(true);
 
-    let reply = 'Great question! Let me help you with that…';
+    try {
+      const res = await aiService.chatWithCoach(text, studentId, courseId);
+      if (res && res.reply) {
+        setMessages(m => [
+          ...m, 
+          { 
+            sender: 'ai', 
+            text: res.reply,
+            action: res.suggested_action,
+            topic: res.identified_weak_topic
+          }
+        ]);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend coach chat fallback', err);
+    }
+
+    let reply = 'Let me break down that concept for you:';
     const t = text.toLowerCase();
-    if (t.includes('index')) reply = 'In PostgreSQL, a composite index (col1, col2) only optimizes queries when col1 is present in the WHERE clause. Always order index columns from highest to lowest selectivity!';
-    else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) reply = 'In EF Core, DbContext.SaveChangesAsync() wraps all entity changes in a single atomic transaction. If any constraint fails, all modifications roll back safely — this is the "A" in ACID!';
-    else if (t.includes('challenge') || t.includes('practice') || t.includes('quest')) reply = "I have calibrated a 5-minute EF Core Transactions quest targeting your detected weaknesses. Head to Journey tab \u2014 it's unlocked and ready with +80 XP bonus!";
-    else if (t.includes('clean') || t.includes('architecture')) reply = 'Clean Architecture isolates your domain entities from frameworks. The golden rule: dependencies point inward only. Your EduFlow.Core project should reference nothing external.';
-    else reply = 'I recommend revisiting Module 1.2: Deterministic Ledgers. It directly addresses this pattern and has a diagnostic quiz ready for you.';
+    let action = null;
+    if (t.includes('index')) {
+      reply = 'In PostgreSQL, a composite index (col1, col2) evaluates left-to-right. Queries must filter by col1 to leverage the index structure. Always place higher cardinality columns first.';
+      action = 'Review PostgreSQL Composite Index Slicing';
+    } else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) {
+      reply = 'In EF Core, DbContext.SaveChangesAsync() operates inside an explicit transaction scope. If any constraint validation fails, all operations roll back deterministically to maintain atomicity.';
+      action = 'Practice Transaction Isolation Lab';
+    } else if (t.includes('clean') || t.includes('architecture')) {
+      reply = 'Clean Architecture separates core enterprise domain entities from frameworks and databases. All dependencies point strictly inward toward domain models.';
+      action = 'Explore Dependency Inversion Rules';
+    } else {
+      reply = 'Review the curriculum module PDFs and test your understanding with the integrated assessments.';
+      action = 'Take Diagnostic Module Quiz';
+    }
 
     setTimeout(() => {
-      setMessages(m => [...m, { sender: 'ai', text: reply }]);
-    }, 700);
+      setMessages(m => [...m, { sender: 'ai', text: reply, action }]);
+      setIsLoading(false);
+    }, 400);
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)', minHeight: '500px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)', minHeight: '480px' }}>
       <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>AI Learning Coach 🤖</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>Personalized tutoring powered by LangGraph multi-agent AI.</div>
+        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>AI Learning Assistant</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Context-aware tutoring for your curriculum modules.</div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '12px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
         {messages.map((msg, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{
-              maxWidth: '75%',
-              padding: '12px 16px',
-              borderRadius: '16px',
+              maxWidth: '80%', padding: '10px 14px', borderRadius: 'var(--radius-sm)',
               background: msg.sender === 'user' ? 'var(--primary)' : 'var(--bg-surface)',
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
-              color: '#FFFFFF',
-              fontSize: '13px',
-              lineHeight: '1.5'
+              color: msg.sender === 'user' ? '#FFFFFF' : 'var(--text-main)', fontSize: '12.5px', lineHeight: '1.5'
             }}>
-              {msg.text}
+              <div>{msg.text}</div>
+              {msg.action && (
+                <div style={{
+                  marginTop: '8px',
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--primary-soft)',
+                  border: '1px solid var(--primary-border)',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}>
+                  <Sparkles size={12} />
+                  <span>Suggested Action: {msg.action}</span>
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
         {PROMPTS.map((p, i) => (
           <button
             key={i}
             onClick={() => sendMessage(p)}
-            style={{
-              padding: '5px 12px',
-              borderRadius: '20px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              color: '#06B6D4',
-              fontSize: '11px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
+            className="btn-ghost"
+            style={{ padding: '4px 10px', fontSize: '11px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)' }}
           >{p}</button>
         ))}
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: '10px',
-        padding: '10px 14px',
-        background: 'var(--bg-surface)',
-        borderRadius: '14px',
-        border: '1px solid var(--border-subtle)'
-      }}>
+      <div style={{ display: 'flex', gap: '8px', padding: '8px 12px', background: 'var(--bg-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
         <input
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
-          placeholder="Ask your AI Coach anything..."
-          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: '13px' }}
+          placeholder="Ask a technical or conceptual question..."
+          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: '12.5px' }}
         />
-        <button onClick={() => sendMessage(input)} style={{ background: 'transparent', border: 'none', color: '#06B6D4', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-          <Send size={18} />
+        <button onClick={() => sendMessage(input)} className="btn-ghost" style={{ padding: '4px', color: 'var(--primary)' }}>
+          <Send size={16} />
         </button>
       </div>
     </div>
   );
 }
 
-function LeaderboardTab({ email }) {
+function FocusFlowTab({ profile, onSessionCompleted }) {
+  const [presetMinutes, setPresetMinutes] = useState(25);
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [isActive, setIsActive] = useState(false);
+  const [selectedTask, setSelectedTask] = useState('PostgreSQL B-Tree Index Selectivity');
+  const [customTask, setCustomTask] = useState('');
+  const [soundMode, setSoundMode] = useState('binaural'); // 'none' | 'binaural' | 'rain'
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [completedSessions, setCompletedSessions] = useState(() => {
+    try {
+      return Number(localStorage.getItem('eduflow_focus_count') || 0);
+    } catch { return 0; }
+  });
+  const [gardenArtifacts, setGardenArtifacts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('eduflow_mind_garden') || '["🌱 Focus Seedling", "🌳 Golden Oak Sapling"]');
+    } catch { return ['🌱 Focus Seedling', '🌳 Golden Oak Sapling']; }
+  });
+  const [celebrationModal, setCelebrationModal] = useState(null);
+
+  // Web Audio synthesizer for ambient focus soundscapes
+  useEffect(() => {
+    let ctx = null;
+    let osc = null;
+    let gain = null;
+
+    if (isActive && audioPlaying && soundMode !== 'none') {
+      try {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.03, ctx.currentTime);
+
+        if (soundMode === 'binaural') {
+          osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(216, ctx.currentTime);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+        } else if (soundMode === 'rain') {
+          const bufferSize = ctx.sampleRate * 2;
+          const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+          const data = buffer.getChannelData(0);
+          let lastOut = 0.0;
+          for (let i = 0; i < bufferSize; i++) {
+            const white = Math.random() * 2 - 1;
+            data[i] = (lastOut + (0.02 * white)) / 1.02;
+            lastOut = data[i];
+            data[i] *= 1.5;
+          }
+          const noise = ctx.createBufferSource();
+          noise.buffer = buffer;
+          noise.loop = true;
+          noise.connect(gain);
+          gain.connect(ctx.destination);
+          noise.start();
+          osc = noise;
+        }
+      } catch (err) {
+        console.warn('Web Audio error:', err);
+      }
+    }
+
+    return () => {
+      try {
+        if (osc) osc.stop();
+        if (ctx) ctx.close();
+      } catch {}
+    };
+  }, [isActive, audioPlaying, soundMode]);
+
+  // Timer Tick
+  useEffect(() => {
+    let interval = null;
+    if (isActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(t => t - 1);
+      }, 1000);
+    } else if (isActive && timeLeft === 0) {
+      setIsActive(false);
+      handleFinishSprint();
+    }
+    return () => clearInterval(interval);
+  }, [isActive, timeLeft]);
+
+  const handleSelectPreset = (mins) => {
+    setIsActive(false);
+    setPresetMinutes(mins);
+    setTimeLeft(mins * 60);
+  };
+
+  const playChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 1.2);
+    } catch {}
+  };
+
+  const handleFinishSprint = async () => {
+    playChime();
+    const taskName = customTask.trim() || selectedTask;
+    const minutes = presetMinutes;
+
+    try {
+      const res = await gamificationService.recordFocusSession({
+        studentId: profile.studentId || '33333333-3333-3333-3333-333333333333',
+        durationMinutes: minutes,
+        topicOrTask: taskName,
+        focusTechnique: `Pomodoro (${minutes}m)`
+      });
+
+      const artifact = res.focusArtifactAwarded || (minutes >= 45 ? '💎 Ancient Focus Crystal' : (minutes >= 25 ? '🌳 Golden Oak Sapling' : '🌱 Emerald Sprout'));
+
+      const newGarden = [...gardenArtifacts, artifact];
+      setGardenArtifacts(newGarden);
+      const newCount = completedSessions + 1;
+      setCompletedSessions(newCount);
+      try {
+        localStorage.setItem('eduflow_focus_count', String(newCount));
+        localStorage.setItem('eduflow_mind_garden', JSON.stringify(newGarden));
+      } catch {}
+
+      setCelebrationModal({
+        xp: res.xpAwarded || (minutes * 2),
+        coins: res.coinsAwarded || 15,
+        artifact,
+        task: taskName,
+        message: res.message
+      });
+
+      if (onSessionCompleted) {
+        onSessionCompleted(res.xpAwarded || (minutes * 2), res.coinsAwarded || 15, res.newStreak || (profile.streak + 1));
+      }
+    } catch (err) {
+      console.warn('Session recording error:', err);
+    }
+  };
+
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const totalSec = presetMinutes * 60;
+  const progressPct = Math.round(((totalSec - timeLeft) / totalSec) * 100);
+
+  let growthEmoji = '🌱';
+  let growthLabel = 'Focus Seed Planted';
+  if (progressPct >= 75) {
+    growthEmoji = presetMinutes >= 45 ? '💎' : '🌳';
+    growthLabel = presetMinutes >= 45 ? 'Ancient Crystal Resonating' : 'Golden Oak Thriving';
+  } else if (progressPct >= 35) {
+    growthEmoji = '🌿';
+    growthLabel = 'Deep Flow State Reached';
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-      <div>
-        <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)' }}>Weekly Sprint Podium 🏆</div>
-        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '3px' }}>Compete with your cohort — top 3 earn bonus XP multipliers every Monday.</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Header Banner */}
+      <div className="card-premium" style={{
+        padding: '22px',
+        backgroundColor: 'var(--bg-surface)',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <span className="badge-pill badge-primary">DEEP WORK STUDIO</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Flow State & Pomodoro Motivation</span>
+          </div>
+          <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+            Study Focus & Mind Garden
+          </h3>
+          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+            Lock in uninterrupted concentration. Uninterrupted focus awards +XP, grows your Mind Garden, and protects your streak!
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div className="card-premium" style={{ padding: '8px 14px', textAlign: 'center', backgroundColor: 'var(--bg-card)' }}>
+            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--primary)' }}>{completedSessions}</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Sprints Finished</div>
+          </div>
+          <div className="card-premium" style={{ padding: '8px 14px', textAlign: 'center', backgroundColor: 'var(--bg-card)' }}>
+            <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--warning)' }}>{gardenArtifacts.length}</div>
+            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Mind Garden</div>
+          </div>
+        </div>
       </div>
 
-      {/* Top 3 Podium */}
-      <div style={{
-        padding: '24px 16px',
-        borderRadius: '18px',
-        background: 'linear-gradient(180deg, #1E1B4B 0%, #0F172A 100%)',
-        border: '1px solid rgba(99,102,241,0.35)',
+      {/* Main Timer Display */}
+      <div className="card-premium glass-card-hover" style={{
+        padding: '32px 24px',
+        backgroundColor: 'var(--bg-surface)',
         display: 'flex',
-        justifyContent: 'space-evenly',
-        alignItems: 'flex-end'
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px',
+        position: 'relative',
+        overflow: 'hidden'
       }}>
-        {[LEADERBOARD[1], LEADERBOARD[0], LEADERBOARD[2]].map((s, i) => {
-          const positions = ['🥈', '👑', '🥉'];
-          const heights = [80, 110, 70];
-          const colors = ['#06B6D4', '#F59E0B', '#D97706'];
-          return (
-            <div key={s.rank} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-              <div style={{ fontSize: '22px' }}>{positions[i]}</div>
-              <div style={{ fontSize: '12px', fontWeight: '800', color: '#FFFFFF' }}>{s.name.split(' ')[0]}</div>
-              <div style={{ fontSize: '11px', fontWeight: '700', color: colors[i] }}>{s.xp.toLocaleString()} XP</div>
-              <div style={{
-                width: '72px',
-                height: `${heights[i]}px`,
-                borderRadius: '10px 10px 0 0',
-                background: `${colors[i]}22`,
-                border: `1px solid ${colors[i]}55`,
+        {/* Interval Presets */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {[
+            { mins: 25, label: '25m Classic Sprint', xp: '+35 XP' },
+            { mins: 45, label: '45m Deep Work', xp: '+75 XP' },
+            { mins: 15, label: '15m Quick Burst', xp: '+20 XP' },
+            { mins: 1, label: '1m Test Demo', xp: '+10 XP' }
+          ].map(p => (
+            <button
+              key={p.mins}
+              onClick={() => handleSelectPreset(p.mins)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-full)',
+                backgroundColor: presetMinutes === p.mins ? 'var(--primary)' : 'var(--bg-card)',
+                color: presetMinutes === p.mins ? '#ffffff' : 'var(--text-main)',
+                fontSize: '11.5px',
+                fontWeight: '700',
+                border: presetMinutes === p.mins ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: '900',
-                fontSize: '18px',
-                color: colors[i]
-              }}>#{s.rank}</div>
-            </div>
-          );
-        })}
-      </div>
+                gap: '6px'
+              }}
+            >
+              <span>{p.label}</span>
+              <span style={{ fontSize: '10px', opacity: 0.85 }}>({p.xp})</span>
+            </button>
+          ))}
+        </div>
 
-      {/* Full Table */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {LEADERBOARD.map(s => {
-          const isMe = s.email === email;
-          return (
-            <div key={s.rank} style={{
-              padding: '12px 16px',
-              borderRadius: '12px',
-              background: isMe ? 'rgba(99,102,241,0.12)' : 'var(--bg-surface)',
-              border: `1px solid ${isMe ? 'rgba(99,102,241,0.5)' : 'var(--border-subtle)'}`,
+        {/* Growing Mind Garden Visualization */}
+        <div style={{
+          width: '180px',
+          height: '180px',
+          borderRadius: '50%',
+          background: 'var(--bg-card)',
+          border: '4px solid var(--border-card)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          boxShadow: isActive ? '0 0 35px rgba(139, 92, 246, 0.35)' : 'none',
+          transition: 'all 0.5s ease'
+        }}>
+          <div style={{ fontSize: '46px', animation: isActive ? 'pulse 2s infinite' : 'none' }}>
+            {growthEmoji}
+          </div>
+          <div style={{
+            fontSize: '32px',
+            fontWeight: '800',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-main)',
+            letterSpacing: '-0.02em',
+            marginTop: '4px'
+          }}>
+            {formatTime(timeLeft)}
+          </div>
+          <div style={{ fontSize: '10.5px', color: 'var(--secondary)', fontWeight: '700' }}>
+            {growthLabel}
+          </div>
+        </div>
+
+        {/* Focus Progress Bar */}
+        <div style={{ width: '100%', maxWidth: '380px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>
+            <span>Flow State Progress</span>
+            <span>{progressPct}% Completed</span>
+          </div>
+          <div style={{
+            width: '100%',
+            height: '8px',
+            backgroundColor: 'var(--bg-card)',
+            borderRadius: 'var(--radius-full)',
+            overflow: 'hidden',
+            border: '1px solid var(--border-subtle)'
+          }}>
+            <div style={{
+              width: `${progressPct}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)',
+              borderRadius: 'var(--radius-full)',
+              transition: 'width 0.4s ease'
+            }} />
+          </div>
+        </div>
+
+        {/* Active Study Objective */}
+        <div style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            Active Concentration Topic:
+          </label>
+          <select
+            value={selectedTask}
+            onChange={e => setSelectedTask(e.target.value)}
+            disabled={isActive}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: 'var(--bg-input)',
+              border: '1px solid var(--border-card)',
+              color: 'var(--text-main)',
+              fontSize: '12.5px'
+            }}
+          >
+            <option value="PostgreSQL B-Tree Index Selectivity">PostgreSQL B-Tree Index Selectivity (Module 1)</option>
+            <option value="ACID Transactions & Graph Deadlocks">ACID Transactions & Graph Deadlocks (Module 2)</option>
+            <option value="Clean Architecture & DIP Invariants">Clean Architecture & DIP Invariants</option>
+            <option value="Custom Technical Research">Custom Technical Sprint...</option>
+          </select>
+
+          {selectedTask === 'Custom Technical Research' && (
+            <input
+              type="text"
+              placeholder="What are you focusing on?"
+              value={customTask}
+              onChange={e => setCustomTask(e.target.value)}
+              disabled={isActive}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-xs)',
+                backgroundColor: 'var(--bg-input)',
+                border: '1px solid var(--border-card)',
+                color: 'var(--text-main)',
+                fontSize: '12px'
+              }}
+            />
+          )}
+        </div>
+
+        {/* Ambient Audio Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+            <button
+              onClick={() => setAudioPlaying(!audioPlaying)}
+              className="btn-ghost"
+              style={{ padding: '6px', color: audioPlaying ? 'var(--primary)' : 'var(--text-muted)' }}
+              title={audioPlaying ? 'Mute ambient sound' : 'Unmute ambient sound'}
+            >
+              {audioPlaying ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+            <span>Ambient Sound:</span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[
+              { id: 'binaural', label: 'Gamma 40Hz Wave' },
+              { id: 'rain', label: 'Rain Resonance' },
+              { id: 'none', label: 'Silent' }
+            ].map(s => (
+              <button
+                key={s.id}
+                onClick={() => { setSoundMode(s.id); setAudioPlaying(s.id !== 'none'); }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-xs)',
+                  backgroundColor: soundMode === s.id ? 'var(--bg-card)' : 'transparent',
+                  color: soundMode === s.id ? 'var(--primary)' : 'var(--text-muted)',
+                  fontSize: '11px',
+                  fontWeight: soundMode === s.id ? '700' : '500',
+                  border: soundMode === s.id ? '1px solid var(--border-card)' : '1px solid transparent',
+                  cursor: 'pointer'
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Timer Action Buttons */}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+          <button
+            onClick={() => {
+              if (!isActive && audioPlaying && soundMode !== 'none') {
+                // Audio will start automatically
+              }
+              setIsActive(!isActive);
+            }}
+            className="btn-primary hover-scale"
+            style={{
+              padding: '10px 32px',
+              fontSize: '14px',
+              fontWeight: '800',
+              borderRadius: 'var(--radius-full)',
               display: 'flex',
               alignItems: 'center',
-              gap: '14px'
+              gap: '8px',
+              boxShadow: '0 4px 16px rgba(139, 92, 246, 0.4)'
+            }}
+          >
+            {isActive ? <Pause size={16} /> : <Play size={16} />}
+            {isActive ? 'Pause Sprint' : (timeLeft === totalSec ? 'Start Focus Sprint' : 'Resume Sprint')}
+          </button>
+
+          <button
+            onClick={() => {
+              setIsActive(false);
+              setTimeLeft(presetMinutes * 60);
+            }}
+            className="btn-secondary hover-scale"
+            style={{
+              padding: '10px 16px',
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            title="Reset timer"
+          >
+            <RotateCcw size={15} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '360px', marginTop: '4px' }}>
+          💡 <strong>Psychology Tip:</strong> Completing a continuous focus sprint activates the dopamine reward pathways, reinforcing deep academic recall.
+        </div>
+      </div>
+
+      {/* Mind Garden Showcase */}
+      <div>
+        <div style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '0.04em', marginBottom: '8px' }}>
+          MIND GARDEN & FOCUS ARTIFACTS
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {gardenArtifacts.map((art, idx) => (
+            <div key={idx} className="card-premium" style={{
+              padding: '10px 16px',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              fontWeight: '700',
+              color: 'var(--text-main)'
             }}>
-              <div style={{ fontWeight: '900', fontSize: '14px', color: s.rank <= 3 ? '#F59E0B' : 'var(--text-muted)', width: '28px', flexShrink: 0 }}>
-                #{s.rank}
+              <span>{art.split(' ')[0]}</span>
+              <span>{art.slice(2)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Celebration Modal upon Completion */}
+      {celebrationModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%',
+            maxWidth: '420px',
+            backgroundColor: 'var(--bg-card)',
+            padding: '28px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+            border: '2px solid var(--success-border)'
+          }}>
+            <div style={{ fontSize: '56px' }}>🎉</div>
+            <h3 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+              Focus Sprint Conquered!
+            </h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+              You completed your sprint on <strong>{celebrationModal.task}</strong> without losing concentration!
+            </p>
+
+            <div style={{
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--success-soft)',
+              border: '1px solid var(--success-border)',
+              color: 'var(--success)',
+              fontWeight: '800',
+              fontSize: '16px'
+            }}>
+              +{celebrationModal.xp} XP • +{celebrationModal.coins} Coins Awarded!
+            </div>
+
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-surface)',
+              fontSize: '12px',
+              color: 'var(--text-muted)'
+            }}>
+              Unlocked Focus Artifact: <strong>{celebrationModal.artifact}</strong> added to your Mind Garden!
+            </div>
+
+            <button
+              onClick={() => setCelebrationModal(null)}
+              className="btn-primary hover-scale"
+              style={{ width: '100%', padding: '10px', fontSize: '13px', fontWeight: '800', marginTop: '6px' }}
+            >
+              Collect Rewards & Keep Flowing
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeaderboardTab({ profile }) {
+  const [standings, setStandings] = useState([]);
+  const [squads, setSquads] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchRanks() {
+      try {
+        const [lb, sq] = await Promise.all([
+          gamificationService.getLeaderboard('weekly', 10),
+          gamificationService.getAllSquads()
+        ]);
+        setStandings(lb || []);
+        setSquads(sq || []);
+      } catch (err) {
+        console.warn(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchRanks();
+  }, []);
+
+  const mySquad = squads.find(s => 
+    s.members && s.members.some(m => m.studentId === profile.studentId || m.studentName === profile.fullName)
+  ) || squads[0];
+
+  const targetXp = 2500;
+  const squadProgressPct = mySquad ? Math.min(100, Math.round(((mySquad.combinedXp || 0) / targetXp) * 100)) : 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Collaborative Squad Banner */}
+      {mySquad && (
+        <div className="card-premium glass-card-hover" style={{
+          padding: '20px',
+          backgroundColor: 'var(--bg-surface)',
+          borderLeft: '4px solid var(--secondary)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>{mySquad.avatarUrl || '🚀'}</span>
+              <div>
+                <span className="badge-pill badge-neutral" style={{ fontSize: '10px', marginBottom: '2px' }}>
+                  MY SQUAD COLLABORATIVE GOAL
+                </span>
+                <h4 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                  {mySquad.name}
+                </h4>
               </div>
-              <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', color: '#FFFFFF', flexShrink: 0 }}>
-                {s.name[0]}
+            </div>
+            <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--secondary)' }}>
+              {mySquad.combinedXp?.toLocaleString() || 0} XP
+            </span>
+          </div>
+
+          <div style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-xs)',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            marginBottom: '10px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '4px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Quest: {mySquad.description || 'Sprint Quest'}</span>
+              <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{squadProgressPct}% Completed</span>
+            </div>
+            <div style={{ width: '100%', height: '6px', backgroundColor: 'var(--bg-canvas)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+              <div style={{ width: `${squadProgressPct}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)', borderRadius: 'var(--radius-full)' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>Teammates:</span>
+            {(mySquad.members || []).map(m => (
+              <span key={m.studentId} className="badge-pill badge-neutral" style={{ fontSize: '11px' }}>
+                {m.studentName} ({m.totalXp} XP)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cohort Leaderboard */}
+      <div>
+        <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>Cohort Standings</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Weekly ranking of all learners based on genuine lesson mastery and focus sprints.</div>
+      </div>
+
+      <div className="card-premium" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
+        {standings.map((s, idx) => {
+          const isMe = s.studentName === profile.fullName || s.studentId === profile.studentId;
+          return (
+            <div key={s.studentId || idx} style={{
+              padding: '12px 14px', borderRadius: 'var(--radius-sm)',
+              background: isMe ? 'var(--primary-soft)' : (idx === 0 ? 'var(--warning-soft)' : 'var(--bg-surface)'),
+              border: isMe ? '1px solid var(--primary-border)' : (idx === 0 ? '1px solid var(--warning-border)' : '1px solid var(--border-subtle)'),
+              display: 'flex', alignItems: 'center', gap: '12px'
+            }}>
+              <div style={{ fontWeight: '800', fontSize: '13px', color: idx === 0 ? 'var(--warning)' : 'var(--text-muted)', width: '26px', flexShrink: 0 }}>
+                {idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`))}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: '700', fontSize: '13px', color: isMe ? '#818CF8' : 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {s.name} {isMe && <span style={{ fontSize: '10px', background: 'rgba(99,102,241,0.2)', padding: '2px 6px', borderRadius: '10px', color: '#818CF8' }}>YOU</span>}
+                <div style={{ fontWeight: '700', fontSize: '13px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {s.studentName} {isMe && <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>YOU</span>}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level} • {s.streak}d streak 🔥</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level {s.level || 1} • {s.streak || 0}d streak</div>
               </div>
-              <div style={{ fontWeight: '800', fontSize: '13px', color: '#F59E0B', flexShrink: 0 }}>
-                {s.xp.toLocaleString()} XP
+              <div style={{ fontWeight: '700', fontSize: '13.5px', color: isMe ? 'var(--primary)' : 'var(--secondary)', flexShrink: 0 }}>
+                {(s.scoreXp || 0).toLocaleString()} XP
               </div>
             </div>
           );
@@ -728,138 +1451,384 @@ function LeaderboardTab({ email }) {
   );
 }
 
-function ProfileTab({ profile, email, onLogout }) {
-  const [confirmLogout, setConfirmLogout] = useState(false);
-
+function ProfileTab({ profile, onLogout }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* User Card */}
-      <div style={{ padding: '20px', borderRadius: '18px', background: 'var(--bg-surface)', border: '1px solid rgba(99,102,241,0.4)', display: 'flex', gap: '16px', alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="card-premium" style={{ padding: '18px 20px', display: 'flex', gap: '14px', alignItems: 'center' }}>
         <div style={{
-          width: '56px', height: '56px', borderRadius: '50%',
-          background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+          width: '48px', height: '48px', borderRadius: 'var(--radius-sm)',
+          background: 'var(--primary-soft)', border: '1px solid var(--primary-border)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '22px', fontWeight: '900', color: '#FFFFFF',
-          boxShadow: '0 0 18px rgba(99,102,241,0.4)', flexShrink: 0
+          fontSize: '18px', fontWeight: '800', color: 'var(--primary)', flexShrink: 0
         }}>
           {profile.fullName[0]}
         </div>
         <div>
-          <div style={{ fontSize: '18px', fontWeight: '900', color: 'var(--text-main)' }}>{profile.fullName}</div>
-          <div style={{ fontSize: '12px', color: '#06B6D4', fontWeight: '700', marginBottom: '6px' }}>Level {profile.level} — {profile.levelName}</div>
-          <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '12px', color: '#F59E0B', fontWeight: '800' }}>⭐ {profile.totalXp.toLocaleString()} XP</span>
-            <span style={{ fontSize: '12px', color: '#06B6D4', fontWeight: '800' }}>🪙 {profile.coins} Coins</span>
-            <span style={{ fontSize: '12px', color: '#F43F5E', fontWeight: '800' }}>🔥 {profile.streak} Day Streak</span>
+          <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)' }}>{profile.fullName}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--secondary)', fontWeight: '600', marginBottom: '4px' }}>Level {profile.level} — {profile.levelName}</div>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--warning)', fontWeight: '700' }}>{profile.totalXp.toLocaleString()} XP</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--secondary)', fontWeight: '700' }}>{profile.coins} Coins</span>
+            <span style={{ fontSize: '11.5px', color: 'var(--accent)', fontWeight: '700' }}>{profile.streak} Day Streak</span>
           </div>
         </div>
       </div>
 
-      {/* Badges */}
       <div>
-        <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--text-subtle)', letterSpacing: '0.07em', marginBottom: '12px' }}>
-          BADGES & TROPHIES
+        <div style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-muted)', letterSpacing: '0.04em', marginBottom: '8px' }}>
+          EARNED CREDENTIALS & BADGES
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
           {profile.badges.map(b => (
-            <div key={b.name} style={{
-              padding: '16px',
-              borderRadius: '14px',
-              background: b.unlocked ? 'var(--bg-card)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${b.unlocked ? 'rgba(99,102,241,0.35)' : 'var(--border-subtle)'}`,
-              textAlign: 'center',
-              opacity: b.unlocked ? 1 : 0.5
+            <div key={b.id || b.name} className="card-premium" style={{
+              padding: '14px',
+              textAlign: 'center', opacity: b.unlocked ? 1 : 0.45
             }}>
-              <div style={{ fontSize: '28px', marginBottom: '6px' }}>{b.unlocked ? b.icon : '🔒'}</div>
-              <div style={{ fontSize: '12.5px', fontWeight: '800', color: b.unlocked ? 'var(--text-main)' : 'var(--text-subtle)', marginBottom: '3px' }}>{b.name}</div>
+              <div style={{ fontSize: '22px', marginBottom: '4px' }}>{b.unlocked ? b.icon : '🔒'}</div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: b.unlocked ? 'var(--text-main)' : 'var(--text-muted)', marginBottom: '2px' }}>{b.name}</div>
               <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>{b.desc}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Logout */}
-      {!confirmLogout ? (
-        <button
-          onClick={() => setConfirmLogout(true)}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: '12px',
-            background: 'rgba(244,63,94,0.12)',
-            border: '1px solid rgba(244,63,94,0.35)',
-            color: '#F43F5E',
-            fontWeight: '800',
-            fontSize: '14px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px'
-          }}
-        >
-          <LogOut size={16} /> Sign Out / Logout
-        </button>
-      ) : (
-        <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.4)', textAlign: 'center' }}>
-          <div style={{ fontWeight: '800', color: '#FFFFFF', marginBottom: '12px', fontSize: '14px' }}>
-            Confirm sign out from EduFlow AI?
-          </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button onClick={() => setConfirmLogout(false)} style={{ padding: '8px 20px', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)', fontWeight: '700', cursor: 'pointer' }}>
-              Cancel
-            </button>
-            <button onClick={onLogout} style={{ padding: '8px 20px', borderRadius: '8px', background: '#F43F5E', border: 'none', color: '#FFFFFF', fontWeight: '700', cursor: 'pointer' }}>
-              Yes, Logout
-            </button>
-          </div>
+      {/* Appearance / Theme Toggle */}
+      <div className="card-premium" style={{
+        padding: '12px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: 'var(--bg-surface)'
+      }}>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>Interface Theme</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Toggle between high-contrast Dark and Light modes</div>
         </div>
-      )}
+        <ThemeToggle showLabel />
+      </div>
+
+      <button
+        onClick={onLogout}
+        className="btn-danger"
+        style={{
+          width: '100%', padding: '10px', fontSize: '13px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+        }}
+      >
+        <LogOut size={15} /> Sign Out
+      </button>
     </div>
   );
 }
 
 // ─── Main StudentPortal Component ─────────────────────────────────────────────
-export default function StudentPortal({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('home');
-  const [quizNode, setQuizNode] = useState(null);
+export default function StudentPortal({ user, onLogout, onSwitchRole }) {
+  const [activeTab, setActiveTabState] = useState(() => {
+    try {
+      return sessionStorage.getItem('eduflow_student_active_tab') || 'curriculum';
+    } catch {
+      return 'curriculum';
+    }
+  });
 
-  const profileData = STUDENT_DATA[user?.email] || STUDENT_DATA['student@eduflow.ai'];
-  const [profile, setProfile] = useState({ ...profileData });
+  const setActiveTab = (tab) => {
+    try {
+      sessionStorage.setItem('eduflow_student_active_tab', tab);
+    } catch {}
+    setActiveTabState(tab);
+  };
+  const [activeQuiz, setActiveQuiz] = useState(null);
+  const [serverQuiz, setServerQuiz] = useState(null);
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [courses, setCourses] = useState([]);
 
-  const handleMissionClaim = (xp, coins) => {
-    setProfile(p => ({
-      ...p,
-      totalXp: p.totalXp + xp,
-      xpInLevel: p.xpInLevel + xp,
-      coins: p.coins + coins
-    }));
+  useEffect(() => {
+    async function loadStudentData() {
+      // 1. Load Enrolled Courses with Full Modules & Syllabus
+      try {
+        let rawCourses = [];
+        try {
+          rawCourses = await courseService.getMyCourses();
+        } catch {
+          rawCourses = await courseService.getCourses();
+        }
+        if (Array.isArray(rawCourses) && rawCourses.length > 0) {
+          const fullCoursesDetails = await Promise.all(
+            rawCourses.map(async c => {
+              const targetId = c.courseId || c.id;
+              const detail = await courseService.getCourseById(targetId);
+              return detail || c;
+            })
+          );
+
+          const mapped = fullCoursesDetails.map(c => ({
+            id: c.id,
+            code: c.code || 'CS-301',
+            title: c.title,
+            description: c.description || '',
+            modules: (c.modules || []).map((m, idx) => ({
+              id: m.id || `m_${idx}`,
+              title: m.title,
+              description: m.description || '',
+              pdfUrl: m.pdfUrl || null,
+              attachmentFileName: m.attachmentFileName || 'Module Syllabus.pdf',
+              lessons: (m.lessons || []).map((l, lIdx) => ({
+                id: l.id || `l_${lIdx}`,
+                title: l.title,
+                duration: `${l.estimatedMinutes || 30} mins`,
+                xp: l.xpReward || 40,
+                completed: l.isCompleted || false,
+                pdfUrl: l.pdfUrl || null,
+                attachmentFileName: l.attachmentFileName || null
+              }))
+            }))
+          }));
+          if (mapped.length > 0) {
+            setCourses(mapped);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load courses, using seed:', err);
+      }
+
+      // 2. Load Real Course Quizzes from PostgreSQL & Local Storage
+      try {
+        const qList = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444').catch(() => []);
+        const localList = getGeneratedQuizzes('44444444-4444-4444-4444-444444444444');
+        const combined = [...localList, ...(qList || [])];
+        if (combined.length > 0) {
+          const targetQuiz = combined[0];
+          if (targetQuiz.questions && targetQuiz.questions.length > 0) {
+            setServerQuiz(targetQuiz);
+          } else {
+            try {
+              const detailedQuiz = await quizService.getQuizById(targetQuiz.id);
+              if (detailedQuiz && detailedQuiz.questions) {
+                setServerQuiz(detailedQuiz);
+              } else {
+                setServerQuiz(targetQuiz);
+              }
+            } catch {
+              setServerQuiz(targetQuiz);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load backend quizzes, using seed:', err);
+      }
+
+      // 3. Load Live Gamification Dashboard Profile
+      try {
+        const studentId = user?.id || '33333333-3333-3333-3333-333333333333';
+        const gameData = await gamificationService.getGameDashboard(studentId);
+        if (gameData && gameData.profile) {
+          const prof = gameData.profile;
+          setProfile(prev => ({
+            ...prev,
+            fullName: prof.studentName || user?.fullName || prev.fullName,
+            totalXp: prof.totalXp,
+            level: prof.currentLevel,
+            levelName: prof.levelName || prev.levelName,
+            xpInLevel: prof.xpProgressInCurrentLevel,
+            xpToNext: prof.xpRequiredForNextLevel,
+            coins: prof.coins,
+            streak: prof.currentStreak,
+            freezeTokens: prof.freezeTokensAvailable,
+            badges: prof.recentBadges && prof.recentBadges.length > 0
+              ? prof.recentBadges.map(b => ({
+                  id: b.id,
+                  name: b.title,
+                  icon: b.iconUrl || '🏅',
+                  unlocked: b.isUnlocked,
+                  desc: b.description
+                }))
+              : prev.badges
+          }));
+        }
+      } catch (err) {
+        console.warn('Could not load gamification dashboard:', err);
+      }
+    }
+    loadStudentData();
+  }, [user]);
+
+  const [profile, setProfile] = useState({
+    fullName: user?.fullName || 'Student',
+    level: 1,
+    levelName: 'Novice',
+    totalXp: 0,
+    xpInLevel: 0,
+    xpToNext: 100,
+    coins: 0,
+    streak: 0,
+    freezeTokens: 0,
+    badges: []
+  });
+
+  const handleMissionClaim = async (xp, coins) => {
+    try {
+      const studentId = user?.id || '33333333-3333-3333-3333-333333333333';
+      await gamificationService.claimGrandReward(studentId);
+    } catch {}
+    setProfile(p => {
+      const newTotal = p.totalXp + xp;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + coins
+      };
+    });
   };
 
-  const handleFreezeUse = () => {
+  const handleFreezeUse = async () => {
     if (profile.freezeTokens <= 0) return;
+    try {
+      const studentId = user?.id || '33333333-3333-3333-3333-333333333333';
+      await gamificationService.useStreakFreeze(studentId);
+    } catch {}
     setProfile(p => ({ ...p, freezeTokens: p.freezeTokens - 1 }));
-    alert(`🛡️ Streak Freeze Shield activated for today! ${profile.freezeTokens - 1} remaining.`);
+    alert(`Streak freeze activated for today. ${profile.freezeTokens - 1} remaining.`);
   };
 
-  const handleQuizComplete = (xp, coins) => {
-    setProfile(p => ({
-      ...p,
-      totalXp: p.totalXp + xp,
-      xpInLevel: p.xpInLevel + xp,
-      coins: p.coins + coins
-    }));
-    setTimeout(() => {
-      setQuizNode(null);
-      setActiveTab('journey');
-    }, 2000);
+  const handleStartQuiz = async (quizToRun) => {
+    let target = quizToRun || serverQuiz;
+    if (!target) {
+      const localList = getGeneratedQuizzes('44444444-4444-4444-4444-444444444444');
+      if (localList.length > 0) {
+        target = localList[0];
+      }
+    }
+    if (target && (!target.questions || target.questions.length === 0)) {
+      const localMatches = getGeneratedQuizzes();
+      const foundLocal = localMatches.find(q => q.id === target.id || q.title === target.title);
+      if (foundLocal && foundLocal.questions && foundLocal.questions.length > 0) {
+        target = { ...target, ...foundLocal };
+      } else {
+        try {
+          const detailed = await quizService.getQuizById(target.id);
+          if (detailed && detailed.questions && detailed.questions.length > 0) {
+            target = detailed;
+          }
+        } catch (err) {
+          console.warn('Failed to load quiz detail:', err);
+        }
+      }
+    }
+    setActiveQuiz(target);
+  };
+
+  const handleCompleteLesson = (lessonId, xpReward, courseId, modId) => {
+    setCourses(prevCourses => {
+      return prevCourses.map(c => {
+        if (c.id === courseId) {
+          return {
+            ...c,
+            modules: c.modules.map(m => {
+              if (m.id === modId) {
+                return {
+                  ...m,
+                  lessons: m.lessons.map(l => {
+                    if (l.id === lessonId) {
+                      return { ...l, completed: true };
+                    }
+                    return l;
+                  })
+                };
+              }
+              return m;
+            })
+          };
+        }
+        return c;
+      });
+    });
+
+    setProfile(p => {
+      const newTotal = p.totalXp + xpReward;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + 15
+      };
+    });
+  };
+
+  const handleQuizComplete = async (quiz, answers, localStats) => {
+    // Attempt authoritative backend submission if quiz ID is a valid Guid
+    const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quiz?.id);
+    if (isGuid && answers && answers.length > 0) {
+      try {
+        const res = await quizService.submitQuiz(quiz.id, answers);
+        if (res) {
+          setProfile(p => {
+            const newTotal = res.newTotalXp ?? (p.totalXp + (res.xpEarned || 0));
+            const newLevel = res.newLevel ?? p.level;
+            const updatedBadges = p.badges.map(b => {
+              if (res.badgeUnlocked && b.id === res.badgeUnlocked) return { ...b, unlocked: true };
+              if (b.id === 'QUIZ_ACE' && res.percentageScore >= 100) return { ...b, unlocked: true };
+              if (b.id === 'FIRST_STEP') return { ...b, unlocked: true };
+              return b;
+            });
+            return {
+              ...p,
+              totalXp: newTotal,
+              xpInLevel: newTotal % 1000,
+              level: newLevel,
+              coins: p.coins + (res.coinsEarned || 0),
+              streak: res.passed ? p.streak + 1 : p.streak,
+              badges: updatedBadges
+            };
+          });
+          return res;
+        }
+      } catch (err) {
+        console.warn('Backend quiz submission fallback to client evaluation:', err);
+      }
+    }
+
+    // Client fallback evaluation
+    const xpEarned = localStats.passed ? (localStats.score === 100 ? (quiz.xpReward || 80) + 30 : (quiz.xpReward || 80)) : 20;
+    const coinsEarned = localStats.passed ? (quiz.coinReward || 25) : 5;
+    setProfile(p => {
+      const newTotal = p.totalXp + xpEarned;
+      const newLevel = Math.floor(newTotal / 1000) + 1;
+      const updatedBadges = p.badges.map(b => {
+        if (b.id === 'QUIZ_ACE' && localStats.score === 100) return { ...b, unlocked: true };
+        if (b.id === 'FIRST_STEP') return { ...b, unlocked: true };
+        return b;
+      });
+      return {
+        ...p,
+        totalXp: newTotal,
+        xpInLevel: newTotal % 1000,
+        level: newLevel,
+        coins: p.coins + coinsEarned,
+        streak: localStats.passed ? p.streak + 1 : p.streak,
+        badges: updatedBadges
+      };
+    });
+
+    return {
+      passed: localStats.passed,
+      percentageScore: localStats.score,
+      xpEarned,
+      coinsEarned,
+      feedback: localStats.passed ? 'Well done! You passed the assessment.' : 'Keep practicing to master these topics.'
+    };
   };
 
   const TABS = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'journey', label: 'Journey', icon: Map },
-    { id: 'coach', label: 'AI Coach', icon: Bot },
-    { id: 'ranks', label: 'Ranks', icon: Trophy },
+    { id: 'curriculum', label: 'Curriculum', icon: BookOpen },
+    { id: 'home', label: 'Dashboard', icon: Home },
+    { id: 'focus', label: 'Focus & Flow', icon: Zap },
+    { id: 'coach', label: 'AI Assistant', icon: Bot },
+    { id: 'ranks', label: 'Rankings & Squad', icon: Trophy },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
@@ -868,8 +1837,8 @@ export default function StudentPortal({ user, onLogout }) {
       display: 'flex',
       flexDirection: 'column',
       minHeight: '100vh',
-      backgroundColor: 'var(--bg-main)',
-      maxWidth: '680px',
+      backgroundColor: 'var(--bg-canvas)',
+      maxWidth: '720px',
       margin: '0 auto',
       position: 'relative'
     }}>
@@ -878,67 +1847,147 @@ export default function StudentPortal({ user, onLogout }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '14px 20px',
+        padding: '12px 20px',
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-subtle)',
-        flexShrink: 0
+        flexShrink: 0,
+        gap: '12px',
+        flexWrap: 'wrap'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '34px', height: '34px', borderRadius: '10px',
-            background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
-          }}>
-            <Zap size={18} color="#FFFFFF" />
-          </div>
-          <div>
-            <div style={{ fontSize: '14px', fontWeight: '900', color: 'var(--text-main)', lineHeight: 1 }}>EduFlow AI</div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Student Learning Arena</div>
-          </div>
-        </div>
+        <BrandLogo size="sm" subtitle="Student Workspace" />
 
-        {/* Quick stat pills */}
+        {/* Direct Redirection Role Switcher */}
+        <RoleSwitcher 
+          currentRole="Student" 
+          onSwitchRole={onSwitchRole} 
+          compact 
+        />
+
+        {/* Stat Pills & Theme Toggle */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '20px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}>
-            <Zap size={12} color="#F59E0B" />
-            <span style={{ fontSize: '12px', fontWeight: '800', color: '#F59E0B' }}>{profile.totalXp.toLocaleString()} XP</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '20px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.25)' }}>
-            <span style={{ fontSize: '13px' }}>🔥</span>
-            <span style={{ fontSize: '12px', fontWeight: '800', color: '#F43F5E' }}>{profile.streak}d</span>
-          </div>
+          <span className="badge-pill badge-warning" style={{ fontSize: '11px' }}>
+            <Zap size={11} /> {profile.totalXp.toLocaleString()} XP
+          </span>
+          <span className="badge-pill badge-danger" style={{ fontSize: '11px' }}>
+            <Flame size={11} /> {profile.streak}d streak
+          </span>
+          <ThemeToggle compact />
         </div>
       </div>
 
       {/* Page Content */}
-      <div style={{ flex: 1, padding: '20px', overflowY: 'auto', paddingBottom: '90px' }}>
-        {quizNode ? (
-          <QuizRunner node={quizNode} onComplete={handleQuizComplete} />
+      <div style={{ flex: 1, padding: '18px 20px', overflowY: 'auto', paddingBottom: '80px' }}>
+        {activeQuiz ? (
+          <QuizRunner
+            quiz={activeQuiz}
+            onComplete={handleQuizComplete}
+            onCancel={() => setActiveQuiz(null)}
+          />
         ) : (
           <>
+            {activeTab === 'curriculum' && (
+              <CurriculumTab
+                courses={courses}
+                onOpenPdf={(doc) => setPdfDoc(doc)}
+                onCompleteLesson={handleCompleteLesson}
+                onStartQuiz={(quiz) => handleStartQuiz(quiz)}
+              />
+            )}
             {activeTab === 'home' && (
               <HomeTab
                 profile={profile}
                 onMissionClaim={handleMissionClaim}
                 onFreezeUse={handleFreezeUse}
                 onNavigate={(tab) => setActiveTab(tab)}
+                onStartQuiz={(quiz) => handleStartQuiz(quiz)}
               />
             )}
-            {activeTab === 'journey' && (
-              <JourneyTab onStartQuiz={(node) => setQuizNode(node)} />
+            {activeTab === 'focus' && (
+              <FocusFlowTab
+                profile={profile}
+                onSessionCompleted={(xp, coins, streak) => {
+                  setProfile(p => {
+                    const newTotal = p.totalXp + xp;
+                    const newLevel = Math.floor(newTotal / 1000) + 1;
+                    return {
+                      ...p,
+                      totalXp: newTotal,
+                      xpInLevel: newTotal % 1000,
+                      level: newLevel,
+                      coins: p.coins + coins,
+                      streak: Math.max(p.streak, streak)
+                    };
+                  });
+                }}
+              />
             )}
-            {activeTab === 'coach' && <CoachTab />}
-            {activeTab === 'ranks' && <LeaderboardTab email={user?.email} />}
+            {activeTab === 'coach' && <CoachTab studentId={user?.id} courseId={courses[0]?.id} />}
+            {activeTab === 'ranks' && <LeaderboardTab profile={profile} />}
             {activeTab === 'profile' && (
               <ProfileTab
                 profile={profile}
-                email={user?.email}
                 onLogout={onLogout}
               />
             )}
           </>
         )}
       </div>
+
+      {/* In-App PDF Reader Modal */}
+      {pdfDoc && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100,
+          padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%', maxWidth: '780px', height: '80vh',
+            backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-card)',
+            borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            boxShadow: 'var(--shadow-popover)'
+          }}>
+            <div style={{
+              padding: '14px 18px', background: 'var(--bg-surface)', borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FileText size={18} color="var(--secondary)" />
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{pdfDoc.title}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{pdfDoc.fileName} • Document Viewer</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => downloadPdf(pdfDoc.rawUrl || pdfDoc.url, pdfDoc.fileName, pdfDoc.title)}
+                  className="btn-primary"
+                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px', border: 'none', cursor: 'pointer' }}
+                >
+                  <Download size={12} /> Download
+                </button>
+                <button
+                  onClick={() => setPdfDoc(null)}
+                  className="btn-ghost"
+                  style={{ padding: '5px' }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, backgroundColor: 'var(--bg-canvas)', overflow: 'hidden' }}>
+              <iframe
+                src={pdfDoc.url}
+                title={pdfDoc.title}
+                width="100%"
+                height="100%"
+                style={{ border: 'none' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Navigation */}
       <div style={{
@@ -947,35 +1996,35 @@ export default function StudentPortal({ user, onLogout }) {
         left: '50%',
         transform: 'translateX(-50%)',
         width: '100%',
-        maxWidth: '680px',
+        maxWidth: '720px',
         background: 'var(--bg-surface)',
         borderTop: '1px solid var(--border-subtle)',
         display: 'flex',
         justifyContent: 'space-around',
-        padding: '10px 0 14px',
+        padding: '8px 0 10px',
         zIndex: 100
       }}>
         {TABS.map(tab => {
           const Icon = tab.icon;
-          const isActive = activeTab === tab.id && !quizNode;
+          const isActive = activeTab === tab.id && !activeQuiz;
           return (
             <button
               key={tab.id}
-              onClick={() => { setQuizNode(null); setActiveTab(tab.id); }}
+              onClick={() => { setActiveQuiz(null); setActiveTab(tab.id); }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '4px',
-                padding: '0 16px',
+                gap: '3px',
+                padding: '0 12px',
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                color: isActive ? '#06B6D4' : '#64748B'
+                color: isActive ? 'var(--primary)' : 'var(--text-muted)'
               }}
             >
-              <Icon size={22} />
-              <span style={{ fontSize: '10.5px', fontWeight: isActive ? '800' : '500' }}>{tab.label}</span>
+              <Icon size={18} />
+              <span style={{ fontSize: '10px', fontWeight: isActive ? '700' : '500' }}>{tab.label}</span>
             </button>
           );
         })}

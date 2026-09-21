@@ -10,8 +10,11 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Database Configuration (PostgreSQL with fallback retry)
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
-    ?? "Host=localhost;Port=5432;Database=eduflow_db;Username=postgres;Password=postgres";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    connectionString = "Host=ep-empty-bird-ax89v5us.c-4.us-east-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_xMTIqYu1Vrn4;SSL Mode=Require;Trust Server Certificate=true;Timeout=30;Command Timeout=30;";
+}
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
@@ -19,15 +22,21 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     {
         npgsqlOptions.EnableRetryOnFailure(3);
     });
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
 // 2. Register Domain & Infrastructure Services
 builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
 
 // 3. JWT Authentication & Authorization
-var jwtSecret = builder.Configuration["JwtSettings:Secret"] ?? "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";
+var jwtSecret = builder.Configuration["JwtSettings:Secret"];
+if (string.IsNullOrWhiteSpace(jwtSecret))
+{
+    jwtSecret = "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";
+}
 var key = Encoding.UTF8.GetBytes(jwtSecret);
 
 builder.Services.AddAuthentication(options =>
@@ -64,7 +73,15 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("EduFlowCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000", "http://localhost:8080")
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  if (string.IsNullOrWhiteSpace(origin)) return false;
+                  if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                  {
+                      return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+                  }
+                  return false;
+              })
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -116,6 +133,22 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// 7. Database Initialization & Auto-Migration
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        DbInitializer.Initialize(context);
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "An error occurred during database initialization/schema creation.");
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -125,12 +158,30 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new { message = "An unexpected server error occurred. Please try again later." });
+    });
+});
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("EduFlowCorsPolicy");
+app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Lightweight health endpoints for system monitoring & dev auto-reload coordination
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow }));
 
 app.Run();
 

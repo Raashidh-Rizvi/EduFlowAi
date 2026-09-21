@@ -1,7 +1,11 @@
 # EduFlow AI – Architecture Decision Records (ADRs) 🏛️
+
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+
+> **Reconciliation note:** Read the [current responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) for ownership and audited status. Zustand/BLoC here conflict with React Query/Provider in the [root ADR](../legacy/adrs/ROOT_ADR.md); these recorded proposals require a later explicit decision, not fabricated approval. The audit found React hooks/context/storage and Flutter setState prototypes. Relational logs/plans exist, but durable graph recovery and approval execution remain PARTIAL; Redis/SignalR remain DOCUMENTED ONLY. Consequences below describe intended architectural benefits, not verified deployment or test results.
 > **SE3090 Assignment 1 | Architectural Justifications & Trade-Off Analysis**
 
-This document records the foundational architectural decisions made for the EduFlow AI platform, detailing the context, considered options, decisions taken, and resulting consequences in accordance with Section 14.2 of the SE3090 specification.
+This is the canonical decision register. Accepted below means an existing documented choice corroborated by source, not a new approval made during reorganization. Proposed and Unresolved entries are not adopted implementation facts. Record a genuine decision/evidence date when a conflict is resolved; no lecturer approval is implied.
 
 ---
 
@@ -20,6 +24,8 @@ This document records the foundational architectural decisions made for the EduF
 
 ## ADR-001: React Web Application State Management
 
+**Status: Unresolved.** Zustand here conflicts with React Query/Context in the archived root ADR. Current source uses hooks/context/storage; no winner is selected.
+
 ### Context
 The React web dashboard serves instructors and administrators. It requires managing authentication state, paginated course/module listings, live gradebook updates, and the multi-step AI Challenge/Study Plan approval workflow. We need a state management solution that avoids boilerplate, supports asynchronous data fetching, and provides clear separation of concerns.
 
@@ -29,7 +35,7 @@ The React web dashboard serves instructors and administrators. It requires manag
 3. **Zustand**: Lightweight (under 2kB), hook-based, minimal boilerplate, out-of-the-box support for async actions and devtools.
 
 ### Decision
-We chose **Zustand** as the primary state management solution for the React Web Application.
+Recorded proposal: **Zustand**. Selection versus the alternative recorded in the root ADR remains unresolved.
 
 ### Consequences
 - **Positive**: Minimal boilerplate code, straightforward async state handling, excellent performance without re-render cascades.
@@ -38,6 +44,8 @@ We chose **Zustand** as the primary state management solution for the React Web 
 ---
 
 ## ADR-002: Flutter Mobile Application State Management
+
+**Status: Unresolved.** BLoC here conflicts with Provider in the archived root ADR. Current Flutter uses setState prototypes; no winner is selected.
 
 ### Context
 The Flutter mobile application needs to manage authentication tokens, dynamic course navigation, timed quiz countdowns, and asynchronous game loop updates with clear UI reactivity.
@@ -48,7 +56,7 @@ The Flutter mobile application needs to manage authentication tokens, dynamic co
 3. **BLoC (Business Logic Component) / Cubit**: Strictly separates UI, business logic, and data layers using streams and reactive events.
 
 ### Decision
-We chose **BLoC / Cubit (flutter_bloc)** for the Flutter Mobile Application.
+Recorded proposal: **BLoC / Cubit (flutter_bloc)**. Selection versus Provider remains unresolved.
 
 ### Consequences
 - **Positive**: Unidirectional data flow, exceptional testability with `bloc_test`, predictable state transitions for quiz timers and auth lifecycles.
@@ -57,6 +65,8 @@ We chose **BLoC / Cubit (flutter_bloc)** for the Flutter Mobile Application.
 ---
 
 ## ADR-003: Agentic AI Framework & Multi-Agent Orchestration
+
+**Status: Accepted — existing documented/source-backed framework choice.** LangGraph/FastAPI are used by the current service. This does not establish durable recovery or an enforced acceptance workflow.
 
 ### Context
 The system requires an intelligent adaptive engine that analyzes student deficiencies, compiles tailored challenges, and enforces deterministic safety validation. We need an orchestration framework capable of supporting stateful multi-agent workflows, tool calling, and human-in-the-loop pauses.
@@ -70,12 +80,14 @@ The system requires an intelligent adaptive engine that analyzes student deficie
 We chose **LangGraph (Python 3.11)** with **FastAPI** as the dedicated internal Agentic AI orchestration microservice.
 
 ### Consequences
-- **Positive**: Complete control over agent execution order (Analysis -> Generator -> Validation), guaranteed structured outputs via Pydantic, seamless retry on validation failure.
+- **Intended benefit**: Explicit workflow roles (Planner -> Domain Analysis -> Action / Tool -> Validation / Safety -> authorized human approval where required), structured output validation via Pydantic and controlled retries. Integration and enforcement remain PARTIAL in the current audit.
 - **Negative**: Requires hosting a secondary internal Python runtime behind the ASP.NET Core API gateway.
 
 ---
 
 ## ADR-004: Persistence Strategy for Agent Workflow State & Audit Trails
+
+**Status: Proposed — full durable-state design.** Relational logs/plans exist, but the graph remains in-memory; complete restart recovery and JSONB trace coverage are not established.
 
 ### Context
 Every agent execution, tool call, prompt input, validation result, and human instructor approval decision must be persisted for auditability, traceability, and final grading evaluation.
@@ -86,7 +98,7 @@ Every agent execution, tool call, prompt input, validation result, and human ins
 3. **PostgreSQL Relational Schema with `JSONB` for Dynamic Trace Data**: Store core workflow metadata in normalized tables, while storing detailed agent execution traces and tool outputs in PostgreSQL `JSONB` columns.
 
 ### Decision
-We chose a **hybrid relational + JSONB strategy in PostgreSQL 16**, managed via **Entity Framework Core**.
+Proposed full-state design: **relational + JSONB persistence in PostgreSQL**, managed via **Entity Framework Core**. Existing plan/log persistence is only part of this design.
 
 ### Consequences
 - **Positive**: Unified database infrastructure, ACID transactional guarantees when instructors approve plans, powerful indexing via GIN on JSONB execution traces, seamless EF Core mapping.
@@ -95,6 +107,8 @@ We chose a **hybrid relational + JSONB strategy in PostgreSQL 16**, managed via 
 ---
 
 ## ADR-005: Backend Architecture & Gateway Integration Pattern
+
+**Status: Accepted — existing documented/source-backed public boundary.** ASP.NET Core and the AI gateway exist; authorization coverage and mobile integration remain incomplete.
 
 ### Context
 The assignment specification strictly mandates that React and Flutter clients must communicate exclusively through the ASP.NET Core Web API. The Python LangGraph AI service must remain an internal subsystem.
@@ -114,6 +128,8 @@ We adopted the **ASP.NET Core Authoritative Gateway & Orchestrator Pattern**.
 
 ## ADR-006: Cloud Deployment & Containerization Strategy
 
+**Status: Unresolved.** The archived root ADR names Azure/Vercel; this entry proposes containers/local reproducibility. These can coexist, but neither establishes an agreed, verified deployment target.
+
 ### Context
 The application must be deployable with working live endpoints, Swagger access, database initialization, and reproducible local startup scripts.
 
@@ -122,7 +138,7 @@ The application must be deployable with working live endpoints, Swagger access, 
 2. **Containerized Multi-Service Deployment (Docker Compose + Cloud PaaS)**: Containerize all services with Docker and deploy to managed cloud hosting.
 
 ### Decision
-We chose **Docker containerization with Docker Compose for local reproducibility** and deployment readiness.
+Recorded proposal: **Docker containerization with Docker Compose for local reproducibility**. Hosting choice and operational evidence remain unresolved.
 
 ### Consequences
 - **Positive**: Single-command local startup (`docker compose up`), fully reproducible builds in GitHub Actions CI.
@@ -132,6 +148,8 @@ We chose **Docker containerization with Docker Compose for local reproducibility
 
 ## ADR-007: Deterministic Immutable XP Ledger vs Direct Mutating Counts
 
+**Status: Proposed — invariant enforcement incomplete.** Ledger/aggregate code exists; immutable enforcement, replay/concurrency protection and complete auditability are not established.
+
 ### Context
 Gamification points (XP) and coins can be corrupted or disputed if stored simply as an integer column that gets overwritten with `UPDATE users SET xp = xp + 50`.
 
@@ -140,15 +158,17 @@ Gamification points (XP) and coins can be corrupted or disputed if stored simply
 2. **Immutable Transaction Ledger (`xp_transactions`) + Cached Aggregate Column**: Every XP gain generates a discrete transaction record with timestamp, source type, and amount, while maintaining a synchronized cached aggregate.
 
 ### Decision
-We chose the **Immutable Transaction Ledger Pattern** (`xp_transactions` + `student_xp`).
+The proposed invariant is the **Immutable Transaction Ledger Pattern** (`xp_transactions` + `student_xp`).
 
 ### Consequences
-- **Positive**: 100% auditability, eliminates duplicate claims, supports retroactive dispute reconciliation, and simplifies streak/level recalculations.
+- **Intended benefit**: Traceable rewards and dispute reconciliation. Preventing duplicate claims requires explicit uniqueness/idempotency and transaction controls; a ledger alone does not guarantee them.
 - **Negative**: Requires an additional INSERT per learning activity.
 
 ---
 
 ## ADR-008: Real-Time Event Communication via ASP.NET Core SignalR
+
+**Status: Proposed.** SignalR remains DOCUMENTED ONLY in the current audit.
 
 ### Context
 When a student completes a quiz or challenge, instant visual feedback (e.g. `+50 XP` toast, `Level Up` confetti, live rank shift) is required without client polling.
@@ -159,7 +179,7 @@ When a student completes a quiz or challenge, instant visual feedback (e.g. `+50
 3. **ASP.NET Core SignalR**: Native WebSocket support with fallback to Long Polling, tight integration with .NET Dependency Injection and authorization.
 
 ### Decision
-We chose **ASP.NET Core SignalR Hubs** (`GamificationHub` and `LeaderboardHub`).
+Proposed option: **ASP.NET Core SignalR Hubs** (`GamificationHub` and `LeaderboardHub`).
 
 ### Consequences
 - **Positive**: Sub-second UI reactivity on both Flutter mobile and React web; zero client polling.
@@ -168,6 +188,8 @@ We chose **ASP.NET Core SignalR Hubs** (`GamificationHub` and `LeaderboardHub`).
 ---
 
 ## ADR-009: Redis Sorted Sets for High-Performance Leaderboard Ranking
+
+**Status: Proposed.** Redis leaderboard caching remains DOCUMENTED ONLY in the current audit.
 
 ### Context
 Calculating real-time leaderboards on relational tables using `ORDER BY SUM(xp) DESC` across thousands of students is computationally heavy for frequent dashboard reads.
@@ -178,7 +200,7 @@ Calculating real-time leaderboards on relational tables using `ORDER BY SUM(xp) 
 3. **Redis Sorted Sets (`ZADD`, `ZREVRANGE`, `ZREVRANK`)**: In-memory sorted sets providing $O(\log N)$ updates and $O(\log N + M)$ range reads.
 
 ### Decision
-We chose **Redis Sorted Sets** as the real-time leaderboard caching engine, backed by PostgreSQL as the authoritative persistent ledger.
+Proposed option: **Redis Sorted Sets** as the real-time leaderboard caching engine, backed by PostgreSQL as the authoritative persistent ledger.
 
 ### Consequences
 - **Positive**: Instantaneous ranking lookups and top-100 queries; minimal database CPU utilization.

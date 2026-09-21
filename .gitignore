@@ -5,6 +5,15 @@
 *.suo
 *.userosscache
 *.sln.docstates
+backend/EduFlow.Api/appsettings.Development.json
+backend/EduFlow.Api/appsettings.Local.json
+
+# Stray ad-hoc API-testing output (use a local /scratch/ dir instead, also gitignored)
+/backend_response*.json
+/response.json
+/final_success_test.json
+/success_test*.json
+/scratch/
 
 # Node.js / React
 **/node_modules/
@@ -17,6 +26,12 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright
+**/playwright-report/
+**/test-results/
+**/e2e/screenshots/
+.playwright-mcp/
 
 # Flutter / Dart
 **/mobile/build/
@@ -40,3 +55,5 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+DAILY_GIT_WORKFLOW.md
+GITHUB_ACTIONS_GUIDE.md

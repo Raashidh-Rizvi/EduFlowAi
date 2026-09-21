@@ -61,6 +61,17 @@ public class AuthController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Revokes the provided refresh token, effectively logging the user out.
+    /// Idempotent — returns 200 even if the token was already revoked or not found.
+    /// </summary>
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+    {
+        await _authService.LogoutAsync(request.RefreshToken);
+        return Ok(new { message = "Logged out successfully." });
+    }
+
     [HttpGet("me")]
     [Authorize]
     public async Task<IActionResult> GetProfile()
@@ -74,4 +85,63 @@ public class AuthController : ControllerBase
         var profile = await _authService.GetUserProfileAsync(userId);
         return Ok(profile);
     }
+
+    /// <summary>
+    /// Returns the public profile of any user by their ID.
+    /// Admins can access any user; Students and Instructors can only access their own.
+    /// </summary>
+    [HttpGet("users/{id:guid}")]
+    [Authorize]
+    public async Task<IActionResult> GetUserById(Guid id)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var requestingUserId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        // Non-admins can only view their own profile via this endpoint
+        if (!role.Equals("Admin", StringComparison.OrdinalIgnoreCase) && requestingUserId != id)
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var profile = await _authService.GetUserByIdAsync(id);
+            return Ok(profile);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Updates the authenticated user's own profile (full name and avatar URL).
+    /// Admins may also call this endpoint for any user.
+    /// </summary>
+    [HttpPut("users/{id:guid}")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile(Guid id, [FromBody] UpdateProfileRequest request)
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var requestingUserId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        // Only allow updating own profile unless Admin
+        if (!role.Equals("Admin", StringComparison.OrdinalIgnoreCase) && requestingUserId != id)
+        {
+            return Forbid();
+        }
+
+        try
+        {
+            var updated = await _authService.UpdateProfileAsync(id, request);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
 }
+
