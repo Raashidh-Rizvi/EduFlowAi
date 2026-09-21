@@ -1,6 +1,15 @@
 import api from './api';
 
-const DEFAULT_STUDENT_ID = '33333333-3333-3333-3333-333333333333';
+// Phase 2A fix: Read real logged-in student ID from session — never use hardcoded test ID
+function getLoggedInStudentId() {
+  try {
+    const user = JSON.parse(localStorage.getItem('eduflow_user') || '{}');
+    // Try all field names the backend may use
+    return user.id || user.userId || user.studentId || '';
+  } catch {
+    return '';
+  }
+}
 
 const DEFAULT_FALLBACK_STUDENTS = [
   { studentId: '33333333-3333-3333-3333-333333333333', fullName: 'Alex Rivera', email: 'alex@eduflow.ai', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', totalXp: 1850, currentLevel: 3, currentStreak: 5, currentSquadId: null, currentSquadName: null },
@@ -306,7 +315,8 @@ export const gamificationService = {
   },
 
   // ── Student Game Dashboard & Ledger ─────────────────────────────────────────
-  async getGameDashboard(studentId = DEFAULT_STUDENT_ID) {
+  // Phase 2A fix: uses real student ID from session, not hardcoded test ID
+  async getGameDashboard(studentId = getLoggedInStudentId()) {
     try {
       const response = await api.get(`/gamification/dashboard/${studentId}`);
       return response.data;
@@ -316,7 +326,8 @@ export const gamificationService = {
     }
   },
 
-  async claimDailyGrandMission(studentId = DEFAULT_STUDENT_ID) {
+  // Phase 2A fix: uses real student ID from session
+  async claimDailyGrandMission(studentId = getLoggedInStudentId()) {
     try {
       const response = await api.post(`/gamification/missions/claim-grand/${studentId}`);
       return response.data;
@@ -325,7 +336,8 @@ export const gamificationService = {
     }
   },
 
-  async getXpLedger(studentId = DEFAULT_STUDENT_ID) {
+  // Phase 2A fix: uses real student ID from session
+  async getXpLedger(studentId = getLoggedInStudentId()) {
     try {
       const response = await api.get(`/gamification/ledger/${studentId}`);
       return response.data;
@@ -334,7 +346,8 @@ export const gamificationService = {
     }
   },
 
-  async useStreakFreeze(studentId = DEFAULT_STUDENT_ID) {
+  // Phase 2A fix: uses real student ID from session
+  async useStreakFreeze(studentId = getLoggedInStudentId()) {
     try {
       const response = await api.post(`/gamification/streak/freeze/${studentId}`);
       return response.data;
@@ -343,18 +356,26 @@ export const gamificationService = {
     }
   },
 
-  async getNextBestAction(studentId = DEFAULT_STUDENT_ID) {
+  // Phase 2B fix: reads real user data from session; calls correct /api/ai/ route from Phase 1
+  async getNextBestAction() {
     try {
+      const userStr = localStorage.getItem('eduflow_user');
+      const user = userStr ? JSON.parse(userStr) : {};
+
       const response = await api.post('/ai/next-best-action', {
-        student_id: studentId,
-        student_name: 'Alex Rivera',
-        level: 2,
-        total_xp: 660,
-        streak: 3
+        student_name: user.fullName || user.name || 'Student',
+        level:        user.level   || user.currentLevel  || 1,
+        total_xp:     user.totalXp || user.xp            || 0,
+        streak:       user.streak  || user.currentStreak || 0
       });
       return response.data;
-    } catch {
-      return null;
+    } catch (err) {
+      console.warn('[gamificationService] getNextBestAction failed:', err?.message);
+      // Safe fallback — never crash the student portal
+      return {
+        recommendation: 'Continue with your enrolled courses and complete pending lessons.',
+        source: 'fallback'
+      };
     }
   }
 };
