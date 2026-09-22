@@ -753,7 +753,7 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
                   </div>
                 </div>
               );
-            )})}
+            })}
           </div>
         </section>
 
