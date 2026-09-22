@@ -360,6 +360,115 @@ public class QuizzesController : BaseApiController
         return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, quiz);
     }
 
+    [HttpPost("upload-quiz")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> UploadQuiz([FromBody] UploadQuizRequest request)
+    {
+        if (!await IsCourseOwnerOrAdmin(request.CourseId))
+        {
+            if (request.CourseId != Guid.Empty)
+                return Forbid();
+        }
+
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
+        if (course == null)
+        {
+            return BadRequest(new { message = "Selected Course does not exist." });
+        }
+
+        if (request.Questions == null || request.Questions.Count == 0)
+        {
+            return BadRequest(new { message = "Uploaded quiz must contain at least one question." });
+        }
+
+        foreach (var q in request.Questions)
+        {
+            if (string.IsNullOrWhiteSpace(q.Prompt))
+                return BadRequest(new { message = "All questions must have a non-empty prompt." });
+            if (q.Points <= 0)
+                return BadRequest(new { message = $"Question '{q.Prompt}' must have points greater than 0." });
+            if (q.Type == QuestionType.MultipleChoice && (q.Options == null || q.Options.Count < 2))
+                return BadRequest(new { message = $"Multiple choice question '{q.Prompt}' requires at least 2 options." });
+            if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                return BadRequest(new { message = $"Question '{q.Prompt}' must specify a correct answer." });
+        }
+
+        int totalMarks = request.Questions.Sum(q => q.Points);
+
+        var quiz = new Assessment
+        {
+            CourseId = request.CourseId,
+            ScopeType = request.ScopeType,
+            ScopeId = request.ScopeId ?? request.CourseId,
+            Title = request.Title,
+            Description = request.Description,
+            Type = AssessmentType.Quiz,
+            Difficulty = DifficultyLevel.Medium,
+            TimeLimitSeconds = request.TimeLimitMinutes * 60,
+            TimeLimitMinutes = request.TimeLimitMinutes,
+            PassingScorePercent = request.PassingScorePercent,
+            QuestionCount = request.Questions.Count,
+            AttemptsAllowed = 3,
+            RandomizeQuestions = true,
+            RandomizeOptions = true,
+            FeedbackMode = FeedbackMode.Immediate,
+            ShowCorrectAnswers = true,
+            XpReward = request.XpReward,
+            CoinReward = request.CoinReward,
+            Status = QuizStatus.Draft,
+            GeneratedByAI = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        int index = 1;
+        foreach (var q in request.Questions)
+        {
+            var question = new Question
+            {
+                Prompt = q.Prompt,
+                Type = q.Type,
+                OptionsJson = JsonSerializer.Serialize(q.Options ?? new List<string>()),
+                CorrectAnswer = q.CorrectAnswer,
+                Explanation = q.Explanation,
+                Difficulty = q.Difficulty,
+                Points = q.Points > 0 ? q.Points : 10,
+                OrderIndex = q.OrderIndex > 0 ? q.OrderIndex : index++,
+                SourceContentId = q.SourceContentId,
+                LearningObjective = q.LearningObjective,
+                MetadataJson = q.MetadataJson ?? "{}"
+            };
+
+            if (q.OptionDetails != null && q.OptionDetails.Count > 0)
+            {
+                int optIdx = 1;
+                foreach (var opt in q.OptionDetails)
+                {
+                    question.Options.Add(new QuestionOption
+                    {
+                        OptionText = opt.OptionText,
+                        IsCorrect = opt.IsCorrect,
+                        DisplayOrder = opt.DisplayOrder > 0 ? opt.DisplayOrder : optIdx++
+                    });
+                }
+            }
+
+            quiz.Questions.Add(question);
+        }
+
+        await DbContext.Assessments.AddAsync(quiz);
+        await DbContext.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, new
+        {
+            quizId = quiz.Id,
+            title = quiz.Title,
+            questionCount = quiz.QuestionCount,
+            totalMarks,
+            status = quiz.Status.ToString(),
+            message = "Quiz uploaded successfully as Draft. Validate and publish when ready."
+        });
+    }
+
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateQuiz(Guid id, [FromBody] CreateQuizRequest request)
@@ -599,6 +708,7 @@ public class QuizzesController : BaseApiController
     {
         var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
+                .ThenInclude(q => q.Options)
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (quiz == null)
@@ -612,21 +722,81 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
+        // --- Publication validation gate ---
+
+        var errors = new List<string>();
+
+        // 1. Question count check
         if (quiz.Questions.Count == 0)
         {
-            return BadRequest(new { message = "Cannot publish an empty quiz with 0 questions." });
+            errors.Add("Cannot publish an empty quiz with 0 questions.");
         }
 
-        // Validation gate: PassingScorePercent must be between 1-100
+        // 2. Per-question structure validation
+        foreach (var q in quiz.Questions)
+        {
+            if (string.IsNullOrWhiteSpace(q.Prompt))
+                errors.Add($"Question #{q.OrderIndex} has an empty prompt.");
+
+            if (q.Points <= 0)
+                errors.Add($"Question #{q.OrderIndex} must have points greater than 0.");
+
+            var options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+
+            switch (q.Type)
+            {
+                case QuestionType.MultipleChoice:
+                    if (options.Count < 2)
+                        errors.Add($"MCQ #{q.OrderIndex} requires at least 2 options, found {options.Count}.");
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                        errors.Add($"MCQ #{q.OrderIndex} must specify a correct answer.");
+                    else if (!options.Any(o => string.Equals(o.Trim(), q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase)))
+                        errors.Add($"MCQ #{q.OrderIndex} correct answer '{q.CorrectAnswer}' does not match any option.");
+                    break;
+
+                case QuestionType.MultipleSelect:
+                    if (options.Count < 2)
+                        errors.Add($"Multi-select #{q.OrderIndex} requires at least 2 options.");
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                        errors.Add($"Multi-select #{q.OrderIndex} must specify correct answers.");
+                    break;
+
+                case QuestionType.TrueFalse:
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer) ||
+                        (!q.CorrectAnswer.Equals("True", StringComparison.OrdinalIgnoreCase) &&
+                         !q.CorrectAnswer.Equals("False", StringComparison.OrdinalIgnoreCase)))
+                        errors.Add($"T/F #{q.OrderIndex} must have 'True' or 'False' as correct answer.");
+                    break;
+
+                case QuestionType.FillInBlank:
+                case QuestionType.ShortAnswer:
+                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
+                        errors.Add($"Fill-in-blank/Short #{q.OrderIndex} must have a correct answer.");
+                    break;
+            }
+        }
+
+        // 3. Passing score validation
         if (quiz.PassingScorePercent <= 0 || quiz.PassingScorePercent > 100)
         {
-            return BadRequest(new { message = $"Passing score percent must be between 1 and 100. Current: {quiz.PassingScorePercent}." });
+            errors.Add($"Passing score percent must be between 1 and 100. Current: {quiz.PassingScorePercent}.");
         }
 
-        // Validation gate: XP must be within platform bounds
+        // 4. XP economy cap
         if (quiz.XpReward > 250)
         {
-            return BadRequest(new { message = $"XP reward ({quiz.XpReward}) exceeds platform maximum of 250 XP. Adjust before publishing." });
+            errors.Add($"XP reward ({quiz.XpReward}) exceeds platform maximum of 250 XP.");
+        }
+
+        // 5. If AI-generated, require at least one non-fallback question
+        if (quiz.GeneratedByAI && quiz.Questions.All(q => q.Prompt.Contains("Regenerated Scenario")))
+        {
+            errors.Add("AI-generated quiz contains only fallback questions. Re-run AI generation.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return BadRequest(new { message = "Quiz validation failed. Fix errors before publishing.", errors });
         }
 
         quiz.Status = QuizStatus.Published;
@@ -1428,9 +1598,9 @@ public class QuizzesController : BaseApiController
                 IsCorrect: isCorrect,
                 PointsAwarded: awarded,
                 Explanation: quiz.ShowCorrectAnswers ? feedback : "Feedback available on review.",
-                SlideCitation: slideCitation,
+                SlideCitation: quiz.ShowCorrectAnswers ? slideCitation : null,
                 QuestionType: qTypeLabel,
-                MarkingScheme: rubricExplanation
+                MarkingScheme: quiz.ShowCorrectAnswers ? rubricExplanation : null
             ));
 
             Guid? topicScopeId = quiz.ScopeType == QuizScopeType.Topic ? quiz.ScopeId : null;

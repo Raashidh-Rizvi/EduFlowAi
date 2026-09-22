@@ -69,6 +69,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpPost("instructor-create")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<SquadActionResultDto>> InstructorCreateSquad([FromBody] InstructorCreateSquadRequest request, CancellationToken ct)
     {
         var result = await _teamService.InstructorCreateSquadAsync(request, ct);
@@ -80,6 +81,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<SquadActionResultDto>> UpdateSquad(Guid id, [FromBody] UpdateSquadRequest request, CancellationToken ct)
     {
         var result = await _teamService.UpdateSquadAsync(id, request, ct);
@@ -91,6 +93,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/members")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<SquadActionResultDto>> AddMember(Guid id, [FromQuery] Guid studentId, CancellationToken ct)
     {
         var result = await _teamService.AddMemberAsync(id, studentId, EduFlow.Core.Enums.TeamRole.Member, ct);
@@ -102,6 +105,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}/members/{studentId:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<SquadActionResultDto>> RemoveMember(Guid id, Guid studentId, CancellationToken ct)
     {
         var result = await _teamService.RemoveMemberAsync(id, studentId, ct);
@@ -113,6 +117,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<bool>> DeleteSquad(Guid id, CancellationToken ct)
     {
         var success = await _teamService.DeleteSquadAsync(id, ct);
