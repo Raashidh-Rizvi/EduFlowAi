@@ -115,44 +115,10 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
           }));
           setRecentActivities(mapped);
         } else {
-          setRecentActivities([
-            {
-              id: 1,
-              title: 'Module 2 Quiz Published',
-              desc: 'Formative Assessment with 15 questions is now live for 72 students.',
-              time: '18 mins ago',
-              icon: CheckCircle2,
-              color: 'var(--success)'
-            },
-            {
-              id: 2,
-              title: '42 Students Completed Functions Quiz',
-              desc: 'Average cohort score: 81.4% • 6 students achieved 100% mastery.',
-              time: '1 hour ago',
-              icon: Activity,
-              color: 'var(--primary)'
-            }
-          ]);
+          setRecentActivities([]);
         }
       } catch {
-        setRecentActivities([
-          {
-            id: 1,
-            title: 'Module 2 Quiz Published',
-            desc: 'Formative Assessment with 15 questions is now live for 72 students.',
-            time: '18 mins ago',
-            icon: CheckCircle2,
-            color: 'var(--success)'
-          },
-          {
-            id: 2,
-            title: '42 Students Completed Functions Quiz',
-            desc: 'Average cohort score: 81.4% • 6 students achieved 100% mastery.',
-            time: '1 hour ago',
-            icon: Activity,
-            color: 'var(--primary)'
-          }
-        ]);
+        setRecentActivities([]);
       }
     } catch (err) {
       console.warn('Instructor dashboard load fallback', err);
@@ -737,7 +703,11 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {recentActivities.map(item => {
+            {recentActivities.length === 0 ? (
+              <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No recent activity to display. Activity will appear as students complete lessons and assessments.
+              </div>
+            ) : recentActivities.map(item => {
               const Icon = item.icon;
               return (
                 <div 
@@ -783,7 +753,7 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
                   </div>
                 </div>
               );
-            })}
+            )})}
           </div>
         </section>
 

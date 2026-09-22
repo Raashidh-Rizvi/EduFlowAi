@@ -2,22 +2,13 @@ import api from './api';
 
 export const courseService = {
   async getCourses() {
-    try {
-      const response = await api.get('/courses');
-      return response.data;
-    } catch {
-      return [];
-    }
+    const response = await api.get('/courses');
+    return response.data;
   },
 
   async getCourseById(courseId) {
-    try {
-      const response = await api.get(`/courses/${courseId}`);
-      return response.data;
-    } catch (err) {
-      console.warn('Falling back to local course detail', err);
-      return null;
-    }
+    const response = await api.get(`/courses/${courseId}`);
+    return response.data;
   },
 
   async createCourse(data) {
