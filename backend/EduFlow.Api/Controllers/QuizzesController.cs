@@ -991,7 +991,9 @@ public class QuizzesController : BaseApiController
         string? physicalSlidePath = null;
         if (!string.IsNullOrEmpty(slideRelativeUrl))
         {
-            physicalSlidePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", slideRelativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            var webRootPath = _environment?.WebRootPath
+                ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
+            physicalSlidePath = Path.Combine(webRootPath, slideRelativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
             if (!System.IO.File.Exists(physicalSlidePath))
             {
                 physicalSlidePath = null;
@@ -1007,7 +1009,9 @@ public class QuizzesController : BaseApiController
                  (!string.IsNullOrWhiteSpace(request.ModuleTitle) && m.Title == request.ModuleTitle)));
             if (dbModule != null && !string.IsNullOrEmpty(dbModule.PdfUrl))
             {
-                var candidatePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", dbModule.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+                var fallbackWebRoot = _environment?.WebRootPath
+                    ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
+                var candidatePath = Path.Combine(fallbackWebRoot, dbModule.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
                 if (System.IO.File.Exists(candidatePath))
                 {
                     physicalSlidePath = candidatePath;
@@ -1563,8 +1567,8 @@ public class QuizzesController : BaseApiController
                     awarded = Math.Clamp((int)Math.Round(matchRatio * q.Points), studentAns.Length > 15 ? 4 : 0, q.Points);
                     isCorrect = awarded >= (int)(q.Points * 0.7);
                     feedback = isCorrect
-                        ? $"AI Evaluation: Strong conceptual alignment with slide criteria (+{awarded}/{q.Points} marks)."
-                        : $"AI Evaluation: Partial conceptual match. Expected core concept: {q.CorrectAnswer}";
+                        ? $"Strong keyword match with model answer (+{awarded}/{q.Points} marks)."
+                        : $"Partial keyword match. Expected core concept: {q.CorrectAnswer}";
                 }
                 else
                 {

@@ -165,7 +165,7 @@ Student 2 owns: **Academic Curriculum, Assessment, AI Content Management, AI Age
 | Quiz Validation | QuizzesController | 200-300 | Business rules |
 | Quiz Publish/Unpublish | QuizzesController | 300-400 | Status workflow |
 | Quiz AI Generation | QuizzesController | 400-500 | AI gateway integration |
-| Quiz Grading | QuizzesController | 500-600 | Manual + AI grading |
+| Quiz Grading | QuizzesController | 1472-1658 | Rule-based grading (no AI call) |
 | Quiz Submissions | QuizzesController | 600-700 | Submit + retrieve |
 | Challenge CRUD | ChallengesController | 1-187 | Basic CRUD |
 | AI Study Plan Review | AiReviewController | 1-531 | Full HITL workflow |

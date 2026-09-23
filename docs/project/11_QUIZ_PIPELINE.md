@@ -247,7 +247,9 @@ sequenceDiagram
 
 ---
 
-## 7. Auto-Grading Logic
+## 7. Grading Logic (Current Implementation)
+
+> **Important:** All grading is **rule-based** (deterministic C# heuristics). The AI evaluator exists but is not called during submission.
 
 ### 7.1 Grading by Question Type
 
@@ -258,28 +260,13 @@ sequenceDiagram
 | Fill in Blank | Case-insensitive, trimmed match (+ accepted synonyms list) |
 | True/False | Exact boolean match |
 | Dropdown | Exact match |
-| Short Answer | AI-assisted grading with rubric + human flag if confidence < 80% |
+| Short Answer | Keyword-overlap heuristic (rule-based, not AI) — see §7.2 |
 
-### 7.2 Short Answer AI Grading
+### 7.2 Short Answer Grading (Current Implementation)
 
-```text
-SYSTEM:
-Grade this student answer against the rubric.
-Rubric: {rubric_text}
-Model answer: {model_answer}
+Short answer grading uses a **deterministic keyword-overlap heuristic** in `QuizzesController.SubmitQuiz` (lines 1551–1568). The model answer is split into words >3 characters; the student answer is scored by keyword containment ratio, clamped to `[4, maxPoints]`, and passes at ≥70% of points.
 
-Student answer: {student_answer}
-
-Return JSON:
-{
-  "score": 0.0-1.0,
-  "confidence": 0.0-1.0,
-  "feedback": "...",
-  "requires_human_review": true|false
-}
-
-Rule: If confidence < 0.8, set requires_human_review = true.
-```
+The AI semantic rubric grader described below exists in `ai-agent/agents/quiz_evaluator_agent.py` but is **not invoked** by the .NET submission path. The `AiGatewayClient.AutoGradeQuizSubmissionAsync` method that would call it has zero callers.
 
 ### 7.3 Score Calculation
 
