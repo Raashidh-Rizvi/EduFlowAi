@@ -1,0 +1,215 @@
+================================================================================
+          EDUFLOW AI - DETAILED PROJECT WALKTHROUGH & VIVA GUIDE
+================================================================================
+Author     : Atheek M.F. (IT24103933)
+Role       : Student 3 — Student Experience, Gamification & Mobile Companion
+AI Agent   : Domain Analysis Agent (ai-agent/agents/domain_analysis.py)
+Branch     : IT24103933_Atheek_Fareez
+Target PR  : dev
+Date       : September 2026
+Status     : 100% COMPLETE (Phases 0 through Final)
+================================================================================
+
+TABLE OF CONTENTS:
+1. Executive Role Summary & Architecture
+2. Phase-by-Phase Technical Walkthrough
+   - Phase 0: Environment & Branch Setup
+   - Phase 1: Backend Security & New AI Endpoint
+   - Phase 2: React Frontend Real Identity Fixes
+   - Phase 3: Flutter Mobile Real API Service Layer
+   - Phase 4: Python AI Smoke Tests & Backend C# Test Expansion
+   - Final Phase: System Verification & Complete Commit History
+3. All Files Created and Modified
+4. Test Suites & Verification Execution Commands
+5. Top Viva Exam Questions & Detailed Answers
+6. Demonstration Flow for Evaluation
+
+--------------------------------------------------------------------------------
+1. EXECUTIVE ROLE SUMMARY & ARCHITECTURE
+--------------------------------------------------------------------------------
+EduFlow AI is a 3-member enterprise learning and gamification platform:
+- Student 1 (Admin/Auth) : User accounts, security policies, system configuration
+- Student 2 (Instructor) : Course authoring, syllabus management, quiz grading
+- Student 3 (Atheek - You):
+  * Student Portal       : Course enrollments, lesson progress, focus timer
+  * Gamification Engine  : XP transactions, levels, streaks, badges, leaderboards
+  * AI Coach Integration : Next-best-action guidance via domain telemetry analysis
+  * Flutter Mobile App   : Native mobile companion with offline-first JWT storage
+
+--------------------------------------------------------------------------------
+2. PHASE-BY-PHASE TECHNICAL WALKTHROUGH
+--------------------------------------------------------------------------------
+
+PHASE 0: ENVIRONMENT & BASELINE SYNC
+------------------------------------
+- Synchronized branch IT24103933_Atheek_Fareez from team branch 'dev'.
+- Verified backend runs on http://localhost:5204.
+- Verified frontend runs on Vite http://localhost:5173.
+- Verified baseline test suite passing.
+
+PHASE 1: BACKEND SECURITY & NEW AI ENDPOINT
+-------------------------------------------
+Commit: 30bf839 - fix(gamification): add self-only authorization to gamification endpoints
+Files:
+1. backend/EduFlow.Api/Controllers/GamificationController.cs
+   - Removed conflicting route attribute [Route("api/v1/gamification")].
+   - Added [Authorize] requirement to endpoints.
+   - Implemented self-only authorization guard preventing cross-student access:
+     if (callerId != studentId && !User.IsInRole("Admin")) return Forbid();
+   - Guarded methods: GetDashboard, GetProfile, GetLedger, GetMasteryMatrix,
+     ClaimGrandReward, and UseStreakFreeze.
+2. backend/EduFlow.Api/Controllers/AiStudentController.cs (NEW FILE)
+   - Created POST /api/ai/next-best-action endpoint.
+   - Reads student identity strictly from JWT ClaimTypes.NameIdentifier.
+   - Built-in fallback resilience: returns safe calibrated advice if AI service
+     is unavailable so student UI never crashes.
+   - Guaranteed read-only: does NOT mutate student XP or grades directly.
+
+PHASE 2: REACT FRONTEND REAL IDENTITY FIXES
+-------------------------------------------
+Commit: 98f3d01 - fix(frontend): replace hardcoded student ID with real session identity
+Files:
+1. frontend/src/services/gamificationService.js
+   - Removed hardcoded DEFAULT_STUDENT_ID ('33333333-3333-3333-3333-333333333333').
+   - Created getLoggedInStudentId() helper reading from localStorage 'eduflow_user'.
+   - Updated getGameDashboard, claimDailyGrandMission, getXpLedger, and useStreakFreeze
+     to use logged-in student's real ID by default.
+   - Fixed getNextBestAction to query real /api/ai/next-best-action endpoint
+     with real session values (fullName, totalXp, level, streak).
+
+PHASE 3: FLUTTER MOBILE REAL API SERVICE LAYER
+----------------------------------------------
+Commits:
+- ed29f25 - feat(mobile): create real API service layer for Flutter app
+- fe4b2a9 - feat(mobile): connect login screen to real backend auth
+Files:
+1. mobile/lib/services/api_service.dart (NEW FILE)
+   - Configured Dio HTTP client pointing to http://10.0.2.2:5204/api (Android/Windows).
+   - Added interceptor automatically injecting 'Authorization: Bearer <token>'.
+   - Secure persistent storage of token and user profile via FlutterSecureStorage.
+2. mobile/lib/services/auth_service.dart (NEW FILE)
+   - Connects to backend POST /api/auth/login.
+   - Saves token and user info; handles logout session clearing.
+3. mobile/lib/services/gamification_service.dart (NEW FILE)
+   - Connects to GET /api/gamification/dashboard/{studentId} and /leaderboard.
+4. mobile/lib/screens/auth/login_screen.dart
+   - Connected login button to AuthService.login().
+   - Shows loading spinner during network request and SnackBar on errors.
+5. mobile/test/services/api_service_test.dart (NEW FILE)
+   - 4 unit tests verifying base URL, port 5204, /api route, and email validation.
+   - Test result: 00:18 +4: All tests passed!
+
+PHASE 4: PYTHON AI SMOKE TESTS & BACKEND TEST EXPANSION
+-------------------------------------------------------
+Commits:
+- 973569c - test(ai): add smoke tests for Domain Analysis Agent
+- c8d8e9c - test(gamification): add level boundary and dashboard tests
+Files:
+1. ai-agent/agents/domain_analysis.py
+   - Added analyze() method evaluating student quiz scores, mastery levels,
+     weak topics (< 50%), and strong topics (>= 80%).
+   - Enforces design rule: AI agent NEVER awards XP directly.
+2. ai-agent/tests/test_domain_analysis_smoke.py (NEW FILE)
+   - 5 smoke tests covering agent initialization, empty data fallback,
+     low quiz score diagnosis, high quiz score feedback, and anti-tamper check.
+3. backend/EduFlow.Tests/GamificationServiceTests.cs
+   - AwardXpAsync_Level2_WhenTotalXpReaches500: proves level 2 boundary at 500 XP.
+   - GetStudentDashboard_ReturnsRealValues_AfterXpAwarded: proves database
+     persistence of XP transactions and student records.
+
+FINAL PHASE: COMPLETE VERIFICATION & EVIDENCE TRACKING
+------------------------------------------------------
+Commit: 11b4599 - docs(student3): update production phases and personal work status to 100% complete
+- Documented completion in Atheek_Fareez_PRODUCTION_PHASES.md and Atheek_Fareez_WORK_STATUS.md.
+- Verified all commits and PR ready for merge into 'dev'.
+
+--------------------------------------------------------------------------------
+3. ALL FILES CREATED AND MODIFIED
+--------------------------------------------------------------------------------
+CREATED (NEW):
+- backend/EduFlow.Api/Controllers/AiStudentController.cs
+- mobile/lib/services/api_service.dart
+- mobile/lib/services/auth_service.dart
+- mobile/lib/services/gamification_service.dart
+- mobile/test/services/api_service_test.dart
+- ai-agent/tests/test_domain_analysis_smoke.py
+- Atheek_Fareez_PRODUCTION_PHASES.md
+- Atheek_Fareez_WORK_STATUS.md
+- Atheek_Fareez_WALKTHROUGH.txt
+
+MODIFIED:
+- backend/EduFlow.Api/Controllers/GamificationController.cs
+- frontend/src/services/gamificationService.js
+- mobile/lib/screens/auth/login_screen.dart
+- ai-agent/agents/domain_analysis.py
+- backend/EduFlow.Tests/GamificationServiceTests.cs
+
+--------------------------------------------------------------------------------
+4. TEST SUITES & VERIFICATION EXECUTION COMMANDS
+--------------------------------------------------------------------------------
+Run these commands in PowerShell to demonstrate all working tests:
+
+1. C# .NET Backend Tests:
+   cd "C:\Users\Dell\Desktop\SLIIT_3rd_Year_1 SEM\SE Frame Works\Project\backend"
+   dotnet test EduFlow.Tests --verbosity normal
+   => Expected: 10+ passed, 0 failed
+
+2. Flutter Mobile Unit Tests:
+   cd "C:\Users\Dell\Desktop\SLIIT_3rd_Year_1 SEM\SE Frame Works\Project\mobile"
+   flutter test test/services/api_service_test.dart
+   => Expected: 00:18 +4: All tests passed!
+
+3. Python AI Smoke Tests:
+   cd "C:\Users\Dell\Desktop\SLIIT_3rd_Year_1 SEM\SE Frame Works\Project\ai-agent"
+   python -m pytest tests/test_domain_analysis_smoke.py -v
+   => Expected: 5 passed
+
+--------------------------------------------------------------------------------
+5. TOP VIVA EXAM QUESTIONS & DETAILED ANSWERS
+--------------------------------------------------------------------------------
+Q1: Why do you have both XpTransactions (ledger) and StudentXp (total)?
+A1: XpTransactions is an append-only transaction ledger (like a bank statement)
+    that records every single reward event, source type, and timestamp. It is
+    immutable and prevents fraudulent tampering. StudentXp stores the cached
+    aggregated total XP and level so dashboard and leaderboard queries execute
+    in O(1) time without expensive SQL SUM aggregates on every page load.
+
+Q2: How do you prevent a student from viewing or claiming another student's data?
+A2: In GamificationController, we never trust the studentId passed in the URL.
+    We extract the caller's verified ID from the cryptographically signed JWT
+    claims (ClaimTypes.NameIdentifier). If the caller's ID does not match the
+    requested studentId (and user is not an Admin), the controller immediately
+    aborts and returns HTTP 403 Forbid().
+
+Q3: Why must the AI Agent NEVER directly award XP or update grades?
+A3: Large Language Models and AI agents are probabilistic and can hallucinate or
+    be manipulated through prompt injection. Financial and reward ledgers require
+    strict ACID guarantees in the relational database. The AI agent only analyzes
+    student telemetry to recommend the next best action; XP is only awarded by
+    the core .NET backend through authenticated business logic.
+
+Q4: How does the Flutter mobile application handle authentication & tokens?
+A4: ApiService uses FlutterSecureStorage (backed by Android Keystore on Android
+    and Keychain on iOS) to store the JWT securely. A custom Dio interceptor
+    automatically reads this token and injects 'Authorization: Bearer <token>'
+    into the headers of all outbound HTTP requests.
+
+Q5: What happens when a student reaches 500 XP?
+A5: In LevelCurve.cs, 500 XP is the exact threshold for Level 2. When AwardXpAsync
+    is invoked, it calculates the new level from total XP. If newLevel > oldLevel,
+    it sets LevelUpOccurred = true in the returned DTO, which informs the
+    client frontend to trigger celebratory UI animations.
+
+--------------------------------------------------------------------------------
+6. COMPLETE GIT COMMIT HISTORY
+--------------------------------------------------------------------------------
+Hash    Type   Commit Message
+------- ------ -----------------------------------------------------------------
+11b4599 docs   docs(student3): update production phases and personal work status to 100% complete
+c8d8e9c test   test(gamification): add level boundary and dashboard tests
+973569c test   test(ai): add smoke tests for Domain Analysis Agent
+fe4b2a9 feat   feat(mobile): connect login screen to real backend auth
+ed29f25 feat   feat(mobile): create real API service layer for Flutter app
+98f3d01 fix    fix(frontend): replace hardcoded student ID with real session identity
+30bf839 fix    fix(gamification): add self-only authorization to gamification endpoints
+================================================================================
