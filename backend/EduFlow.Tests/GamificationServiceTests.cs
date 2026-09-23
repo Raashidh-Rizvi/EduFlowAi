@@ -168,7 +168,7 @@ public class GamificationServiceTests
         await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 300, "Lesson");
 
         // Check the DB directly — XP must be saved
-        var xpRecord = await db.StudentXps.FirstOrDefaultAsync(x => x.StudentId == studentId);
+        var xpRecord = await db.StudentXp.FirstOrDefaultAsync(x => x.StudentId == studentId);
         Assert.NotNull(xpRecord);
         Assert.Equal(300, xpRecord.TotalXp);
         Assert.Equal(1, service.CalculateLevel(xpRecord.TotalXp)); // Level 1 at 300 XP

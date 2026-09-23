@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>eduflow-ai-api-1f6c2e4a-8b3d-4c7e-9a2f-3d6b1c8e5f90</UserSecretsId>
