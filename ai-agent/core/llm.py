@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 
+# LLM request timeout in seconds (prevents hung calls from blocking agents indefinitely)
+LLM_TIMEOUT_SECONDS = int(os.environ.get("LLM_TIMEOUT_SECONDS", "60"))
+
 
 def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
     """
@@ -74,7 +77,8 @@ def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
             azure_endpoint=azure_endpoint,
             api_key=azure_key,
             api_version=api_version,
-            temperature=temperature
+            temperature=temperature,
+            request_timeout=LLM_TIMEOUT_SECONDS
         )
 
     # 2. Google Gemini
@@ -82,14 +86,25 @@ def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
     if gemini_key:
         resolved_model = model_name or os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL
         logger.info("Using Google Gemini model: %s", resolved_model)
-        return ChatGoogleGenerativeAI(model=resolved_model, temperature=temperature, google_api_key=gemini_key)
+        return ChatGoogleGenerativeAI(
+            model=resolved_model,
+            temperature=temperature,
+            google_api_key=gemini_key,
+            timeout=LLM_TIMEOUT_SECONDS,
+            max_retries=2
+        )
 
     # 3. Standard OpenAI
     openai_key = os.environ.get("OPENAI_API_KEY")
     if HAS_OPENAI and openai_key:
         resolved_openai = model_name or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         logger.info("Using standard OpenAI model: %s", resolved_openai)
-        return ChatOpenAI(model=resolved_openai, temperature=temperature, api_key=openai_key)
+        return ChatOpenAI(
+            model=resolved_openai,
+            temperature=temperature,
+            api_key=openai_key,
+            request_timeout=LLM_TIMEOUT_SECONDS
+        )
 
     raise ValidationError(
         "No valid LLM credentials configured. Please set AZURE_OPENAI_API_KEY & AZURE_OPENAI_CHAT_DEPLOYMENT, "

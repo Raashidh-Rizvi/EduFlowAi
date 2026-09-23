@@ -24,6 +24,7 @@ jobs:
       # These are NOT real secrets and must never be used in production.
       ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=eduflow_test;Username=postgres;Password=postgres"
       JwtSettings__Secret: "8f2e91ab4c3d7e6f1a0b5c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f"
+      AiService__ApiKey: "ci-internal-test-token"
     steps:
       - uses: actions/checkout@v4
 
@@ -106,3 +107,7 @@ jobs:
       - name: Run Agent Golden Evaluation Tests
         working-directory: ./ai-agent
         run: pytest tests/ -v
+
+      - name: Run Phase 4 Reliability Tests
+        working-directory: ./ai-agent
+        run: pytest tests/test_phase4_reliability.py -v

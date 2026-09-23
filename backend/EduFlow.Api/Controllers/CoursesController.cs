@@ -642,15 +642,45 @@ public class CoursesController : BaseApiController
             return BadRequest(new { message = "No file uploaded or file is empty." });
         }
 
+        // Security: Validate file extension
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (ext != ".pdf" && ext != ".pptx" && ext != ".ppt" && ext != ".docx" && ext != ".doc")
         {
             return BadRequest(new { message = "Only PDF documents (.pdf), Word documents (.docx, .doc) and PowerPoint presentations (.pptx, .ppt) are allowed." });
         }
 
-        if (file.Length > 50 * 1024 * 1024) // 50MB limit
+        // Security: Validate file size (50MB limit)
+        if (file.Length > 50 * 1024 * 1024)
         {
             return BadRequest(new { message = "File size exceeds 50MB limit." });
+        }
+
+        // Security: Validate content-type matches extension
+        var allowedContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword"
+        };
+        if (!string.IsNullOrEmpty(file.ContentType) && !allowedContentTypes.Contains(file.ContentType))
+        {
+            return BadRequest(new { message = $"File content type '{file.ContentType}' does not match the allowed types." });
+        }
+
+        // Security: Sanitize filename - strip path components, prevent traversal
+        var rawFileName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrWhiteSpace(rawFileName))
+        {
+            return BadRequest(new { message = "Invalid file name." });
+        }
+
+        // Security: Ensure no directory traversal in the filename
+        var sanitizedFileName = rawFileName.Replace("..", "").Replace("/", "").Replace("\\", "");
+        if (sanitizedFileName != rawFileName)
+        {
+            return BadRequest(new { message = "File name contains invalid characters." });
         }
 
         var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
@@ -661,8 +691,16 @@ public class CoursesController : BaseApiController
             Directory.CreateDirectory(uploadDir);
         }
 
-        var safeFileName = $"{Guid.NewGuid()}_{Path.GetFileName(file.FileName)}";
+        var safeFileName = $"{Guid.NewGuid()}_{Path.GetFileName(sanitizedFileName)}";
         var filePath = Path.Combine(uploadDir, safeFileName);
+
+        // Security: Verify the resolved path is within the upload directory
+        var resolvedPath = Path.GetFullPath(filePath);
+        var resolvedUploadDir = Path.GetFullPath(uploadDir);
+        if (!resolvedPath.StartsWith(resolvedUploadDir, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Invalid file path." });
+        }
 
         using (var stream = new FileStream(filePath, FileMode.Create))
         {
@@ -672,7 +710,7 @@ public class CoursesController : BaseApiController
         var fileUrl = $"/uploads/{folderName}/{safeFileName}";
         return Ok(new PdfUploadResultDto(
             FileUrl: fileUrl,
-            FileName: file.FileName,
+            FileName: rawFileName,
             FileSizeBytes: file.Length,
             Message: "Lecture slide uploaded and stored successfully."
         ));
@@ -703,6 +741,14 @@ public class CoursesController : BaseApiController
 
         var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
         var physicalPath = Path.Combine(webRoot, module.PdfUrl.TrimStart('/'));
+
+        // Security: Verify resolved path is within webroot to prevent path traversal
+        var resolvedPhysicalPath = Path.GetFullPath(physicalPath);
+        var resolvedWebRoot = Path.GetFullPath(webRoot);
+        if (!resolvedPhysicalPath.StartsWith(resolvedWebRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Invalid file path." });
+        }
 
         if (!System.IO.File.Exists(physicalPath))
         {

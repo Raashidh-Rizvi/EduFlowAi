@@ -48,14 +48,7 @@ const RANDOM_NAMES = [
   'Vector Vanguard'
 ];
 
-const DEFAULT_FALLBACK_STUDENTS = [
-  { studentId: '33333333-3333-3333-3333-333333333333', fullName: 'Alex Rivera', email: 'alex@eduflow.ai', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', totalXp: 1850, currentLevel: 3, currentStreak: 5, currentSquadId: null, currentSquadName: null },
-  { studentId: '33333333-3333-3333-3333-333333333334', fullName: 'Sarah Chen', email: 'sarah.chen@eduflow.ai', avatarUrl: null, totalXp: 1420, currentLevel: 4, currentStreak: 8, currentSquadId: null, currentSquadName: null },
-  { studentId: '33333333-3333-3333-3333-333333333335', fullName: 'Daniel Miller', email: 'daniel.miller@eduflow.ai', avatarUrl: null, totalXp: 1150, currentLevel: 3, currentStreak: 6, currentSquadId: null, currentSquadName: null },
-  { studentId: '33333333-3333-3333-3333-333333333336', fullName: 'Marcus Vance', email: 'marcus.vance@eduflow.ai', avatarUrl: null, totalXp: 890, currentLevel: 3, currentStreak: 4, currentSquadId: null, currentSquadName: null },
-  { studentId: '33333333-3333-3333-3333-333333333337', fullName: 'Priya Patel', email: 'priya.patel@eduflow.ai', avatarUrl: null, totalXp: 720, currentLevel: 2, currentStreak: 5, currentSquadId: null, currentSquadName: null },
-  { studentId: '33333333-3333-3333-3333-333333333338', fullName: 'Elena Rostova', email: 'elena.rostova@eduflow.ai', avatarUrl: null, totalXp: 480, currentLevel: 2, currentStreak: 2, currentSquadId: null, currentSquadName: null }
-];
+
 
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'
@@ -71,6 +64,7 @@ export default function Gamification() {
   const [badges, setBadges] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Modal State for Instructor Team Creation
@@ -100,6 +94,7 @@ export default function Gamification() {
   const loadData = async () => {
     try {
       setLoading(true);
+      setError(null);
       const [
         squadsData,
         studentsData,
@@ -119,7 +114,7 @@ export default function Gamification() {
       ]);
 
       setSquads(squadsData || []);
-      setStudents((studentsData && studentsData.length > 0) ? studentsData : DEFAULT_FALLBACK_STUDENTS);
+      setStudents(studentsData || []);
       setLeaderboard(leaderboardData || []);
       setSquadLeaderboard(squadLeaderboardData || []);
       setBadges(badgesData || []);
@@ -127,6 +122,7 @@ export default function Gamification() {
       setXpMultiplier(multiplierVal || 1.0);
     } catch (err) {
       console.warn('Error loading gamification data:', err);
+      setError('Unable to load gamification data. Please try refreshing.');
     } finally {
       setLoading(false);
     }
@@ -256,6 +252,26 @@ export default function Gamification() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* Error Banner */}
+      {error && (
+        <div style={{
+          padding: '12px 20px',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+          border: '1px solid rgba(239, 68, 68, 0.25)',
+          fontSize: '13px',
+          color: 'var(--accent)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <span>{error}</span>
+          <button onClick={loadData} className="btn-ghost" style={{ fontSize: '12px', padding: '4px 8px' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {toastMessage && (
         <div style={{
@@ -691,7 +707,7 @@ export default function Gamification() {
           {/* Roster Directory Cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
             {(() => {
-              const effective = (students && students.length > 0) ? students : DEFAULT_FALLBACK_STUDENTS;
+              const effective = students || [];
               const filtered = effective.filter(st => {
                 const sId = st.studentId || st.id || st.userId;
                 const squad = squads.find(sq => (sq.members || []).some(m => (m.studentId || m.id) === sId));

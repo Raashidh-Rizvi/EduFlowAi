@@ -54,14 +54,23 @@ def verify_internal_token(x_internal_api_key: Optional[str] = Header(None)) -> N
     # Read the expected shared secret from the environment on every call
     expected_token = os.getenv("INTERNAL_SERVICE_TOKEN")
 
-    # Fail-open when the secret hasn't been configured yet (local dev/CI)
+    # Fail-open only when explicitly allowed (local dev/CI).
+    # Default is fail-closed: if no token is configured, reject requests.
+    fail_open = os.getenv("INTERNAL_AUTH_FAIL_OPEN", "false").lower() in ("1", "true", "yes")
     if not expected_token:
-        logger.warning(
-            "INTERNAL_SERVICE_TOKEN is not set - internal service authentication "
-            "is NOT being enforced. Set INTERNAL_SERVICE_TOKEN to require callers "
-            "to send a matching X-Internal-Api-Key header."
+        if fail_open:
+            logger.warning(
+                "INTERNAL_SERVICE_TOKEN is not set and INTERNAL_AUTH_FAIL_OPEN=true - "
+                "internal service authentication is NOT being enforced. "
+                "Set INTERNAL_SERVICE_TOKEN to require callers to send a matching "
+                "X-Internal-Api-Key header."
+            )
+            return
+        raise HTTPException(
+            status_code=503,
+            detail="Internal service authentication is not configured. "
+                   "Set INTERNAL_SERVICE_TOKEN environment variable."
         )
-        return
 
     # Reject the request if the header is missing or does not match the secret
     if x_internal_api_key != expected_token:

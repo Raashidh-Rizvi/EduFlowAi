@@ -112,9 +112,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 pytest tests/
 
 # Start FastAPI server with live reload
-python main.py
+#python main.py
 # Or run with uvicorn explicitly:
-# python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
