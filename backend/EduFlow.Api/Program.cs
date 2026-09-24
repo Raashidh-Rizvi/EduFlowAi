@@ -169,9 +169,19 @@ app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
+        var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var exception = exceptionHandlerPathFeature?.Error;
+
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(exception, "An unhandled exception occurred while processing the request.");
+
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(new { message = "An unexpected server error occurred. Please try again later." });
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            message = "An unexpected server error occurred. Please try again later.",
+            error = app.Environment.IsDevelopment() ? exception?.Message : null
+        });
     });
 });
 

@@ -14,6 +14,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Microsoft.AspNetCore.Hosting;
+
 namespace EduFlow.Api.Controllers;
 
 [ApiController]
@@ -23,12 +25,18 @@ public class QuizzesController : BaseApiController
 {
     private readonly IGamificationService _gamificationService;
     private readonly IAiGatewayClient _aiGatewayClient;
+    private readonly IWebHostEnvironment? _environment;
 
-    public QuizzesController(ApplicationDbContext dbContext, IGamificationService gamificationService, IAiGatewayClient aiGatewayClient)
+    public QuizzesController(
+        ApplicationDbContext dbContext,
+        IGamificationService gamificationService,
+        IAiGatewayClient aiGatewayClient,
+        IWebHostEnvironment? environment = null)
         : base(dbContext)
     {
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
+        _environment = environment;
     }
 
     // -------------------------------------------------------------------------

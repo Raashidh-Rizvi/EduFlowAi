@@ -70,11 +70,12 @@ def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
     azure_chat_deployment = os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT")
 
     if HAS_OPENAI and azure_key and azure_endpoint and azure_chat_deployment:
+        clean_endpoint = azure_endpoint.split('/openai')[0].rstrip('/')
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-02-01")
         logger.info("Using Azure OpenAI Chat model deployment: %s", azure_chat_deployment)
         return AzureChatOpenAI(
             azure_deployment=azure_chat_deployment,
-            azure_endpoint=azure_endpoint,
+            azure_endpoint=clean_endpoint,
             api_key=azure_key,
             api_version=api_version,
             temperature=temperature,
@@ -131,11 +132,12 @@ def get_embeddings() -> Any:
     azure_embedding_deployment = os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
     if HAS_OPENAI and azure_key and azure_endpoint:
+        clean_endpoint = azure_endpoint.split('/openai')[0].rstrip('/')
         api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2023-05-15")
         logger.info("Using Azure OpenAI Embeddings deployment: %s", azure_embedding_deployment)
         return AzureOpenAIEmbeddings(
             azure_deployment=azure_embedding_deployment,
-            azure_endpoint=azure_endpoint,
+            azure_endpoint=clean_endpoint,
             api_key=azure_key,
             openai_api_version=api_version
         )

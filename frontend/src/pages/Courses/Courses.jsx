@@ -46,7 +46,7 @@ import {
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
-import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
+import { saveGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
   const [coursesList, setCoursesList] = useState([]);
