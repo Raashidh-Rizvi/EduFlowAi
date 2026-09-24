@@ -14,7 +14,7 @@
     "build:agent": "python -m compileall -q ai-agent/agents ai-agent/core ai-agent/graph ai-agent/models ai-agent/tools ai-agent/main.py",
     "dev:backend:build-reload": "dotnet watch --project backend/EduFlow.Api run --no-hot-reload --non-interactive",
     "dev:frontend": "npm --prefix frontend run dev",
-    "dev:agent": "cd ai-agent && python -m uvicorn main:app --reload --port 8000"
+    "dev:agent": "cd ai-agent && python -m uvicorn main:app --reload --port 8888"
   },
   "keywords": [
     "eduflow",

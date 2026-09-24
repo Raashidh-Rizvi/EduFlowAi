@@ -415,13 +415,13 @@ services:
     environment:
       - DB_CONNECTION=Host=db;Database=eduflow;Username=postgres;Password=localpassword
       - REDIS_CONNECTION=redis:6379
-      - AI_SERVICE_URL=http://ai-agent:8000
+      - AI_SERVICE_URL=http://ai-agent:8888
     depends_on: [db, redis]
 
   ai-agent:
     build: ./ai-agent
     ports:
-      - "8000:8000"
+      - "8888:8888"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DB_CONNECTION=Host=db;Database=eduflow;...

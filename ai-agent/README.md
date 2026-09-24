@@ -171,10 +171,10 @@ pytest tests/
 # Run FastAPI server with auto-reload
 python main.py
 # Or using uvicorn directly:
-# python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# python -m uvicorn main:app --reload --host 0.0.0.0 --port 8888
 ```
 
-- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
-- **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Agent Topology**: [http://localhost:8000/agents/topology](http://localhost:8000/agents/topology)
+- **Health Check**: [http://localhost:8888/health](http://localhost:8888/health)
+- **Interactive Swagger Docs**: [http://localhost:8888/docs](http://localhost:8888/docs)
+- **Agent Topology**: [http://localhost:8888/agents/topology](http://localhost:8888/agents/topology)
 

@@ -376,6 +376,24 @@ def get_next_best_action(request: NextBestActionRequest, _: None = Depends(verif
         raise HTTPException(status_code=500, detail="An unexpected error occurred while determining the next action.")
 
 
+@app.post("/api/ai/quiz/evaluate", response_model=QuizAutoGradeResponse)
+def evaluate_quiz_submission(request: QuizAutoGradeRequest, _: None = Depends(verify_internal_token)):
+    """
+    Evaluates a student's quiz submission using the deterministic rules and semantic AI rubric grading.
+    """
+    try:
+        evaluator = QuizEvaluatorAgent()
+        res, _ = evaluator.evaluate_submission(
+            questions=request.questions,
+            answers=request.answers,
+            pass_percentage=request.pass_percentage
+        )
+        return QuizAutoGradeResponse(**res)
+    except Exception as e:
+        logging.error(f"Error evaluating quiz submission: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while grading the quiz.")
+
+
 # =============================================================================
 # 5. LangGraph Blackboard Workflow & Approval State Machine Endpoints
 # =============================================================================
@@ -460,7 +478,7 @@ def get_observability_metrics(_: None = Depends(verify_internal_token)):
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    # Start the Uvicorn ASGI server on port 8000 with auto-reload
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_dirs=["agents", "core", "graph", "models", "tools"])
+    # Start the Uvicorn ASGI server on port 8888 with auto-reload
+    uvicorn.run("main:app", host="0.0.0.0", port=8888, reload=True, reload_dirs=["agents", "core", "graph", "models", "tools"])
 
 # Trigger reload

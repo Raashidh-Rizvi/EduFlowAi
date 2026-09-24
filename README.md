@@ -41,7 +41,7 @@ For the step-by-step installation and environment configuration guide, read the 
 # From repository root:
 node dev-runner.js
 ```
-*Starts React Frontend (port 2174), ASP.NET Core API (port 5204), and Python AI Agent (port 8000) simultaneously with live reloading.*
+*Starts React Frontend (port 2174), ASP.NET Core API (port 5204), and Python AI Agent (port 8888) simultaneously with live reloading.*
 
 ---
 
@@ -55,7 +55,7 @@ python -m venv venv
 pip install -r requirements.txt
 python main.py
 ```
-- **Endpoints**: [http://localhost:8000/health](http://localhost:8000/health) | Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Endpoints**: [http://localhost:8888/health](http://localhost:8888/health) | Docs: [http://localhost:8888/docs](http://localhost:8888/docs)
 
 #### 2. ASP.NET Core Backend API (`backend`)
 ```powershell
