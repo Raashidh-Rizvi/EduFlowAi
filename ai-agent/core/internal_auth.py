@@ -72,6 +72,6 @@ def verify_internal_token(x_internal_api_key: Optional[str] = Header(None)) -> N
                    "Set INTERNAL_SERVICE_TOKEN environment variable."
         )
 
-    # Reject the request if the header is missing or does not match the secret
     if x_internal_api_key != expected_token:
+        print(f"[DEBUG Auth] expected: '{expected_token}', received: '{x_internal_api_key}'")
         raise HTTPException(status_code=401, detail="Invalid or missing internal service token")

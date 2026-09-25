@@ -95,7 +95,25 @@ def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
             max_retries=2
         )
 
-    # 3. Standard OpenAI
+    # 3. Groq
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        try:
+            from langchain_groq import ChatGroq
+            resolved_groq = model_name or "llama3-70b-8192"
+            if resolved_groq and "gemini" in resolved_groq.lower():
+                resolved_groq = "mixtral-8x7b-32768"
+            logger.info("Using Groq model: %s", resolved_groq)
+            return ChatGroq(
+                model=resolved_groq,
+                temperature=temperature,
+                api_key=groq_key,
+                timeout=LLM_TIMEOUT_SECONDS
+            )
+        except ImportError:
+            pass
+
+    # 4. Standard OpenAI
     openai_key = os.environ.get("OPENAI_API_KEY")
     if HAS_OPENAI and openai_key:
         resolved_openai = model_name or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
@@ -108,9 +126,8 @@ def get_llm(temperature: float = 0.3, model_name: Optional[str] = None) -> Any:
         )
 
     raise ValidationError(
-        "No valid LLM credentials configured. Please set AZURE_OPENAI_API_KEY & AZURE_OPENAI_CHAT_DEPLOYMENT, "
-        "or GEMINI_API_KEY, or OPENAI_API_KEY in ai-agent/.env.",
-        details={"env_vars": ["AZURE_OPENAI_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]}
+        "No valid LLM credentials configured. Please set AZURE_OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY in ai-agent/.env.",
+        details={"env_vars": ["AZURE_OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"]}
     )
 
 
