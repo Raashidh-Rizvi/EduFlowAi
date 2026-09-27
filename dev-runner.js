@@ -10,6 +10,7 @@
 
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,27 +19,34 @@ const __dirname = path.dirname(__filename);
 const isWindows = process.platform === 'win32';
 const shellCmd = isWindows ? true : '/bin/sh';
 
+const relativeVenvPython = isWindows ? path.join('.', '.venv', 'Scripts', 'python.exe') : path.join('.', '.venv', 'bin', 'python');
+const fullVenvPython = path.join(__dirname, 'ai-agent', isWindows ? path.join('.venv', 'Scripts', 'python.exe') : path.join('.venv', 'bin', 'python'));
+const pythonCmd = fs.existsSync(fullVenvPython) ? relativeVenvPython : 'python';
+
 const services = [
   {
     name: 'Frontend',
     color: '\x1b[36m', // Cyan
     cwd: path.join(__dirname, 'frontend'),
     cmd: isWindows ? 'npm.cmd' : 'npm',
-    args: ['run', 'dev']
+    args: ['run', 'dev'],
+    url: 'http://localhost:2174 (or http://localhost:5173)'
   },
   {
     name: 'Backend ',
     color: '\x1b[32m', // Green
     cwd: path.join(__dirname, 'backend', 'EduFlow.Api'),
     cmd: 'dotnet',
-    args: ['watch', 'run', '--non-interactive']
+    args: ['watch', 'run', '--non-interactive'],
+    url: 'http://localhost:5204 (Swagger: http://localhost:5204/swagger)'
   },
   {
     name: 'AIAgent ',
     color: '\x1b[35m', // Magenta
     cwd: path.join(__dirname, 'ai-agent'),
-    cmd: 'python',
-    args: ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', '8000']
+    cmd: pythonCmd,
+    args: ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', '8000'],
+    url: 'http://localhost:8000 (API Docs: http://localhost:8000/docs)'
   }
 ];
 
@@ -47,8 +55,11 @@ const children = [];
 console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m');
 console.log('\x1b[1m\x1b[34m  🚀 EduFlow AI - Unified Full-Stack Live Development Server  \x1b[0m');
 console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m');
-console.log('⚡ Any code updates in Frontend, Backend, or AI Agent will');
-console.log('   automatically recompile and reload the web application.\n');
+console.log('\x1b[1mService URLs:\x1b[0m');
+console.log('  🌐 \x1b[36mFrontend Web App\x1b[0m  : http://localhost:2174');
+console.log('  ⚙️  \x1b[32m.NET Backend API\x1b[0m  : http://localhost:5204 (Swagger: http://localhost:5204/swagger)');
+console.log('  ⚡ \x1b[35mPython AI Engine\x1b[0m  : http://localhost:8000 (Interactive Docs: http://localhost:8000/docs)');
+console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m\n');
 
 services.forEach((service) => {
   const child = spawn(service.cmd, service.args, {

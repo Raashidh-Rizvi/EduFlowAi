@@ -1,14 +1,30 @@
 """
-EduFlow AI - Simple RAG Core Service
-====================================
-Orchestrates PDF parsing, ChromaDB vector indexing, and Gemini 1.5 Flash
-grounded question answering with slide citations.
+===============================================================================
+EduFlow AI - Simple RAG Core Service (rag_service.py)
+===============================================================================
+WHAT THIS FILE DOES:
+This is the central coordinator (the "Brain") of our RAG subsystem.
+It connects all the pieces together:
+1. Document Ingestion: parser.py -> chunker.py -> vector_store.py
+2. Student Q&A Chat: vector_store.py (search) -> LLM Provider (Gemini or Groq)
+3. Verifiable Citations: Returns exact slide numbers with relevance scores.
+4. Flexible Chat LLM Switch:
+   - LLM_PROVIDER="gemini" (Google Gemini 1.5 Flash)
+   - LLM_PROVIDER="groq"   (Ultra-fast Groq LPU with Llama 3.3 70B)
+5. Slide Topic Discovery: Categorizes uploaded slides into syllabus topics.
+6. Slide-Grounded Quizzes: Generates quiz questions directly from slides.
+===============================================================================
 """
 
 import os
 import re
 import json
 from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
+
+# Ensure environment variables are loaded
+load_dotenv()
+
 from rag.parser import DocumentParser, ParsedPage
 from rag.chunker import SlideChunker, DocumentChunk
 from rag.vector_store import ChromaVectorStore
@@ -25,18 +41,31 @@ from models.schemas import (
 
 class SimpleRagService:
     """
-    Core RAG engine for EduFlow AI.
+    Core RAG Engine orchestrating parsing, indexing, vector search, and dual-LLM Q&A.
     """
 
     def __init__(self, vector_store: Optional[ChromaVectorStore] = None):
+        """
+        INITIALIZATION:
+        Loads parser, chunker, vector store, and credentials for both Gemini and Groq.
+        """
         self.parser = DocumentParser()
         self.chunker = SlideChunker()
         self.vector_store = vector_store or ChromaVectorStore()
-        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
-        self.gemini_model_name = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+
+        # LLM Provider Switch: "gemini" or "groq"
+        self.llm_provider = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
+
+        # Google Gemini Credentials
+        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        self.gemini_model_name = os.environ.get("GEMINI_MODEL", "models/gemini-3.8-flash")
+
+        # Groq Credentials (Ultra-Fast LPU Inference)
+        self.groq_api_key = os.environ.get("GROQ_API_KEY", "").strip()
+        self.groq_model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
     # -------------------------------------------------------------------------
-    # 1. DOCUMENT INDEXING
+    # 1. DOCUMENT INDEXING WORKFLOW
     # -------------------------------------------------------------------------
 
     def index_file(
@@ -46,14 +75,15 @@ class SimpleRagService:
         module_id: Optional[str] = None
     ) -> IndexPdfResponse:
         """
-        Parses a PDF/PPTX from disk, splits into semantic chunks, and stores into ChromaDB.
+        STEP-BY-STEP INDEXING PIPELINE:
+        Called when an instructor uploads a course PDF in the web portal.
         """
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found on disk: {file_path}")
 
         file_name = os.path.basename(file_path)
 
-        # 1. Parse document into pages
+        # Step 1: Parse document into structured pages
         pages = self.parser.parse(file_path)
         if not pages:
             return IndexPdfResponse(
@@ -66,7 +96,7 @@ class SimpleRagService:
                 message="File was read but contained no extractable text."
             )
 
-        # 2. Chunk pages preserving slide boundary
+        # Step 2: Chunk pages into 500-token segments retaining slide metadata
         chunks = self.chunker.chunk_pages(
             pages=pages,
             source_file=file_name,
@@ -74,7 +104,7 @@ class SimpleRagService:
             module_id=module_id or ""
         )
 
-        # 3. Store in persistent ChromaDB
+        # Step 3: Save vectors into local ChromaDB
         indexed_count = self.vector_store.add_chunks(chunks)
 
         return IndexPdfResponse(
@@ -88,7 +118,7 @@ class SimpleRagService:
         )
 
     # -------------------------------------------------------------------------
-    # 2. GROUNDED CHAT & QUESTION ANSWERING
+    # 2. GROUNDED CHAT & QUESTION ANSWERING (GEMINI / GROQ SWITCH)
     # -------------------------------------------------------------------------
 
     def chat(
@@ -96,23 +126,50 @@ class SimpleRagService:
         question: str,
         course_id: Optional[str] = None,
         module_id: Optional[str] = None,
+        source_file: Optional[str] = None,
         max_citations: int = 3
     ) -> RagChatResponse:
         """
-        Retrieves relevant slide chunks from ChromaDB and answers via Gemini 1.5 Flash.
-        Strictly includes slide and page citations.
+        STEP-BY-STEP STUDENT CHAT WORKFLOW:
+        Called when a student asks the AI Tutor a question about the course.
+        Supports both Gemini and Groq, with optional Strict Slide Deck Scoping.
         """
+        # Step 1: Retrieve best-matching slide chunks from ChromaDB
         search_results = self.vector_store.search(
             query=question,
             course_id=course_id,
             module_id=module_id,
+            source_file=source_file,
             top_k=max(4, max_citations)
         )
 
+        # Step 1.1: Smart fallback if no chunks were found:
+        # If source_file was specified, retry searching by source_file alone (in case course_id/module_id restricted it)
+        if not search_results and source_file:
+            search_results = self.vector_store.search(
+                query=question,
+                course_id=None,
+                module_id=None,
+                source_file=source_file,
+                top_k=max(4, max_citations)
+            )
+
+        # If still no chunks and global course_id/module_id filter was used, search across all indexed materials
+        if not search_results and not source_file and (course_id or module_id):
+            search_results = self.vector_store.search(
+                query=question,
+                course_id=None,
+                module_id=None,
+                source_file=None,
+                top_k=max(4, max_citations)
+            )
+
+        # Step 2: Handle empty knowledge base scenario
         if not search_results:
+            scope_desc = f"in '{source_file}'" if source_file else "in the uploaded course lecture slides"
             return RagChatResponse(
                 answer=(
-                    "I could not find relevant content in the uploaded course lecture slides for this question. "
+                    f"I could not find relevant content {scope_desc} for this question. "
                     "Please ensure the lecture slides or course notes have been uploaded and indexed."
                 ),
                 citations=[],
@@ -120,7 +177,7 @@ class SimpleRagService:
                 confidence_score=0.4
             )
 
-        # Build citations list
+        # Step 3: Build citations list and context string
         citations: List[SlideCitation] = []
         context_snippets: List[str] = []
 
@@ -130,7 +187,6 @@ class SimpleRagService:
             source_file = meta.get("source_file", "Lecture Slides")
             raw_text = res.get("text", "")
             
-            # Extract first 150 characters for preview
             preview = raw_text.replace("\n", " ").strip()
             if len(preview) > 160:
                 preview = preview[:157] + "..."
@@ -145,53 +201,83 @@ class SimpleRagService:
 
         context_text = "\n\n---\n\n".join(context_snippets)
 
-        # Generate answer using Gemini if API key is present
-        answer_text = self._generate_llm_answer(question, context_text)
+        # Step 4: Ask selected LLM (Gemini or Groq) to synthesize the answer
+        answer_text, active_provider = self._generate_llm_answer(question, context_text)
 
         return RagChatResponse(
             answer=answer_text,
             citations=citations,
-            source="gemini_rag" if self.gemini_api_key else "extractive_rag",
+            source=f"{active_provider}_rag",
             confidence_score=0.96
         )
 
-    def _generate_llm_answer(self, question: str, context: str) -> str:
+    def _generate_llm_answer(self, question: str, context: str) -> tuple[str, str]:
         """
-        Queries Google Gemini 1.5 Flash with strict grounding instructions.
-        Falls back to extractive summarization if no API key is provided.
+        ONE METHOD TO SWITCH CHAT LLM:
+        - Checks self.llm_provider ("groq" or "gemini")
+        - Calls the chosen engine with strict grounding instructions
+        - Falls back gracefully if offline or without keys
         """
+        system_instructions = (
+            "You are the EduFlow AI Learning Coach. A student asked a question about their course materials.\n\n"
+            "INSTRUCTIONS:\n"
+            "1. Answer the student's question clearly, concisely, and accurately.\n"
+            "2. Ground your answer ONLY in the provided course excerpts.\n"
+            "3. Cite the exact slide/page numbers (e.g. 'According to Slide 4...').\n"
+            "4. If the context does not contain the answer, politely state that it is not covered in the slides."
+        )
+
+        user_prompt = f"COURSE EXCERPTS:\n{context}\n\nSTUDENT QUESTION:\n{question}\n\nANSWER:"
+
+        # ---------------------------------------------------------------------
+        # OPTION A: GROQ (Ultra-Fast LPU with Llama 3.3 70B)
+        # ---------------------------------------------------------------------
+        if self.llm_provider == "groq" and self.groq_api_key:
+            try:
+                from groq import Groq
+                client = Groq(api_key=self.groq_api_key)
+                completion = client.chat.completions.create(
+                    model=self.groq_model_name,
+                    messages=[
+                        {"role": "system", "content": system_instructions},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=600
+                )
+                if completion.choices and completion.choices[0].message.content:
+                    return completion.choices[0].message.content.strip(), "groq"
+            except Exception as e:
+                print(f"[SimpleRagService] Groq chat error: {e}. Attempting fallback...")
+
+        # ---------------------------------------------------------------------
+        # OPTION B: GOOGLE GEMINI (Gemini 1.5 Flash)
+        # ---------------------------------------------------------------------
         if self.gemini_api_key:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.gemini_api_key)
                 model = genai.GenerativeModel(self.gemini_model_name)
 
-                prompt = (
-                    "You are the EduFlow AI Learning Coach. A student asked a question about their course materials.\n\n"
-                    "INSTRUCTIONS:\n"
-                    "1. Answer the student's question clearly, concisely, and accurately.\n"
-                    "2. Ground your answer ONLY in the following course excerpts.\n"
-                    "3. Cite the exact slide/page numbers (e.g. 'According to Slide 4...').\n"
-                    "4. If the context does not contain the answer, politely state that it is not covered in the slides.\n\n"
-                    f"COURSE EXCERPTS:\n{context}\n\n"
-                    f"STUDENT QUESTION:\n{question}\n\n"
-                    "ANSWER:"
-                )
-                response = model.generate_content(prompt)
+                full_prompt = f"{system_instructions}\n\n{user_prompt}"
+                response = model.generate_content(full_prompt)
                 if response and response.text:
-                    return response.text.strip()
+                    return response.text.strip(), "gemini"
             except Exception as e:
                 print(f"[SimpleRagService] Gemini generation error: {e}. Falling back to extractive answer.")
 
-        # High-quality fallback answer built from retrieved slides
-        return (
+        # ---------------------------------------------------------------------
+        # OPTION C: Extractive Fallback (Runs 100% offline without any API keys)
+        # ---------------------------------------------------------------------
+        fallback_answer = (
             f"Based on the course lecture slides:\n\n"
             f"{context[:450]}...\n\n"
             f"*(Refer to the attached slide citations for complete details)*"
         )
+        return fallback_answer, "extractive"
 
     # -------------------------------------------------------------------------
-    # 3. TOPIC CATEGORIZATION (For Course Slide Explorer)
+    # 3. TOPIC DISCOVERY FROM SLIDES
     # -------------------------------------------------------------------------
 
     def categorize_slide_topics(self, slide_path: str, max_topics: int = 6) -> CategorizeTopicsResponse:
@@ -207,7 +293,6 @@ class SimpleRagService:
                 source="rag"
             )
 
-        # Group pages into 3 to 5 logical topic bands
         num_topics = min(max_topics, max(2, total_slides // 3))
         step = max(1, total_slides // num_topics)
 
@@ -216,7 +301,6 @@ class SimpleRagService:
             start_page = i * step + 1
             end_page = min(total_slides, (i + 1) * step) if i < num_topics - 1 else total_slides
             
-            # Pick title from first slide in range
             rep_page = pages[start_page - 1]
             title = rep_page.title
             if not title or title.startswith("Slide"):
@@ -226,7 +310,6 @@ class SimpleRagService:
             if not summary:
                 summary = f"Core principles and mechanisms covered across slides {start_page} to {end_page}."
 
-            # Extract simple key concepts
             words = [w for w in re.findall(r'\b[A-Z][a-zA-Z]{3,}\b', rep_page.text) if len(w) > 3]
             key_concepts = list(dict.fromkeys(words))[:3]
             if not key_concepts:
@@ -270,14 +353,12 @@ class SimpleRagService:
         questions: List[QuizQuestionItem] = []
 
         if pages:
-            # Generate grounded questions from actual slides
             step = max(1, len(pages) // num_questions)
             for idx in range(num_questions):
                 p_idx = min(len(pages) - 1, idx * step)
                 page = pages[p_idx]
                 q_id = idx + 1
 
-                # Clean question prompt
                 q_text = f"According to {page.title} (Slide {page.page_number}), what is the primary role of this concept?"
                 options = [
                     f"It provides the core execution and invariant boundaries outlined in {page.title}.",
@@ -297,7 +378,6 @@ class SimpleRagService:
                     points=10
                 ))
         else:
-            # Deterministic architectural fallback questions
             default_topics = target_topics or ["Clean Architecture", "Dependency Inversion"]
             for idx in range(num_questions):
                 topic = default_topics[idx % len(default_topics)]

@@ -184,12 +184,22 @@ class TestFastApiEndpoints:
         assert len(chat_data["citations"]) > 0
         assert chat_data["citations"][0]["page_number"] in [1, 2, 3]
 
-    def test_compatibility_endpoints(self):
+    def test_slide_topics_and_quiz_endpoints(self):
         client = TestClient(app)
-        res_topo = client.get("/agents/topology")
-        assert res_topo.status_code == 200
-        assert res_topo.json()["status"] == "Healthy"
+        
+        # Test categorize topics endpoint
+        cat_res = client.post("/api/v1/ai/slides/categorize-topics", json={"slide_path": TEST_DOC_PATH})
+        assert cat_res.status_code == 200
+        cat_data = cat_res.json()
+        assert len(cat_data["topics"]) >= 1
 
-        res_tools = client.get("/tools/registry")
-        assert res_tools.status_code == 200
-        assert res_tools.json()["total_tools"] >= 4
+        # Test slide quiz generation endpoint
+        quiz_res = client.post("/api/v1/ai/slides/generate-quiz", json={
+            "slide_path": TEST_DOC_PATH,
+            "module_title": "Architecture",
+            "num_questions": 2
+        })
+        assert quiz_res.status_code == 200
+        quiz_data = quiz_res.json()
+        assert len(quiz_data["questions"]) == 2
+        assert quiz_data["questions"][0]["slide_citation"] is not None
