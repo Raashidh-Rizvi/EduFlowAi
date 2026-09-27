@@ -46,7 +46,7 @@ import {
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import { courseService } from '../../services/courseService';
 import { quizService } from '../../services/quizService';
-import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
+import { saveGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
   const [coursesList, setCoursesList] = useState([]);
@@ -113,7 +113,9 @@ export default function Courses({ currentUser }) {
 
   useEffect(() => {
     loadCourses();
+  }, []);
 
+  useEffect(() => {
     const handleQuizRefresh = () => {
       if (selectedCourseId) {
         courseService.getCourseById(selectedCourseId).then(fullCourse => {
@@ -1155,58 +1157,78 @@ export default function Courses({ currentUser }) {
 
         {/* Create Course Modal */}
         {showCourseModal && (
-          <div className="modal-overlay" onClick={() => setShowCourseModal(false)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h3 style={{ margin: 0, fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }} onClick={() => setShowCourseModal(false)}>
+            <div onClick={e => e.stopPropagation()} style={{
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-card)',
+              borderRadius: 'var(--radius-lg)',
+              width: '100%',
+              maxWidth: '520px',
+              padding: '24px',
+              boxShadow: 'var(--shadow-popover)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Plus size={20} color="var(--primary)" />
                   Create New Course
                 </h3>
-                <button onClick={() => setShowCourseModal(false)} className="btn-icon">
-                  <X size={20} />
-                </button>
+                <button onClick={() => setShowCourseModal(false)} className="btn-ghost" style={{ padding: '4px' }}>✕</button>
               </div>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', gap: '16px' }}>
-                  <div style={{ flex: '1' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Code</label>
-                    <input placeholder="e.g. CS101" value={newCourseCode} onChange={e => setNewCourseCode(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
-                  </div>
-                  <div style={{ flex: '1' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Category</label>
-                    <select value={newCourseCategory} onChange={e => setNewCourseCategory(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
-                      <option value="Software Engineering">Software Engineering</option>
-                      <option value="Data Science">Data Science</option>
-                      <option value="Design">Design</option>
-                      <option value="Business">Business</option>
-                    </select>
-                  </div>
-                  <div style={{ flex: '1' }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Academic Term</label>
-                    <select value={newCourseTerm} onChange={e => setNewCourseTerm(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
-                      <option value="Fall 2026">Fall 2026</option>
-                      <option value="Spring 2026">Spring 2026</option>
-                      <option value="Summer 2026">Summer 2026</option>
-                      <option value="Fall 2025">Fall 2025</option>
-                      <option value="Term 1">Term 1</option>
-                      <option value="Term 2">Term 2</option>
-                    </select>
-                  </div>
-                </div>
-
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Title</label>
-                  <input placeholder="e.g. Distributed Systems" value={newCourseTitle} onChange={e => setNewCourseTitle(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Code</label>
+                  <input placeholder="e.g. CS101" value={newCourseCode} onChange={e => setNewCourseCode(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
                 </div>
-
                 <div>
-                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Description</label>
-                  <textarea rows={3} placeholder="Course overview and syllabus..." value={newCourseDesc} onChange={e => setNewCourseDesc(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Category</label>
+                  <select value={newCourseCategory} onChange={e => setNewCourseCategory(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
+                    <option value="Software Engineering">Software Engineering</option>
+                    <option value="Data Science">Data Science</option>
+                    <option value="Design">Design</option>
+                    <option value="Business">Business</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Academic Term</label>
+                  <select value={newCourseTerm} onChange={e => setNewCourseTerm(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }}>
+                    <option value="Fall 2026">Fall 2026</option>
+                    <option value="Spring 2026">Spring 2026</option>
+                    <option value="Summer 2026">Summer 2026</option>
+                    <option value="Fall 2025">Fall 2025</option>
+                    <option value="Term 1">Term 1</option>
+                    <option value="Term 2">Term 2</option>
+                  </select>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Course Title</label>
+                <input placeholder="e.g. Distributed Systems" value={newCourseTitle} onChange={e => setNewCourseTitle(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>Description</label>
+                <textarea rows={3} placeholder="Course overview and syllabus..." value={newCourseDesc} onChange={e => setNewCourseDesc(e.target.value)} style={{ width: '100%', padding: '9px 12px', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--text-main)', fontSize: '13px' }} />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
                 <button onClick={() => setShowCourseModal(false)} className="btn-secondary">Cancel</button>
                 <button onClick={handleCreateCourse} className="btn-primary">Create Course</button>
               </div>

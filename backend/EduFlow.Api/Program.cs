@@ -9,11 +9,13 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Database Configuration (PostgreSQL with fallback retry)
+// 1. Database Configuration (PostgreSQL)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    connectionString = "Host=ep-empty-bird-ax89v5us.c-4.us-east-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_xMTIqYu1Vrn4;SSL Mode=Require;Trust Server Certificate=true;Timeout=30;Command Timeout=30;";
+    throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection is not configured. " +
+        "Set it via appsettings.json, environment variable ConnectionStrings__DefaultConnection, or user secrets.");
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -35,7 +37,9 @@ builder.Services.AddScoped<ITeamService, TeamService>();
 var jwtSecret = builder.Configuration["JwtSettings:Secret"];
 if (string.IsNullOrWhiteSpace(jwtSecret))
 {
-    jwtSecret = "EduFlowAI_Super_Secret_Key_For_Jwt_Signing_At_Least_32_Bytes_Long!";
+    throw new InvalidOperationException(
+        "JwtSettings:Secret is not configured. " +
+        "Set it via appsettings.json, environment variable JwtSettings__Secret, or user secrets.");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecret);
 
@@ -134,9 +138,12 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // 7. Database Initialization & Auto-Migration
+// Migration failures are intentionally NOT suppressed: the application must not
+// start against a database whose schema is out of sync.
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
@@ -144,8 +151,8 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred during database initialization/schema creation.");
+        logger.LogCritical(ex, "Database initialization/migration failed. Application cannot start safely.");
+        throw;
     }
 }
 
@@ -162,9 +169,19 @@ app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
+        var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var exception = exceptionHandlerPathFeature?.Error;
+
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(exception, "An unhandled exception occurred while processing the request.");
+
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(new { message = "An unexpected server error occurred. Please try again later." });
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            message = "An unexpected server error occurred. Please try again later.",
+            error = app.Environment.IsDevelopment() ? exception?.Message : null
+        });
     });
 });
 

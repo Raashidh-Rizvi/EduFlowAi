@@ -17,34 +17,47 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AiReviewController : ControllerBase
+public class AiReviewController : BaseApiController
 {
-    private readonly ApplicationDbContext _dbContext;
     private readonly IAiGatewayClient _aiGatewayClient;
     private readonly ILogger<AiReviewController> _logger;
 
     public AiReviewController(ApplicationDbContext dbContext, IAiGatewayClient aiGatewayClient, ILogger<AiReviewController> logger)
+        : base(dbContext)
     {
-        _dbContext = dbContext;
         _aiGatewayClient = aiGatewayClient;
         _logger = logger;
     }
 
     /// <summary>
     /// Lists all study plan proposals pending instructor review.
+    /// Admins see all proposals. Instructors see only proposals for their own courses.
     /// </summary>
     [HttpGet("pending-proposals")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetPendingProposals()
     {
-        var plans = await _dbContext.StudyPlans
+        var (userId, role) = GetCurrentUser();
+        var isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+
+        var query = DbContext.StudyPlans
             .Include(sp => sp.Student)
             .Include(sp => sp.Course)
             .Include(sp => sp.Items)
             .Where(sp => sp.Status == StudyPlanStatus.PendingInstructorApproval)
-            .OrderByDescending(sp => sp.CreatedAt)
-            .ToListAsync();
+            .AsQueryable();
 
+        // Scope to instructor's courses only
+        if (!isAdmin && userId != Guid.Empty)
+        {
+            var instructorCourseIds = await DbContext.Courses
+                .Where(c => c.InstructorId == userId)
+                .Select(c => c.Id)
+                .ToListAsync();
+            query = query.Where(sp => instructorCourseIds.Contains(sp.CourseId));
+        }
+
+        var plans = await query.OrderByDescending(sp => sp.CreatedAt).ToListAsync();
         return Ok(plans);
     }
 
@@ -55,7 +68,7 @@ public class AiReviewController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetWorkflows([FromQuery] StudyPlanStatus? status = null)
     {
-        var query = _dbContext.StudyPlans
+        var query = DbContext.StudyPlans
             .Include(sp => sp.Student)
             .Include(sp => sp.Course)
             .Include(sp => sp.Items)
@@ -76,10 +89,10 @@ public class AiReviewController : ControllerBase
     /// </summary>
     [HttpGet("workflows/{id}")]
     [HttpGet("proposals/{id}")]
-    [Authorize]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetWorkflowById(Guid id)
     {
-        var plan = await _dbContext.StudyPlans
+        var plan = await DbContext.StudyPlans
             .Include(sp => sp.Student)
             .Include(sp => sp.Course)
             .Include(sp => sp.Items)
@@ -92,6 +105,12 @@ public class AiReviewController : ControllerBase
             return NotFound(new { message = "Study plan proposal not found." });
         }
 
+        // Ownership: instructor can only view proposals for their own courses
+        if (!await IsCourseOwnerOrAdmin(plan.CourseId))
+        {
+            return Forbid();
+        }
+
         return Ok(plan);
     }
 
@@ -99,18 +118,18 @@ public class AiReviewController : ControllerBase
     /// Triggers the 4-agent LangGraph orchestration pipeline to generate a customized study plan.
     /// </summary>
     [HttpPost("orchestrate")]
-    [Authorize]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> OrchestrateStudyPlan([FromBody] StudyPlanRequest request)
     {
         // 1. Resolve student ID safely (prioritize specified valid student, then fallback to student in DB)
         Guid studentId;
-        if (!string.IsNullOrWhiteSpace(request.student_id) && Guid.TryParse(request.student_id, out var parsedReqId) && await _dbContext.Users.AnyAsync(u => u.Id == parsedReqId))
+        if (!string.IsNullOrWhiteSpace(request.student_id) && Guid.TryParse(request.student_id, out var parsedReqId) && await DbContext.Users.AnyAsync(u => u.Id == parsedReqId))
         {
             studentId = parsedReqId;
         }
         else
         {
-            var studentUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Role == UserRole.Student);
+            var studentUser = await DbContext.Users.FirstOrDefaultAsync(u => u.Role == UserRole.Student);
             studentId = studentUser?.Id ?? Guid.Parse("33333333-3333-3333-3333-333333333333");
         }
 
@@ -120,23 +139,34 @@ public class AiReviewController : ControllerBase
         {
             if (Guid.TryParse(request.course_id, out var parsedCourseId))
             {
-                course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Id == parsedCourseId);
+                course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == parsedCourseId);
             }
             if (course == null)
             {
                 var targetCode = request.course_id.Split(':')[0].Trim();
-                course = await _dbContext.Courses.FirstOrDefaultAsync(c => c.Code.ToLower() == targetCode.ToLower() || c.Code.ToLower() == request.course_id.ToLower());
+                course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Code.ToLower() == targetCode.ToLower() || c.Code.ToLower() == request.course_id.ToLower());
             }
         }
         if (course == null)
         {
-            course = await _dbContext.Courses.FirstOrDefaultAsync();
+            course = await DbContext.Courses.FirstOrDefaultAsync();
         }
 
-        var courseId = course?.Id ?? Guid.Parse("44444444-4444-4444-4444-444444444444");
+        if (course == null)
+        {
+            return BadRequest(new { message = "No course found. Please provide a valid course_id." });
+        }
+
+        // Ownership: instructor can only generate study plans for their own courses
+        if (!await IsCourseOwnerOrAdmin(course.Id))
+        {
+            return Forbid();
+        }
+
+        var courseId = course.Id;
 
         // 3. Prepare normalized payload for Python AI Microservice
-        var studentObj = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == studentId);
+        var studentObj = await DbContext.Users.FirstOrDefaultAsync(u => u.Id == studentId);
         var sName = !string.IsNullOrWhiteSpace(request.student_name) ? request.student_name : (studentObj?.FullName ?? "Alex Rivera");
         var outgoingPayload = new
         {
@@ -189,7 +219,7 @@ public class AiReviewController : ControllerBase
             _logger.LogWarning(ex, "Failed to parse schedule items from AI JSON into StudyPlanItems.");
         }
 
-        await _dbContext.StudyPlans.AddAsync(studyPlan);
+        await DbContext.StudyPlans.AddAsync(studyPlan);
 
         // Record AI workflow execution audit log
         var workflowLog = new AiWorkflowLog
@@ -202,9 +232,9 @@ public class AiReviewController : ControllerBase
             ExecutionTimeMs = 380,
             ValidationPassed = true
         };
-        await _dbContext.AiWorkflowLogs.AddAsync(workflowLog);
+        await DbContext.AiWorkflowLogs.AddAsync(workflowLog);
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(JsonDocument.Parse(aiJson).RootElement);
     }
@@ -216,10 +246,16 @@ public class AiReviewController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateProposal(Guid id, [FromBody] UpdateStudyPlanRequest request)
     {
-        var plan = await _dbContext.StudyPlans.Include(sp => sp.Items).FirstOrDefaultAsync(sp => sp.Id == id);
+        var plan = await DbContext.StudyPlans.Include(sp => sp.Items).FirstOrDefaultAsync(sp => sp.Id == id);
         if (plan == null)
         {
             return NotFound(new { message = "Study plan proposal not found." });
+        }
+
+        // Ownership: instructor can only update proposals for their own courses
+        if (!await IsCourseOwnerOrAdmin(plan.CourseId))
+        {
+            return Forbid();
         }
 
         if (!string.IsNullOrWhiteSpace(request.TargetGoal))
@@ -237,7 +273,7 @@ public class AiReviewController : ControllerBase
 
         if (request.Items != null)
         {
-            _dbContext.StudyPlanItems.RemoveRange(plan.Items);
+            DbContext.StudyPlanItems.RemoveRange(plan.Items);
             foreach (var itemDto in request.Items)
             {
                 plan.Items.Add(new StudyPlanItem
@@ -252,7 +288,7 @@ public class AiReviewController : ControllerBase
         }
 
         plan.UpdatedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(plan);
     }
@@ -264,10 +300,16 @@ public class AiReviewController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> SubmitDecision(Guid id, [FromBody] ProposalDecisionRequest request)
     {
-        var plan = await _dbContext.StudyPlans.FirstOrDefaultAsync(sp => sp.Id == id);
+        var plan = await DbContext.StudyPlans.FirstOrDefaultAsync(sp => sp.Id == id);
         if (plan == null)
         {
             return NotFound(new { message = "Study plan not found." });
+        }
+
+        // Ownership: instructor can only approve/reject proposals for their own courses
+        if (!await IsCourseOwnerOrAdmin(plan.CourseId))
+        {
+            return Forbid();
         }
 
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -321,9 +363,9 @@ public class AiReviewController : ControllerBase
             Message = notifMsg,
             Type = isApproved ? "AiApproved" : (isRevision ? "AiRevision" : "AiRejected")
         };
-        await _dbContext.Notifications.AddAsync(notification);
+        await DbContext.Notifications.AddAsync(notification);
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
 
         return Ok(new { message = $"Study plan proposal {request.Decision.ToLower()} successfully.", planId = plan.Id, status = plan.Status.ToString() });
     }

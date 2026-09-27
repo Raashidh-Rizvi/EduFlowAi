@@ -5,7 +5,10 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5204
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
   }
 });
 
@@ -15,16 +18,25 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config);
   return config;
-}, (error) => Promise.reject(error));
+}, (error) => {
+  console.error('[API Request Error]', error);
+  return Promise.reject(error);
+});
 
 // Response interceptor for unified error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API Response] ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`, response.data);
+    return response;
+  },
   (error) => {
+    console.error('[API Response Error]', error);
     let friendlyMessage = "An unexpected error occurred. Please check your connection and try again.";
     
     if (error.response) {
+      console.error(`[API Response Error Data] Status: ${error.response.status}`, error.response.data);
       if (error.response.status === 401) {
         friendlyMessage = "Your session has expired or is invalid. Please log in again.";
         // Clear stale token
@@ -42,6 +54,8 @@ api.interceptors.response.use(
       } else if (error.response.status === 500) {
         friendlyMessage = error.response.data?.detail || error.response.data?.message || "Our servers are experiencing issues. Please try again later.";
       }
+    } else {
+      console.error('[API Response Error (Network or Timeout)]', error.message);
     }
     
     // Attach the friendly message to the error object so components can use it directly

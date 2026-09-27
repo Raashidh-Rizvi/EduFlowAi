@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
   Send, 
@@ -8,33 +8,83 @@ import {
   AlertCircle, 
   MessageSquare,
   ShieldCheck,
-  Radio
+  Radio,
+  RefreshCw
 } from 'lucide-react';
+import api from '../../services/api';
 
 export default function Communications() {
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [targetAudience, setTargetAudience] = useState('all');
   const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
 
-  const handleBroadcast = (e) => {
+  useEffect(() => {
+    loadBroadcasts();
+  }, []);
+
+  const loadBroadcasts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/notifications/broadcasts', { params: { limit: 20 } });
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setAnnouncements(data.map(b => ({
+          id: b.id,
+          title: b.title,
+          message: b.content,
+          sentAt: b.createdAt ? new Date(b.createdAt).toLocaleString() : 'Unknown',
+          isGlobal: b.isGlobal,
+          authorName: b.authorName || 'Instructor',
+          channel: 'In-App Notification'
+        })));
+      }
+    } catch (err) {
+      setError('Unable to load broadcast history. Please try refreshing.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBroadcast = async (e) => {
     e.preventDefault();
-    if (!broadcastTitle || !broadcastMessage) return;
+    if (!broadcastTitle.trim() || !broadcastMessage.trim()) return;
 
-    const newAnn = {
-      id: `a-${Date.now()}`,
-      title: broadcastTitle,
-      message: broadcastMessage,
-      sentAt: 'Just now',
-      channel: 'FCM Push + In-App Notification',
-      recipients: targetAudience === 'all' ? 'All Enrolled (342)' : 'At-Risk Students (42)',
-      delivered: true
-    };
+    setSending(true);
+    try {
+      const payload = {
+        title: broadcastTitle.trim(),
+        content: broadcastMessage.trim(),
+        isGlobal: targetAudience === 'all',
+        courseId: null
+      };
 
-    setAnnouncements([newAnn, ...announcements]);
-    setBroadcastTitle('');
-    setBroadcastMessage('');
-    alert('Announcement successfully dispatched to student mobile clients via Firebase Cloud Messaging!');
+      const response = await api.post('/notifications/broadcast', payload);
+      const newId = response.data?.announcementId || `a-${Date.now()}`;
+
+      const newAnn = {
+        id: newId,
+        title: broadcastTitle.trim(),
+        message: broadcastMessage.trim(),
+        sentAt: new Date().toLocaleString(),
+        isGlobal: targetAudience === 'all',
+        authorName: 'You',
+        channel: 'In-App Notification'
+      };
+
+      setAnnouncements([newAnn, ...announcements]);
+      setBroadcastTitle('');
+      setBroadcastMessage('');
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Failed to send broadcast.';
+      alert(`Broadcast Error: ${msg}`);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -101,9 +151,8 @@ export default function Communications() {
                   className="form-select"
                   style={{ width: 'auto', padding: '6px 12px', fontSize: '12px' }}
                 >
-                  <option value="all">All Enrolled Students (342)</option>
-                  <option value="at-risk">At-Risk Learners Only (42)</option>
-                  <option value="top">Top 10 Leaderboard Achievers</option>
+                  <option value="all">All Enrolled Students</option>
+                  <option value="at-risk">At-Risk Learners Only</option>
                 </select>
               </div>
 
@@ -111,9 +160,19 @@ export default function Communications() {
                 type="submit"
                 className="btn-primary"
                 style={{ padding: '8px 16px', fontSize: '12.5px' }}
+                disabled={sending || !broadcastTitle.trim() || !broadcastMessage.trim()}
               >
-                <Send size={14} />
-                <span>Dispatch Broadcast</span>
+                {sending ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    <span>Dispatch Broadcast</span>
+                  </>
+                )}
               </button>
             </div>
           </form>
@@ -152,10 +211,43 @@ export default function Communications() {
 
       {/* Broadcast History Log */}
       <section className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Broadcast & Notification History</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>Broadcast & Notification History</h3>
+          <button
+            onClick={loadBroadcasts}
+            className="btn-ghost"
+            style={{ fontSize: '12px', padding: '4px 8px' }}
+            disabled={loading}
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            <span>{loading ? 'Loading...' : 'Refresh'}</span>
+          </button>
+        </div>
+
+        {error && (
+          <div style={{
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            fontSize: '12.5px',
+            color: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertCircle size={14} />
+            <span>{error}</span>
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {announcements.length === 0 ? (
+          {loading ? (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              <RefreshCw size={18} className="animate-spin" style={{ margin: '0 auto 8px', opacity: 0.5 }} />
+              Loading broadcast history...
+            </div>
+          ) : announcements.length === 0 ? (
             <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
               No broadcast announcements sent yet. Dispatched announcements and push notifications will be logged here.
             </div>
@@ -177,7 +269,8 @@ export default function Communications() {
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{item.message}</p>
                 <div style={{ display: 'flex', gap: '14px', marginTop: '6px', fontSize: '11px', color: 'var(--text-subtle)' }}>
                   <span>Channel: <strong style={{ color: 'var(--secondary)' }}>{item.channel}</strong></span>
-                  <span>Recipients: {item.recipients}</span>
+                  <span>By: {item.authorName}</span>
+                  <span>Scope: {item.isGlobal ? 'Global' : 'Course-specific'}</span>
                 </div>
               </div>
 

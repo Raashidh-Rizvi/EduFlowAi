@@ -12,7 +12,7 @@ EduFlow AI uses a **LangGraph multi-agent swarm** running as a separate Python +
 
 ```mermaid
 flowchart TD
-    BACKEND["ASP.NET Core\n(API Gateway)"] -->|"HTTP POST /generate or /analyze"| AI["LangGraph AI Service\nPort 8000"]
+    BACKEND["ASP.NET Core\n(API Gateway)"] -->|"HTTP POST /generate or /analyze"| AI["LangGraph AI Service\nPort 8888"]
     AI --> COORD["🧠 Coordinator / Planner Agent\n(Entry point)"]
     COORD --> TOOL["🔧 Action / Tool Agent"]
     COORD --> DOMAIN["📊 Domain Analysis Agent"]

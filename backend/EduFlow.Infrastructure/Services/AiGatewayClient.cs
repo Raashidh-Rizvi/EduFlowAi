@@ -37,7 +37,9 @@ public class AiGatewayClient : IAiGatewayClient
     public AiGatewayClient(HttpClient httpClient, IConfiguration configuration, ILogger<AiGatewayClient>? logger = null)
     {
         _httpClient = httpClient;
-        _httpClient.Timeout = TimeSpan.FromSeconds(120);
+        var timeoutRaw = configuration["AiService:TimeoutSeconds"];
+        var timeoutSeconds = int.TryParse(timeoutRaw, out var ts) && ts > 0 ? ts : 30;
+        _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
         _logger = logger;
 

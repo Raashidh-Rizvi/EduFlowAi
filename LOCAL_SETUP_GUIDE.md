@@ -112,14 +112,14 @@ OPENAI_API_KEY=your_openai_api_key_here
 pytest tests/
 
 # Start FastAPI server with live reload
-python main.py
+#python main.py
 # Or run with uvicorn explicitly:
-# python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload --host 0.0.0.0 --port 8888
 ```
 
-- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
-- **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Agent Topology Endpoint**: [http://localhost:8000/agents/topology](http://localhost:8000/agents/topology)
+- **Health Check**: [http://localhost:8888/health](http://localhost:8888/health)
+- **Interactive Swagger Docs**: [http://localhost:8888/docs](http://localhost:8888/docs)
+- **Agent Topology Endpoint**: [http://localhost:8888/agents/topology](http://localhost:8888/agents/topology)
 
 ---
 
@@ -170,7 +170,7 @@ node dev-runner.js
 
 Or run individual sub-service watch tasks via npm:
 ```powershell
-npm run dev:agent               # Starts Python AI Agent on port 8000
+npm run dev:agent               # Starts Python AI Agent on port 8888
 npm run dev:frontend            # Starts React Vite Frontend on port 2174
 npm run dev:backend:build-reload# Starts ASP.NET Core Backend with watch build on port 5204
 ```

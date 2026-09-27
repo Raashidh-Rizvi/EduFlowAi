@@ -12,14 +12,9 @@ public static class DbInitializer
     /// </summary>
     public static void Initialize(ApplicationDbContext context)
     {
-        try
-        {
-            context.Database.Migrate();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[DbInitializer] Migration failed: {ex.Message} -> {ex.InnerException?.Message}");
-        }
+        // Apply pending migrations. Failure is NOT swallowed: the caller (Program.cs)
+        // rethrows so the application refuses to start with an out-of-sync schema.
+        context.Database.Migrate();
 
         try
         {

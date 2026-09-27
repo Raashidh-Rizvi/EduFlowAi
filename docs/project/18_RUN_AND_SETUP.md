@@ -9,7 +9,7 @@ This guide describes local startup for the repository, not a verified deployment
 | Subsystem | Technology | Default Port / URL | Documentation / UI |
 |---|---|---|---|
 | **Backend API** | ASP.NET Core (.NET 10), EF Core, PostgreSQL | HTTP launch profile: `http://localhost:5204`; HTTPS profile additionally uses port 7009 | `http://localhost:5204/swagger` |
-| **Agentic AI Microservice** | Python 3.11+, FastAPI, LangGraph | `http://localhost:8000` | `http://localhost:8000/docs` |
+| **Agentic AI Microservice** | Python 3.11+, FastAPI, LangGraph | `http://localhost:8888` | `http://localhost:8888/docs` |
 | **Web Application** | React 18, Vite, Lucide Icons | `http://localhost:2174` | Web Dashboard & Portals |
 | **Mobile App** | Flutter 3.x, Dart | Device / Emulator | Student Mobile Interface |
 
@@ -35,7 +35,7 @@ Use separate terminals for Python, backend and web; use a fourth for Flutter whe
 
 ```mermaid
 flowchart LR
-    T1["Terminal 1: Python AI Service\n(Port 8000)"]
+    T1["Terminal 1: Python AI Service\n(Port 8888)"]
     T2["Terminal 2: .NET Backend API\n(Port 5204)"]
     T3["Terminal 3: React Frontend\n(Port 2174)"]
 
@@ -74,11 +74,11 @@ The retained core workflow roles are Planner → Domain Analysis → Action/Tool
 
 4. Start the FastAPI server:
    ```powershell
-   python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   python -m uvicorn main:app --reload --host 0.0.0.0 --port 8888
    ```
-   - **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
-   - **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-   - **Agent Topology Endpoint**: [http://localhost:8000/agents/topology](http://localhost:8000/agents/topology)
+   - **Health Check**: [http://localhost:8888/health](http://localhost:8888/health)
+   - **Interactive Swagger Docs**: [http://localhost:8888/docs](http://localhost:8888/docs)
+   - **Agent Topology Endpoint**: [http://localhost:8888/agents/topology](http://localhost:8888/agents/topology)
 
 ---
 
@@ -223,8 +223,8 @@ npm run dev:backend:build-reload# dotnet watch run with clean rebuild on save
 
 ## 8. Troubleshooting & FAQ
 
-### Q: Port 8000 or 5000 is already in use
-- Check running processes or change the port in `ai-agent/main.py` (`port=8000`) or `backend/EduFlow.Api/Properties/launchSettings.json`.
+### Q: Port 8888 or 5000 is already in use
+- Check running processes or change the port in `ai-agent/main.py` (`port=8888`) or `backend/EduFlow.Api/Properties/launchSettings.json`.
 
 ### Q: Python script execution policy error on Windows
 - If `.\venv\Scripts\Activate.ps1` gives an execution policy error, run:
@@ -234,7 +234,7 @@ npm run dev:backend:build-reload# dotnet watch run with clean rebuild on save
   ```
   Or run without activating:
   ```powershell
-  .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+  .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8888
   ```
 
 ### Q: OpenAI API Key missing warning

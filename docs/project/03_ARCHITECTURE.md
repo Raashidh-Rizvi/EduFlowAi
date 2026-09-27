@@ -45,7 +45,7 @@ flowchart TB
         INFRA["Infrastructure\n(EF Core · Redis · AI Gateway · Email)"]
     end
 
-    subgraph AI["AI Microservice — Python + LangGraph (Port 8000)"]
+    subgraph AI["AI Microservice — Python + LangGraph (Port 8888)"]
         P["🧠 Coordinator / Planner Agent"]
         T["🔧 Action / Tool Agent"]
         D["📊 Domain Analysis Agent"]
@@ -365,7 +365,7 @@ sequenceDiagram
 |---------|------|----------|
 | ASP.NET Core API (HTTP) | 5000 | HTTP |
 | ASP.NET Core API (HTTPS) | 5001 | HTTPS |
-| LangGraph AI Microservice | 8000 | HTTP |
+| LangGraph AI Microservice | 8888 | HTTP |
 | React Dev Server | 2174 | HTTP |
 | Flutter (device/emulator) | — | ADB / USB |
 | PostgreSQL | 5432 | TCP |

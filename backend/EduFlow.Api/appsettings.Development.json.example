@@ -6,21 +6,20 @@
       "Microsoft.EntityFrameworkCore.Database.Command": "Warning"
     }
   },
-  "AllowedHosts": "*",
   "ConnectionStrings": {
-    "DefaultConnection": "Host=ep-empty-bird-ax89v5us-pooler.c-4.us-east-2.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_xMTIqYu1Vrn4;SSL Mode=Require;Trust Server Certificate=true;"
+    "DefaultConnection": "Host=localhost;Database=EduFlowDb;Username=postgres;Password=YOUR_POSTGRES_PASSWORD"
   },
   "Redis": {
     "ConnectionString": "localhost:6379"
   },
   "JwtSettings": {
-    "Secret": "EduFlowSuperSecretKeyForDevelopmentPurposes2026!WithMinimum256BitsLengthRequirements",
+    "Secret": "YOUR_SUPER_SECRET_JWT_KEY_AT_LEAST_256_BITS_LONG_FOR_SECURITY",
     "Issuer": "EduFlowAPI",
     "Audience": "EduFlowClients",
     "ExpiryMinutes": 1440
   },
   "AiService": {
-    "BaseUrl": "http://localhost:8888",
+    "BaseUrl": "http://localhost:8000",
     "ApiKey": "eduflow-local-dev-internal-token-2026",
     "TimeoutSeconds": 30
   }

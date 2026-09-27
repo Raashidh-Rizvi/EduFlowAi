@@ -11,8 +11,8 @@
 ### 1.1 Base URL & Versioning
 
 ```text
-Development:    http://localhost:5000/api
-Production:     https://api.eduflow.ai/api
+Development:    http://localhost:5204/api
+Production:     NOT DEPLOYED — no production URL exists yet
 
 Versioning:     /api/v1/... (current version)
                 /api/v2/... (future breaking changes)

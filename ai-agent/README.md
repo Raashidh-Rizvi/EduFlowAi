@@ -92,3 +92,36 @@ Interactive API documentation available at:
 pytest tests/test_simple_rag.py -v
 ```
 All 8 unit and integration tests pass with 100% success.
+
+---
+
+## 5. Local Setup & Testing
+
+### 1. Virtual Environment & Dependencies
+
+```powershell
+# Navigate to AI agent directory
+cd ai-agent
+
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment (Windows PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Environment Configuration
+Copy `.env.example` to `.env` inside `ai-agent/` and fill in your API keys.
+
+### 3. Run the Microservice
+
+```powershell
+# Run FastAPI server with auto-reload
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+- **Health Check**: http://localhost:8000/health
+- **Interactive Swagger Docs**: http://localhost:8000/docs
