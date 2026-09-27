@@ -674,8 +674,22 @@ function CoachTab({ studentId, courseId }) {
     { sender: 'ai', text: 'Hello. I am your AI Learning Assistant. I analyze curriculum progress and clarify technical concepts. What topic are you studying today?' }
   ]);
   const [input, setInput] = useState('');
+  const [slideDecks, setSlideDecks] = useState([]);
+  const [selectedDeck, setSelectedDeck] = useState('');
+
+  // Discover available slide decks for targeted focus
+  useEffect(() => {
+    let isMounted = true;
+    aiService.getSlideDecks().then(decks => {
+      if (isMounted && Array.isArray(decks) && decks.length > 0) {
+        setSlideDecks(decks);
+      }
+    }).catch(err => console.warn('Could not fetch slide decks:', err));
+    return () => { isMounted = false; };
+  }, []);
 
   const PROMPTS = [
+    'What is searching and problem solving in this lecture?',
     'Explain PostgreSQL Composite Indexes',
     'How do ACID transactions work in EF Core?',
     'What is Clean Architecture domain isolation?'
@@ -690,15 +704,18 @@ function CoachTab({ studentId, courseId }) {
     setIsLoading(true);
 
     try {
-      const res = await aiService.chatWithCoach(text, studentId, courseId);
-      if (res && res.reply) {
+      const activeDeck = slideDecks.find(d => d.source_file === selectedDeck);
+      const effectiveCourseId = activeDeck?.course_id || courseId;
+      const res = await aiService.chatWithCoach(text, studentId, effectiveCourseId, selectedDeck || null);
+      if (res && (res.reply || res.answer)) {
         setMessages(m => [
           ...m, 
           { 
             sender: 'ai', 
-            text: res.reply,
+            text: res.reply || res.answer,
             action: res.suggested_action,
-            topic: res.identified_weak_topic
+            topic: res.identified_weak_topic,
+            citations: res.citations
           }
         ]);
         setIsLoading(false);
@@ -733,9 +750,77 @@ function CoachTab({ studentId, courseId }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 200px)', minHeight: '480px' }}>
-      <div style={{ marginBottom: '12px' }}>
+      <div style={{ marginBottom: '10px' }}>
         <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>AI Learning Assistant</div>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>Context-aware tutoring for your curriculum modules.</div>
+      </div>
+
+      {/* TARGETED LECTURE SCOPE BAR */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '8px',
+        padding: '8px 12px',
+        marginBottom: '10px',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '240px' }}>
+          <span style={{ fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Lecture Focus:</span>
+          <select
+            value={selectedDeck}
+            onChange={(e) => setSelectedDeck(e.target.value)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-main)',
+              color: 'var(--text-main)',
+              fontSize: '12px',
+              outline: 'none',
+              cursor: 'pointer',
+              flex: 1
+            }}
+          >
+            <option value="">🌐 All Enrolled Lectures (Global Course Scope)</option>
+            {slideDecks.map((d, i) => (
+              <option key={i} value={d.source_file}>
+                📑 {d.display_title} ({d.total_chunks} slides)
+              </option>
+            ))}
+          </select>
+        </div>
+        {selectedDeck ? (
+          <span style={{
+            fontSize: '11px',
+            padding: '2px 8px',
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            color: '#10B981',
+            fontWeight: '600',
+            whiteSpace: 'nowrap'
+          }}>
+            🎯 Strict Lecture Focus
+          </span>
+        ) : (
+          <span style={{
+            fontSize: '11px',
+            padding: '2px 8px',
+            borderRadius: 'var(--radius-full)',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            border: '1px solid rgba(59, 130, 246, 0.25)',
+            color: 'var(--primary)',
+            fontWeight: '600',
+            whiteSpace: 'nowrap'
+          }}>
+            🌐 Global Scope
+          </span>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
@@ -747,7 +832,49 @@ function CoachTab({ studentId, courseId }) {
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
               color: msg.sender === 'user' ? '#FFFFFF' : 'var(--text-main)', fontSize: '12.5px', lineHeight: '1.5'
             }}>
-              <div>{msg.text}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+              {msg.citations && msg.citations.length > 0 && (
+                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '5px' }}>
+                    📑 Verifiable Slide Citations & Exploration:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {msg.citations.map((c, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span title={c.preview_text} style={{
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                          border: '1px solid rgba(59, 130, 246, 0.25)',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          color: 'var(--primary)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          Slide {c.page_number} ({Math.round(c.relevance_score * 100)}% match)
+                        </span>
+                        <button
+                          onClick={() => sendMessage(`Can you explain Slide ${c.page_number} in simple terms with a real-world example?`)}
+                          className="btn-ghost"
+                          style={{
+                            padding: '2px 8px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px dashed var(--border-subtle)',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          🔍 Deep Dive Slide {c.page_number}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {msg.action && (
                 <div style={{
                   marginTop: '8px',
@@ -787,7 +914,7 @@ function CoachTab({ studentId, courseId }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
-          placeholder="Ask a technical or conceptual question..."
+          placeholder={selectedDeck ? "Ask a question about this specific lecture..." : "Ask a technical or conceptual question..."}
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-main)', fontSize: '12.5px' }}
         />
         <button onClick={() => sendMessage(input)} className="btn-ghost" style={{ padding: '4px', color: 'var(--primary)' }}>
@@ -1921,7 +2048,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 }}
               />
             )}
-            {activeTab === 'coach' && <CoachTab studentId={user?.id} courseId={courses[0]?.id} />}
+            {activeTab === 'coach' && <CoachTab studentId={user?.id} courseId={courses[0]?.code?.toLowerCase() || courses[0]?.id || "it3012-se"} />}
             {activeTab === 'ranks' && <LeaderboardTab profile={profile} />}
             {activeTab === 'profile' && (
               <ProfileTab

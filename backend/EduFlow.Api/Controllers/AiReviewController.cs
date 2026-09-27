@@ -496,7 +496,8 @@ public record ReviseProposalRequest(
 public record CoachChatApiRequest(
     string student_id,
     string course_id,
-    string message
+    string message,
+    string? source_file = null
 );
 
 public record GenerateQuizApiRequest(

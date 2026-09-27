@@ -47,8 +47,12 @@ yarn-error.log*
 *.py[cod]
 *$py.class
 **/venv/
+**/.venv/
 **/.env
 .pytest_cache/
+**/data/chroma_db/
+ai-agent/data/
+**/temp_test_chroma_db/
 
 # IDE / OS
 .vscode/
