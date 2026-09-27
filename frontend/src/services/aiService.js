@@ -79,11 +79,17 @@ export const aiService = {
       source_file: sourceFile || null
     };
 
+    let backendResponse = null;
+
     // 1. Try production path through .NET Backend API Gateway (port 5204)
     try {
       const response = await api.post('/aireview/coach/chat', payload);
       if (response && response.data && (response.data.reply || response.data.answer)) {
-        return response.data;
+        if (response.data.source !== 'fallback') {
+          return response.data;
+        }
+        backendResponse = response.data;
+        console.warn('Backend returned fallback response, attempting direct AI microservice connection...');
       }
     } catch (err) {
       console.warn('Backend /aireview/coach/chat unavailable, bridging directly to AI Microservice (port 8000)...', err);
@@ -103,7 +109,7 @@ export const aiService = {
       console.warn('Direct AI microservice unavailable:', directErr);
     }
 
-    return null;
+    return backendResponse;
   },
 
   async getSlideDecks() {
