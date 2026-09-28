@@ -17,7 +17,7 @@ SECTIONS IN THIS FILE:
 ===============================================================================
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -112,6 +112,8 @@ class RagChatRequest(BaseModel):
                              Default is 3.
     """
     question: str = Field(..., description="Student query or question regarding the course slides")
+    student_id: Optional[str] = None
+    session_id: Optional[str] = Field(None, min_length=1, max_length=128)
     course_id: Optional[str] = Field(None, description="Optional Course ID to restrict retrieval")
     module_id: Optional[str] = Field(None, description="Optional Module ID to restrict retrieval")
     source_file: Optional[str] = Field(None, description="Optional PDF filename to restrict search to a specific lecture slide deck")
@@ -147,6 +149,7 @@ class CoachChatRequest(BaseModel):
     Matches payload: { "student_id": "...", "course_id": "...", "message": "...", "source_file": "..." }
     """
     student_id: Optional[str] = Field(None, description="Optional Student GUID")
+    session_id: Optional[str] = Field(None, min_length=1, max_length=128)
     course_id: Optional[str] = Field(None, description="Optional Course ID/code")
     message: str = Field(..., description="Student question or chat message")
     source_file: Optional[str] = Field(None, description="Optional PDF filename to lock search to a specific slide deck")
@@ -177,6 +180,52 @@ class SlideDeckItem(BaseModel):
 class ListSlideDecksResponse(BaseModel):
     """List of available indexed lecture slide decks."""
     slide_decks: List[SlideDeckItem] = []
+
+
+class LearningRequest(BaseModel):
+    student_id: Optional[str] = None
+    session_id: Optional[str] = Field(None, min_length=1, max_length=128)
+    course_id: Optional[str] = None
+    source_file: str = Field(..., min_length=1, pattern=r"\S")
+    request_type: Literal["breakdown", "plan", "explain"]
+    sub_lecture_id: Optional[str] = None
+    topic: Optional[str] = None
+    message: Optional[str] = None
+
+
+class LectureSection(BaseModel):
+    title: str = Field(..., min_length=1)
+    page_start: int = Field(..., ge=1)
+    page_end: int = Field(..., ge=1)
+    topics: List[str] = Field(..., min_length=1)
+
+
+class SubLecture(LectureSection):
+    id: str
+    source_file: str
+
+
+class StudySession(BaseModel):
+    session_number: int = Field(..., ge=1)
+    title: str = Field(..., min_length=1)
+    tasks: List[str] = Field(..., min_length=1)
+    estimated_minutes: int = Field(..., ge=1, le=480)
+    sub_lecture_id: Optional[str] = None
+
+
+class StudyPlan(BaseModel):
+    title: str = Field(..., min_length=1)
+    sessions: List[StudySession] = Field(..., min_length=1)
+
+
+class LearningResponse(BaseModel):
+    request_type: Literal["breakdown", "plan", "explain"]
+    source_file: str
+    sub_lectures: List[SubLecture] = Field(default_factory=list)
+    plan: Optional[StudyPlan] = None
+    answer: Optional[str] = None
+    citations: List[SlideCitation] = Field(default_factory=list)
+    source: str = "learning_agent"
 
 
 # =============================================================================

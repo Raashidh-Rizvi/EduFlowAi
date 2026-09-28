@@ -149,7 +149,8 @@ class ChromaVectorStore:
         course_id: Optional[str] = None,
         module_id: Optional[str] = None,
         source_file: Optional[str] = None,
-        top_k: int = 4
+        top_k: int = 4,
+        sub_lecture_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         STEP 3: SEMANTIC VECTOR SEARCH WITH TARGETED SCOPE FILTERING
@@ -162,12 +163,17 @@ class ChromaVectorStore:
         if source_file:
             # Strict Lecture Scope: filename uniquely identifies the slide deck
             conditions.append({"source_file": {"$eq": source_file}})
+            if course_id:
+                conditions.append({"course_id": {"$eq": course_id}})
         else:
             # Global or module scope
             if course_id:
                 conditions.append({"course_id": {"$eq": course_id}})
             if module_id:
                 conditions.append({"module_id": {"$eq": module_id}})
+
+        if sub_lecture_id:
+            conditions.append({"sub_lecture_id": {"$eq": sub_lecture_id}})
 
         where_filter = None
         if len(conditions) > 1:
@@ -182,13 +188,8 @@ class ChromaVectorStore:
         if where_filter:
             kwargs["where"] = where_filter
 
-        try:
-            results = self.collection.query(**kwargs)
-        except Exception as e:
-            # Fallback without filter if empty or filter error
-            print(f"[ChromaVectorStore] Filter query fallback ({e})")
-            kwargs.pop("where", None)
-            results = self.collection.query(**kwargs)
+        # Retrieval failure must never remove the selected lecture filter.
+        results = self.collection.query(**kwargs)
 
         output: List[Dict[str, Any]] = []
         if results and results.get("documents") and len(results["documents"]) > 0:
@@ -206,6 +207,33 @@ class ChromaVectorStore:
                 })
 
         return output
+
+    def get_lecture_chunks(self, source_file: str, course_id: Optional[str] = None):
+        conditions = [{"source_file": {"$eq": source_file}}]
+        if course_id:
+            conditions.append({"course_id": {"$eq": course_id}})
+        where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        data = self.collection.get(where=where, include=["documents", "metadatas"])
+        chunks = [
+            {"id": cid, "text": doc, "metadata": meta}
+            for cid, doc, meta in zip(data["ids"], data["documents"], data["metadatas"])
+            if doc and doc.strip()
+        ]
+        return sorted(chunks, key=lambda c: (
+            c["metadata"]["page_number"], c["metadata"].get("chunk_index", 0), c["id"]
+        ))
+
+    def save_lecture_sections(self, chunks, sections, fingerprint: str):
+        """Metadata-only update: preserve indexed documents and embeddings."""
+        metadatas = []
+        for chunk in chunks:
+            section = next(s for s in sections if
+                           s.page_start <= chunk["metadata"]["page_number"] <= s.page_end)
+            metadatas.append({
+                **chunk["metadata"], "sub_lecture_id": section.id,
+                "learning_section": section.model_dump_json(), "learning_fingerprint": fingerprint,
+            })
+        self.collection.update(ids=[c["id"] for c in chunks], metadatas=metadatas)
 
     def count(self, course_id: Optional[str] = None) -> int:
         """Returns the total number of chunks currently stored in ChromaDB."""
