@@ -152,13 +152,13 @@ export default function AdminManagement() {
             <span className="badge-pill badge-danger">
               ROOT RBAC ACCESS
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Platform Security & Policy Engine</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>User Directory & Access</span>
           </div>
           <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-            Platform Governance & Administration
+            User Management
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-            Manage identity directory, elevate role scopes, monitor AI model token usage & costs, observe multi-agent workflows, and enforce deterministic safety constraints.
+            Manage user details, roles, and account status.
           </p>
         </div>
 
@@ -190,65 +190,6 @@ export default function AdminManagement() {
           >
             <Users size={14} /> 
             <span>Directory ({usersList.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('ai-telemetry')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'ai-telemetry' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'ai-telemetry' ? '700' : '500',
-              border: activeSubTab === 'ai-telemetry' ? '1px solid var(--primary)' : '1px solid transparent',
-              cursor: 'pointer',
-              boxShadow: activeSubTab === 'ai-telemetry' ? '0 0 10px rgba(99, 102, 241, 0.15)' : 'none'
-            }}
-          >
-            <Brain size={14} color={activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'currentColor'} /> 
-            <span>AI & Agent Telemetry</span>
-            <span className="badge-pill badge-primary" style={{ fontSize: '10px', padding: '1px 5px' }}>NEW</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('config')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'config' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'config' ? 'var(--text-main)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'config' ? '600' : '500',
-              border: activeSubTab === 'config' ? '1px solid var(--border-card)' : '1px solid transparent',
-              cursor: 'pointer'
-            }}
-          >
-            <SlidersHorizontal size={14} /> 
-            <span>Platform Policy</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('system')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'system' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'system' ? 'var(--text-main)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'system' ? '600' : '500',
-              border: activeSubTab === 'system' ? '1px solid var(--border-card)' : '1px solid transparent',
-              cursor: 'pointer'
-            }}
-          >
-            <Server size={14} /> 
-            <span>Telemetry</span>
           </button>
         </div>
       </div>
@@ -313,7 +254,6 @@ export default function AdminManagement() {
                 <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ padding: '10px 12px' }}>User Details</th>
                   <th style={{ padding: '10px 12px' }}>Role Scope</th>
-                  <th style={{ padding: '10px 12px' }}>Experience Points</th>
                   <th style={{ padding: '10px 12px' }}>Account Status</th>
                   <th style={{ padding: '10px 12px' }}>Enrolled On</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
@@ -345,9 +285,6 @@ export default function AdminManagement() {
                       </select>
                     </td>
 
-                    <td style={{ padding: '12px', color: 'var(--secondary)', fontWeight: '600' }}>
-                      {user.xp}
-                    </td>
 
                     <td style={{ padding: '12px' }}>
                       <span className={`badge-pill ${user.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>

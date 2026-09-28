@@ -41,7 +41,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
     {
       label: 'Academics & Content',
       items: [
-        { id: 'courses', label: 'Curriculum & Modules', icon: BookOpen, minRole: 'All' },
+        { id: 'courses', label: isAdmin ? 'Course Management' : 'Curriculum & Modules', icon: BookOpen, minRole: 'All' },
         { id: 'assessments', label: 'Assessments & Quizzes', icon: CheckCircle2, minRole: 'All' }
       ]
     },
@@ -71,7 +71,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
       label: 'Governance & Comms',
       items: [
         ...(isAdmin ? [
-          { id: 'admin', label: 'Platform Governance', icon: Shield, badge: 'Root', badgeType: 'danger', minRole: 'Admin' }
+          { id: 'admin', label: 'User Management', icon: Shield, badge: 'Root', badgeType: 'danger', minRole: 'Admin' }
         ] : []),
         ...(isInstructor ? [
           { id: 'communications', label: 'Communications Hub', icon: Bell, minRole: 'Instructor' }
@@ -118,7 +118,10 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
         paddingRight: '4px',
       }}>
         {navSections.map((section, sIdx) => {
-          if (!section.items || section.items.length === 0) return null;
+          const visibleItems = section.items.filter(item =>
+            !isAdmin || ['dashboard', 'courses', 'admin', 'communications'].includes(item.id)
+          );
+          if (visibleItems.length === 0) return null;
           return (
             <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{
@@ -133,7 +136,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
                 {section.label}
               </div>
 
-              {section.items.map(tab => {
+              {visibleItems.map(tab => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 return (
