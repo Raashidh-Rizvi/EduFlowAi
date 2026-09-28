@@ -249,7 +249,7 @@ api.interceptors.response.use(
         errorCode = 'SERVER_ERROR_5XX';
         const serverMsg = responseData?.message || responseData?.detail || responseData?.error || 'Internal Server Error';
         friendlyMessage = `Server Error (${status}) — the backend encountered an unexpected issue.\n\n${serverMsg}`;
-        actionableSteps = ['Check the .NET backend console for error details.', 'Verify the PostgreSQL database is running.', 'Check the Python AI microservice at http://localhost:8000/health'];
+        actionableSteps = ['Check the .NET backend console for error details.', 'Verify the PostgreSQL database is running.', 'Check the Python AI microservice at http://localhost:8888/health'];
       }
 
       console.groupEnd();

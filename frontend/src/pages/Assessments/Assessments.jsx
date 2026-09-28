@@ -154,7 +154,7 @@ export default function Assessments({ currentUser }) {
       setAiApiStatus({
         color: 'red',
         status: 'unreachable',
-        message: 'AI Microservice Unreachable at http://localhost:8000. Please verify Python service is active.',
+        message: 'AI Microservice Unreachable at http://localhost:8888. Please verify Python service is active.',
         canGenerate: false
       });
     } finally {
@@ -357,7 +357,7 @@ export default function Assessments({ currentUser }) {
         color: 'yellow',
         errorCode: 'RATE_LIMITED_429',
         statusCode: 429,
-        endpoint: '/quizzes/ai-status → http://localhost:8000/api/v1/ai/status',
+        endpoint: '/quizzes/ai-status → http://localhost:8888/api/v1/ai/status',
         actionableSteps: [
           'Wait 30–60 seconds, then click "Retry".',
           'Check your Gemini / Groq API quota in their dashboards.',
@@ -375,14 +375,14 @@ export default function Assessments({ currentUser }) {
     if (aiApiStatus.color === 'red') {
       setAiErrorDetails({
         title: 'AI Microservice Unreachable / Offline',
-        message: 'Cannot reach the EduFlow Python AI Microservice at http://localhost:8000. The service may not be running.',
+        message: 'Cannot reach the EduFlow Python AI Microservice at http://localhost:8888. The service may not be running.',
         color: 'red',
         errorCode: 'AI_SERVICE_OFFLINE',
         statusCode: 503,
-        endpoint: 'http://localhost:8000/api/v1/ai/status',
+        endpoint: 'http://localhost:8888/api/v1/ai/status',
         actionableSteps: [
-          'Open a terminal and run: cd ai-agent && python -m uvicorn main:app --reload --port 8000',
-          'Verify the service is healthy: open http://localhost:8000/health in your browser.',
+          'Open a terminal and run: cd ai-agent && python -m uvicorn main:app --reload --port 8888',
+          'Verify the service is healthy: open http://localhost:8888/health in your browser.',
           'Check ai-agent/.env for correct GEMINI_API_KEY or GROQ_API_KEY.',
           'Make sure the Python virtual environment is activated: .venv\\Scripts\\activate (Windows)',
         ],
@@ -501,7 +501,7 @@ export default function Assessments({ currentUser }) {
         errorCode = 'AI_GENERATION_FAILED';
         steps = steps.length > 0 ? steps : [
           'The Python AI Microservice failed to generate questions.',
-          'Check that the Python service is running: http://localhost:8000/health',
+          'Check that the Python service is running: http://localhost:8888/health',
           'Verify your GEMINI_API_KEY or GROQ_API_KEY in ai-agent/.env',
           'Check the Python terminal for error details (e.g. "invalid API key", "quota exceeded")',
           backendMsg ? `Server said: "${backendMsg}"` : null,

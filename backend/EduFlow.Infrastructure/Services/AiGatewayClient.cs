@@ -40,7 +40,7 @@ public class AiGatewayClient : IAiGatewayClient
         var timeoutRaw = configuration["AiService:TimeoutSeconds"];
         var timeoutSeconds = int.TryParse(timeoutRaw, out var ts) && ts > 0 ? ts : 30;
         _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
+        _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8888";
         _logger = logger;
 
         var apiKey = configuration["AiService:ApiKey"];

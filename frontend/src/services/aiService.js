@@ -1,6 +1,6 @@
 import api from './api';
 
-const AI_MICROSERVICE_URL = 'http://localhost:8000';
+const AI_MICROSERVICE_URL = 'http://localhost:8888';
 
 // ─────────────────────────────────────────────────────────────────
 // AI SERVICE — RAG Chat, Coach Chat, Slide Decks, Review workflows
@@ -119,7 +119,7 @@ export const aiService = {
       console.warn('  Falling back to direct Python AI Microservice connection...');
     }
 
-    // 2. Direct fallback bridge to Python AI Microservice (port 8000)
+    // 2. Direct fallback bridge to Python AI Microservice (port 8888)
     const directUrl = `${AI_MICROSERVICE_URL}/ai-coach-chat`;
     console.log('');
     console.log('Step 2: Direct Python AI Microservice fallback → POST', directUrl);
@@ -149,7 +149,7 @@ export const aiService = {
       console.error('❌ Direct AI Microservice UNREACHABLE at', directUrl);
       console.error('  Error:', directErr.message);
       console.error('  This means the Python FastAPI service is NOT running.');
-      console.error('  Start it with: cd ai-agent && python -m uvicorn main:app --reload --port 8000');
+      console.error('  Start it with: cd ai-agent && python -m uvicorn main:app --reload --port 8888');
     }
 
     console.groupEnd();
@@ -176,7 +176,7 @@ export const aiService = {
         });
         if (decks.length === 0) {
           console.warn('⚠️ No slide decks are indexed! AI quiz generation will fall back to generic questions.');
-          console.warn('  To index slides: POST to http://localhost:8000/api/v1/rag/index-pdf');
+          console.warn('  To index slides: POST to http://localhost:8888/api/v1/rag/index-pdf');
         }
         console.groupEnd();
         return decks;
@@ -190,7 +190,7 @@ export const aiService = {
       console.error('❌ Could not reach Python AI Microservice to fetch slide decks');
       console.error('URL attempted:', url);
       console.error('Error:', e.message);
-      console.error('Verify Python service is running: http://localhost:8000/health');
+      console.error('Verify Python service is running: http://localhost:8888/health');
       console.groupEnd();
     }
     return [];
@@ -252,7 +252,7 @@ export const aiService = {
         console.error('❌ Network error reaching RAG Chat endpoint');
         console.error('URL:', url);
         console.error('Error:', err.message);
-        console.error('Verify Python service: http://localhost:8000/health');
+        console.error('Verify Python service: http://localhost:8888/health');
       }
       console.groupEnd();
       throw err;

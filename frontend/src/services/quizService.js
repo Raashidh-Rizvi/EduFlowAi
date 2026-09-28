@@ -62,7 +62,7 @@ export const quizService = {
     const endpoint = '/quizzes/ai-status';
     console.group('%c[QuizService] 🤖 Checking AI Microservice Status', 'color: #9c27b0; font-weight: bold;');
     console.log('Endpoint:', endpoint);
-    console.log('This proxies through .NET backend to Python AI service at http://localhost:8000');
+    console.log('This proxies through .NET backend to Python AI service at http://localhost:8888');
     try {
       const response = await api.get(endpoint);
       console.log('AI Status Response:', response.data);
@@ -115,7 +115,7 @@ export const quizService = {
     console.log('');
     console.log('ℹ️  NOTE: This endpoint requires [Authorize(Roles = "Instructor,Admin")]');
     console.log('ℹ️  If you get a 401, check the Token State logged above.');
-    console.log('ℹ️  The .NET backend will then call Python at http://localhost:8000/generate-quiz');
+    console.log('ℹ️  The .NET backend will then call Python at http://localhost:8888/generate-quiz');
 
     try {
       const response = await api.post(endpoint, data);

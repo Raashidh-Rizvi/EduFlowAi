@@ -377,3 +377,7 @@ def generate_quiz_legacy(request: dict):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Quiz generation error: {str(e)}")
 
+
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run('main:app', host='0.0.0.0', port=8888, reload=True)
