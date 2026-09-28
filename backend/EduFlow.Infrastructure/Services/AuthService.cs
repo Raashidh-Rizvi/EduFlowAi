@@ -1,4 +1,6 @@
 using System;
+using System.ComponentModel.DataAnnotations;
+using Npgsql;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -29,7 +31,50 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
-        var existingUser = await _dbContext.Users.AnyAsync(u => u.Email.ToLower() == request.Email.ToLower(), ct);
+        if (request.Role != UserRole.Student)
+        {
+            throw new InvalidOperationException("Public registration only allows Student accounts.");
+        }
+
+        var user = await PrepareUserAsync(request, ct);
+
+        var (token, expiresAt) = GenerateJwtToken(user);
+        var refreshToken = GenerateRefreshToken(user.Id);
+        await _dbContext.RefreshTokens.AddAsync(refreshToken, ct);
+
+        await SaveNewUserAsync(ct);
+
+        return new AuthResponse(
+            UserId: user.Id,
+            FullName: user.FullName,
+            Email: user.Email,
+            Role: user.Role.ToString(),
+            Token: token,
+            RefreshToken: refreshToken.Token,
+            ExpiresAt: expiresAt
+        );
+    }
+
+    public async Task<CreatedUserDto> CreateUserAsync(RegisterRequest request, CancellationToken ct = default)
+    {
+        var user = await PrepareUserAsync(request, ct);
+        await SaveNewUserAsync(ct);
+        return new CreatedUserDto(user.Id, user.FullName, user.Email, user.Role.ToString(), user.IsActive, user.CreatedAt);
+    }
+
+    private async Task<User> PrepareUserAsync(RegisterRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length > 200)
+            throw new InvalidOperationException("Full name is required and must be at most 200 characters.");
+        var email = request.Email?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(email) || email.Length > 254 || !new EmailAddressAttribute().IsValid(email))
+            throw new InvalidOperationException("A valid email address is required.");
+        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8 || Encoding.UTF8.GetByteCount(request.Password) > 72)
+            throw new InvalidOperationException("Password must be at least 8 characters and at most 72 UTF-8 bytes.");
+        if (request.Role is not (UserRole.Student or UserRole.Instructor or UserRole.Admin))
+            throw new InvalidOperationException("Role must be Student, Instructor, or Admin.");
+
+        var existingUser = await _dbContext.Users.AnyAsync(u => u.Email.ToLower() == email, ct);
         if (existingUser)
         {
             throw new InvalidOperationException("A user with this email address already exists.");
@@ -38,8 +83,8 @@ public class AuthService : IAuthService
         var passwordHash = HashPassword(request.Password);
         var user = new User
         {
-            FullName = request.FullName,
-            Email = request.Email.ToLower(),
+            FullName = request.FullName.Trim(),
+            Email = email,
             PasswordHash = passwordHash,
             Role = request.Role,
             IsActive = true
@@ -68,21 +113,20 @@ public class AuthService : IAuthService
             await _dbContext.StudentStreaks.AddAsync(studentStreak, ct);
         }
 
-        var (token, expiresAt) = GenerateJwtToken(user);
-        var refreshToken = GenerateRefreshToken(user.Id);
-        await _dbContext.RefreshTokens.AddAsync(refreshToken, ct);
+        return user;
+    }
 
-        await _dbContext.SaveChangesAsync(ct);
-
-        return new AuthResponse(
-            UserId: user.Id,
-            FullName: user.FullName,
-            Email: user.Email,
-            Role: user.Role.ToString(),
-            Token: token,
-            RefreshToken: refreshToken.Token,
-            ExpiresAt: expiresAt
-        );
+    private async Task SaveNewUserAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Users_Email" })
+        {
+            // The unique email index also protects simultaneous creation requests.
+            throw new InvalidOperationException("A user with this email address already exists.", ex);
+        }
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)

@@ -7,7 +7,7 @@ public record RegisterRequest(
     string FullName,
     string Email,
     string Password,
-    UserRole Role
+    UserRole Role = UserRole.Student
 );
 
 public record LoginRequest(
@@ -48,3 +48,14 @@ public record UserProfileDto(
     bool IsActive
 );
 
+
+public record CreatedUserDto(
+    Guid Id,
+    string FullName,
+    string Email,
+    string Role,
+    bool IsActive,
+    DateTime CreatedAt
+);
+
+public record CreateUserRequest(string FullName, string Email, string Password, string Role);

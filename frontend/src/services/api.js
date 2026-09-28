@@ -18,25 +18,25 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config);
+  console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`);
   return config;
 }, (error) => {
-  console.error('[API Request Error]', error);
+  console.error('[API Request Error]', error.message);
   return Promise.reject(error);
 });
 
 // Response interceptor for unified error handling
 api.interceptors.response.use(
   (response) => {
-    console.log(`[API Response] ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`, response.data);
+    console.log(`[API Response] ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`);
     return response;
   },
   (error) => {
-    console.error('[API Response Error]', error);
+    console.error('[API Response Error]', error.message);
     let friendlyMessage = "An unexpected error occurred. Please check your connection and try again.";
     
     if (error.response) {
-      console.error(`[API Response Error Data] Status: ${error.response.status}`, error.response.data);
+      console.error(`[API Response Error] Status: ${error.response.status}`);
       if (error.response.status === 401) {
         friendlyMessage = "Your session has expired or is invalid. Please log in again.";
         // Clear stale token
@@ -47,6 +47,8 @@ api.interceptors.response.use(
         if (window.location.pathname !== '/') {
            window.location.reload();
         }
+      } else if (error.response.status === 403) {
+        friendlyMessage = "You do not have permission to perform this action.";
       } else if (error.response.status === 400 || error.response.status === 404) {
         friendlyMessage = error.response.data?.detail || error.response.data?.message || "We couldn't process that request. Please verify your information.";
       } else if (error.response.status === 429) {

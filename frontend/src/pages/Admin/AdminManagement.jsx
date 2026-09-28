@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
 import { 
   Shield, 
@@ -42,6 +42,117 @@ export default function AdminManagement() {
 
   const [usersList, setUsersList] = useState([]);
 
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Student' });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const addUserDialog = useRef(null);
+  const createInFlight = useRef(false);
+  const usersRequest = useRef(0);
+
+  useEffect(() => {
+    if (showAddUser) addUserDialog.current?.showModal();
+    else addUserDialog.current?.close();
+  }, [showAddUser]);
+
+  const closeAddUser = () => {
+    if (createInFlight.current) return;
+    setShowAddUser(false);
+    setNewUser({ fullName: '', email: '', password: '', role: 'Student' });
+    setCreateError('');
+  };
+
+  const handleCreateUser = async (event) => {
+    event.preventDefault();
+    if (createInFlight.current) return;
+    setCreateError('');
+    const payload = { ...newUser, fullName: newUser.fullName.trim(), email: newUser.email.trim() };
+    if (!payload.fullName || !payload.email || !payload.password.trim()) {
+      setCreateError('Full name, email, and password are required.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+$/.test(payload.email)) {
+      setCreateError('Enter a valid email address.');
+      return;
+    }
+    if (payload.password.length < 8 || new TextEncoder().encode(payload.password).length > 72) {
+      setCreateError('Password must be at least 8 characters and at most 72 UTF-8 bytes.');
+      return;
+    }
+    if (!['Student', 'Instructor', 'Admin'].includes(payload.role)) {
+      setCreateError('Select a valid role.');
+      return;
+    }
+    createInFlight.current = true;
+    setCreatingUser(true);
+    try {
+      const { data: user } = await api.post('/admin/users', payload);
+      // Use the saved account returned by the server; keep the Admin session intact.
+      usersRequest.current += 1;
+      setUsersList(current => [{
+        id: user.id, name: user.fullName, email: user.email, role: user.role,
+        status: user.isActive ? 'Active' : 'Suspended',
+        joined: new Date(user.createdAt).toISOString().split('T')[0]
+      }, ...current.filter(existing => existing.id !== user.id)]);
+      setSearchFilter('');
+      setRoleFilter('All');
+      setCreateSuccess('User created successfully.');
+      setShowAddUser(false);
+      setNewUser({ fullName: '', email: '', password: '', role: 'Student' });
+    } catch (error) {
+      const data = error.response?.data;
+      const validationErrors = data?.errors ? Object.values(data.errors).flat().join(' ') : '';
+      setCreateError(validationErrors || data?.message || error.friendlyMessage || 'Unable to create user. Please try again.');
+    } finally {
+      createInFlight.current = false;
+      setCreatingUser(false);
+    }
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState('');
+  const deleteDialog = useRef(null);
+  const deleteInFlight = useRef(false);
+  let currentAdminId = '';
+  try {
+    const sessionUser = JSON.parse(localStorage.getItem('eduflow_user') || 'null');
+    currentAdminId = String(sessionUser?.userId || sessionUser?.id || '').toLowerCase();
+  } catch {}
+
+  useEffect(() => {
+    if (deleteTarget) deleteDialog.current?.showModal();
+    else deleteDialog.current?.close();
+  }, [deleteTarget]);
+
+  const closeDeleteDialog = () => {
+    if (deleteInFlight.current) return;
+    setDeleteTarget(null);
+    setDeleteError('');
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || deleteInFlight.current) return;
+    deleteInFlight.current = true;
+    setDeletingUser(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/admin/users/${deleteTarget.id}`);
+      usersRequest.current += 1;
+      setUsersList(current => current.filter(user => user.id !== deleteTarget.id));
+      setDeleteSuccess('User permanently deleted.');
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(error.response?.data?.message || error.friendlyMessage ||
+        'Unable to delete user. Please try again.');
+    } finally {
+      deleteInFlight.current = false;
+      setDeletingUser(false);
+    }
+  };
+
   // AI Telemetry State
   const [aiTelemetry, setAiTelemetry] = useState(null);
   const [loadingAiTelemetry, setLoadingAiTelemetry] = useState(false);
@@ -61,6 +172,7 @@ export default function AdminManagement() {
   }, [activeSubTab]);
 
   const fetchUsers = async () => {
+    const requestId = ++usersRequest.current;
     try {
       const response = await api.get('/admin/users');
       // Map API response to match UI format
@@ -73,7 +185,7 @@ export default function AdminManagement() {
         xp: `${u.totalXp} XP`,
         joined: new Date(u.createdAt).toISOString().split('T')[0]
       }));
-      setUsersList(mapped);
+      if (requestId === usersRequest.current) setUsersList(mapped);
     } catch (err) {
       console.warn('Failed to fetch users:', err);
     }
@@ -152,13 +264,13 @@ export default function AdminManagement() {
             <span className="badge-pill badge-danger">
               ROOT RBAC ACCESS
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Platform Security & Policy Engine</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>User Directory & Access</span>
           </div>
           <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-            Platform Governance & Administration
+            User Management
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-            Manage identity directory, elevate role scopes, monitor AI model token usage & costs, observe multi-agent workflows, and enforce deterministic safety constraints.
+            Manage user details, roles, and account status.
           </p>
         </div>
 
@@ -191,67 +303,67 @@ export default function AdminManagement() {
             <Users size={14} /> 
             <span>Directory ({usersList.length})</span>
           </button>
-          <button
-            onClick={() => setActiveSubTab('ai-telemetry')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'ai-telemetry' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'ai-telemetry' ? '700' : '500',
-              border: activeSubTab === 'ai-telemetry' ? '1px solid var(--primary)' : '1px solid transparent',
-              cursor: 'pointer',
-              boxShadow: activeSubTab === 'ai-telemetry' ? '0 0 10px rgba(99, 102, 241, 0.15)' : 'none'
-            }}
-          >
-            <Brain size={14} color={activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'currentColor'} /> 
-            <span>AI & Agent Telemetry</span>
-            <span className="badge-pill badge-primary" style={{ fontSize: '10px', padding: '1px 5px' }}>NEW</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('config')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'config' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'config' ? 'var(--text-main)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'config' ? '600' : '500',
-              border: activeSubTab === 'config' ? '1px solid var(--border-card)' : '1px solid transparent',
-              cursor: 'pointer'
-            }}
-          >
-            <SlidersHorizontal size={14} /> 
-            <span>Platform Policy</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('system')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'system' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'system' ? 'var(--text-main)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'system' ? '600' : '500',
-              border: activeSubTab === 'system' ? '1px solid var(--border-card)' : '1px solid transparent',
-              cursor: 'pointer'
-            }}
-          >
-            <Server size={14} /> 
-            <span>Telemetry</span>
-          </button>
         </div>
       </div>
+
+      {createSuccess && <div role="status" className="badge-pill badge-success">{createSuccess}</div>}
+      <dialog
+        ref={addUserDialog}
+        aria-labelledby="add-user-title"
+        onCancel={(event) => { event.preventDefault(); closeAddUser(); }}
+        className="card-premium"
+        style={{ padding: '28px', width: 'min(480px, calc(100vw - 32px))', maxHeight: '90vh', overflowY: 'auto', margin: 'auto', color: 'var(--text-main)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)' }}
+      >
+        <form onSubmit={handleCreateUser} aria-busy={creatingUser} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h2 id="add-user-title" style={{ fontSize: '20px', fontWeight: '800' }}>Add User</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Create an account and assign its role.</p>
+          {createError && <div role="alert" style={{ color: 'var(--danger)', fontSize: '13px' }}>{createError}</div>}
+          <fieldset disabled={creatingUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: 0, border: 0 }}>
+            <label htmlFor="new-user-name">Full Name</label>
+            <input id="new-user-name" className="form-input" autoFocus required maxLength={200} autoComplete="off" value={newUser.fullName} onChange={event => setNewUser({ ...newUser, fullName: event.target.value })} />
+            <label htmlFor="new-user-email">Email</label>
+            <input id="new-user-email" className="form-input" type="email" required maxLength={254} autoComplete="off" value={newUser.email} onChange={event => setNewUser({ ...newUser, email: event.target.value })} />
+            <label htmlFor="new-user-password">Password</label>
+            <input id="new-user-password" className="form-input" type="password" required minLength={8} maxLength={72} autoComplete="new-password" aria-describedby="new-user-password-help" value={newUser.password} onChange={event => setNewUser({ ...newUser, password: event.target.value })} />
+            <small id="new-user-password-help" style={{ color: 'var(--text-muted)' }}>At least 8 characters; at most 72 UTF-8 bytes.</small>
+            <label htmlFor="new-user-role">Role</label>
+            <select id="new-user-role" className="form-select" required value={newUser.role} onChange={event => setNewUser({ ...newUser, role: event.target.value })}>
+              <option value="Student">Student</option>
+              <option value="Instructor">Instructor</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </fieldset>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" className="btn-secondary" disabled={creatingUser} onClick={closeAddUser}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={creatingUser}>{creatingUser ? 'Creating...' : 'Create User'}</button>
+          </div>
+        </form>
+      </dialog>
+
+      {deleteSuccess && <div role="status" className="badge-pill badge-success">{deleteSuccess}</div>}
+      <dialog
+        ref={deleteDialog}
+        aria-labelledby="delete-user-title"
+        aria-describedby="delete-user-warning"
+        onCancel={event => { event.preventDefault(); closeDeleteDialog(); }}
+        className="card-premium"
+        style={{ padding: '28px', width: 'min(480px, calc(100vw - 32px))', maxHeight: '90vh', overflowY: 'auto', margin: 'auto', color: 'var(--text-main)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)' }}
+      >
+        <div aria-busy={deletingUser} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h2 id="delete-user-title" style={{ fontSize: '20px', fontWeight: '800' }}>Permanently delete user?</h2>
+          <p><strong>{deleteTarget?.name}</strong><br />{deleteTarget?.email}</p>
+          <p id="delete-user-warning" style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+            This permanently removes the account and cannot be undone. Accounts with existing platform activity cannot be deleted; use Suspend instead.
+          </p>
+          {deleteError && <div role="alert" style={{ color: 'var(--danger)', fontSize: '13px' }}>{deleteError}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" autoFocus className="btn-secondary" disabled={deletingUser} onClick={closeDeleteDialog}>Cancel</button>
+            <button type="button" className="btn-danger" disabled={deletingUser} onClick={handleDeleteUser}>
+              {deletingUser ? 'Deleting...' : 'Permanently Delete'}
+            </button>
+          </div>
+        </div>
+      </dialog>
 
       {/* 1. User Management View */}
       {activeSubTab === 'users' && (
@@ -297,7 +409,7 @@ export default function AdminManagement() {
                 Showing {filteredUsers.length} of {usersList.length} Accounts
               </span>
               <button 
-                onClick={() => alert('Add User Modal will open here. You can add Instructors or Students.')} 
+                onClick={() => { setCreateSuccess(''); setCreateError(''); setShowAddUser(true); }}
                 className="btn-primary"
                 style={{ padding: '6px 12px', fontSize: '12px', gap: '6px' }}
               >
@@ -313,7 +425,6 @@ export default function AdminManagement() {
                 <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ padding: '10px 12px' }}>User Details</th>
                   <th style={{ padding: '10px 12px' }}>Role Scope</th>
-                  <th style={{ padding: '10px 12px' }}>Experience Points</th>
                   <th style={{ padding: '10px 12px' }}>Account Status</th>
                   <th style={{ padding: '10px 12px' }}>Enrolled On</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
@@ -345,10 +456,6 @@ export default function AdminManagement() {
                       </select>
                     </td>
 
-                    <td style={{ padding: '12px', color: 'var(--secondary)', fontWeight: '600' }}>
-                      {user.xp}
-                    </td>
-
                     <td style={{ padding: '12px' }}>
                       <span className={`badge-pill ${user.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>
                         {user.status}
@@ -366,6 +473,16 @@ export default function AdminManagement() {
                         style={{ padding: '5px 10px', fontSize: '11.5px' }}
                       >
                         {user.status === 'Active' ? 'Suspend' : 'Activate'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        disabled={deletingUser || user.id.toLowerCase() === currentAdminId}
+                        title={user.id.toLowerCase() === currentAdminId ? 'You cannot delete your own account.' : 'Permanently delete unused account'}
+                        onClick={() => { setDeleteError(''); setDeleteSuccess(''); setCreateSuccess(''); setDeleteTarget(user); }}
+                        style={{ padding: '5px 10px', fontSize: '11.5px', marginLeft: '8px' }}
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>
