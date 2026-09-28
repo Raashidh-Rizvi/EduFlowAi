@@ -88,10 +88,11 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
+            _logger?.LogWarning("[AiGatewayClient] OrchestrateStudyPlanAsync non-success: {Status}", response.StatusCode);
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback simulation when python microservice is not active
+            _logger?.LogError(ex, "[AiGatewayClient] OrchestrateStudyPlanAsync error connecting to {Url}", $"{_baseUrl}/orchestrate-study-plan");
         }
 
         return FallbackStudyPlanJson();
@@ -106,10 +107,11 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
+            _logger?.LogWarning("[AiGatewayClient] GenerateAdaptiveChallengeAsync non-success: {Status}", response.StatusCode);
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback
+            _logger?.LogError(ex, "[AiGatewayClient] GenerateAdaptiveChallengeAsync error connecting to {Url}", $"{_baseUrl}/generate-adaptive-challenge");
         }
 
         return FallbackAdaptiveChallengeJson();

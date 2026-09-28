@@ -31,6 +31,7 @@ import {
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
+import ErrorModal from '../../components/common/ErrorModal';
 
 export default function Assessments({ currentUser }) {
   const [activeSubTab, setActiveSubTab] = useState('quizzes'); // 'quizzes' | 'bosses' | 'rubrics'
@@ -128,7 +129,13 @@ export default function Assessments({ currentUser }) {
   const [aiErrorDetails, setAiErrorDetails] = useState({
     title: '',
     message: '',
-    color: 'red'
+    color: 'red',
+    errorCode: '',
+    statusCode: null,
+    endpoint: '',
+    responseBody: null,
+    tokenState: null,
+    actionableSteps: [],
   });
 
   const fetchAiStatus = async () => {
@@ -345,9 +352,20 @@ export default function Assessments({ currentUser }) {
     // Pre-check status before launching call
     if (aiApiStatus.color === 'yellow') {
       setAiErrorDetails({
-        title: 'AI Token Usage Limit Reached (429 RateLimit)',
-        message: aiApiStatus.message || 'Token quota limit reached for the configured AI provider. Please upgrade your API plan or wait a few moments before retrying.',
-        color: 'yellow'
+        title: 'AI Rate Limit Reached (429)',
+        message: aiApiStatus.message || 'Token quota limit reached for the configured AI provider. Generation is temporarily paused.',
+        color: 'yellow',
+        errorCode: 'RATE_LIMITED_429',
+        statusCode: 429,
+        endpoint: '/quizzes/ai-status → http://localhost:8000/api/v1/ai/status',
+        actionableSteps: [
+          'Wait 30–60 seconds, then click "Retry".',
+          'Check your Gemini / Groq API quota in their dashboards.',
+          'Switch the LLM_PROVIDER in ai-agent/.env (e.g. switch from gemini to groq).',
+          'Check the Python AI service terminal for rate limit error messages.',
+        ],
+        responseBody: { status: aiApiStatus.status, message: aiApiStatus.message },
+        tokenState: null,
       });
       setShowAiErrorModal(true);
       setIsAiGenerating(false);
@@ -357,8 +375,19 @@ export default function Assessments({ currentUser }) {
     if (aiApiStatus.color === 'red') {
       setAiErrorDetails({
         title: 'AI Microservice Unreachable / Offline',
-        message: aiApiStatus.message || 'Unable to connect to the EduFlow AI Microservice at http://localhost:8000. Please verify the Python service is active.',
-        color: 'red'
+        message: 'Cannot reach the EduFlow Python AI Microservice at http://localhost:8000. The service may not be running.',
+        color: 'red',
+        errorCode: 'AI_SERVICE_OFFLINE',
+        statusCode: 503,
+        endpoint: 'http://localhost:8000/api/v1/ai/status',
+        actionableSteps: [
+          'Open a terminal and run: cd ai-agent && python -m uvicorn main:app --reload --port 8000',
+          'Verify the service is healthy: open http://localhost:8000/health in your browser.',
+          'Check ai-agent/.env for correct GEMINI_API_KEY or GROQ_API_KEY.',
+          'Make sure the Python virtual environment is activated: .venv\\Scripts\\activate (Windows)',
+        ],
+        responseBody: { status: aiApiStatus.status, message: aiApiStatus.message },
+        tokenState: null,
       });
       setShowAiErrorModal(true);
       setIsAiGenerating(false);
@@ -431,12 +460,82 @@ export default function Assessments({ currentUser }) {
       }
     } catch (err) {
       setAiGenToast(null);
-      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed: Unable to connect to AI Agent API microservice.';
-      const isRateLimit = errMsg.includes('429') || errMsg.toLowerCase().includes('token') || errMsg.toLowerCase().includes('quota');
+
+      // ── Extract all diagnostic info from the enriched error object (set by api.js interceptor) ──
+      const httpStatus = err.response?.status ?? null;
+      const backendCode = err.response?.data?.code ?? err.errorCode ?? 'UNKNOWN';
+      const backendMsg = err.response?.data?.message ?? err.response?.data?.detail ?? null;
+      const friendlyMsg = err.friendlyMessage ?? err.message ?? 'AI Generation Failed.';
+      const tokenState = err.diagnostic?.tokenState ?? null;
+      const actionableSteps = err.actionableSteps ?? [];
+      const responseBody = err.response?.data ?? null;
+
+      // ── Classify the error type ──
+      let errorTitle = 'AI Quiz Generation Failed';
+      let errorColor = 'red';
+      let errorCode = backendCode;
+      let steps = actionableSteps;
+
+      if (httpStatus === 401) {
+        errorTitle = 'Authentication Failed (401 Unauthorized)';
+        errorColor = 'red';
+        errorCode = 'UNAUTHORIZED_401';
+        steps = steps.length > 0 ? steps : [
+          'You are not logged in, or your session has expired.',
+          'Click the logout button and sign in again as an Instructor or Admin.',
+          'Only Instructor and Admin roles can generate AI quizzes.',
+          'Check the browser console (F12) for token diagnostic details.',
+        ];
+      } else if (httpStatus === 403) {
+        errorTitle = 'Access Forbidden (403)';
+        errorColor = 'red';
+        errorCode = 'FORBIDDEN_403';
+        steps = steps.length > 0 ? steps : [
+          `Your account role ("${tokenState?.role ?? 'unknown'}") cannot generate AI quizzes.`,
+          'Instructor or Admin role is required.',
+          'Contact your administrator to update your account role.',
+        ];
+      } else if (backendCode === 'AI_GENERATION_FAILED' || httpStatus === 400) {
+        errorTitle = 'AI Generation Blocked (400)';
+        errorColor = 'orange';
+        errorCode = 'AI_GENERATION_FAILED';
+        steps = steps.length > 0 ? steps : [
+          'The Python AI Microservice failed to generate questions.',
+          'Check that the Python service is running: http://localhost:8000/health',
+          'Verify your GEMINI_API_KEY or GROQ_API_KEY in ai-agent/.env',
+          'Check the Python terminal for error details (e.g. "invalid API key", "quota exceeded")',
+          backendMsg ? `Server said: "${backendMsg}"` : null,
+        ].filter(Boolean);
+      } else if (httpStatus === 429 || friendlyMsg.toLowerCase().includes('quota') || friendlyMsg.toLowerCase().includes('token limit')) {
+        errorTitle = 'AI Rate Limit Reached (429)';
+        errorColor = 'yellow';
+        errorCode = 'RATE_LIMITED_429';
+        steps = steps.length > 0 ? steps : [
+          'Your AI API quota is exhausted. Wait 30–60 seconds before retrying.',
+          'Check your Gemini or Groq account dashboard for remaining quota.',
+          'Switch to a different LLM provider in ai-agent/.env (LLM_PROVIDER=groq or gemini).',
+        ];
+      } else if (!httpStatus) {
+        errorTitle = 'Network Error — Backend Unreachable';
+        errorColor = 'red';
+        errorCode = 'NETWORK_ERROR';
+        steps = steps.length > 0 ? steps : [
+          'Cannot reach the .NET backend at http://localhost:5204',
+          'Start the backend: cd backend && dotnet run --project EduFlow.Api',
+          'Check that PostgreSQL is running.',
+        ];
+      }
+
       setAiErrorDetails({
-        title: isRateLimit ? 'AI Token Limit Reached (429 RateLimit)' : 'AI Generation Error',
-        message: errMsg,
-        color: isRateLimit ? 'yellow' : 'red'
+        title: errorTitle,
+        message: backendMsg ?? friendlyMsg,
+        color: errorColor,
+        errorCode,
+        statusCode: httpStatus,
+        endpoint: '/api/quizzes/generate-ai',
+        actionableSteps: steps,
+        responseBody,
+        tokenState,
       });
       setShowAiErrorModal(true);
     } finally {
@@ -2777,92 +2876,23 @@ export default function Assessments({ currentUser }) {
         </div>
       )}
 
-      {/* AI API Error Notice Popup Modal */}
-      {showAiErrorModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 10000, padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: 'var(--bg-card)',
-            border: `2px solid ${aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444'}`,
-            borderRadius: 'var(--radius-lg)',
-            width: '100%', maxWidth: '520px',
-            padding: '24px',
-            boxShadow: 'var(--shadow-popover)',
-            display: 'flex', flexDirection: 'column', gap: '16px',
-            animation: 'fadeIn 0.2s ease-out'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{
-                width: '44px', height: '44px', borderRadius: '50%',
-                backgroundColor: aiErrorDetails.color === 'yellow' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                color: aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-              }}>
-                <ShieldAlert size={24} />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'var(--text-main)' }}>
-                  {aiErrorDetails.title || (aiErrorDetails.color === 'yellow' ? 'AI Token Limit Reached' : 'AI Microservice Unreachable')}
-                </h3>
-                <span style={{
-                  fontSize: '11px', fontWeight: '700', textTransform: 'uppercase',
-                  color: aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444',
-                  letterSpacing: '0.5px'
-                }}>
-                  {aiErrorDetails.color === 'yellow' ? '🟡 STATUS: YELLOW (TOKEN LIMIT REACHED)' : '🔴 STATUS: RED (UNREACHABLE)'}
-                </span>
-              </div>
-            </div>
-
-            <div style={{
-              backgroundColor: 'var(--bg-canvas)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '14px 16px',
-              fontSize: '13px',
-              lineHeight: '1.5',
-              color: 'var(--text-main)',
-              border: '1px solid var(--border-subtle)'
-            }}>
-              {aiErrorDetails.message}
-            </div>
-
-            <div style={{
-              fontSize: '11.5px',
-              color: 'var(--text-muted)',
-              backgroundColor: 'var(--bg-surface)',
-              padding: '10px 12px',
-              borderRadius: 'var(--radius-xs)',
-              borderLeft: `3px solid ${aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444'}`
-            }}>
-              <strong>Strict Quality Policy:</strong> Fallback/garbage question generation has been prevented. No ungrounded or empty draft entries were created.
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
-              <button
-                onClick={async () => {
-                  await fetchAiStatus();
-                  setShowAiErrorModal(false);
-                }}
-                className="btn-secondary"
-                style={{ fontSize: '12.5px', padding: '7px 14px' }}
-              >
-                Re-Check API Status
-              </button>
-              <button
-                onClick={() => setShowAiErrorModal(false)}
-                className="btn-primary"
-                style={{ fontSize: '12.5px', padding: '7px 14px' }}
-              >
-                Close & Return
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI API Error Popup — uses the reusable ErrorModal component for rich diagnostics */}
+      <ErrorModal
+        show={showAiErrorModal}
+        onClose={() => setShowAiErrorModal(false)}
+        title={aiErrorDetails.title}
+        message={aiErrorDetails.message}
+        color={aiErrorDetails.color}
+        errorCode={aiErrorDetails.errorCode}
+        statusCode={aiErrorDetails.statusCode}
+        endpoint={aiErrorDetails.endpoint}
+        actionableSteps={aiErrorDetails.actionableSteps}
+        responseBody={aiErrorDetails.responseBody}
+        tokenState={aiErrorDetails.tokenState}
+        onRetry={async () => {
+          await fetchAiStatus();
+        }}
+      />
 
       {/* EDIT QUIZ MODAL FOR INSTRUCTORS */}
       {showEditModal && (

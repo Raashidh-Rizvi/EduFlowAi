@@ -19,11 +19,15 @@ It connects all the pieces together:
 import os
 import re
 import json
+import logging
+import traceback
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
 load_dotenv()
+
+logger = logging.getLogger("eduflow.rag_service")
 
 from rag.parser import DocumentParser, ParsedPage
 from rag.chunker import SlideChunker, DocumentChunk
@@ -63,6 +67,25 @@ class SimpleRagService:
         # Groq Credentials (Ultra-Fast LPU Inference)
         self.groq_api_key = os.environ.get("GROQ_API_KEY", "").strip()
         self.groq_model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+        # ── Startup Diagnostics ──
+        logger.info(f"[SimpleRagService.__init__] LLM Provider: {self.llm_provider}")
+        logger.info(f"[SimpleRagService.__init__] Gemini API Key: {'✅ SET' if self.gemini_api_key else '❌ EMPTY — set GEMINI_API_KEY in ai-agent/.env'}")
+        logger.info(f"[SimpleRagService.__init__] Gemini Model: {self.gemini_model_name}")
+        logger.info(f"[SimpleRagService.__init__] Groq API Key: {'✅ SET' if self.groq_api_key else '❌ EMPTY — set GROQ_API_KEY in ai-agent/.env'}")
+        logger.info(f"[SimpleRagService.__init__] Groq Model: {self.groq_model_name}")
+        logger.info(f"[SimpleRagService.__init__] ChromaDB chunks indexed: {self.vector_store.count()}")
+
+        if self.llm_provider == "gemini" and not self.gemini_api_key:
+            logger.warning(
+                "[SimpleRagService.__init__] ⚠️  LLM_PROVIDER=gemini but GEMINI_API_KEY is empty! "
+                "All LLM calls will fall back to extractive mode (no AI answers)."
+            )
+        elif self.llm_provider == "groq" and not self.groq_api_key:
+            logger.warning(
+                "[SimpleRagService.__init__] ⚠️  LLM_PROVIDER=groq but GROQ_API_KEY is empty! "
+                "Will attempt Gemini fallback, then extractive mode."
+            )
 
     # -------------------------------------------------------------------------
     # 1. DOCUMENT INDEXING WORKFLOW
@@ -233,6 +256,7 @@ class SimpleRagService:
         # OPTION A: GROQ (Ultra-Fast LPU with Llama 3.3 70B)
         # ---------------------------------------------------------------------
         if self.llm_provider == "groq" and self.groq_api_key:
+            logger.info(f"[_generate_llm_answer] Calling Groq LLM: model={self.groq_model_name}")
             try:
                 from groq import Groq
                 client = Groq(api_key=self.groq_api_key)
@@ -246,14 +270,21 @@ class SimpleRagService:
                     max_tokens=600
                 )
                 if completion.choices and completion.choices[0].message.content:
-                    return completion.choices[0].message.content.strip(), "groq"
+                    answer = completion.choices[0].message.content.strip()
+                    logger.info(f"[_generate_llm_answer] ✅ Groq responded: {len(answer)} chars")
+                    return answer, "groq"
             except Exception as e:
-                print(f"[SimpleRagService] Groq chat error: {e}. Attempting fallback...")
+                logger.error(f"[_generate_llm_answer] ❌ Groq error: {type(e).__name__}: {e}")
+                logger.error(f"[_generate_llm_answer] Groq error details: {traceback.format_exc()}")
+                logger.info("[_generate_llm_answer] Attempting Gemini fallback...")
+        elif self.llm_provider == "groq" and not self.groq_api_key:
+            logger.warning("[_generate_llm_answer] ⚠️  Groq selected but GROQ_API_KEY is empty — skipping Groq.")
 
         # ---------------------------------------------------------------------
         # OPTION B: GOOGLE GEMINI (Gemini 1.5 Flash)
         # ---------------------------------------------------------------------
         if self.gemini_api_key:
+            logger.info(f"[_generate_llm_answer] Calling Gemini LLM: model={self.gemini_model_name}")
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.gemini_api_key)
@@ -262,13 +293,26 @@ class SimpleRagService:
                 full_prompt = f"{system_instructions}\n\n{user_prompt}"
                 response = model.generate_content(full_prompt)
                 if response and response.text:
-                    return response.text.strip(), "gemini"
+                    answer = response.text.strip()
+                    logger.info(f"[_generate_llm_answer] ✅ Gemini responded: {len(answer)} chars")
+                    return answer, "gemini"
             except Exception as e:
-                print(f"[SimpleRagService] Gemini generation error: {e}. Falling back to extractive answer.")
+                logger.error(f"[_generate_llm_answer] ❌ Gemini error: {type(e).__name__}: {e}")
+                logger.error(f"[_generate_llm_answer] Gemini error details: {traceback.format_exc()}")
+                logger.warning("[_generate_llm_answer] Falling back to extractive answer (no LLM).")
+        else:
+            logger.warning(
+                "[_generate_llm_answer] ⚠️  GEMINI_API_KEY is empty — cannot call Gemini. "
+                "Set GEMINI_API_KEY in ai-agent/.env to enable AI answers."
+            )
 
         # ---------------------------------------------------------------------
         # OPTION C: Extractive Fallback (Runs 100% offline without any API keys)
         # ---------------------------------------------------------------------
+        logger.warning(
+            "[_generate_llm_answer] ⚠️  Using EXTRACTIVE FALLBACK — no LLM was available. "
+            "This means NO AI-synthesized answers. Check your API keys and LLM_PROVIDER in .env."
+        )
         fallback_answer = (
             f"Based on the course lecture slides:\n\n"
             f"{context[:450]}...\n\n"
