@@ -24,8 +24,12 @@ test('real Student chat returns global, strict and follow-up answers via ASP.NET
   for (const [question, source] of [
     ['explain machine learning', null],
     ['What are the main topics in this lecture?', lecture],
-    ['Explain the first of those topics more simply.', lecture]
+    ['Explain the first of those topics more simply.', lecture],
+    ['What is data mining according to this lecture?', lecture],
+    ['How does it differ from machine learning?', lecture],
+    ['Summarize the comparison in your previous answer in one sentence.', lecture]
   ]) {
+    const started = Date.now();
     if (source) await page.locator('select').selectOption(source);
     const reply = page.waitForResponse(r => r.url().includes('/api/aireview/coach/chat'), { timeout: 90000 });
     await input.fill(question);
@@ -45,6 +49,7 @@ test('real Student chat returns global, strict and follow-up answers via ASP.NET
     if (process.env.EDUFLOW_EXPECT_EXTRACTIVE === '1') expect(result.source).toBe('extractive_rag');
     console.log(JSON.stringify({ endpoint: '/api/aireview/coach/chat', status: response.status(),
       question, source_file: payload.source_file, source: result.source,
+      seconds: (Date.now() - started) / 1000, answer: result.reply,
       answer_length: result.reply.length, citations: result.citations.map(c => ({ file: c.source_file, page: c.page_number })) }));
   }
   await expect(page.getByRole('button', { name: /Deep Dive Slide/ }).last()).toBeVisible();
