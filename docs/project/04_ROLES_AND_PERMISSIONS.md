@@ -1,8 +1,12 @@
+> **RETAINED HISTORICAL DESIGN — OWNER REVIEW PENDING (2026-09-28).** The body below is preserved domain/design material, not verified current implementation or an active task list. Historical labels such as "canonical", "current", "implemented" and "enforced" apply to its earlier snapshot only. Any old agent topology, route, library, database or completion claim is historical/proposed until checked against current source. Do not restore removed architecture. Follow the [source of truth](../00_SOURCE_OF_TRUTH.md), [catalog](../INDEX.md) and [current status](../current/IMPLEMENTATION_STATUS.md). Other members' subsystem completion is not certified here.
+
+> **Specific interpretation:** Preserve useful intended permissions, but use the current responsibility matrix for ownership. Old vulnerability findings and permission-enforcement claims need a new software audit.
+
 # EduFlow AI – Roles & Permissions
 
-> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](../legacy/project/17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
 
-> **Reconciliation note:** This matrix describes intended permissions, not verified enforcement. The [current responsibility audit](../responsibilities/RESPONSIBILITY_MATRIX.md) records caller-selected registration roles, incomplete token/suspension behavior, missing resource checks and unprotected reward/team mutations. Student 1 owns access/global course governance; Student 2 owns academic content, publishing and review even where Admin has permission; Student 3 owns learner participation. Runtime access roles are not exclusive code ownership.
+> **Reconciliation note:** This matrix describes intended permissions, not verified enforcement. The [current responsibility audit](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md) records caller-selected registration roles, incomplete token/suspension behavior, missing resource checks and unprotected reward/team mutations. Student 1 owns access/global course governance; Student 2 owns academic content, publishing and review even where Admin has permission; Student 3 owns learner participation. Runtime access roles are not exclusive code ownership.
 
 > This document defines the complete Role-Based Access Control (RBAC) model for EduFlow AI, covering all three user roles: **Admin**, **Instructor**, and **Student**.
 

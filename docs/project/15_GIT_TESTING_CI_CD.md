@@ -1,6 +1,10 @@
+> **RETAINED HISTORICAL DESIGN — OWNER REVIEW PENDING (2026-09-28).** The body below is preserved domain/design material, not verified current implementation or an active task list. Historical labels such as "canonical", "current", "implemented" and "enforced" apply to its earlier snapshot only. Any old agent topology, route, library, database or completion claim is historical/proposed until checked against current source. Do not restore removed architecture. Follow the [source of truth](../00_SOURCE_OF_TRUTH.md), [catalog](../INDEX.md) and [current status](../current/IMPLEMENTATION_STATUS.md). Other members' subsystem completion is not certified here.
+
+> **Specific interpretation:** The retained LangGraph commit example, pgvector containers and port-8888 Compose examples are historical samples, not current setup/CI instructions. Use the current setup guide (Python port 8000) and executable CI configuration.
+
 # EduFlow AI – Git, Testing, CI/CD & Delivery
 
-> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results. The [actual CI workflow](../../.github/workflows/ci.yml) controls current execution; illustrative YAML below must not override it.
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](../legacy/project/17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results. The [actual CI workflow](../../.github/workflows/ci.yml) controls current execution; illustrative YAML below must not override it.
 
 > This document defines the branching strategy, commit conventions, test pyramid, CI/CD pipeline, and quality gates for EduFlow AI.
 
@@ -8,7 +12,7 @@
 
 ## 1. Branching Strategy
 
-Read [RESPONSIBILITY_MATRIX.md](../responsibilities/RESPONSIBILITY_MATRIX.md) first. The current integration branch is dev; IT24103352_Ahamed is Student 1's personal branch. Other feature names below are examples, not evidence of existing branches or authorship.
+Read [RESPONSIBILITY_MATRIX.md](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md) first. The current integration branch is dev; IT24103352_Ahamed is Student 1's personal branch. Other feature names below are examples, not evidence of existing branches or authorship.
 
 ```text
 main
@@ -88,7 +92,7 @@ chore: update .NET SDK to 8.0.7
 
 ## 4. Unit Tests
 
-The checkmarked cases below are test requirements/design examples, not recorded passing results. Existing test source has gaps identified in the [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md); some tests persist expected values without exercising production behavior.
+The checkmarked cases below are test requirements/design examples, not recorded passing results. Existing test source has gaps identified in the [current audit](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md); some tests persist expected values without exercising production behavior.
 
 ### 4.1 Identity, Curriculum and Participation
 

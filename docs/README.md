@@ -1,32 +1,14 @@
 # Documentation — Start Here
 
-This is the documentation entry point for team members, evaluators and coding agents such as Codex or Antigravity.
+Read in this order:
 
-## Required reading order
+1. [Source of truth](00_SOURCE_OF_TRUTH.md): requirements versus implementation versus history.
+2. [Current guidance](INDEX.md#current-guidance): architecture, status, API, RAG and setup.
+3. [Current responsibility matrix](current/RESPONSIBILITY_MATRIX.md).
+4. Member summaries: [Wazni](members/member-1-wazni/README.md), [Raashidh](members/member-2-raashidh/README.md), [Atheek](members/member-3-atheek/README.md).
+5. [Official references](INDEX.md#official-references), which retain requirements authority regardless of reading order.
+6. [Legacy archive](legacy/README.md), only when historical context is needed.
 
-1. Read this guide.
-2. Read [RESPONSIBILITY_MATRIX.md](responsibilities/RESPONSIBILITY_MATRIX.md).
-3. Read the relevant tracker: [Student 1 — Ahamed / System Admin](responsibilities/STUDENT_1_SYSTEM_ADMIN.md), [Student 2 — Raashidh / Instructor](responsibilities/STUDENT_2_INSTRUCTOR.md), or [Student 3 — Atheek / Student](responsibilities/STUDENT_3_STUDENT.md).
-4. Read task-relevant [canonical project documents](INDEX.md#current-project-documents).
-5. Verify implementation claims against current source and reproducible tests/evidence.
-6. **Never treat docs/legacy/ as current instructions.** Consult it only for explicitly relevant historical/reference work.
+The [catalog](INDEX.md) separates implemented guidance, retained design, member evidence and historical snapshots. [Moved-document mapping](MOVED_DOCUMENTS.md) preserves original locations and explains historical links.
 
-## Which source answers which question?
-
-| Question | Authority |
-|---|---|
-| Assignment requirements | [Official specification](reference/SEF-ASSINGMENT-01-%5BIntegrated-Full-Stack-and-Agentic-AI-Application-Development-Specification-With-Marking-Scheme%5D.md); [notice](reference/SEF-ASSINGMENT-01-Notice.md) and [sample scenario](reference/SEF-ASSINGMENT-01-Sample-Scenario-Guidance-Only-%5BAutoCare-AI%5D.md) are supporting guidance |
-| Current ownership and personal task tracking | [Responsibility matrix](responsibilities/RESPONSIBILITY_MATRIX.md) and individual trackers |
-| Current technical design and contracts | [docs/project/](project/), with explicit design/implementation limits |
-| Project-wide status and evidence | [Implementation status](project/17_IMPLEMENTATION_STATUS.md) |
-| Historical material | [docs/legacy/](legacy/); never an ownership or implementation authority |
-| Actual application behavior | Current source plus reproducible evidence; a design, plan or completion badge is insufficient |
-
-There are three current student owners and four retained core AI roles. Written group-size approval and proportional assignment adjustments remain **TO CONFIRM**. New ownership does not establish past contribution.
-
-## Useful routes
-
-- New developer: [overview](project/01_PROJECT_OVERVIEW.md) → [architecture](project/03_ARCHITECTURE.md) → [run/setup](project/18_RUN_AND_SETUP.md).
-- Evaluator: official specification → matrix/trackers → [status](project/17_IMPLEMENTATION_STATUS.md) → [workflows](project/02_SYSTEM_WORKFLOWS.md) and actual evidence.
-- Implementation task: matrix → relevant tracker → contract/design → current source → verification.
-- [Complete catalog](INDEX.md) lists every canonical document, subsystem README and archive separately.
+Learning Agent is verified within its recorded test scope. Admin/User/Course software verification, distinct Quiz Generator completion and assignment-compliance confirmation are separate matters. Do not restore old agents to reconcile historical documents.

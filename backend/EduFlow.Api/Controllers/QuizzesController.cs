@@ -13,7 +13,6 @@ using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 using Microsoft.AspNetCore.Hosting;
 
@@ -27,20 +26,17 @@ public class QuizzesController : BaseApiController
     private readonly IGamificationService _gamificationService;
     private readonly IAiGatewayClient _aiGatewayClient;
     private readonly IWebHostEnvironment? _environment;
-    private readonly ILogger<QuizzesController> _logger;
 
     public QuizzesController(
         ApplicationDbContext dbContext,
         IGamificationService gamificationService,
         IAiGatewayClient aiGatewayClient,
-        ILogger<QuizzesController> logger,
         IWebHostEnvironment? environment = null)
         : base(dbContext)
     {
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
         _environment = environment;
-        _logger = logger;
     }
 
     // -------------------------------------------------------------------------
@@ -945,45 +941,17 @@ public class QuizzesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GenerateAiQuiz([FromBody] GenerateAiQuizRequest request)
     {
-        // ── Log the authenticated user context (helps diagnose 401/403 issues) ──
-        var userEmail = User.FindFirst(ClaimTypes.Email)?.Value
-            ?? User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")?.Value
-            ?? User.FindFirst(ClaimTypes.Name)?.Value
-            ?? "unknown";
-        var userRole = User.FindFirst(ClaimTypes.Role)?.Value
-            ?? User.FindFirst("http://schemas.microsoft.com/ws/2008/06/identity/claims/role")?.Value
-            ?? "unknown";
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown";
-
-        _logger.LogInformation(
-            "[GenerateAiQuiz] Request from User={Email} Role={Role} UserId={UserId} " +
-            "| CourseId={CourseId} Topic={Topic} Difficulty={Difficulty} " +
-            "| QuestionCount={Count} ScopeType={Scope} PdfUrl={Pdf}",
-            userEmail, userRole, userId,
-            request.CourseId, request.Topic, request.Difficulty,
-            request.QuestionCount, request.ScopeType, request.PdfUrl ?? request.SlideUrl ?? "(none)"
-        );
-
         var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
         if (course == null)
         {
-            _logger.LogWarning(
-                "[GenerateAiQuiz] ❌ Course not found: CourseId={CourseId}", request.CourseId);
             return NotFound(new { message = "Course not found." });
         }
 
         // Ownership check: instructor may only generate quizzes for their own courses
         if (!await IsCourseOwnerOrAdmin(request.CourseId))
         {
-            _logger.LogWarning(
-                "[GenerateAiQuiz] ❌ Ownership check failed: User={Email} (Role={Role}) does not own CourseId={CourseId}",
-                userEmail, userRole, request.CourseId);
             return Forbid();
         }
-
-        _logger.LogInformation(
-            "[GenerateAiQuiz] ✅ Auth passed. Proceeding to generate quiz. Course={Title}",
-            course.Title);
 
         var workflowId = $"wf-qz-{Guid.NewGuid().ToString("N")[..8]}";
         var count = Math.Clamp(request.QuestionCount, 1, 20);
@@ -1025,9 +993,6 @@ public class QuizzesController : BaseApiController
         // -------------------------------------------------------------------------
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
         // -------------------------------------------------------------------------
-        _logger.LogInformation(
-            "[GenerateAiQuiz] Calling Python AI Microservice via AiGatewayClient for Topic={Topic}",
-            request.Topic ?? request.ModuleTitle ?? "(all)");
 
         // Map relative PdfUrl or SlideUrl to physical path for the python service
         string? slideRelativeUrl = request.SlideUrl ?? request.PdfUrl;
@@ -1179,17 +1144,11 @@ public class QuizzesController : BaseApiController
                     i++;
                 }
                 usedPython = true;
-                _logger.LogInformation(
-                    "[GenerateAiQuiz] ✅ Python AI service returned {Count} questions for Topic={Topic}",
-                    quiz.Questions.Count, request.Topic ?? "(all)");
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex,
-                "[GenerateAiQuiz] ❌ Python AI Microservice error: {Message} " +
-                "| User={Email} CourseId={CourseId} Topic={Topic}",
-                ex.Message, userEmail, request.CourseId, request.Topic);
+            Console.WriteLine($"[AI Agent] Python service error: {ex.Message}");
             aiErrorDetail = ex.Message;
         }
 
@@ -1204,10 +1163,6 @@ public class QuizzesController : BaseApiController
             {
                 errMessage = aiErrorDetail;
             }
-            _logger.LogWarning(
-                "[GenerateAiQuiz] ❌ AI generation failed (usedPython=false): {Message} " +
-                "| User={Email} CourseId={CourseId}",
-                errMessage, userEmail, request.CourseId);
             return BadRequest(new { 
                 message = errMessage,
                 status = "error",
@@ -1219,10 +1174,6 @@ public class QuizzesController : BaseApiController
 
         await DbContext.Assessments.AddAsync(quiz);
         await DbContext.SaveChangesAsync();
-        _logger.LogInformation(
-            "[GenerateAiQuiz] ✅ Quiz saved to DB: QuizId={QuizId} Questions={Count} User={Email}",
-            quiz.Id, quiz.QuestionCount, userEmail);
-
 
         var questionsDto = quiz.Questions.Select(q => new QuizQuestionDto(
             q.Id,

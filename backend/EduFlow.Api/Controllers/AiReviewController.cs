@@ -462,10 +462,64 @@ public class AiReviewController : BaseApiController
     [Authorize]
     public async Task<IActionResult> ChatWithCoach([FromBody] CoachChatApiRequest request)
     {
-        var responseJson = await _aiGatewayClient.ChatWithCoachAsync(request);
-        return Ok(JsonDocument.Parse(responseJson).RootElement);
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.ChatWithCoachAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpPost("learn")]
+    [Authorize]
+    public async Task<IActionResult> Learn([FromBody] LearningAgentApiRequest request)
+    {
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.LearnAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpGet("learning/slide-decks")]
+    [Authorize]
+    public async Task<IActionResult> GetLearningSlideDecks()
+    {
+        var response = await _aiGatewayClient.GetLearningSlideDecksAsync(HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpPost("rag/chat")]
+    [Authorize]
+    public async Task<IActionResult> RagChat([FromBody] RagChatApiRequest request)
+    {
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.RagChatAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
     }
 }
+
+public record RagChatApiRequest(
+    string question,
+    string? course_id = null,
+    string? module_id = null,
+    string? source_file = null,
+    int max_citations = 3,
+    string? student_id = null,
+    string? session_id = null
+);
+
+public record LearningAgentApiRequest(
+    string? student_id,
+    string? course_id,
+    string source_file,
+    string request_type,
+    string? session_id = null,
+    string? sub_lecture_id = null,
+    string? topic = null,
+    string? message = null
+);
 
 public record StudyPlanRequest(
     string student_id,
@@ -494,10 +548,11 @@ public record ReviseProposalRequest(
 );
 
 public record CoachChatApiRequest(
-    string student_id,
+    string? student_id,
     string course_id,
     string message,
-    string? source_file = null
+    string? source_file = null,
+    string? session_id = null
 );
 
 public record GenerateQuizApiRequest(

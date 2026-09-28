@@ -15,14 +15,11 @@ WHAT THIS FILE DOES:
 """
 
 import os
-import logging
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Ensure environment variables are loaded
 load_dotenv()
-
-logger = logging.getLogger("eduflow.vector_store")
 
 import chromadb
 from chromadb.config import Settings
@@ -100,9 +97,6 @@ class ChromaVectorStore:
         02. "default" -> Built-in Local ONNX (all-MiniLM-L6-v2)
         =========================================================================
         """
-        logger.info(f"[_resolve_embedding_function] Requested provider: {self.provider}")
-        logger.info(f"[_resolve_embedding_function] GEMINI_API_KEY: {'✅ SET' if self.gemini_api_key else '❌ EMPTY'}")
-
         if self.provider == "gemini":
             if self.gemini_api_key:
                 try:
@@ -113,20 +107,14 @@ class ChromaVectorStore:
                     # Quick validation test
                     ef(["test"])
                     self.active_provider = "gemini"
-                    logger.info("[_resolve_embedding_function] ✅ Gemini embedding initialized successfully.")
                     return ef
                 except Exception as e:
-                    logger.warning(f"[_resolve_embedding_function] ⚠️  Gemini embedding failed: {type(e).__name__}: {e}")
-                    logger.warning("[_resolve_embedding_function] Falling back to local ONNX default embedding.")
+                    print(f"[VectorStore] Warning: Could not initialize Gemini embeddings ({e}). Falling back to local default.")
             else:
-                logger.warning(
-                    "[_resolve_embedding_function] ⚠️  EMBEDDING_PROVIDER=gemini but GEMINI_API_KEY is empty. "
-                    "Falling back to local ONNX default embedding."
-                )
+                print("[VectorStore] Notice: EMBEDDING_PROVIDER is 'gemini' but GEMINI_API_KEY is empty. Falling back to local default.")
 
         # 01. Default: Fast, local ONNX embedding (runs offline, zero extra RAM)
         self.active_provider = "default"
-        logger.info("[_resolve_embedding_function] ✅ Using local ONNX embedding (all-MiniLM-L6-v2) — offline, no API key needed.")
         return None  # Passing None instructs ChromaDB to use its built-in local ONNX model
 
     def add_chunks(self, chunks: List[DocumentChunk]) -> int:
@@ -161,7 +149,8 @@ class ChromaVectorStore:
         course_id: Optional[str] = None,
         module_id: Optional[str] = None,
         source_file: Optional[str] = None,
-        top_k: int = 4
+        top_k: int = 4,
+        sub_lecture_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         STEP 3: SEMANTIC VECTOR SEARCH WITH TARGETED SCOPE FILTERING
@@ -174,6 +163,8 @@ class ChromaVectorStore:
         if source_file:
             # Strict Lecture Scope: filename uniquely identifies the slide deck
             conditions.append({"source_file": {"$eq": source_file}})
+            if course_id:
+                conditions.append({"course_id": {"$eq": course_id}})
         else:
             # Global or module scope
             if course_id:
@@ -181,38 +172,24 @@ class ChromaVectorStore:
             if module_id:
                 conditions.append({"module_id": {"$eq": module_id}})
 
+        if sub_lecture_id:
+            conditions.append({"sub_lecture_id": {"$eq": sub_lecture_id}})
+
         where_filter = None
         if len(conditions) > 1:
             where_filter = {"$and": conditions}
         elif len(conditions) == 1:
             where_filter = conditions[0]
 
-        total_chunks = self.collection.count()
-        logger.info(
-            f"[search] Query: '{query[:60]}...', filter: {where_filter}, "
-            f"top_k={top_k}, total_chunks_in_store={total_chunks}"
-        )
-        if total_chunks == 0:
-            logger.warning(
-                "[search] ⚠️  ChromaDB collection is EMPTY — no slides indexed! "
-                "Index slides first via POST /api/v1/rag/index-pdf"
-            )
-
         kwargs = {
             "query_texts": [query],
-            "n_results": min(top_k, max(1, total_chunks or 1))
+            "n_results": min(top_k, max(1, self.collection.count() or 1))
         }
         if where_filter:
             kwargs["where"] = where_filter
 
-        try:
-            results = self.collection.query(**kwargs)
-        except Exception as e:
-            # Fallback without filter if empty or filter error
-            logger.warning(f"[search] ⚠️  Filter query failed: {type(e).__name__}: {e}")
-            logger.warning(f"[search] Retrying without filter (returning all results for query)")
-            kwargs.pop("where", None)
-            results = self.collection.query(**kwargs)
+        # Retrieval failure must never remove the selected lecture filter.
+        results = self.collection.query(**kwargs)
 
         output: List[Dict[str, Any]] = []
         if results and results.get("documents") and len(results["documents"]) > 0:
@@ -230,6 +207,33 @@ class ChromaVectorStore:
                 })
 
         return output
+
+    def get_lecture_chunks(self, source_file: str, course_id: Optional[str] = None):
+        conditions = [{"source_file": {"$eq": source_file}}]
+        if course_id:
+            conditions.append({"course_id": {"$eq": course_id}})
+        where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        data = self.collection.get(where=where, include=["documents", "metadatas"])
+        chunks = [
+            {"id": cid, "text": doc, "metadata": meta}
+            for cid, doc, meta in zip(data["ids"], data["documents"], data["metadatas"])
+            if doc and doc.strip()
+        ]
+        return sorted(chunks, key=lambda c: (
+            c["metadata"]["page_number"], c["metadata"].get("chunk_index", 0), c["id"]
+        ))
+
+    def save_lecture_sections(self, chunks, sections, fingerprint: str):
+        """Metadata-only update: preserve indexed documents and embeddings."""
+        metadatas = []
+        for chunk in chunks:
+            section = next(s for s in sections if
+                           s.page_start <= chunk["metadata"]["page_number"] <= s.page_end)
+            metadatas.append({
+                **chunk["metadata"], "sub_lecture_id": section.id,
+                "learning_section": section.model_dump_json(), "learning_fingerprint": fingerprint,
+            })
+        self.collection.update(ids=[c["id"] for c in chunks], metadatas=metadatas)
 
     def count(self, course_id: Optional[str] = None) -> int:
         """Returns the total number of chunks currently stored in ChromaDB."""

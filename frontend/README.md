@@ -1,29 +1,17 @@
 # EduFlow AI — React Frontend
 
-The React/Vite application provides Admin, Instructor and Student web experiences. Existing code uses hooks/context and browser storage; dependency declarations do not establish working React Router or Zustand architecture. API fallback and approval/publication gaps remain PARTIAL.
+React/Vite web application with Admin, Instructor and Student views. The existing StudentPortal AI Assistant provides lecture selection, chat/citations, topic breakdown, study plans and explanation through the ASP.NET gateway.
 
-## Local commands
+From `frontend/`:
 
-Run from the frontend directory. Configure the backend connection using the [whole-system run guide](../docs/project/18_RUN_AND_SETUP.md).
-
-~~~powershell
+```powershell
 npm ci
 npm run dev
 npm run build
-npm run test:e2e
-~~~
+```
 
-The development configuration uses port 2174. E2E tests require the relevant application/services and test data; no passing result is asserted here.
+Default UI port: 2174. `VITE_API_BASE_URL` configures the ASP.NET API, normally `http://localhost:5204/api`; Learning requests do not go directly to Python. The root dev runner also starts the frontend, so use one launch method.
 
-## Key entry points
+[Application](src/App.jsx) · [API client](src/services/api.js) · [Learning API service](src/services/aiService.js) · [Focused test evidence](../docs/members/member-1-wazni/ai/LEARNING_AGENT_TEST_EVIDENCE.md)
 
-- [Application shell](src/App.jsx) and [bootstrap](src/main.jsx)
-- [Pages](src/pages/)
-- [Shared API client](src/services/api.js) and [services](src/services/)
-- [Package scripts](package.json)
-
-Use server outcomes for authoritative academic/reward state. Shared shell/session/navigation/API infrastructure belongs to the integration effort; owned behavior is defined in the matrix.
-
-## Canonical documentation
-
-[Start here](../docs/README.md) · [Responsibility matrix](../docs/responsibilities/RESPONSIBILITY_MATRIX.md) · [Workflows](../docs/project/02_SYSTEM_WORKFLOWS.md) · [Permissions](../docs/project/04_ROLES_AND_PERMISSIONS.md) · [Quiz pipeline](../docs/project/11_QUIZ_PIPELINE.md) · [Status](../docs/project/17_IMPLEMENTATION_STATUS.md)
+Learning tests do not certify every page or every role's functionality. [Authority](../docs/00_SOURCE_OF_TRUTH.md) · [Catalog](../docs/INDEX.md) · [Setup](../docs/current/LOCAL_SETUP_GUIDE.md)

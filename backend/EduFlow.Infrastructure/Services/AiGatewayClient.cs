@@ -9,15 +9,20 @@ using Microsoft.Extensions.Logging;
 
 namespace EduFlow.Infrastructure.Services;
 
+public record AiProxyResponse(int StatusCode, string Body);
+
 public interface IAiGatewayClient
 {
+    Task<AiProxyResponse> LearnAsync(object requestPayload, CancellationToken ct = default);
+    Task<AiProxyResponse> RagChatAsync(object requestPayload, CancellationToken ct = default);
+    Task<AiProxyResponse> GetLearningSlideDecksAsync(CancellationToken ct = default);
     Task<string> GetAiStatusAsync(CancellationToken ct = default);
     Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateAdaptiveChallengeAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default);
     Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default);
     Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default);
-    Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
+    Task<AiProxyResponse> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GetAgentsTopologyAsync(CancellationToken ct = default);
     Task<string> ExecuteWorkflowAsync(object requestPayload, CancellationToken ct = default);
     Task<string> SubmitWorkflowDecisionAsync(string workflowId, object requestPayload, CancellationToken ct = default);
@@ -40,13 +45,41 @@ public class AiGatewayClient : IAiGatewayClient
         var timeoutRaw = configuration["AiService:TimeoutSeconds"];
         var timeoutSeconds = int.TryParse(timeoutRaw, out var ts) && ts > 0 ? ts : 30;
         _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8888";
+        _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8000";
         _logger = logger;
 
         var apiKey = configuration["AiService:ApiKey"];
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             _httpClient.DefaultRequestHeaders.Add("X-Internal-Api-Key", apiKey);
+        }
+    }
+
+    public Task<AiProxyResponse> LearnAsync(object requestPayload, CancellationToken ct = default)
+        => ProxyLearningAsync(HttpMethod.Post, "/api/v1/agent/learn", requestPayload, ct);
+
+    public Task<AiProxyResponse> RagChatAsync(object requestPayload, CancellationToken ct = default)
+        => ProxyLearningAsync(HttpMethod.Post, "/api/v1/rag/chat", requestPayload, ct);
+
+    public Task<AiProxyResponse> GetLearningSlideDecksAsync(CancellationToken ct = default)
+        => ProxyLearningAsync(HttpMethod.Get, "/api/v1/rag/slide-decks", null, ct);
+
+    private async Task<AiProxyResponse> ProxyLearningAsync(HttpMethod method, string path, object? payload, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(method, $"{_baseUrl}{path}");
+            if (payload != null) request.Content = JsonContent.Create(payload);
+            using var response = await _httpClient.SendAsync(request, ct);
+            return new AiProxyResponse((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new AiProxyResponse(504, JsonSerializer.Serialize(new { detail = "The learning request took too long. Please retry." }));
+        }
+        catch (HttpRequestException)
+        {
+            return new AiProxyResponse(503, JsonSerializer.Serialize(new { detail = "The learning service is unavailable. Please try again shortly." }));
         }
     }
 
@@ -88,11 +121,10 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
-            _logger?.LogWarning("[AiGatewayClient] OrchestrateStudyPlanAsync non-success: {Status}", response.StatusCode);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger?.LogError(ex, "[AiGatewayClient] OrchestrateStudyPlanAsync error connecting to {Url}", $"{_baseUrl}/orchestrate-study-plan");
+            // Fallback simulation when python microservice is not active
         }
 
         return FallbackStudyPlanJson();
@@ -107,11 +139,10 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
-            _logger?.LogWarning("[AiGatewayClient] GenerateAdaptiveChallengeAsync non-success: {Status}", response.StatusCode);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger?.LogError(ex, "[AiGatewayClient] GenerateAdaptiveChallengeAsync error connecting to {Url}", $"{_baseUrl}/generate-adaptive-challenge");
+            // Fallback
         }
 
         return FallbackAdaptiveChallengeJson();
@@ -188,30 +219,8 @@ public class AiGatewayClient : IAiGatewayClient
         return FallbackRetentionJson();
     }
 
-    public async Task<string> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/ai-coach-chat", requestPayload, ct);
-            if (response.IsSuccessStatusCode)
-            {
-                return await response.Content.ReadAsStringAsync(ct);
-            }
-        }
-        catch
-        {
-            // Fallback
-        }
-
-        return JsonSerializer.Serialize(new
-        {
-            reply = "I'm your EduFlow AI Learning Coach! Keep completing lessons and quizzes to earn XP and level up.",
-            suggested_action = "Review Clean Architecture and start a practice challenge.",
-            identified_weak_topic = "Database Optimization & Clean Architecture",
-            confidence_score = 0.95,
-            source = "fallback"
-        });
-    }
+    public Task<AiProxyResponse> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default)
+        => ProxyLearningAsync(HttpMethod.Post, "/ai-coach-chat", requestPayload, ct);
 
     public async Task<string> GetAgentsTopologyAsync(CancellationToken ct = default)
     {

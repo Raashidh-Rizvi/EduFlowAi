@@ -670,23 +670,29 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
 }
 
 function CoachTab({ studentId, courseId }) {
+  const [sessionId] = useState(() => crypto.randomUUID());
   const [messages, setMessages] = useState([
     { sender: 'ai', text: 'Hello. I am your AI Learning Assistant. I analyze curriculum progress and clarify technical concepts. What topic are you studying today?' }
   ]);
   const [input, setInput] = useState('');
   const [slideDecks, setSlideDecks] = useState([]);
   const [selectedDeck, setSelectedDeck] = useState('');
+  const [selectedTopic, setSelectedTopic] = useState(null);
+  const [deckError, setDeckError] = useState('');
+  const [deckLoadAttempt, setDeckLoadAttempt] = useState(0);
 
   // Discover available slide decks for targeted focus
   useEffect(() => {
     let isMounted = true;
+    setDeckError('');
     aiService.getSlideDecks().then(decks => {
-      if (isMounted && Array.isArray(decks) && decks.length > 0) {
+      if (isMounted && Array.isArray(decks)) {
         setSlideDecks(decks);
+        if (!decks.length) setDeckError('No indexed lectures are available yet. Index a lecture to use the Learning Agent.');
       }
-    }).catch(err => console.warn('Could not fetch slide decks:', err));
+    }).catch(err => { if (isMounted) setDeckError(err.message); });
     return () => { isMounted = false; };
-  }, []);
+  }, [deckLoadAttempt]);
 
   const PROMPTS = [
     'What is searching and problem solving in this lecture?',
@@ -706,7 +712,7 @@ function CoachTab({ studentId, courseId }) {
     try {
       const activeDeck = slideDecks.find(d => d.source_file === selectedDeck);
       const effectiveCourseId = activeDeck?.course_id || courseId;
-      const res = await aiService.chatWithCoach(text, studentId, effectiveCourseId, selectedDeck || null);
+      const res = await aiService.chatWithCoach(text, studentId, effectiveCourseId, selectedDeck || null, sessionId);
       if (res && (res.reply || res.answer)) {
         setMessages(m => [
           ...m, 
@@ -718,34 +724,51 @@ function CoachTab({ studentId, courseId }) {
             citations: res.citations
           }
         ]);
-        setIsLoading(false);
         return;
       }
+      throw new Error('The AI assistant returned no answer. Please retry.');
     } catch (err) {
-      console.warn('Backend coach chat fallback', err);
-    }
-
-    let reply = 'Let me break down that concept for you:';
-    const t = text.toLowerCase();
-    let action = null;
-    if (t.includes('index')) {
-      reply = 'In PostgreSQL, a composite index (col1, col2) evaluates left-to-right. Queries must filter by col1 to leverage the index structure. Always place higher cardinality columns first.';
-      action = 'Review PostgreSQL Composite Index Slicing';
-    } else if (t.includes('acid') || t.includes('ef core') || t.includes('transaction')) {
-      reply = 'In EF Core, DbContext.SaveChangesAsync() operates inside an explicit transaction scope. If any constraint validation fails, all operations roll back deterministically to maintain atomicity.';
-      action = 'Practice Transaction Isolation Lab';
-    } else if (t.includes('clean') || t.includes('architecture')) {
-      reply = 'Clean Architecture separates core enterprise domain entities from frameworks and databases. All dependencies point strictly inward toward domain models.';
-      action = 'Explore Dependency Inversion Rules';
-    } else {
-      reply = 'Review the curriculum module PDFs and test your understanding with the integrated assessments.';
-      action = 'Take Diagnostic Module Quiz';
-    }
-
-    setTimeout(() => {
-      setMessages(m => [...m, { sender: 'ai', text: reply, action }]);
+      setMessages(m => [...m, { sender: 'ai', text: err.message || 'The AI assistant is unavailable. Please retry.', error: true, retryText: text }]);
+    } finally {
       setIsLoading(false);
-    }, 400);
+    }
+  };
+
+  const requestLearning = async (requestType, topic = null) => {
+    if (!selectedDeck || isLoading) return;
+    setIsLoading(true);
+    const label = requestType === 'breakdown' ? 'Break Into Topics'
+      : requestType === 'explain' ? `Explain: ${topic?.topic || topic?.title}`
+        : topic ? `Study plan: ${topic.topic || topic.title}` : 'Complete Lecture Study Plan';
+    setMessages(m => [...m, { sender: 'user', text: label, learningDeck: selectedDeck }]);
+    try {
+      const activeDeck = slideDecks.find(d => d.source_file === selectedDeck);
+      const result = await aiService.learn({
+        student_id: studentId,
+        session_id: sessionId,
+        course_id: activeDeck?.course_id || null,
+        source_file: selectedDeck,
+        request_type: requestType,
+        sub_lecture_id: topic?.id || null,
+        topic: topic?.topic || null
+      });
+      if (requestType === 'breakdown') setSelectedTopic(null);
+      setMessages(m => [...m, {
+        sender: 'ai', learningDeck: selectedDeck,
+        text: result.answer || (result.plan ? result.plan.title : 'Lecture topics — select a topic or subtopic to study.'),
+        subLectures: result.sub_lectures,
+        plan: result.plan,
+        citations: result.citations
+      }]);
+    } catch (err) {
+      setMessages(m => [...m, {
+        sender: 'ai', learningDeck: selectedDeck, error: true,
+        text: err.message || 'The learning service is unavailable. Please retry.',
+        retryLearning: { requestType, topic }
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -773,7 +796,8 @@ function CoachTab({ studentId, courseId }) {
           <span style={{ fontWeight: '700', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Lecture Focus:</span>
           <select
             value={selectedDeck}
-            onChange={(e) => setSelectedDeck(e.target.value)}
+            disabled={isLoading}
+            onChange={(e) => { setSelectedDeck(e.target.value); setSelectedTopic(null); }}
             style={{
               padding: '4px 8px',
               borderRadius: 'var(--radius-sm)',
@@ -823,8 +847,34 @@ function CoachTab({ studentId, courseId }) {
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
-        {messages.map((msg, i) => (
+      {deckError && (
+        <div role="alert" style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          {deckError} <button className="btn-ghost" onClick={() => setDeckLoadAttempt(n => n + 1)}>Retry loading lectures</button>
+        </div>
+      )}
+      {selectedDeck && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+          <button className="btn-ghost" disabled={isLoading} onClick={() => requestLearning('plan')}>
+            Complete Lecture Study Plan
+          </button>
+          <button className="btn-ghost" disabled={isLoading} onClick={() => requestLearning('breakdown')}>
+            Break Into Topics
+          </button>
+          {selectedTopic && (
+            <div style={{ width: '100%', padding: '8px', border: '1px solid var(--primary-border)', borderRadius: 'var(--radius-sm)', background: 'var(--primary-soft)', fontSize: '12px' }}>
+              <strong>Selected: {selectedTopic.topic || selectedTopic.title}</strong>
+              <span style={{ color: 'var(--text-muted)', marginLeft: '8px' }}>Slides {selectedTopic.page_start}–{selectedTopic.page_end}</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
+                <button className="btn-ghost" disabled={isLoading} onClick={() => requestLearning('plan', selectedTopic)}>Study This Topic</button>
+                <button className="btn-ghost" disabled={isLoading} onClick={() => requestLearning('explain', selectedTopic)}>Explain This Topic</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div aria-live="polite" style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingBottom: '12px' }}>
+        {messages.filter(msg => !msg.learningDeck || msg.learningDeck === selectedDeck).map((msg, i) => (
           <div key={i} style={{ display: 'flex', justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start' }}>
             <div style={{
               maxWidth: '80%', padding: '10px 14px', borderRadius: 'var(--radius-sm)',
@@ -832,7 +882,41 @@ function CoachTab({ studentId, courseId }) {
               border: msg.sender === 'ai' ? '1px solid var(--border-subtle)' : 'none',
               color: msg.sender === 'user' ? '#FFFFFF' : 'var(--text-main)', fontSize: '12.5px', lineHeight: '1.5'
             }}>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+              <div role={msg.error ? 'alert' : undefined} style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
+              {msg.error && (
+                <button className="btn-ghost" disabled={isLoading} onClick={() => msg.retryLearning
+                  ? requestLearning(msg.retryLearning.requestType, msg.retryLearning.topic)
+                  : sendMessage(msg.retryText)}>Retry</button>
+              )}
+              {msg.subLectures?.map(section => (
+                <details key={section.id} open style={{ marginTop: '10px', padding: '8px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: '700' }}>{section.title} · Slides {section.page_start}–{section.page_end}</summary>
+                  <button className="btn-ghost" disabled={isLoading} aria-pressed={selectedTopic?.id === section.id && !selectedTopic?.topic}
+                    onClick={() => setSelectedTopic(section)} style={{ marginTop: '6px', color: 'var(--primary)' }}>Select Topic</button>
+                  <ul style={{ margin: '4px 0', paddingLeft: '20px' }}>
+                    {section.topics.map((topic, index) => (
+                      <li key={index}>
+                        <button className="btn-ghost" disabled={isLoading}
+                          aria-pressed={selectedTopic?.id === section.id && selectedTopic?.topic === topic}
+                          onClick={() => setSelectedTopic({ ...section, topic })} style={{ textAlign: 'left' }}>{topic}</button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ))}
+              {msg.plan && (
+                <ol style={{ margin: '10px 0 0', paddingLeft: '22px' }}>
+                  {msg.plan.sessions.map(session => (
+                    <li key={session.session_number} style={{ marginBottom: '12px' }}>
+                      <strong>Session {session.session_number}: {session.title}</strong>
+                      <span style={{ color: 'var(--text-muted)' }}> · {session.estimated_minutes} minutes</span>
+                      <ul style={{ paddingLeft: '18px', marginTop: '4px' }}>
+                        {session.tasks.map((task, index) => <li key={index}>{task}</li>)}
+                      </ul>
+                    </li>
+                  ))}
+                </ol>
+              )}
               {msg.citations && msg.citations.length > 0 && (
                 <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)' }}>
                   <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '5px' }}>
@@ -856,6 +940,7 @@ function CoachTab({ studentId, courseId }) {
                           Slide {c.page_number} ({Math.round(c.relevance_score * 100)}% match)
                         </span>
                         <button
+                          disabled={isLoading || (selectedDeck && c.source_file !== selectedDeck)}
                           onClick={() => sendMessage(`Can you explain Slide ${c.page_number} in simple terms with a real-world example?`)}
                           className="btn-ghost"
                           style={{
@@ -896,6 +981,7 @@ function CoachTab({ studentId, courseId }) {
             </div>
           </div>
         ))}
+        {isLoading && <div role="status" style={{ padding: '10px', fontSize: '12px', color: 'var(--text-muted)' }}>Reading your lecture and preparing a response…</div>}
       </div>
 
       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
