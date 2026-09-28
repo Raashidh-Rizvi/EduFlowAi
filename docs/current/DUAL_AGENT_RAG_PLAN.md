@@ -1,4 +1,20 @@
 # Dual-Agent RAG Learning System — Full Execution Plan
+
+## CURRENT IMPLEMENTATION NOTES — 2026-09-28
+
+This remains the approved **two-agent plan**. The original plan body below is preserved; its schedules, sample schemas, direct FastAPI diagram and proposed routes are design examples, not an inventory of implemented behavior. [Source of truth](../00_SOURCE_OF_TRUTH.md) and [actual contracts](API_CONTRACTS.md) govern implementation interpretation.
+
+- Actual browser path: **React → ASP.NET Core AI gateway → Python**. Learning actions use public `POST /api/aireview/learn` → internal `POST /api/v1/agent/learn`. Chat uses `/api/aireview/coach/chat` → `/ai-coach-chat`.
+- Learning Agent is implemented and verified within [recorded tests](../members/member-1-wazni/ai/LEARNING_AGENT_TEST_EVIDENCE.md). Tools run internally; do not add duplicate public endpoints merely to match the original examples.
+- Actual plan output is `{title, sessions}` with `session_number`, not the original `days`/`day_number` example. Sections have `id`, `title`, `page_start`, `page_end`, `topics`, `source_file`; full text is not returned as the illustrative SubLecture model suggests.
+- STM now retains the latest three completed pairs, isolated by user/session/course/lecture scope. It is process-local and resets on restart; chat failure/extractive fallback turns are excluded. No long-term-memory framework was introduced.
+- Quiz Generator Agent is a separate responsibility assigned to Raashidh. Its distinct-agent completion is **implementation verification pending**. Existing slide-quiz generation does not prove all planned Quiz Agent routes exist.
+- `/api/v1/agent/quiz`, `/api/v1/tools/*`, and the illustrated sub-lecture GET route are **planned examples, not currently registered endpoints**. RAG remains shared infrastructure, not another agent.
+- Normal PDF upload does not automatically index. Local Chroma indexing precedes discovery. Reuse existing storage/embeddings; do not rebuild RAG or add Redis based on optional examples below.
+- **Requirement/compliance confirmation pending:** lecturer approval is **UNVERIFIED / TEAM CONFIRMATION REQUIRED**. Preserve official requirements and report conflicts; do not restore legacy architecture.
+
+---
+
 ### By: World-Class RAG Architect and Learning Platform Mentor
 
 ---

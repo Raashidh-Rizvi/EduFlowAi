@@ -1,8 +1,12 @@
+> **RETAINED HISTORICAL DESIGN — OWNER REVIEW PENDING (2026-09-28).** The body below is preserved domain/design material, not verified current implementation or an active task list. Historical labels such as "canonical", "current", "implemented" and "enforced" apply to its earlier snapshot only. Any old agent topology, route, library, database or completion claim is historical/proposed until checked against current source. Do not restore removed architecture. Follow the [source of truth](../00_SOURCE_OF_TRUTH.md), [catalog](../INDEX.md) and [current status](../current/IMPLEMENTATION_STATUS.md). Other members' subsystem completion is not certified here.
+
+> **Specific interpretation:** Controls below are requirements/design examples; historical vulnerability findings are not re-certified here. Current code and targeted security verification must establish enforcement.
+
 # EduFlow AI – Security & Privacy
 
-> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](../legacy/project/17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
 
-> **Reconciliation note:** Treat the controls below as requirements/design examples, not a security certification. The [current audit](../responsibilities/RESPONSIBILITY_MATRIX.md) records missing authorization/resource checks, caller-selected registration roles, incomplete token revocation, hardcoded startup configuration and internal-service authentication that fails open without a secret. Student 1 coordinates shared identity/safety; Students 2 and 3 enforce their own academic/learner resource boundaries. No complete mitigation or passing security-test result is asserted.
+> **Reconciliation note:** Treat the controls below as requirements/design examples, not a security certification. The [current audit](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md) records missing authorization/resource checks, caller-selected registration roles, incomplete token revocation, hardcoded startup configuration and internal-service authentication that fails open without a secret. Student 1 coordinates shared identity/safety; Students 2 and 3 enforce their own academic/learner resource boundaries. No complete mitigation or passing security-test result is asserted.
 
 > This document defines the security architecture, OWASP mitigation strategies, data privacy rules, and compliance requirements for EduFlow AI.
 
