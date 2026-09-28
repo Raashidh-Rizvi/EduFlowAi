@@ -71,66 +71,53 @@ export const aiService = {
     return response.data;
   },
 
-  async chatWithCoach(message, studentId = '33333333-3333-3333-3333-333333333333', courseId = 'it3012-se', sourceFile = null) {
+  async chatWithCoach(message, studentId = null, courseId = 'it3012-se', sourceFile = null, sessionId = null) {
     const payload = {
       student_id: studentId,
       course_id: courseId,
       message: message,
-      source_file: sourceFile || null
+      source_file: sourceFile || null,
+      session_id: sessionId
     };
 
-    let backendResponse = null;
-
-    // 1. Try production path through .NET Backend API Gateway (port 5204)
     try {
-      const response = await api.post('/aireview/coach/chat', payload);
-      if (response && response.data && (response.data.reply || response.data.answer)) {
-        if (response.data.source !== 'fallback') {
-          return response.data;
-        }
-        backendResponse = response.data;
-        console.warn('Backend returned fallback response, attempting direct AI microservice connection...');
+      const { data } = await api.post('/aireview/coach/chat', payload, { timeout: 150000 });
+      const reply = data?.reply || data?.answer;
+      if (typeof reply === 'string' && reply.trim() && data.source !== 'fallback') {
+        return { ...data, reply };
       }
+      throw new Error('The AI assistant returned no answer. Please retry.');
     } catch (err) {
-      console.warn('Backend /aireview/coach/chat unavailable, bridging directly to AI Microservice (port 8000)...', err);
+      const detail = err.response?.data?.detail;
+      if (err.isAxiosError) throw new Error(typeof detail === 'string' ? detail : 'The AI assistant is unavailable. Please try again shortly.');
+      throw err;
     }
+  },
 
-    // 2. Direct fallback bridge to Python AI Microservice (port 8000)
+  async learn(payload) {
     try {
-      const directRes = await fetch('http://localhost:8000/ai-coach-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (directRes.ok) {
-        return await directRes.json();
-      }
-    } catch (directErr) {
-      console.warn('Direct AI microservice unavailable:', directErr);
+      const response = await api.post('/aireview/learn', payload, { timeout: 150000 });
+      return response.data;
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      throw new Error(typeof detail === 'string' ? detail : 'The learning service is unavailable. Please try again shortly.');
     }
-
-    return backendResponse;
   },
 
   async getSlideDecks() {
     try {
-      const res = await fetch('http://localhost:8000/api/v1/rag/slide-decks');
-      if (res.ok) {
-        const data = await res.json();
-        return data.slide_decks || [];
-      }
+      const response = await api.get('/aireview/learning/slide-decks');
+      return response.data.slide_decks || [];
     } catch (e) {
       console.warn('Failed to load slide decks from AI microservice:', e);
     }
-    return [];
+    throw new Error('Indexed lectures could not be loaded. Check that the AI service is running, then retry.');
   },
 
   async ragChat(question, courseId = 'it3012-se', moduleId = 'lecture-04', sourceFile = null) {
-    const res = await fetch('http://localhost:8000/api/v1/rag/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, course_id: courseId, module_id: moduleId, source_file: sourceFile })
+    const response = await api.post('/aireview/rag/chat', {
+      question, course_id: courseId, module_id: moduleId, source_file: sourceFile
     });
-    return await res.json();
+    return response.data;
   }
 };
