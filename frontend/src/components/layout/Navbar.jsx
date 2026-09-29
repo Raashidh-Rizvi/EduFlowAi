@@ -36,8 +36,10 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
       subtitle: 'Review, modify, and authorize agentic personalized study roadmaps and remedial quests' 
     },
     'courses': { 
-      title: 'Curriculum & Learning Journey', 
-      subtitle: 'Manage modular course units, video resources, technical documentation, and visual roadmap nodes' 
+      title: isAdmin ? 'Course Management' : 'Curriculum & Learning Journey',
+      subtitle: isAdmin
+        ? 'Manage platform courses, enrollments, modules, and course access.'
+        : 'Manage modular course units, video resources, technical documentation, and visual roadmap nodes'
     },
     'assessments': { 
       title: 'Assessments & Evaluation Engine', 
