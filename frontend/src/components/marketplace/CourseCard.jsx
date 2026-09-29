@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Clock, BarChart3, Users, BookOpen, Layers, ArrowRight, BadgeCheck } from 'lucide-react';
+import { Clock, BarChart3, Users, BookOpen, Layers, ArrowRight } from 'lucide-react';
 import StarRating from './StarRating';
 import Avatar from './Avatar';
 import { formatDurationHours, formatPrice, formatCount, levelLabel } from '../../utils/marketplaceFormat';
@@ -75,7 +75,6 @@ export default function CourseCard({ course, style = {}, className = '' }) {
         <div className="mk-card__instructor">
           <Avatar name={instructorName} src={course.instructorAvatarUrl} size={24} />
           <span>{instructorName}</span>
-          <BadgeCheck size={14} aria-hidden="true" style={{ color: 'var(--primary)', flexShrink: 0 }} />
         </div>
 
         <StarRating value={course.averageRating} count={course.ratingCount} size={13} />

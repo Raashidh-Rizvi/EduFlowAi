@@ -19,6 +19,7 @@ import CatalogPage from './pages/Marketplace/CatalogPage';
 import CourseDetailsPage from './pages/Marketplace/CourseDetailsPage';
 import InstructorProfilePage from './pages/Marketplace/InstructorProfilePage';
 import PolicyPage from './pages/Marketplace/PolicyPage';
+import LearnEntry from './pages/Student/LearnEntry';
 import StudentPortal from './pages/Student/StudentPortal';
 import InstructorPortal from './pages/Instructor/InstructorPortal';
 import EnrollmentRequestsView from './pages/Instructor/views/EnrollmentRequestsView';
@@ -273,6 +274,9 @@ function AppRoutes() {
             <Route path="/instructors/:id" element={<InstructorProfilePage />} />
             <Route path="/policies/:slug" element={<PolicyPage />} />
           </Route>
+
+          {/* Learning portal entry: server-verified enrollment gate, then the student console. */}
+          <Route path="/learn/:courseId" element={<LearnEntry />} />
 
           <Route path="/login" element={authView} />
           <Route path="/console" element={consoleView} />

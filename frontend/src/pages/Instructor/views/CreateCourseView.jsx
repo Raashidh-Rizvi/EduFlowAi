@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Rocket, ArrowLeft, Info, CheckCircle2 } from 'lucide-react';
 import { courseService } from '../../../services/courseService';
 import { SectionHeading, ErrorBanner } from '../shared';
+import CourseMetadataFields, { metadataPayload } from './CourseMetadataFields';
 
 const FIELD = {
   width: '100%', padding: '10px 13px', fontSize: '13px', color: 'var(--text-main)',
@@ -26,7 +27,14 @@ export default function CreateCourseView({ onNavigate }) {
     durationHours: 8,
     isFree: true,
     price: 0,
-    thumbnailUrl: ''
+    thumbnailUrl: '',
+    shortDescription: '',
+    language: 'English',
+    xpReward: 0,
+    certificateEnabled: false,
+    learningOutcomes: [],
+    prerequisites: [],
+    targetAudience: []
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -62,7 +70,8 @@ export default function CreateCourseView({ onNavigate }) {
         difficulty: form.difficulty,
         durationHours: Number(form.durationHours) || 0,
         price: form.isFree ? 0 : Number(form.price),
-        isFree: Boolean(form.isFree)
+        isFree: Boolean(form.isFree),
+        ...metadataPayload(form)
       };
       const result = await courseService.createCourse(payload);
       setCreated(result);
@@ -94,7 +103,14 @@ export default function CreateCourseView({ onNavigate }) {
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn-primary" onClick={() => onNavigate('courses')}>Open Curriculum Editor</button>
             <button className="btn-secondary" onClick={() => onNavigate('my-courses')}>Back to My Courses</button>
-            <button className="btn-ghost" onClick={() => { setCreated(null); setForm({ ...form, code: '', title: '', description: '' }); }}>
+            <button className="btn-ghost" onClick={() => {
+              setCreated(null);
+              setForm(f => ({
+                ...f,
+                code: '', title: '', description: '', shortDescription: '',
+                learningOutcomes: [], prerequisites: [], targetAudience: []
+              }));
+            }}>
               Create another
             </button>
           </div>
@@ -122,6 +138,7 @@ export default function CreateCourseView({ onNavigate }) {
           <div>
             <Label required>Course Title</Label>
             <input
+              aria-label="Course Title"
               value={form.title}
               onChange={update('title')}
               placeholder="Course title e.g. CS-401: Distributed Systems"
@@ -132,11 +149,11 @@ export default function CreateCourseView({ onNavigate }) {
           <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '14px' }}>
             <div>
               <Label required>Course Code</Label>
-              <input value={form.code} onChange={update('code')} placeholder="CS-401" style={FIELD} />
+              <input aria-label="Course Code" value={form.code} onChange={update('code')} placeholder="CS-401" style={FIELD} />
             </div>
             <div>
               <Label required>Category</Label>
-              <input value={form.category} onChange={update('category')} placeholder="Computer Science" style={FIELD} />
+              <input aria-label="Category" value={form.category} onChange={update('category')} placeholder="Computer Science" style={FIELD} />
             </div>
           </div>
 
@@ -152,15 +169,17 @@ export default function CreateCourseView({ onNavigate }) {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-            <div>
-              <Label>Thumbnail URL</Label>
-              <input value={form.thumbnailUrl} onChange={update('thumbnailUrl')} placeholder="https://…" style={FIELD} />
-            </div>
-            <div>
-              <Label>Term</Label>
-              <input value={form.term} onChange={update('term')} placeholder="Fall 2026" style={FIELD} />
-            </div>
+          <div>
+            <Label>Thumbnail URL</Label>
+            <input value={form.thumbnailUrl} onChange={update('thumbnailUrl')} placeholder="https://…" style={FIELD} />
           </div>
+          <div>
+            <Label>Term</Label>
+            <input value={form.term} onChange={update('term')} placeholder="Fall 2026" style={FIELD} />
+          </div>
+        </div>
+
+        <CourseMetadataFields form={form} update={update} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

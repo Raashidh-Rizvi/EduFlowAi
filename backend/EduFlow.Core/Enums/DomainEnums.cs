@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace EduFlow.Core.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UserRole
 {
     Admin,

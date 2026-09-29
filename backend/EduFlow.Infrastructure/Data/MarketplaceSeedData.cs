@@ -42,7 +42,14 @@ public static class MarketplaceSeedData
         string ThumbnailUrl,
         int EnrollmentCount,
         ModuleSpec[] Modules,
-        ReviewSpec[] Reviews)
+        ReviewSpec[] Reviews,
+        string ShortDescription = "",
+        string[] LearningOutcomes = null,
+        string[] Prerequisites = null,
+        string[] TargetAudience = null,
+        int XpReward = 0,
+        bool CertificateEnabled = false,
+        string Language = "English")
     {
         public bool IsFree => Price == 0m;
     }
@@ -74,6 +81,7 @@ public static class MarketplaceSeedData
                 Code = spec.Code,
                 Title = spec.Title,
                 Description = spec.Description,
+                ShortDescription = spec.ShortDescription,
                 Category = spec.Category,
                 Term = "Fall 2026",
                 ThumbnailUrl = spec.ThumbnailUrl,
@@ -84,6 +92,12 @@ public static class MarketplaceSeedData
                 DurationHours = spec.DurationHours,
                 Price = spec.Price,
                 IsFree = spec.IsFree,
+                Language = spec.Language,
+                XpReward = spec.XpReward,
+                CertificateEnabled = spec.CertificateEnabled,
+                LearningOutcomesJson = System.Text.Json.JsonSerializer.Serialize(spec.LearningOutcomes ?? Array.Empty<string>()),
+                PrerequisitesJson = System.Text.Json.JsonSerializer.Serialize(spec.Prerequisites ?? Array.Empty<string>()),
+                TargetAudienceJson = System.Text.Json.JsonSerializer.Serialize(spec.TargetAudience ?? Array.Empty<string>()),
                 AverageRating = spec.Reviews.Length > 0
                     ? Math.Round(spec.Reviews.Average(r => r.Rating), 2)
                     : 0.0,
@@ -428,6 +442,134 @@ public static class MarketplaceSeedData
                 new ReviewSpec(5, "The opportunity-sizing template is now standard here."),
                 new ReviewSpec(4, "Concise and free of buzzword soup."),
                 new ReviewSpec(4, "Helped me move from feature factory to outcomes.")
-            })
+            },
+            ShortDescription: "Discovery, sizing and roadmaps that survive engineering.",
+            LearningOutcomes: new[]
+            {
+                "Run discovery interviews that surface real problems",
+                "Size opportunities with defensible assumptions",
+                "Write outcome-based roadmaps",
+                "Prioritise with confidence and communicate trade-offs"
+            },
+            TargetAudience: new[] { "Aspiring product managers", "Engineers moving into product", "Founders shipping their first product" },
+            XpReward: 900),
+
+        // ── Metadata for the remaining catalogue entries ─────────────────────────
+        // (positional args above end at Reviews; these named upgrades run afterwards
+        // via the course variable below, so existing specs stay untouched)
+        new CourseSpec(
+            "WS-101",
+            "Cloud Foundations & Deployment",
+            "Ship real services: containers, CI/CD pipelines, environments, monitoring and the deployment habits that keep Friday releases boring.",
+            "Software Engineering",
+            DifficultyLevel.Medium,
+            18,
+            34.99m,
+            "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600",
+            2,
+            new[]
+            {
+                new ModuleSpec(
+                    "Containers & Images",
+                    "Dockerfiles, layers, and images that build the same everywhere.",
+                    new[] { "Dockerfile fundamentals", "Multi-stage builds", "Registry workflows" }),
+                new ModuleSpec(
+                    "Pipelines & Observability",
+                    "CI/CD, health checks and alerting you can act on.",
+                    new[] { "Pipeline as code", "Health checks & probes", "Meaningful alerts" })
+            },
+            new[]
+            {
+                new ReviewSpec(5, "First course where my deploy actually worked afterwards."),
+                new ReviewSpec(4, "Solid, practical pipeline material.")
+            },
+            ShortDescription: "Containers, CI/CD and deployment habits that keep releases boring.",
+            LearningOutcomes: new[]
+            {
+                "Containerise applications with Docker",
+                "Build a CI/CD pipeline from scratch",
+                "Design environments and configuration strategy",
+                "Monitor services with actionable alerting",
+                "Deploy to production with zero-downtime patterns"
+            },
+            Prerequisites: new[] { "Basic command line comfort", "One programming language" },
+            TargetAudience: new[] { "Backend developers", "Devs moving to DevOps", "Students building portfolio projects" },
+            XpReward: 1200,
+            CertificateEnabled: true),
+
+        new CourseSpec(
+            "CS-520",
+            "Distributed Systems in Practice",
+            "Consensus, replication, partitioning and the CAP theorem through hands-on labs — engineer systems that stay correct when networks misbehave.",
+            "Computer Science",
+            DifficultyLevel.Hard,
+            30,
+            69.99m,
+            "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=600",
+            2,
+            new[]
+            {
+                new ModuleSpec(
+                    "Replication & Consistency",
+                    "Leader election, quorums and the consistency models that matter.",
+                    new[] { "Leader election labs", "Quorum reads & writes", "Consistency models compared" }),
+                new ModuleSpec(
+                    "Partition Tolerance",
+                    "Detecting failures, healing state and designing for the inevitable split.",
+                    new[] { "Failure detection", "State reconciliation", "Designing for splits" })
+            },
+            new[]
+            {
+                new ReviewSpec(5, "The partition labs changed how I design every service."),
+                new ReviewSpec(4, "Challenging and fair — great labs.")
+            },
+            ShortDescription: "Consensus, replication and partition tolerance through real labs.",
+            LearningOutcomes: new[]
+            {
+                "Explain consensus algorithms and their trade-offs",
+                "Choose replication strategies for real workloads",
+                "Design partition-tolerant data flows",
+                "Debug distributed systems with intent"
+            },
+            Prerequisites: new[] { "Solid networking basics", "Comfort with concurrency" },
+            TargetAudience: new[] { "Senior developers", "Platform engineers", "Graduate students" },
+            XpReward: 1500,
+            CertificateEnabled: true),
+
+        new CourseSpec(
+            "AI-110",
+            "Prompt Engineering for Product Teams",
+            "From zero to reliable LLM features: prompting patterns, evaluation harnesses and shipping AI features users trust.",
+            "Artificial Intelligence",
+            DifficultyLevel.Easy,
+            10,
+            0m,
+            "https://images.unsplash.com/photo-1677442136019-21780ecad995?w=600",
+            2,
+            new[]
+            {
+                new ModuleSpec(
+                    "Prompting Patterns",
+                    "Few-shot, chain-of-thought and structured outputs that behave.",
+                    new[] { "Instructions that stick", "Few-shot examples", "Structured outputs" }),
+                new ModuleSpec(
+                    "Evaluation & Shipping",
+                    "Golden sets, regression tests and guarding user trust.",
+                    new[] { "Golden datasets", "Regression harness", "Shipping guardrails" })
+            },
+            new[]
+            {
+                new ReviewSpec(4, "Practical patterns we shipped the same week."),
+                new ReviewSpec(5, "The eval harness chapter is worth the price.")
+            },
+            ShortDescription: "Reliable LLM features: patterns, evaluation and shipping.",
+            LearningOutcomes: new[]
+            {
+                "Write prompts that behave reliably in production",
+                "Build an evaluation harness for AI features",
+                "Ship LLM features with guardrails users trust"
+            },
+            TargetAudience: new[] { "Product teams adding AI features", "Developers new to LLMs" },
+            XpReward: 600)
     };
 }

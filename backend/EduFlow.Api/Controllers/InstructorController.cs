@@ -11,6 +11,7 @@ using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace EduFlow.Api.Controllers;
@@ -325,32 +326,43 @@ public class InstructorController : BaseApiController
             });
         }
 
-        await using var transaction = await BeginWriteTransactionAsync();
-
-        enrollment.Status = EnrollmentStatus.Active;
-        enrollment.ReviewedAt = DateTime.UtcNow;
-        enrollment.ReviewedByInstructorId = userId;
-        enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Approved by instructor." : request.Notes.Trim();
-        enrollment.UpdatedAt = DateTime.UtcNow;
-
-        DbContext.Notifications.Add(new Notification
+        // The status flip, the reviewer audit fields and the student notification must commit
+        // together, and the whole unit has to run inside the execution strategy: starting the
+        // transaction outside IExecutionStrategy.ExecuteAsync is incompatible with the
+        // EnableRetryOnFailure strategy configured for Npgsql and always throws.
+        var result = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            UserId = enrollment.StudentId,
-            Title = "Enrollment Approved",
-            Message = $"Your enrollment request for '{enrollment.Course?.Title}' was approved. You can start learning now.",
-            Type = "EnrollmentApproved"
+            await using var transaction = DbContext.Database.IsRelational()
+                ? await DbContext.Database.BeginTransactionAsync()
+                : null;
+
+            enrollment.Status = EnrollmentStatus.Active;
+            enrollment.ReviewedAt = DateTime.UtcNow;
+            enrollment.ReviewedByInstructorId = userId;
+            enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Approved by instructor." : request.Notes.Trim();
+            enrollment.UpdatedAt = DateTime.UtcNow;
+
+            DbContext.Notifications.Add(new Notification
+            {
+                UserId = enrollment.StudentId,
+                Title = "Enrollment Approved",
+                Message = $"Your enrollment request for '{enrollment.Course?.Title}' was approved. You can start learning now.",
+                Type = "EnrollmentApproved"
+            });
+
+            await DbContext.SaveChangesAsync();
+            if (transaction != null) await transaction.CommitAsync();
+
+            return new
+            {
+                message = "Enrollment approved.",
+                enrollmentId = enrollment.Id,
+                status = enrollment.Status.ToString(),
+                statusLabel = enrollment.Status.ToApiLabel()
+            };
         });
 
-        await DbContext.SaveChangesAsync();
-        if (transaction != null) await transaction.CommitAsync();
-
-        return Ok(new
-        {
-            message = "Enrollment approved.",
-            enrollmentId = enrollment.Id,
-            status = enrollment.Status.ToString(),
-            statusLabel = enrollment.Status.ToApiLabel()
-        });
+        return Ok(result);
     }
 
     /// <summary>Rejects a pending enrollment on one of the instructor's own courses.</summary>
@@ -383,43 +395,42 @@ public class InstructorController : BaseApiController
             });
         }
 
-        await using var transaction = await BeginWriteTransactionAsync();
-
-        enrollment.Status = EnrollmentStatus.Rejected;
-        enrollment.ReviewedAt = DateTime.UtcNow;
-        enrollment.ReviewedByInstructorId = userId;
-        enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Rejected by instructor." : request.Notes.Trim();
-        enrollment.UpdatedAt = DateTime.UtcNow;
-
-        DbContext.Notifications.Add(new Notification
+        // Same reason as ApproveEnrollmentRequest: the transaction has to live inside the
+        // execution strategy because EnableRetryOnFailure forbids user-initiated transactions
+        // that are started outside IExecutionStrategy.ExecuteAsync.
+        var result = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            UserId = enrollment.StudentId,
-            Title = "Enrollment Request Declined",
-            Message = $"Your enrollment request for '{enrollment.Course?.Title}' was declined. {enrollment.ReviewNotes}",
-            Type = "EnrollmentRejected"
+            await using var transaction = DbContext.Database.IsRelational()
+                ? await DbContext.Database.BeginTransactionAsync()
+                : null;
+
+            enrollment.Status = EnrollmentStatus.Rejected;
+            enrollment.ReviewedAt = DateTime.UtcNow;
+            enrollment.ReviewedByInstructorId = userId;
+            enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Rejected by instructor." : request.Notes.Trim();
+            enrollment.UpdatedAt = DateTime.UtcNow;
+
+            DbContext.Notifications.Add(new Notification
+            {
+                UserId = enrollment.StudentId,
+                Title = "Enrollment Request Declined",
+                Message = $"Your enrollment request for '{enrollment.Course?.Title}' was declined. {enrollment.ReviewNotes}",
+                Type = "EnrollmentRejected"
+            });
+
+            await DbContext.SaveChangesAsync();
+            if (transaction != null) await transaction.CommitAsync();
+
+            return new
+            {
+                message = "Enrollment request rejected.",
+                enrollmentId = enrollment.Id,
+                status = enrollment.Status.ToString(),
+                statusLabel = enrollment.Status.ToApiLabel()
+            };
         });
 
-        await DbContext.SaveChangesAsync();
-        if (transaction != null) await transaction.CommitAsync();
-
-        return Ok(new
-        {
-            message = "Enrollment request rejected.",
-            enrollmentId = enrollment.Id,
-            status = enrollment.Status.ToString(),
-            statusLabel = enrollment.Status.ToApiLabel()
-        });
-    }
-
-    /// <summary>
-    /// Explicit transaction for multi-row decisions. Relational providers get a real
-    /// transaction; the EF InMemory test provider has no transactions to begin, so it is
-    /// skipped (the single SaveChangesAsync below is still one atomic unit of work there).
-    /// </summary>
-    private async Task<IDbContextTransaction?> BeginWriteTransactionAsync()
-    {
-        if (!DbContext.Database.IsRelational()) return null;
-        return await DbContext.Database.BeginTransactionAsync();
+        return Ok(result);
     }
 
     private IPaymentVerificationService ResolvePaymentGate()

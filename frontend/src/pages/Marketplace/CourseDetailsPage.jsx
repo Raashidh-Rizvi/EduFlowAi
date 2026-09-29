@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, Clock, BookOpen, Layers, Users, BarChart3,
   CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, Loader2, GraduationCap, Send,
-  Zap, Award, Target, Globe2, Eye, Lock, X, BadgeCheck, ListChecks
+  Zap, Award, Target, Globe2, Eye, Lock, X, ListChecks
 } from 'lucide-react';
 import Avatar from '../../components/marketplace/Avatar';
 import StarRating from '../../components/marketplace/StarRating';
@@ -435,8 +435,13 @@ export default function CourseDetailsPage() {
   const isStudent = currentUser?.role === 'Student';
   const canEnroll = Boolean(currentUser) && isStudent;
   const canReview = isStudent;
-  const outcomes = course.learningOutcomes?.length ? course.learningOutcomes : deriveOutcomes(course);
-  const prerequisites = course.prerequisites?.length ? course.prerequisites : derivePrerequisites(course);
+  // Instructor-authored metadata — the marketplace never invents placeholder content:
+  // if the instructor has not written outcomes/requirements yet, the section explains
+  // that honestly instead of fabricating generic bullets.
+  const outcomes = course.learningOutcomes || [];
+  const prerequisites = course.prerequisites || [];
+  const targetAudience = course.targetAudience || [];
+  const displayXp = xpSummary?.displayTotal ?? course.xpReward ?? 0;
   const enrolledLabel =
     enrollment?.status === 'Pending' ? 'Enrollment pending approval'
       : enrollment?.status === 'Active' ? 'You are enrolled'
@@ -496,6 +501,7 @@ export default function CourseDetailsPage() {
             <li><BookOpen size={15} aria-hidden="true" /> {totalLessons} lessons</li>
             <li><Layers size={15} aria-hidden="true" /> {totalModules} modules</li>
             <li><GraduationCap size={15} aria-hidden="true" /> {levelLabel(course.difficulty)}</li>
+            <li><Globe2 size={15} aria-hidden="true" /> {course.language || 'English'}</li>
             <li><BarChart3 size={15} aria-hidden="true" /> Updated {timeAgo(course.updatedAt) || 'recently'}</li>
           </ul>
         </div>
@@ -517,10 +523,9 @@ export default function CourseDetailsPage() {
           <button
             type="button"
             className="btn-primary mk-detail__enroll"
-            onClick={handleEnroll}
+            onClick={enrollment?.status === 'Active' || enrollment?.status === 'Completed' ? goToLearning : handleEnroll}
             disabled={
               enrollState.status === 'loading' ||
-              enrollment?.status === 'Active' ||
               enrollment?.status === 'Pending' ||
               (Boolean(currentUser) && !canEnroll)
             }
@@ -530,15 +535,15 @@ export default function CourseDetailsPage() {
             ) : enrollment?.status === 'Pending' ? (
               'Awaiting approval'
             ) : enrollment ? (
-              'Continue learning'
+              'Continue Learning'
             ) : !currentUser ? (
               'Log in to enroll'
             ) : !canEnroll ? (
               'Staff account — not enrollable'
             ) : isFree ? (
-              'Enroll for free'
+              'Enroll Now — Free'
             ) : (
-              `Enroll — ${price}`
+              `Enroll Now — ${price}`
             )}
           </button>
 
@@ -550,11 +555,30 @@ export default function CourseDetailsPage() {
           )}
 
           <ul className="mk-detail__includes">
-            <li><PlayCircle size={14} aria-hidden="true" /> {totalLessons} on-demand lessons</li>
-            <li><Clock size={14} aria-hidden="true" /> {course.durationHours ? `${course.durationHours} hours of content` : 'Learn at your own pace'}</li>
+            <li><Clock size={14} aria-hidden="true" /> {course.durationHours ? `${course.durationHours} hours of learning` : 'Self-paced learning'}</li>
+            <li><Layers size={14} aria-hidden="true" /> {totalModules} modules</li>
+            <li><PlayCircle size={14} aria-hidden="true" /> {totalLessons} lessons</li>
+            <li><ListChecks size={14} aria-hidden="true" /> {course.quizCount || 0} quizzes</li>
+            {displayXp > 0 && (
+              <li title="XP is earned by completing lessons, quizzes and the course. All XP is validated server-side."><Zap size={14} aria-hidden="true" /> +{formatCount(displayXp)} XP</li>
+            )}
+            {course.certificateEnabled && (
+              <li><Award size={14} aria-hidden="true" /> Certificate of Completion</li>
+            )}
             <li><ShieldCheck size={14} aria-hidden="true" /> Instructor-approved enrollment</li>
-            <li><CheckCircle2 size={14} aria-hidden="true" /> Full curriculum &amp; quizzes included</li>
           </ul>
+
+          <div className="mk-detail__card-meta" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 0', borderTop: '1px solid var(--border-subtle, rgba(128,128,128,0.2))' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <GraduationCap size={13} aria-hidden="true" /> Level: <strong>{levelLabel(course.difficulty)}</strong>
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <Globe2 size={13} aria-hidden="true" /> Language: <strong>{course.language || 'English'}</strong>
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <ShieldCheck size={13} aria-hidden="true" /> Access: <strong>Lifetime</strong>
+            </span>
+          </div>
 
           <div className="mk-detail__card-instructor">
             <Avatar name={instructor.fullName} src={instructor.avatarUrl} size={44} />
@@ -573,15 +597,53 @@ export default function CourseDetailsPage() {
         <div className="mk-detail__main">
           <section className="mk-detail__block" aria-labelledby="learn-title">
             <h2 id="learn-title">What you'll learn</h2>
-            <ul className="mk-detail__outcomes">
-              {outcomes.map((outcome) => (
-                <li key={outcome}>
-                  <CheckCircle2 size={16} aria-hidden="true" />
-                  <span>{outcome}</span>
-                </li>
-              ))}
-            </ul>
+            {outcomes.length === 0 ? (
+              <p className="mk-detail__side-empty">
+                The instructor is still authoring the learning outcomes for this course.
+              </p>
+            ) : (
+              <ul className="mk-detail__outcomes">
+                {outcomes.map((outcome) => (
+                  <li key={outcome}>
+                    <CheckCircle2 size={16} aria-hidden="true" />
+                    <span>{outcome}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
+
+          {displayXp > 0 && (
+            <section className="mk-detail__block mk-xp" aria-label="Learning rewards">
+              <div
+                className="mk-xp__banner"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                  padding: '16px 20px', borderRadius: 'var(--radius-md, 12px)',
+                  background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(59, 130, 246, 0.10))',
+                  border: '1px solid rgba(124, 58, 237, 0.35)'
+                }}
+              >
+                <Zap size={26} aria-hidden="true" style={{ color: '#7C3AED' }} />
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <strong style={{ fontSize: 15, display: 'block', color: 'var(--text-main)' }}>
+                    Complete this course and earn up to {formatCount(displayXp)} XP
+                  </strong>
+                  <span
+                    title="XP (experience points) is EduFlow's learning currency. You earn it by completing lessons, passing quizzes and finishing the course. All XP is calculated and validated on the server — it cannot be gained through repeated requests."
+                    style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'help' }}
+                  >
+                    What is XP? Earn it through lessons, quizzes &amp; course completion.
+                  </span>
+                </div>
+                {xpSummary && xpSummary.earnedFromLessonsAndQuizzes > 0 && (
+                  <span className="mk-chip mk-chip--category" style={{ fontSize: 11 }}>
+                    {formatCount(xpSummary.earnedFromLessonsAndQuizzes)} XP from lessons &amp; quizzes
+                  </span>
+                )}
+              </div>
+            </section>
+          )}
 
           <section className="mk-detail__block" aria-labelledby="curriculum-title">
             <div className="mk-detail__block-head">
@@ -633,8 +695,33 @@ export default function CourseDetailsPage() {
                             <ul>
                               {module.lessons.map((lesson) => (
                                 <li key={lesson.id}>
-                                  <PlayCircle size={15} aria-hidden="true" />
-                                  <span>{lesson.title}</span>
+                                  {lesson.isFreePreview ? (
+                                    <button
+                                      type="button"
+                                      className="mk-curriculum__preview-btn"
+                                      onClick={() => handleOpenPreview(lesson.id)}
+                                      title="Free preview — no enrollment required"
+                                      style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        border: 'none', background: 'transparent', padding: 0,
+                                        cursor: 'pointer', color: 'var(--primary)', fontWeight: 600,
+                                        fontSize: 'inherit', textDecoration: 'underline dotted'
+                                      }}
+                                    >
+                                      <Eye size={15} aria-hidden="true" />
+                                      <span>{lesson.title}</span>
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <PlayCircle size={15} aria-hidden="true" />
+                                      <span>{lesson.title}</span>
+                                    </>
+                                  )}
+                                  {lesson.xpReward > 0 && (
+                                    <span title="XP for completing this lesson" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: '#7C3AED', fontSize: 11 }}>
+                                      <Zap size={11} aria-hidden="true" />+{lesson.xpReward}
+                                    </span>
+                                  )}
                                   <small>{lesson.estimatedMinutes ? `${lesson.estimatedMinutes} min` : '—'}</small>
                                 </li>
                               ))}
@@ -650,39 +737,60 @@ export default function CourseDetailsPage() {
           </section>
 
           <section className="mk-detail__block" aria-labelledby="prereq-title">
-            <h2 id="prereq-title">Prerequisites</h2>
-            <ul className="mk-detail__prereq">
-              {prerequisites.map((item) => (
-                <li key={item}>
-                  <span aria-hidden="true">•</span> {item}
-                </li>
-              ))}
-            </ul>
+            <h2 id="prereq-title">Requirements</h2>
+            {prerequisites.length === 0 ? (
+              <p className="mk-detail__side-empty">
+                No prerequisites — the course is open to everyone at this level.
+              </p>
+            ) : (
+              <ul className="mk-detail__prereq">
+                {prerequisites.map((item) => (
+                  <li key={item}>
+                    <span aria-hidden="true">•</span> {item}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
+
+          {targetAudience.length > 0 && (
+            <section className="mk-detail__block" aria-labelledby="audience-title">
+              <h2 id="audience-title">Who this course is for</h2>
+              <ul className="mk-detail__prereq">
+                {targetAudience.map((item) => (
+                  <li key={item}>
+                    <Target size={14} aria-hidden="true" style={{ flexShrink: 0, color: 'var(--primary)' }} /> {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="mk-detail__block" aria-labelledby="instructor-title">
             <h2 id="instructor-title">Your instructor</h2>
             <div className="mk-detail__instructor-card">
               <Avatar name={instructor.fullName} src={instructor.avatarUrl} size={84} />
               <div>
-                <h3>{instructor.fullName || course.instructorName}</h3>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {instructor.fullName || course.instructorName}
+                </h3>
                 <span className="mk-detail__instructor-role">
                   {instructor.role || 'Instructor'} · {formatCount(instructor.courseCount || 0)} published courses
                 </span>
                 <StarRating value={instructor.averageRating || course.averageRating} count={instructor.ratingCount || course.ratingCount} size={14} />
                 <p>{instructor.bio || 'Educator publishing on the EduFlow course marketplace.'}</p>
-                {(instructor.id || course.instructorId) && (
-                  <p style={{ marginTop: '10px', fontSize: '13.5px', fontWeight: 700 }}>
-                    <Link to={`/instructors/${instructor.id || course.instructorId}`} style={{ color: 'var(--primary)' }}>
-                      View full instructor profile →
-                    </Link>
-                  </p>
-                )}
                 <ul className="mk-detail__instructor-stats">
                   <li><strong>{formatCount(instructor.studentCount || course.enrollmentCount || 0)}</strong><span>Learners</span></li>
                   <li><strong>{formatCount(instructor.courseCount || 0)}</strong><span>Courses</span></li>
                   <li><strong>{instructor.averageRating ? Number(instructor.averageRating).toFixed(1) : '—'}</strong><span>Rating</span></li>
                 </ul>
+                {instructor.id && (
+                  <p style={{ marginTop: '10px' }}>
+                    <Link to={`/instructors/${instructor.id}`} className="btn-secondary" style={{ fontSize: '12.5px', padding: '6px 14px' }}>
+                      View Instructor Profile
+                    </Link>
+                  </p>
+                )}
               </div>
             </div>
           </section>
@@ -805,7 +913,10 @@ export default function CourseDetailsPage() {
 
         <aside className="mk-detail__side">
           <div className="mk-detail__side-card">
-            <h3>More in {course.category}</h3>
+            <h3>You May Also Like</h3>
+            <p style={{ margin: '0 0 10px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+              Related {course.category} courses, best rated first
+            </p>
             {similar.length === 0 ? (
               <p className="mk-detail__side-empty">No other published courses in this category yet.</p>
             ) : (
@@ -832,6 +943,13 @@ export default function CourseDetailsPage() {
           </div>
         </aside>
       </div>
+
+      <FreePreviewModal
+        preview={preview}
+        loading={previewLoading}
+        error={previewError}
+        onClose={closePreview}
+      />
     </div>
   );
 }

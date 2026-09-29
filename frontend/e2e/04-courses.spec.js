@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 test.describe('Courses Curriculum & Learning Path Exploration', () => {
   test.beforeEach(async ({ page }) => {
@@ -11,7 +11,7 @@ test.describe('Courses Curriculum & Learning Path Exploration', () => {
     await tryNowBtn.click();
     await page.locator('text=Dr. Sarah Jenkins').click();
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
-    await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE'))).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('should navigate to Courses, display curriculum tree and allow course management', async ({ page }) => {

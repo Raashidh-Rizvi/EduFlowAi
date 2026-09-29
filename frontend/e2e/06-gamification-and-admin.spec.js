@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 test.describe('Gamification & Admin Governance Exploration', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,7 +36,7 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await expect(page.getByRole('heading', { name: 'Executive Overview' })).toBeVisible({ timeout: 10000 });
 
     // Click Platform Governance in sidebar
-    const adminLink = page.getByRole('button', { name: /Platform Governance/i });
+    const adminLink = page.getByRole('button', { name: /Platform Governance|User Management/i });
     await expect(adminLink).toBeVisible();
     await adminLink.click();
 
@@ -75,7 +75,7 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
     await expect(page.locator('text=INSTRUCTOR CONSOLE')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Enrolled Students')).toBeVisible({ timeout: 10000 });
     // Verify "My Courses" IS visible for Instructor
     await expect(page.locator('text=My Courses')).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: 'e2e/screenshots/18-instructor-overview-with-my-courses.png' });

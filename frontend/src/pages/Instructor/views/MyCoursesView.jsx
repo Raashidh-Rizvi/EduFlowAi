@@ -5,6 +5,7 @@ import { courseService } from '../../../services/courseService';
 import {
   SectionHeading, LoadingBlock, EmptyState, ErrorBanner, StarRating, fmtMoney, fmtNumber
 } from '../shared';
+import CourseMetadataFields, { metadataPayload, metadataFormState } from './CourseMetadataFields';
 
 const FIELD = {
   width: '100%', padding: '10px 13px', fontSize: '13px', color: 'var(--text-main)',
@@ -92,7 +93,8 @@ export default function MyCoursesView({ onNavigate }) {
       durationHours: course.durationHours ?? 0,
       isFree: Boolean(course.isFree),
       price: course.price ?? 0,
-      thumbnailUrl: course.thumbnailUrl || ''
+      thumbnailUrl: course.thumbnailUrl || '',
+      ...metadataFormState(course)
     });
   };
 
@@ -131,7 +133,8 @@ export default function MyCoursesView({ onNavigate }) {
         difficulty: editForm.difficulty,
         durationHours: Number(editForm.durationHours) || 0,
         price: editForm.isFree ? 0 : Number(editForm.price),
-        isFree: Boolean(editForm.isFree)
+        isFree: Boolean(editForm.isFree),
+        ...metadataPayload(editForm)
       };
       const updated = await courseService.updateCourse(editing.id, payload);
       setCourses(prev => prev.map(c => (c.id === editing.id ? { ...c, ...updated } : c)));
@@ -350,23 +353,24 @@ export default function MyCoursesView({ onNavigate }) {
 
             <div>
               <label style={LABEL}>Course Title <span style={{ color: 'var(--accent)' }}>*</span></label>
-              <input value={editForm.title} onChange={updateEdit('title')} style={FIELD} />
+              <input aria-label="Course Title" value={editForm.title} onChange={updateEdit('title')} style={FIELD} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '14px' }}>
               <div>
                 <label style={LABEL}>Course Code <span style={{ color: 'var(--accent)' }}>*</span></label>
-                <input value={editForm.code} onChange={updateEdit('code')} style={FIELD} />
+                <input aria-label="Course Code" value={editForm.code} onChange={updateEdit('code')} style={FIELD} />
               </div>
               <div>
                 <label style={LABEL}>Category <span style={{ color: 'var(--accent)' }}>*</span></label>
-                <input value={editForm.category} onChange={updateEdit('category')} style={FIELD} />
+                <input aria-label="Category" value={editForm.category} onChange={updateEdit('category')} style={FIELD} />
               </div>
             </div>
 
             <div>
               <label style={LABEL}>Description</label>
               <textarea
+                aria-label="Description"
                 value={editForm.description}
                 onChange={updateEdit('description')}
                 rows={4}
@@ -377,11 +381,11 @@ export default function MyCoursesView({ onNavigate }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
               <div>
                 <label style={LABEL}>Term</label>
-                <input value={editForm.term} onChange={updateEdit('term')} style={FIELD} />
+                <input aria-label="Term" value={editForm.term} onChange={updateEdit('term')} style={FIELD} />
               </div>
               <div>
                 <label style={LABEL}>Difficulty</label>
-                <select value={editForm.difficulty} onChange={updateEdit('difficulty')} style={FIELD}>
+                <select aria-label="Difficulty" value={editForm.difficulty} onChange={updateEdit('difficulty')} style={FIELD}>
                   <option value="Easy">Easy</option>
                   <option value="Medium">Medium</option>
                   <option value="Hard">Hard</option>
@@ -390,14 +394,14 @@ export default function MyCoursesView({ onNavigate }) {
               </div>
               <div>
                 <label style={LABEL}>Duration (hours)</label>
-                <input type="number" min="0" value={editForm.durationHours} onChange={updateEdit('durationHours')} style={FIELD} />
+                <input aria-label="Duration (hours)" type="number" min="0" value={editForm.durationHours} onChange={updateEdit('durationHours')} style={FIELD} />
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div>
                 <label style={LABEL}>Thumbnail URL</label>
-                <input value={editForm.thumbnailUrl} onChange={updateEdit('thumbnailUrl')} placeholder="https://…" style={FIELD} />
+                <input aria-label="Thumbnail URL" value={editForm.thumbnailUrl} onChange={updateEdit('thumbnailUrl')} placeholder="https://…" style={FIELD} />
               </div>
               <div>
                 <label style={LABEL}>{editForm.isFree ? 'Price' : 'Price (USD)'}</label>
@@ -431,6 +435,10 @@ export default function MyCoursesView({ onNavigate }) {
                 )}
               </div>
             </div>
+
+            <div style={{ paddingTop: '4px', borderTop: '1px solid var(--border-subtle)' }} />
+
+            <CourseMetadataFields form={editForm} update={updateEdit} />
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', paddingTop: '4px', borderTop: '1px solid var(--border-subtle)' }}>
               <button type="button" className="btn-ghost" onClick={closeEdit} disabled={saving}>Cancel</button>

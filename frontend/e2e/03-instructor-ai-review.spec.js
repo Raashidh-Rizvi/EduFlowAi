@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 test.describe('Instructor AI Review & HITL Governance', () => {
   test.beforeEach(async ({ page }) => {
@@ -16,7 +16,7 @@ test.describe('Instructor AI Review & HITL Governance', () => {
 
   test('should navigate to AI Review and inspect governance workspace', async ({ page }) => {
     // Click AI Study Approvals in sidebar
-    await page.getByRole('button', { name: /AI Study Approvals/i }).click();
+    await page.getByRole('button', { name: /AI (Study Approvals|Review \& Approvals)/i }).click();
 
     // Verify AI Review header
     await expect(page.locator('text=Human-in-the-Loop AI Review').first()).toBeVisible();
@@ -28,7 +28,7 @@ test.describe('Instructor AI Review & HITL Governance', () => {
   });
 
   test('should trigger multi-agent study plan orchestration and approve proposal', async ({ page }) => {
-    await page.getByRole('button', { name: /AI Study Approvals/i }).click();
+    await page.getByRole('button', { name: /AI (Study Approvals|Review \& Approvals)/i }).click();
 
     // Look for Orchestrate button
     const orchestrateBtn = page.getByRole('button', { name: /\+ Orchestrate AI Proposal|Orchestrate New AI Study Plan/i }).first();
