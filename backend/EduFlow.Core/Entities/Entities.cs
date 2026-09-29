@@ -38,6 +38,8 @@ public class User : BaseEntity
     public ICollection<StudyPlan> StudyPlans { get; set; } = new List<StudyPlan>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public ICollection<LessonCompletion> LessonCompletions { get; set; } = new List<LessonCompletion>();
+    public ICollection<SupportTicket> SubmittedSupportTickets { get; set; } = new List<SupportTicket>();
+    public ICollection<SupportTicketResponse> AuthoredSupportTicketResponses { get; set; } = new List<SupportTicketResponse>();
 }
 
 public class RefreshToken : BaseEntity
@@ -672,4 +674,38 @@ public class AuditLog : BaseEntity
     public string EntityId { get; set; } = string.Empty;
     public string Details { get; set; } = string.Empty;
     public string IpAddress { get; set; } = "127.0.0.1";
+}
+
+// -----------------------------------------------------------------------------
+// 9. Support Desk & Inquiries Entities
+// -----------------------------------------------------------------------------
+public class SupportTicket : BaseEntity
+{
+    public Guid SubmittedByUserId { get; set; }
+    public User? SubmittedByUser { get; set; }
+
+    public SupportTicketType Type { get; set; } = SupportTicketType.Feedback;
+    public SupportTicketStatus Status { get; set; } = SupportTicketStatus.Open;
+
+    public string Message { get; set; } = string.Empty;
+    public DateTime? ResolvedAt { get; set; }
+
+    /// <summary>Optimistic concurrency token; updated on every accepted change.</summary>
+    public Guid Version { get; set; } = Guid.NewGuid();
+
+    /// <summary>Client-generated submission idempotency key, unique per user.</summary>
+    public Guid ClientRequestId { get; set; }
+
+    public ICollection<SupportTicketResponse> Responses { get; set; } = new List<SupportTicketResponse>();
+}
+
+public class SupportTicketResponse : BaseEntity
+{
+    public Guid SupportTicketId { get; set; }
+    public SupportTicket? SupportTicket { get; set; }
+
+    public Guid AdminUserId { get; set; }
+    public User? AdminUser { get; set; }
+
+    public string Message { get; set; } = string.Empty;
 }

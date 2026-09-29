@@ -37,6 +37,9 @@ builder.Services.AddScoped<ITeamService, TeamService>();
 // provider-backed implementation when a payment gateway is introduced.
 builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
+builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
+builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
 
 // 2b. Review moderation behaviour (see docs/current/RATINGS_AND_REVIEWS.md)
 builder.Services.Configure<ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));

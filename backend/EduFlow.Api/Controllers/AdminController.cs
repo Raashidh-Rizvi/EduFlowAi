@@ -26,6 +26,7 @@ namespace EduFlow.Api.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IAuthService _authService;
     private readonly ILogger<AdminController> _logger;
     private readonly IRatingService _ratingService;
@@ -34,9 +35,11 @@ public class AdminController : ControllerBase
         ApplicationDbContext dbContext,
         IAuthService authService,
         ILogger<AdminController> logger,
-        IRatingService? ratingService = null)
+        IRatingService? ratingService = null,
+        IAuditLogWriter? auditLogWriter = null)
     {
         _dbContext = dbContext;
+        _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
         _authService = authService;
         _logger = logger;
         // Optional so hosts that only need user management keep working; the
@@ -177,6 +180,7 @@ public class AdminController : ControllerBase
                     return Conflict(new { message = DeleteActivityConflict });
 
                 _dbContext.Users.Remove(user);
+                this.Record(_auditLogWriter, "User.Deleted", id);
                 await _dbContext.SaveChangesAsync(ct);
                 if (transaction != null) await transaction.CommitAsync(ct);
                 return NoContent();

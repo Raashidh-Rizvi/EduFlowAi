@@ -1,11 +1,14 @@
 using System;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
+using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -100,45 +103,209 @@ public class AnalyticsController : ControllerBase
 
     /// <summary>
     /// Returns platform-wide operational and engagement metrics.
+    /// When requested by a verified active Administrator, includes the authoritative adminSummary extension.
     /// </summary>
     [HttpGet("platform")]
-    public async Task<IActionResult> GetPlatformAnalytics()
+    public async Task<IActionResult> GetPlatformAnalytics(CancellationToken cancellationToken = default)
     {
-        var totalUsers = await _dbContext.Users.CountAsync();
-        var totalStudents = await _dbContext.Users.CountAsync(u => u.Role == UserRole.Student);
-        var totalCourses = await _dbContext.Courses.CountAsync();
-        var publishedCourses = await _dbContext.Courses.CountAsync(c => c.IsPublished);
-        var totalEnrollments = await _dbContext.Enrollments.CountAsync(e => e.Status == EnrollmentStatus.Active);
-        var totalSubmissions = await _dbContext.Submissions.CountAsync();
-        var passedSubmissions = await _dbContext.Submissions.CountAsync(s => s.Passed);
-        var totalChallenges = await _dbContext.Challenges.CountAsync();
-        var totalXp = await _dbContext.StudentXp.SumAsync(s => (long)s.TotalXp);
-        var totalBadgesUnlocked = await _dbContext.StudentBadges.CountAsync();
-        var pendingAiApprovals = await _dbContext.StudyPlans.CountAsync(sp => sp.Status == StudyPlanStatus.PendingInstructorApproval);
-        var approvedAiWorkflows = await _dbContext.StudyPlans.CountAsync(sp => sp.Status == StudyPlanStatus.Approved);
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var roleClaim = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        var isAdminClaim = roleClaim.Equals("Admin", StringComparison.OrdinalIgnoreCase);
 
-        var passRate = totalSubmissions > 0 
-            ? Math.Round((double)passedSubmissions / totalSubmissions * 100, 1) 
+        if (isAdminClaim)
+        {
+            if (!Guid.TryParse(uidClaim, out var adminUserId))
+            {
+                return Unauthorized(new { message = "Invalid user identity claim." });
+            }
+
+            var liveUser = await _dbContext.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == adminUserId, cancellationToken);
+
+            if (liveUser == null)
+            {
+                return Unauthorized(new { message = "User account not found." });
+            }
+
+            if (!liveUser.IsActive)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "User account is suspended or inactive." });
+            }
+
+            if (liveUser.Role != UserRole.Admin)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "User does not have Administrator privileges." });
+            }
+
+            Response.Headers.CacheControl = "no-store, private";
+
+            var strategy = _dbContext.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = _dbContext.Database.IsRelational()
+                    ? await _dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, cancellationToken)
+                    : null;
+
+                var totalUsers = await _dbContext.Users.AsNoTracking().CountAsync(cancellationToken);
+                var totalStudents = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Student, cancellationToken);
+                var totalCourses = await _dbContext.Courses.AsNoTracking().CountAsync(cancellationToken);
+                var publishedCourses = await _dbContext.Courses.AsNoTracking().CountAsync(c => c.IsPublished, cancellationToken);
+                var totalEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Active, cancellationToken);
+                var totalSubmissions = await _dbContext.Submissions.AsNoTracking().CountAsync(cancellationToken);
+                var passedSubmissions = await _dbContext.Submissions.AsNoTracking().CountAsync(s => s.Passed, cancellationToken);
+                var totalChallenges = await _dbContext.Challenges.AsNoTracking().CountAsync(cancellationToken);
+                var totalXp = await _dbContext.StudentXp.AsNoTracking().SumAsync(s => (long)s.TotalXp, cancellationToken);
+                var totalBadgesUnlocked = await _dbContext.StudentBadges.AsNoTracking().CountAsync(cancellationToken);
+                var pendingAiApprovals = await _dbContext.StudyPlans.AsNoTracking().CountAsync(sp => sp.Status == StudyPlanStatus.PendingInstructorApproval, cancellationToken);
+                var approvedAiWorkflows = await _dbContext.StudyPlans.AsNoTracking().CountAsync(sp => sp.Status == StudyPlanStatus.Approved, cancellationToken);
+
+                var passRate = totalSubmissions > 0
+                    ? Math.Round((double)passedSubmissions / totalSubmissions * 100, 1)
+                    : 100.0;
+
+                // Extended Admin aggregates
+                var totalInstructors = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Instructor, cancellationToken);
+                var totalAdmins = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Admin, cancellationToken);
+                var activeUsers = await _dbContext.Users.AsNoTracking().CountAsync(u => u.IsActive, cancellationToken);
+                var suspendedUsers = await _dbContext.Users.AsNoTracking().CountAsync(u => !u.IsActive, cancellationToken);
+
+                var unpublishedCourses = await _dbContext.Courses.AsNoTracking().CountAsync(c => !c.IsPublished, cancellationToken);
+                var draftCourses = await _dbContext.Courses.AsNoTracking()
+                    .CountAsync(c => !c.IsPublished && c.Status != null && c.Status.ToLower() == "draft", cancellationToken);
+                var archivedCourses = await _dbContext.Courses.AsNoTracking()
+                    .CountAsync(c => !c.IsPublished && c.Status != null && c.Status.ToLower() == "archived", cancellationToken);
+                var otherUnpublished = unpublishedCourses - draftCourses - archivedCourses;
+                if (otherUnpublished < 0) otherUnpublished = 0;
+
+                var totalEnrollmentRecords = await _dbContext.Enrollments.AsNoTracking().CountAsync(cancellationToken);
+                var activeEnrollments = totalEnrollments;
+                var completedEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Completed, cancellationToken);
+                var pendingEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Pending, cancellationToken);
+                var rejectedEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Rejected, cancellationToken);
+                var cancelledEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Cancelled, cancellationToken);
+                var droppedEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Dropped, cancellationToken);
+
+                var supportTotal = await _dbContext.SupportTickets.AsNoTracking().CountAsync(cancellationToken);
+                var supportOpen = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Status == SupportTicketStatus.Open, cancellationToken);
+                var supportInProgress = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Status == SupportTicketStatus.InProgress, cancellationToken);
+                var supportResolved = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Status == SupportTicketStatus.Resolved, cancellationToken);
+                var supportBug = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Type == SupportTicketType.Bug, cancellationToken);
+                var supportDispute = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Type == SupportTicketType.Dispute, cancellationToken);
+                var supportFeedback = await _dbContext.SupportTickets.AsNoTracking().CountAsync(t => t.Type == SupportTicketType.Feedback, cancellationToken);
+
+                if (transaction != null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+
+                var adminSummary = new AdminPlatformSummaryDto
+                {
+                    GeneratedAt = DateTime.UtcNow,
+                    Users = new UserSummaryMetricsDto
+                    {
+                        Total = totalUsers,
+                        Students = totalStudents,
+                        Instructors = totalInstructors,
+                        Admins = totalAdmins,
+                        Active = activeUsers,
+                        Suspended = suspendedUsers
+                    },
+                    Courses = new CourseSummaryMetricsDto
+                    {
+                        Total = totalCourses,
+                        Published = publishedCourses,
+                        Unpublished = unpublishedCourses,
+                        Draft = draftCourses,
+                        Archived = archivedCourses,
+                        OtherUnpublished = otherUnpublished
+                    },
+                    Enrollments = new EnrollmentSummaryMetricsDto
+                    {
+                        TotalRecords = totalEnrollmentRecords,
+                        Active = activeEnrollments,
+                        Completed = completedEnrollments,
+                        Pending = pendingEnrollments,
+                        Rejected = rejectedEnrollments,
+                        Cancelled = cancelledEnrollments,
+                        Dropped = droppedEnrollments
+                    },
+                    Support = new SupportSummaryMetricsDto
+                    {
+                        Total = supportTotal,
+                        Open = supportOpen,
+                        InProgress = supportInProgress,
+                        Resolved = supportResolved,
+                        Unresolved = supportOpen + supportInProgress,
+                        ByType = new SupportTypeDistributionDto
+                        {
+                            Bug = supportBug,
+                            Dispute = supportDispute,
+                            Feedback = supportFeedback
+                        }
+                    },
+                    SupportAvailability = "Available"
+                };
+
+                return Ok(new
+                {
+                    totalUsers,
+                    totalStudents,
+                    totalCourses,
+                    publishedCourses,
+                    totalEnrollments,
+                    totalSubmissions,
+                    passedSubmissions,
+                    quizPassRate = passRate,
+                    totalChallenges,
+                    totalXpAwarded = totalXp,
+                    totalBadgesUnlocked,
+                    aiWorkflows = new
+                    {
+                        pending = pendingAiApprovals,
+                        approved = approvedAiWorkflows,
+                        total = pendingAiApprovals + approvedAiWorkflows
+                    },
+                    adminSummary
+                });
+            });
+        }
+
+        // Instructor flow: legacy response without adminSummary
+        var legacyTotalUsers = await _dbContext.Users.AsNoTracking().CountAsync(cancellationToken);
+        var legacyTotalStudents = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Student, cancellationToken);
+        var legacyTotalCourses = await _dbContext.Courses.AsNoTracking().CountAsync(cancellationToken);
+        var legacyPublishedCourses = await _dbContext.Courses.AsNoTracking().CountAsync(c => c.IsPublished, cancellationToken);
+        var legacyTotalEnrollments = await _dbContext.Enrollments.AsNoTracking().CountAsync(e => e.Status == EnrollmentStatus.Active, cancellationToken);
+        var legacyTotalSubmissions = await _dbContext.Submissions.AsNoTracking().CountAsync(cancellationToken);
+        var legacyPassedSubmissions = await _dbContext.Submissions.AsNoTracking().CountAsync(s => s.Passed, cancellationToken);
+        var legacyTotalChallenges = await _dbContext.Challenges.AsNoTracking().CountAsync(cancellationToken);
+        var legacyTotalXp = await _dbContext.StudentXp.AsNoTracking().SumAsync(s => (long)s.TotalXp, cancellationToken);
+        var legacyTotalBadgesUnlocked = await _dbContext.StudentBadges.AsNoTracking().CountAsync(cancellationToken);
+        var legacyPendingAiApprovals = await _dbContext.StudyPlans.AsNoTracking().CountAsync(sp => sp.Status == StudyPlanStatus.PendingInstructorApproval, cancellationToken);
+        var legacyApprovedAiWorkflows = await _dbContext.StudyPlans.AsNoTracking().CountAsync(sp => sp.Status == StudyPlanStatus.Approved, cancellationToken);
+
+        var legacyPassRate = legacyTotalSubmissions > 0
+            ? Math.Round((double)legacyPassedSubmissions / legacyTotalSubmissions * 100, 1)
             : 100.0;
 
         return Ok(new
         {
-            totalUsers,
-            totalStudents,
-            totalCourses,
-            publishedCourses,
-            totalEnrollments,
-            totalSubmissions,
-            passedSubmissions,
-            quizPassRate = passRate,
-            totalChallenges,
-            totalXpAwarded = totalXp,
-            totalBadgesUnlocked,
+            totalUsers = legacyTotalUsers,
+            totalStudents = legacyTotalStudents,
+            totalCourses = legacyTotalCourses,
+            publishedCourses = legacyPublishedCourses,
+            totalEnrollments = legacyTotalEnrollments,
+            totalSubmissions = legacyTotalSubmissions,
+            passedSubmissions = legacyPassedSubmissions,
+            quizPassRate = legacyPassRate,
+            totalChallenges = legacyTotalChallenges,
+            totalXpAwarded = legacyTotalXp,
+            totalBadgesUnlocked = legacyTotalBadgesUnlocked,
             aiWorkflows = new
             {
-                pending = pendingAiApprovals,
-                approved = approvedAiWorkflows,
-                total = pendingAiApprovals + approvedAiWorkflows
+                pending = legacyPendingAiApprovals,
+                approved = legacyApprovedAiWorkflows,
+                total = legacyPendingAiApprovals + legacyApprovedAiWorkflows
             }
         });
     }

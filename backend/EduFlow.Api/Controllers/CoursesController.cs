@@ -22,6 +22,7 @@ namespace EduFlow.Api.Controllers;
 [Route("api/[controller]")]
 public class CoursesController : BaseApiController
 {
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IGamificationService _gamificationService;
     private readonly IRatingService _ratingService;
     private readonly IWebHostEnvironment? _environment;
@@ -34,9 +35,11 @@ public class CoursesController : BaseApiController
         IRatingService ratingService,
         IWebHostEnvironment? environment = null,
         IAiGatewayClient? aiGatewayClient = null,
-        IPaymentVerificationService? paymentVerificationService = null)
+        IPaymentVerificationService? paymentVerificationService = null,
+        IAuditLogWriter? auditLogWriter = null)
         : base(dbContext)
     {
+        _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
         _gamificationService = gamificationService;
         _ratingService = ratingService;
         _environment = environment;
@@ -392,6 +395,7 @@ public class CoursesController : BaseApiController
         };
 
         await DbContext.Courses.AddAsync(course);
+        this.Record(_auditLogWriter, "Course.Created", course.Id);
         await DbContext.SaveChangesAsync();
 
         var instructorName = role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
@@ -522,6 +526,13 @@ public class CoursesController : BaseApiController
         // Ownership is immutable through this endpoint: InstructorId is never assigned from the request.
         course.UpdatedAt = DateTime.UtcNow;
 
+        DbContext.ChangeTracker.DetectChanges();
+        var changedFields = DbContext.Entry(course).Properties
+            .Where(p => p.IsModified && AuditEventRegistry.CourseFields.Contains(p.Metadata.Name))
+            .Select(p => p.Metadata.Name).OrderBy(x => x).ToArray();
+        if (changedFields.Length > 0)
+            this.Record(_auditLogWriter, "Course.Updated", course.Id,
+                new Dictionary<string, object?> { ["changedFields"] = string.Join(",", changedFields) });
         await DbContext.SaveChangesAsync();
 
         var dto = new CourseDto(
@@ -577,6 +588,7 @@ public class CoursesController : BaseApiController
         }
 
         DbContext.Courses.Remove(course);
+        this.Record(_auditLogWriter, "Course.Deleted", course.Id);
         await DbContext.SaveChangesAsync();
         return Ok(new { message = "Course deleted successfully." });
     }
@@ -605,6 +617,8 @@ public class CoursesController : BaseApiController
             return Forbid();
         }
 
+        if (course.IsPublished != request.IsPublished)
+            this.Record(_auditLogWriter, request.IsPublished ? "Course.Published" : "Course.Unpublished", course.Id);
         course.IsPublished = request.IsPublished;
         course.Status = request.IsPublished ? "Published" : "Draft";
         course.UpdatedAt = DateTime.UtcNow;
@@ -1417,6 +1431,7 @@ public class CoursesController : BaseApiController
             enrollment.ReviewNotes = "Cancelled by student.";
         }
         enrollment.UpdatedAt = DateTime.UtcNow;
+        this.RecordEnrollment(_auditLogWriter, cancelled ? "Enrollment.Cancelled" : "Enrollment.Dropped", enrollment);
         await DbContext.SaveChangesAsync();
 
         return Ok(new
@@ -1740,6 +1755,7 @@ public class CoursesController : BaseApiController
             existingEnrollment.ReviewedByInstructorId = actorId;
             existingEnrollment.ReviewNotes = "Added directly by instructor.";
             existingEnrollment.UpdatedAt = DateTime.UtcNow;
+            this.RecordEnrollment(_auditLogWriter, "Enrollment.Added", existingEnrollment);
             await DbContext.SaveChangesAsync();
             return Ok(new { message = $"Re-activated enrollment for {student.FullName} in {course.Title}.", enrollmentId = existingEnrollment.Id });
         }
@@ -1757,6 +1773,7 @@ public class CoursesController : BaseApiController
         };
 
         await DbContext.Enrollments.AddAsync(enrollment);
+        this.RecordEnrollment(_auditLogWriter, "Enrollment.Added", enrollment);
         await DbContext.SaveChangesAsync();
 
         return Ok(new { message = $"Successfully added {student.FullName} to {course.Title}.", enrollmentId = enrollment.Id });
@@ -1840,6 +1857,8 @@ public class CoursesController : BaseApiController
             return NotFound(new { message = "Enrollment record not found." });
         }
 
+        if (enrollment.Status != EnrollmentStatus.Dropped)
+            this.RecordEnrollment(_auditLogWriter, "Enrollment.Dropped", enrollment);
         enrollment.Status = EnrollmentStatus.Dropped;
         enrollment.UpdatedAt = DateTime.UtcNow;
         await DbContext.SaveChangesAsync();
