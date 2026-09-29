@@ -4,6 +4,7 @@ import App from './App.jsx';
 import { ThemeProvider } from './context/ThemeContext';
 import ErrorBoundary from './components/layout/ErrorBoundary';
 import './index.css';
+import './styles/marketplace.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

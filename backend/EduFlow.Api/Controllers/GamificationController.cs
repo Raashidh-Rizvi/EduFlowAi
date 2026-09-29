@@ -138,6 +138,7 @@ public class GamificationController : ControllerBase
     }
 
     [HttpPost("focus-session")]
+    [Authorize]
     public async Task<ActionResult<FocusSessionResponseDto>> RecordFocusSession([FromBody] FocusSessionRequestDto request, CancellationToken ct)
     {
         var result = await _gamificationService.AwardFocusSessionXpAsync(request, ct);
@@ -155,6 +156,7 @@ public class GamificationController : ControllerBase
     }
 
     [HttpPost("multiplier")]
+    [Authorize(Roles = "Instructor,Admin")]
     public ActionResult<double> SetMultiplier([FromBody] SetMultiplierRequest request)
     {
         _gamificationService.SetXpMultiplier(request.Multiplier);

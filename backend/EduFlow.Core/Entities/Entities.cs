@@ -26,6 +26,7 @@ public class User : BaseEntity
     // Navigation properties
     public StudentXp? StudentXp { get; set; }
     public StudentStreak? StudentStreak { get; set; }
+    public InstructorProfile? InstructorProfile { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<Course> InstructedCourses { get; set; } = new List<Course>();
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
@@ -48,6 +49,26 @@ public class RefreshToken : BaseEntity
     public bool IsRevoked { get; set; } = false;
 }
 
+/// <summary>
+/// Public-facing teaching profile for a user whose <see cref="User.Role"/> is
+/// <see cref="UserRole.Instructor"/>. One row per user (unique <see cref="UserId"/>).
+/// Name and profile image live on <see cref="User"/> (<c>FullName</c> / <c>AvatarUrl</c>);
+/// this row carries the editable biography and expertise fields.
+/// </summary>
+public class InstructorProfile : BaseEntity
+{
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public string Headline { get; set; } = string.Empty;
+    public string Bio { get; set; } = string.Empty;
+
+    /// <summary>Comma-separated expertise tags, e.g. "Databases,EF Core,Distributed Systems".</summary>
+    public string Expertise { get; set; } = string.Empty;
+
+    public string? WebsiteUrl { get; set; }
+    public string? LinkedInUrl { get; set; }
+}
+
 // -----------------------------------------------------------------------------
 // 2. Education & Curriculum Entities (Hierarchical: Course -> Module -> Topic -> ContentItem)
 // -----------------------------------------------------------------------------
@@ -62,6 +83,22 @@ public class Course : BaseEntity
     public bool IsPublished { get; set; } = true;
     public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
     public string Status { get; set; } = "Published"; // Draft, Published, Archived
+
+    /// <summary>Course duration in hours. 0 means "duration not specified".</summary>
+    public int DurationHours { get; set; } = 0;
+
+    /// <summary>Enrollment price. Ignored when <see cref="IsFree"/> is true.</summary>
+    public decimal Price { get; set; } = 0m;
+
+    /// <summary>True when the course is freely enrollable.</summary>
+    public bool IsFree { get; set; } = true;
+
+    /// <summary>Denormalized average student rating (1-5). Maintained by the review pipeline.</summary>
+    public double AverageRating { get; set; } = 0.0;
+
+    /// <summary>Number of student ratings contributing to <see cref="AverageRating"/>.</summary>
+    public int RatingCount { get; set; } = 0;
+
     public Guid InstructorId { get; set; }
     public User? Instructor { get; set; }
 
@@ -69,6 +106,26 @@ public class Course : BaseEntity
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
     public ICollection<Challenge> Challenges { get; set; } = new List<Challenge>();
+    public ICollection<CourseReview> Reviews { get; set; } = new List<CourseReview>();
+}
+
+/// <summary>
+/// A student's rating + comment for a course they are enrolled in.
+/// One review per (course, student) pair — enforced by a unique index.
+/// Only reviews whose <see cref="Status"/> is <see cref="ReviewStatus.Approved"/>
+/// are visible publicly and counted by the rating aggregation.
+/// </summary>
+public class CourseReview : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public int Rating { get; set; } = 5; // 1..5
+    public string Comment { get; set; } = string.Empty;
+    public ReviewStatus Status { get; set; } = ReviewStatus.Approved;
+    public DateTime? ModeratedAt { get; set; }
+    public Guid? ModeratedById { get; set; }
 }
 
 public class Module : BaseEntity
@@ -151,6 +208,19 @@ public class Enrollment : BaseEntity
     public Course? Course { get; set; }
     public double ProgressPercentage { get; set; } = 0.0;
     public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
+
+    /// <summary>When the (re-)submission that produced the current status was made.</summary>
+    public DateTime? RequestedAt { get; set; }
+
+    /// <summary>When an instructor approved or rejected this enrollment.</summary>
+    public DateTime? ReviewedAt { get; set; }
+
+    /// <summary>The instructor who approved/rejected. Null for admin or system actions.</summary>
+    public Guid? ReviewedByInstructorId { get; set; }
+    public User? ReviewedByInstructor { get; set; }
+
+    /// <summary>Instructor's decision note (e.g. rejection reason).</summary>
+    public string? ReviewNotes { get; set; }
 }
 
 public class LessonCompletion : BaseEntity

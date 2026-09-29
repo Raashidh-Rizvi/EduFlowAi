@@ -270,7 +270,17 @@ public class AuthService : IAuthService
         var jwtSecret = _configuration["JwtSettings:Secret"]
             ?? throw new InvalidOperationException("JwtSettings:Secret is not configured. Set it via user-secrets or the JwtSettings__Secret environment variable.");
         var key = Encoding.UTF8.GetBytes(jwtSecret);
-        var expiresAt = DateTime.UtcNow.AddHours(12);
+
+        // Session lifetime comes from configuration (JwtSettings:ExpiryMinutes) and falls
+        // back to 12 hours when unset. The refresh token (7 days) extends the session via
+        // /api/auth/refresh; logout revokes it.
+        var expiryMinutes = 720;
+        var expiryConfig = _configuration["JwtSettings:ExpiryMinutes"];
+        if (int.TryParse(expiryConfig, out var configuredMinutes) && configuredMinutes > 0)
+        {
+            expiryMinutes = configuredMinutes;
+        }
+        var expiresAt = DateTime.UtcNow.AddMinutes(expiryMinutes);
 
         var claims = new[]
         {

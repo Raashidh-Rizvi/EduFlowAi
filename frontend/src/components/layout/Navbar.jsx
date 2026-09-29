@@ -6,10 +6,12 @@ import RoleSwitcher from '../common/RoleSwitcher';
 export default function Navbar({ activeTab, unreadNotifications = 3, currentUser, onLogout, onSwitchRole }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
+  // Identity always comes from the authenticated user supplied by App (which
+  // sources it from GET /api/auth/me). Never default to a fabricated persona.
   const user = currentUser || {
-    fullName: 'Dr. Sarah Jenkins',
-    email: 'instructor@eduflow.ai',
-    role: 'Instructor'
+    fullName: '',
+    email: '',
+    role: ''
   };
 
   const isAdmin = user.role === 'Admin';
@@ -52,6 +54,30 @@ export default function Navbar({ activeTab, unreadNotifications = 3, currentUser
     'communications': { 
       title: 'Communications & Notification Center', 
       subtitle: 'Broadcast course announcements, automated AI study nudges, and urgent milestone alerts' 
+    },
+    'my-courses': {
+      title: 'My Courses',
+      subtitle: 'Manage, publish and review every course owned by your instructor account'
+    },
+    'create-course': {
+      title: 'Create a New Course',
+      subtitle: 'Author course metadata, pricing and structure — ownership is bound to your session'
+    },
+    'enrollment-requests': {
+      title: 'Enrollment Requests',
+      subtitle: 'Approve or decline student access to your courses and record a decision note'
+    },
+    'my-students': {
+      title: 'My Students',
+      subtitle: 'Roster and learning progress across every course you own'
+    },
+    'reviews': {
+      title: 'Reviews & Ratings',
+      subtitle: 'Student feedback and aggregated ratings for your courses'
+    },
+    'profile': {
+      title: 'Instructor Profile',
+      subtitle: 'Your identity, teaching statistics and workspace shortcuts'
     }
   };
 

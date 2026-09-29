@@ -23,20 +23,29 @@ namespace EduFlow.Api.Controllers;
 public class CoursesController : BaseApiController
 {
     private readonly IGamificationService _gamificationService;
+    private readonly IRatingService _ratingService;
     private readonly IWebHostEnvironment? _environment;
     private readonly IAiGatewayClient? _aiGatewayClient;
+    private readonly IPaymentVerificationService? _paymentVerificationService;
 
     public CoursesController(
         ApplicationDbContext dbContext,
         IGamificationService gamificationService,
+        IRatingService ratingService,
         IWebHostEnvironment? environment = null,
-        IAiGatewayClient? aiGatewayClient = null)
+        IAiGatewayClient? aiGatewayClient = null,
+        IPaymentVerificationService? paymentVerificationService = null)
         : base(dbContext)
     {
         _gamificationService = gamificationService;
+        _ratingService = ratingService;
         _environment = environment;
         _aiGatewayClient = aiGatewayClient;
+        _paymentVerificationService = paymentVerificationService;
     }
+
+    private IPaymentVerificationService ResolvePaymentGate()
+        => _paymentVerificationService ?? new PaymentVerificationService(DbContext);
 
     // -------------------------------------------------------------------------
     // COURSES
@@ -45,7 +54,26 @@ public class CoursesController : BaseApiController
     [HttpGet]
     public async Task<IActionResult> GetCourses()
     {
-        var dbCourses = await DbContext.Courses
+        // SECURITY: identity and role come exclusively from the JWT, never from the
+        // request. Instructors only ever receive their own courses (including their
+        // drafts); Students and anonymous visitors only receive published courses;
+        // Admins receive everything.
+        var (callerId, callerRole) = GetCurrentUser();
+        var courseQuery = DbContext.Courses.AsQueryable();
+        if (callerId == Guid.Empty)
+        {
+            courseQuery = courseQuery.Where(c => c.IsPublished);
+        }
+        else if (callerRole.Equals("Instructor", StringComparison.OrdinalIgnoreCase))
+        {
+            courseQuery = courseQuery.Where(c => c.InstructorId == callerId);
+        }
+        else if (!callerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            courseQuery = courseQuery.Where(c => c.IsPublished);
+        }
+
+        var dbCourses = await courseQuery
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
                 .ThenInclude(m => m.Lessons)
@@ -70,6 +98,10 @@ public class CoursesController : BaseApiController
         var submissions = await DbContext.Submissions
             .AsNoTracking()
             .ToListAsync();
+
+        // Real average rating / review count computed from APPROVED review rows.
+        var ratingSummaries = await _ratingService.GetCourseSummariesAsync(
+            dbCourses.Select(c => c.Id).ToList());
 
         var coursesList = new List<CourseDto>();
 
@@ -109,6 +141,10 @@ public class CoursesController : BaseApiController
                 ? Math.Round(courseSubmissions.Average(s => s.PercentageScore), 1)
                 : (submissions.Any() ? Math.Round(submissions.Average(s => s.PercentageScore), 1) : 86.5);
 
+            var courseRating = ratingSummaries.TryGetValue(c.Id, out var summary)
+                ? summary
+                : CourseRatingSummary.Empty;
+
             double engagement = 0.0;
             if (studentsCount > 0)
             {
@@ -138,7 +174,14 @@ public class CoursesController : BaseApiController
                 quizzesCount,
                 completionRate,
                 avgScore,
-                engagement
+                engagement,
+                c.Difficulty.ToString(),
+                c.Status,
+                c.DurationHours,
+                c.Price,
+                c.IsFree,
+                courseRating.AverageRating,
+                courseRating.ReviewCount
             ));
         }
 
@@ -157,6 +200,19 @@ public class CoursesController : BaseApiController
         if (course == null)
         {
             return NotFound(new { message = "Course not found." });
+        }
+
+        // SECURITY: unpublished (draft) courses are only visible to their owner or an
+        // Admin — modifying the id in the URL must not expose another instructor's draft.
+        if (!course.IsPublished)
+        {
+            var (viewerId, viewerRole) = GetCurrentUser();
+            var isOwner = viewerId != Guid.Empty && course.InstructorId == viewerId;
+            var isAdmin = viewerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+            if (!isOwner && !isAdmin)
+            {
+                return NotFound(new { message = "Course not found." });
+            }
         }
 
         // Resolve real per-lesson completion only when an authenticated Student is viewing
@@ -227,6 +283,14 @@ public class CoursesController : BaseApiController
             .Select(mapQuizToDto)
             .ToList();
 
+        var ratingSummary = await _ratingService.GetCourseSummaryAsync(course.Id);
+
+        // Catalog/description stay visible to everyone (students need them to decide whether
+        // to request enrollment), but the actual attachments are only handed out once the
+        // caller satisfies the approval + payment conditions for this course.
+        var (callerId, callerRole) = GetCurrentUser();
+        var canAccessMaterials = await HasCourseMaterialAccessAsync(course.Id, callerId, callerRole);
+
         var result = new CourseDetailDto(
             course.Id,
             course.Code,
@@ -241,8 +305,8 @@ public class CoursesController : BaseApiController
                 m.Title,
                 m.Description,
                 m.OrderIndex,
-                m.PdfUrl,
-                m.AttachmentFileName,
+                canAccessMaterials ? m.PdfUrl : null,
+                canAccessMaterials ? m.AttachmentFileName : null,
                 m.Lessons.Select(l => new LessonSummaryDto(
                     l.Id,
                     l.Title,
@@ -250,8 +314,8 @@ public class CoursesController : BaseApiController
                     l.EstimatedMinutes,
                     l.OrderIndex,
                     completedLessonIds.Contains(l.Id),
-                    l.PdfUrl,
-                    l.AttachmentFileName
+                    canAccessMaterials ? l.PdfUrl : null,
+                    canAccessMaterials ? l.AttachmentFileName : null
                 )).ToList(),
                 courseAssessments
                     .Where(a => (a.ScopeType == QuizScopeType.Module && (a.ScopeId == m.Id || a.ModuleScopeId == m.Id)) || a.ScopeId == m.Id)
@@ -259,35 +323,69 @@ public class CoursesController : BaseApiController
                     .ToList()
             )).ToList(),
             courseLevelQuizzes,
-            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term
+            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term,
+            ratingSummary.AverageRating,
+            ratingSummary.ReviewCount
         );
 
         return Ok(result);
     }
 
+    /// <summary>
+    /// Creates a course owned by the authenticated instructor.
+    /// The owner is ALWAYS taken from the JWT identity claim — an instructor id sent by
+    /// the client (even if injected into the JSON payload) is never read or trusted.
+    /// </summary>
     [HttpPost]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateCourse([FromBody] CreateCourseRequest request)
     {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        var instructorId = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed)
-            ? parsed
-            : Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var (requestingUserId, role) = GetCurrentUser();
+
+        // No verifiable identity => no course creation. Never fall back to a seeded/default id.
+        if (requestingUserId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A verified instructor identity is required to create a course." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest(new { message = "Course code and title are required." });
+        }
+
+        var code = request.Code.Trim();
+        var codeTaken = await DbContext.Courses.AnyAsync(c => c.Code == code);
+        if (codeTaken)
+        {
+            return Conflict(new { message = $"A course with code '{code}' already exists." });
+        }
 
         var course = new Course
         {
-            Code = request.Code,
-            Title = request.Title,
-            Description = request.Description,
-            Category = request.Category,
+            Code = code,
+            Title = request.Title.Trim(),
+            Description = request.Description ?? string.Empty,
+            Category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim(),
             Term = !string.IsNullOrWhiteSpace(request.Term) ? request.Term : "Fall 2026",
             ThumbnailUrl = request.ThumbnailUrl,
-            InstructorId = instructorId,
-            IsPublished = false   // Courses start as drafts; use /publish to make live
+            Difficulty = ParseDifficulty(request.Difficulty),
+            DurationHours = Math.Max(0, request.DurationHours),
+            Price = request.IsFree ? 0m : Math.Max(0m, request.Price),
+            IsFree = request.IsFree,
+            InstructorId = requestingUserId,   // ownership comes from the authenticated user only
+            IsPublished = false,               // courses start as drafts; use /publish to go live
+            Status = "Draft"
         };
 
         await DbContext.Courses.AddAsync(course);
         await DbContext.SaveChangesAsync();
+
+        var instructorName = role.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : await DbContext.Users
+                .Where(u => u.Id == requestingUserId)
+                .Select(u => u.FullName)
+                .FirstOrDefaultAsync();
 
         var dto = new CourseDto(
             course.Id,
@@ -298,14 +396,29 @@ public class CoursesController : BaseApiController
             course.ThumbnailUrl,
             course.IsPublished,
             course.InstructorId,
-            null,
+            instructorName,
             0,
             0,
-            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term
+            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term,
+            StudentsCount: 0,
+            TopicsCount: 0,
+            QuizzesCount: 0,
+            CompletionRate: 0.0,
+            AvgScore: 0.0,
+            Engagement: 0.0,
+            Difficulty: course.Difficulty.ToString(),
+            Status: course.Status,
+            DurationHours: course.DurationHours,
+            Price: course.Price,
+            IsFree: course.IsFree
         );
 
         return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, dto);
     }
+
+    /// <summary>Maps a client-supplied difficulty string onto the domain enum (defaults to Medium).</summary>
+    private static DifficultyLevel ParseDifficulty(string? value)
+        => Enum.TryParse<DifficultyLevel>(value, ignoreCase: true, out var parsed) ? parsed : DifficultyLevel.Medium;
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
@@ -332,6 +445,11 @@ public class CoursesController : BaseApiController
             course.Term = request.Term;
         }
         course.ThumbnailUrl = request.ThumbnailUrl;
+        course.Difficulty = ParseDifficulty(request.Difficulty);
+        course.DurationHours = Math.Max(0, request.DurationHours);
+        course.IsFree = request.IsFree;
+        course.Price = request.IsFree ? 0m : Math.Max(0m, request.Price);
+        // Ownership is immutable through this endpoint: InstructorId is never assigned from the request.
         course.UpdatedAt = DateTime.UtcNow;
 
         await DbContext.SaveChangesAsync();
@@ -348,7 +466,18 @@ public class CoursesController : BaseApiController
             null,
             0,
             0,
-            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term
+            string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term,
+            StudentsCount: 0,
+            TopicsCount: 0,
+            QuizzesCount: 0,
+            CompletionRate: 0.0,
+            AvgScore: 0.0,
+            Engagement: 0.0,
+            Difficulty: course.Difficulty.ToString(),
+            Status: course.Status,
+            DurationHours: course.DurationHours,
+            Price: course.Price,
+            IsFree: course.IsFree
         );
 
         return Ok(dto);
@@ -400,6 +529,7 @@ public class CoursesController : BaseApiController
         }
 
         course.IsPublished = request.IsPublished;
+        course.Status = request.IsPublished ? "Published" : "Draft";
         course.UpdatedAt = DateTime.UtcNow;
         await DbContext.SaveChangesAsync();
 
@@ -409,6 +539,196 @@ public class CoursesController : BaseApiController
             isPublished = course.IsPublished
         });
     }
+
+    // -------------------------------------------------------------------------
+    // REVIEWS & RATINGS
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Public review list for a course. Only APPROVED reviews are returned.
+    /// Non-approved reviews are visible to the course's instructor
+    /// (GET /api/instructor/reviews) and to administrators (GET /api/admin/reviews).
+    /// </summary>
+    [HttpGet("{id:guid}/reviews")]
+    public async Task<IActionResult> GetCourseReviews(Guid id)
+    {
+        var courseExists = await DbContext.Courses.AsNoTracking().AnyAsync(c => c.Id == id);
+        if (!courseExists)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var reviews = await DbContext.CourseReviews
+            .AsNoTracking()
+            .Where(r => r.CourseId == id && r.Status == ReviewStatus.Approved)
+            .Include(r => r.Student)
+            .Include(r => r.Course)
+            .OrderByDescending(r => r.CreatedAt)
+            .ThenByDescending(r => r.UpdatedAt)
+            .ToListAsync();
+
+        return Ok(reviews.Select(MapReview).ToList());
+    }
+
+    /// <summary>
+    /// The authenticated student's own review for this course (used by the UI to know
+    /// whether to show the submit or the edit form). Returns <c>hasReview = false</c>
+    /// when the student has not reviewed the course yet.
+    /// </summary>
+    [HttpGet("{id:guid}/reviews/mine")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> GetMyCourseReview(Guid id)
+    {
+        var (studentId, _) = GetCurrentUser();
+        if (studentId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A verified student identity is required." });
+        }
+
+        var review = await DbContext.CourseReviews
+            .AsNoTracking()
+            .Where(r => r.CourseId == id && r.StudentId == studentId)
+            .Include(r => r.Student)
+            .Include(r => r.Course)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            hasReview = review != null,
+            review = review != null ? MapReview(review) : null
+        });
+    }
+
+    /// <summary>
+    /// Creates — or updates, when the student already has one — the caller's review of a
+    /// course. The student id always comes from the JWT and is never read from the body,
+    /// so a caller can only ever create or edit their OWN review.
+    ///
+    /// Eligibility is evaluated by <see cref="IRatingService.CheckReviewEligibilityAsync"/>
+    /// (role, published course, verified Active/Completed enrollment, not the instructor).
+    /// One review row per (course, student) is additionally enforced by a unique index.
+    /// </summary>
+    [HttpPost("{id:guid}/reviews")]
+    [Authorize(Roles = "Student")]
+    public async Task<IActionResult> CreateOrUpdateReview(Guid id, [FromBody] CreateCourseReviewRequest request)
+    {
+        var (studentId, _) = GetCurrentUser();
+        if (studentId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "A verified student identity is required to review a course." });
+        }
+
+        if (request.Rating < 1 || request.Rating > 5)
+        {
+            return BadRequest(new { message = "Rating must be between 1 and 5." });
+        }
+
+        var comment = (request.Comment ?? string.Empty).Trim();
+        if (comment.Length > MaxReviewCommentLength)
+        {
+            return BadRequest(new { message = $"Review comment must be {MaxReviewCommentLength} characters or fewer." });
+        }
+
+        var course = await DbContext.Courses.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var eligibility = await _ratingService.CheckReviewEligibilityAsync(studentId, id);
+        if (!eligibility.IsEligible)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = eligibility.Reason });
+        }
+
+        var existing = await DbContext.CourseReviews
+            .FirstOrDefaultAsync(r => r.CourseId == id && r.StudentId == studentId);
+
+        var isNew = existing == null;
+        if (existing == null)
+        {
+            existing = new CourseReview { CourseId = id, StudentId = studentId };
+            await DbContext.CourseReviews.AddAsync(existing);
+        }
+
+        existing.Rating = request.Rating;
+        existing.Comment = comment;
+        existing.UpdatedAt = DateTime.UtcNow;
+        // A brand-new review is auto-approved (or queued) per the moderation policy;
+        // an edited review re-enters the same policy so rejected content can be fixed.
+        existing.Status = _ratingService.ResolveSubmittedStatus();
+
+        await DbContext.SaveChangesAsync();
+        await _ratingService.RecalculateCourseAsync(id);
+
+        var saved = await DbContext.CourseReviews
+            .AsNoTracking()
+            .Where(r => r.Id == existing.Id)
+            .Include(r => r.Student)
+            .Include(r => r.Course)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            message = isNew ? "Review submitted." : "Review updated.",
+            review = saved != null ? MapReview(saved) : null
+        });
+    }
+
+    /// <summary>
+    /// Deletes a review. Allowed only for the review's author or an administrator —
+    /// instructors cannot modify student ratings on their own courses.
+    /// </summary>
+    [HttpDelete("{id:guid}/reviews/{reviewId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> DeleteReview(Guid id, Guid reviewId)
+    {
+        var (userId, role) = GetCurrentUser();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "Authenticated user required." });
+        }
+
+        var review = await DbContext.CourseReviews
+            .FirstOrDefaultAsync(r => r.Id == reviewId && r.CourseId == id);
+        if (review == null)
+        {
+            return NotFound(new { message = "Review not found." });
+        }
+
+        var isAuthor = review.StudentId == userId;
+        var isAdmin = role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        if (!isAuthor && !isAdmin)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { message = "Only the review's author or an administrator may delete a review." });
+        }
+
+        DbContext.CourseReviews.Remove(review);
+        await DbContext.SaveChangesAsync();
+        await _ratingService.RecalculateCourseAsync(id);
+
+        return Ok(new { message = "Review deleted." });
+    }
+
+    /// <summary>Maps a review row to its public DTO (shared by all review endpoints).</summary>
+    private static CourseReviewDto MapReview(CourseReview r) => new(
+        r.Id,
+        r.CourseId,
+        r.Course?.Code ?? string.Empty,
+        r.Course?.Title ?? string.Empty,
+        r.StudentId,
+        r.Student?.FullName ?? "Student",
+        r.Student?.AvatarUrl,
+        r.Rating,
+        r.Comment,
+        r.CreatedAt,
+        r.Status.ToString(),
+        r.UpdatedAt,
+        r.Course?.InstructorId
+    );
+
+    private const int MaxReviewCommentLength = 2000;
 
     // -------------------------------------------------------------------------
     // MODULES
@@ -422,6 +742,8 @@ public class CoursesController : BaseApiController
         {
             return NotFound(new { message = "Course not found." });
         }
+
+        if (await EnforceCourseContentAccess(courseId) is { } denied) return denied;
 
         var modules = await DbContext.Modules
             .Where(m => m.CourseId == courseId)
@@ -541,6 +863,12 @@ public class CoursesController : BaseApiController
         {
             return NotFound(new { message = "Lesson not found." });
         }
+
+        var lessonCourseId = await DbContext.Modules
+            .Where(m => m.Id == lesson.ModuleId)
+            .Select(m => m.CourseId)
+            .FirstOrDefaultAsync();
+        if (await EnforceCourseContentAccess(lessonCourseId) is { } denied) return denied;
 
         var isCompleted = studentId != Guid.Empty && await DbContext.LessonCompletions
             .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
@@ -785,6 +1113,12 @@ public class CoursesController : BaseApiController
     // ENROLLMENT
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Submits a self-service enrollment request. The request is created (or re-opened) with
+    /// PENDING status and only becomes an approved enrollment after the owning instructor
+    /// accepts it. Duplicate active requests are impossible: the (CourseId, StudentId) unique
+    /// index forces every attempt onto the single existing row.
+    /// </summary>
     [HttpPost("{id:guid}/enroll")]
     [Authorize]
     public async Task<IActionResult> EnrollInCourse(Guid id)
@@ -795,10 +1129,23 @@ public class CoursesController : BaseApiController
             return Unauthorized();
         }
 
-        var courseExists = await DbContext.Courses.AnyAsync(c => c.Id == id && c.IsPublished);
-        if (!courseExists)
+        var course = await DbContext.Courses
+            .FirstOrDefaultAsync(c => c.Id == id && c.IsPublished);
+        if (course == null)
         {
             return NotFound(new { message = "Course not found or is not published." });
+        }
+
+        // Payment conditions are evaluated before a request is even created, so an
+        // enrollment that could never be approved is never accepted into the queue.
+        var payment = await ResolvePaymentGate().VerifyAsync(id, studentId);
+        if (!payment.IsSatisfied)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired, new
+            {
+                message = payment.Reason,
+                requiresPayment = payment.RequiresPayment
+            });
         }
 
         var existingEnrollment = await DbContext.Enrollments
@@ -806,7 +1153,45 @@ public class CoursesController : BaseApiController
 
         if (existingEnrollment != null)
         {
-            return Ok(new { message = "Already enrolled in this course.", enrollmentId = existingEnrollment.Id });
+            switch (existingEnrollment.Status)
+            {
+                case EnrollmentStatus.Pending:
+                    return Ok(new
+                    {
+                        message = "Enrollment request already pending instructor approval.",
+                        enrollmentId = existingEnrollment.Id,
+                        status = existingEnrollment.Status.ToString(),
+                        statusLabel = existingEnrollment.Status.ToApiLabel()
+                    });
+                case EnrollmentStatus.Active:
+                case EnrollmentStatus.Completed:
+                    return Ok(new
+                    {
+                        message = "Already enrolled in this course.",
+                        enrollmentId = existingEnrollment.Id,
+                        status = existingEnrollment.Status.ToString(),
+                        statusLabel = existingEnrollment.Status.ToApiLabel()
+                    });
+            }
+
+            // Rejected / Cancelled / Dropped -> re-open the same row as a fresh request.
+            // Reusing the row keeps the (CourseId, StudentId) unique index satisfied.
+            existingEnrollment.Status = EnrollmentStatus.Pending;
+            existingEnrollment.RequestedAt = DateTime.UtcNow;
+            existingEnrollment.ReviewedAt = null;
+            existingEnrollment.ReviewedByInstructorId = null;
+            existingEnrollment.ReviewNotes = null;
+            existingEnrollment.UpdatedAt = DateTime.UtcNow;
+            QueueEnrollmentRequestedNotification(course);
+            await DbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = "Enrollment request resubmitted. Awaiting instructor approval.",
+                enrollmentId = existingEnrollment.Id,
+                status = existingEnrollment.Status.ToString(),
+                statusLabel = existingEnrollment.Status.ToApiLabel()
+            });
         }
 
         var enrollment = new Enrollment
@@ -814,18 +1199,26 @@ public class CoursesController : BaseApiController
             CourseId = id,
             StudentId = studentId,
             ProgressPercentage = 0.0,
-            Status = EnrollmentStatus.Active
+            Status = EnrollmentStatus.Pending,
+            RequestedAt = DateTime.UtcNow
         };
 
         await DbContext.Enrollments.AddAsync(enrollment);
+        QueueEnrollmentRequestedNotification(course);
         await DbContext.SaveChangesAsync();
 
-        return Ok(new { message = "Successfully enrolled in course!", enrollmentId = enrollment.Id });
+        return Ok(new
+        {
+            message = "Enrollment request submitted. Awaiting instructor approval.",
+            enrollmentId = enrollment.Id,
+            status = enrollment.Status.ToString(),
+            statusLabel = enrollment.Status.ToApiLabel()
+        });
     }
 
     /// <summary>
-    /// Unenrolls the authenticated student from a course.
-    /// Sets enrollment status to Dropped rather than hard deleting for audit purposes.
+    /// Cancels a pending enrollment request, or withdraws an approved enrollment.
+    /// Pending requests become CANCELLED; approved enrollments become DROPPED (audit trail).
     /// </summary>
     [HttpDelete("{courseId:guid}/enroll")]
     [Authorize]
@@ -845,12 +1238,216 @@ public class CoursesController : BaseApiController
             return NotFound(new { message = "Enrollment not found." });
         }
 
-        // Soft delete — mark as Dropped to preserve audit trail
-        enrollment.Status = EnrollmentStatus.Dropped;
+        if (enrollment.Status is EnrollmentStatus.Rejected or EnrollmentStatus.Cancelled or EnrollmentStatus.Dropped)
+        {
+            return Ok(new
+            {
+                message = $"This enrollment is already {enrollment.Status.ToApiLabel()}.",
+                enrollmentId = enrollment.Id,
+                status = enrollment.Status.ToString(),
+                statusLabel = enrollment.Status.ToApiLabel()
+            });
+        }
+
+        var cancelled = enrollment.Status == EnrollmentStatus.Pending;
+        enrollment.Status = cancelled ? EnrollmentStatus.Cancelled : EnrollmentStatus.Dropped;
+        if (cancelled)
+        {
+            enrollment.ReviewedAt = DateTime.UtcNow;
+            enrollment.ReviewNotes = "Cancelled by student.";
+        }
         enrollment.UpdatedAt = DateTime.UtcNow;
         await DbContext.SaveChangesAsync();
 
-        return Ok(new { message = "Successfully unenrolled from course." });
+        return Ok(new
+        {
+            message = cancelled
+                ? "Enrollment request cancelled."
+                : "Successfully unenrolled from course.",
+            enrollmentId = enrollment.Id,
+            status = enrollment.Status.ToString(),
+            statusLabel = enrollment.Status.ToApiLabel()
+        });
+    }
+
+    /// <summary>Queues the instructor's "new request" notification. Saved with the caller's SaveChanges.</summary>
+    private void QueueEnrollmentRequestedNotification(Course course)
+    {
+        if (course.InstructorId == Guid.Empty) return;
+        DbContext.Notifications.Add(new Notification
+        {
+            UserId = course.InstructorId,
+            Title = "New Enrollment Request",
+            Message = $"A student requested enrollment in '{course.Title}' and is waiting for your approval.",
+            Type = "EnrollmentRequested"
+        });
+    }
+
+    /// <summary>
+    /// The authenticated student's own enrollment requests with their lifecycle status,
+    /// so their dashboard can show PENDING / APPROVED / REJECTED / CANCELLED accurately.
+    /// </summary>
+    [HttpGet("/api/students/me/enrollment-requests")]
+    [Authorize]
+    public async Task<IActionResult> GetMyEnrollmentRequests()
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
+        {
+            return Unauthorized();
+        }
+
+        var enrollments = await DbContext.Enrollments.AsNoTracking()
+            .Where(e => e.StudentId == studentId)
+            .Include(e => e.Course)
+                .ThenInclude(c => c!.Instructor)
+            .OrderByDescending(e => e.RequestedAt ?? e.CreatedAt)
+            .ToListAsync();
+
+        return Ok(enrollments.Select(e =>
+        {
+            var access = e.Status.GrantsAccess();
+            return new StudentEnrollmentRequestDto(
+                EnrollmentId: e.Id,
+                CourseId: e.CourseId,
+                CourseCode: e.Course?.Code ?? string.Empty,
+                CourseTitle: e.Course?.Title ?? string.Empty,
+                ThumbnailUrl: e.Course?.ThumbnailUrl,
+                Category: e.Course?.Category ?? string.Empty,
+                InstructorName: e.Course?.Instructor?.FullName ?? "Instructor",
+                Status: e.Status.ToString(),
+                StatusLabel: e.Status.ToApiLabel(),
+                RequestedAt: e.RequestedAt ?? e.CreatedAt,
+                ReviewedAt: e.ReviewedAt,
+                ReviewNotes: e.ReviewNotes,
+                ProgressPercentage: e.ProgressPercentage,
+                CanCancel: e.Status == EnrollmentStatus.Pending,
+                HasAccess: access
+            );
+        }));
+    }
+
+    /// <summary>
+    /// Whether the caller may open this course's protected learning materials right now.
+    /// Used by the UI to gate lesson/PDF content behind approval and payment.
+    /// </summary>
+    [HttpGet("{courseId:guid}/access")]
+    [Authorize]
+    public async Task<IActionResult> GetCourseAccess(Guid courseId)
+    {
+        var (userId, role) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+
+        var course = await DbContext.Courses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == courseId);
+        if (course == null) return NotFound(new { message = "Course not found." });
+
+        if (role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+            course.InstructorId == userId)
+        {
+            return Ok(new EnrollmentAccessDto(
+                courseId, true, "Active", "APPROVED",
+                "You own or administer this course.", false, false, true));
+        }
+
+        var payment = await ResolvePaymentGate().VerifyAsync(courseId, userId);
+        var enrollment = await DbContext.Enrollments.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == userId);
+
+        if (enrollment != null && enrollment.Status.GrantsAccess() && payment.IsSatisfied)
+        {
+            return Ok(new EnrollmentAccessDto(
+                courseId, true, enrollment.Status.ToString(), enrollment.Status.ToApiLabel(),
+                "You are enrolled in this course.", true, payment.RequiresPayment, true));
+        }
+
+        var reason = !payment.IsSatisfied
+            ? payment.Reason
+            : enrollment?.Status switch
+            {
+                EnrollmentStatus.Pending => "Your enrollment request is awaiting instructor approval.",
+                EnrollmentStatus.Rejected => "Your enrollment request was declined by the instructor.",
+                EnrollmentStatus.Cancelled => "You cancelled your enrollment request. Submit a new request to rejoin.",
+                EnrollmentStatus.Dropped => "You are no longer enrolled in this course.",
+                _ => "You are not enrolled in this course yet."
+            };
+
+        return Ok(new EnrollmentAccessDto(
+            courseId,
+            false,
+            enrollment?.Status.ToString() ?? "NotEnrolled",
+            enrollment?.Status.ToApiLabel() ?? "NOT_ENROLLED",
+            reason,
+            RequiresApproval: true,
+            RequiresPayment: payment.RequiresPayment,
+            PaymentSatisfied: payment.IsSatisfied));
+    }
+
+    /// <summary>
+    /// True when the caller may read a course's protected learning materials: they own/administer
+    /// the course, or they hold an approved enrollment whose payment conditions are satisfied.
+    /// </summary>
+    private async Task<bool> HasCourseMaterialAccessAsync(Guid courseId, Guid userId, string role)
+    {
+        if (userId == Guid.Empty) return false;
+        if (role.Equals("Admin", StringComparison.OrdinalIgnoreCase)) return true;
+        if (await DbContext.Courses.AnyAsync(c => c.Id == courseId && c.InstructorId == userId)) return true;
+
+        var enrollment = await DbContext.Enrollments.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == userId);
+        if (enrollment == null || !enrollment.Status.GrantsAccess()) return false;
+
+        return (await ResolvePaymentGate().VerifyAsync(courseId, userId)).IsSatisfied;
+    }
+
+    /// <summary>
+    /// Returns null when the caller may open a course's protected learning materials,
+    /// otherwise the 401/402/403 result explaining why access is withheld. Applied to the
+    /// endpoints that expose real lesson content, full curriculum trees and attachments.
+    /// </summary>
+    private async Task<IActionResult?> EnforceCourseContentAccess(Guid courseId)
+    {
+        var (userId, role) = GetCurrentUser();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized(new { message = "Sign in to access this course's learning materials." });
+        }
+
+        if (await HasCourseMaterialAccessAsync(courseId, userId, role)) return null;
+
+        if (!role.Equals("Admin", StringComparison.OrdinalIgnoreCase) &&
+            await DbContext.Courses.AnyAsync(c => c.Id == courseId && c.InstructorId == userId))
+        {
+            return null;
+        }
+
+        var enrollment = await DbContext.Enrollments.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == userId);
+
+        if (enrollment != null && enrollment.Status.GrantsAccess())
+        {
+            var payment = await ResolvePaymentGate().VerifyAsync(courseId, userId);
+            return StatusCode(StatusCodes.Status402PaymentRequired, new
+            {
+                message = payment.Reason,
+                requiresPayment = payment.RequiresPayment
+            });
+        }
+
+        var reason = enrollment?.Status switch
+        {
+            EnrollmentStatus.Pending => "Your enrollment request is awaiting instructor approval.",
+            EnrollmentStatus.Rejected => "Your enrollment request was declined by the instructor.",
+            EnrollmentStatus.Cancelled => "Your enrollment request was cancelled. Submit a new request to rejoin.",
+            EnrollmentStatus.Dropped => "You are no longer enrolled in this course.",
+            _ => "You are not enrolled in this course yet. Request enrollment to gain access."
+        };
+
+        return StatusCode(StatusCodes.Status403Forbidden, new
+        {
+            message = reason,
+            status = enrollment?.Status.ToApiLabel() ?? "NOT_ENROLLED"
+        });
     }
 
     /// <summary>
@@ -868,7 +1465,8 @@ public class CoursesController : BaseApiController
         }
 
         var enrollments = await DbContext.Enrollments
-            .Where(e => e.StudentId == studentId && e.Status == EnrollmentStatus.Active)
+            .Where(e => e.StudentId == studentId
+                && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Pending))
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Instructor)
             .Include(e => e.Course)
@@ -876,12 +1474,24 @@ public class CoursesController : BaseApiController
                     .ThenInclude(m => m.Lessons)
             .ToListAsync();
 
+        var myCourseIds = enrollments.Select(e => e.CourseId).Distinct().ToList();
+        var ratingSummaries = await _ratingService.GetCourseSummariesAsync(myCourseIds);
+        var completedLessonIds = await DbContext.LessonCompletions
+            .Where(lc => lc.StudentId == studentId)
+            .Select(lc => lc.LessonId)
+            .Distinct()
+            .ToListAsync();
+
         var myCourses = enrollments.Select(e =>
         {
-            var totalLessons = e.Course?.Modules.SelectMany(m => m.Lessons).Count() ?? 0;
-            var completedLessons = DbContext.LessonCompletions
-                .Count(lc => lc.StudentId == studentId &&
-                             (e.Course != null && e.Course.Modules.Any(m => m.Lessons.Any(l => l.Id == lc.LessonId))));
+            var courseLessons = e.Course?.Modules.SelectMany(m => m.Lessons).ToList()
+                ?? new List<Lesson>();
+            var totalLessons = courseLessons.Count;
+            var completedLessons = courseLessons.Count(l => completedLessonIds.Contains(l.Id));
+
+            var rating = ratingSummaries.TryGetValue(e.CourseId, out var s)
+                ? s
+                : CourseRatingSummary.Empty;
 
             return new EnrolledCourseDto(
                 EnrollmentId: e.Id,
@@ -896,7 +1506,10 @@ public class CoursesController : BaseApiController
                 EnrolledAt: e.CreatedAt,
                 TotalLessons: totalLessons,
                 CompletedLessons: completedLessons,
-                Term: string.IsNullOrWhiteSpace(e.Course?.Term) ? "Fall 2026" : e.Course.Term
+                Term: string.IsNullOrWhiteSpace(e.Course?.Term) ? "Fall 2026" : e.Course.Term,
+                InstructorId: e.Course?.InstructorId ?? Guid.Empty,
+                AverageRating: rating.AverageRating,
+                RatingCount: rating.ReviewCount
             );
         }).ToList();
 
@@ -938,6 +1551,20 @@ public class CoursesController : BaseApiController
             return NotFound(new { message = "Student not found with provided ID or Email." });
         }
 
+        // Instructor-initiated enrollment is still an approval, so it runs through the same
+        // payment gate as self-service requests.
+        var payment = await ResolvePaymentGate().VerifyAsync(courseId, student.Id);
+        if (!payment.IsSatisfied)
+        {
+            return StatusCode(StatusCodes.Status402PaymentRequired, new
+            {
+                message = payment.Reason,
+                requiresPayment = payment.RequiresPayment
+            });
+        }
+
+        var (actorId, _) = GetCurrentUser();
+
         var existingEnrollment = await DbContext.Enrollments
             .FirstOrDefaultAsync(e => e.CourseId == courseId && e.StudentId == student.Id);
 
@@ -949,6 +1576,9 @@ public class CoursesController : BaseApiController
             }
 
             existingEnrollment.Status = EnrollmentStatus.Active;
+            existingEnrollment.ReviewedAt = DateTime.UtcNow;
+            existingEnrollment.ReviewedByInstructorId = actorId;
+            existingEnrollment.ReviewNotes = "Added directly by instructor.";
             existingEnrollment.UpdatedAt = DateTime.UtcNow;
             await DbContext.SaveChangesAsync();
             return Ok(new { message = $"Re-activated enrollment for {student.FullName} in {course.Title}.", enrollmentId = existingEnrollment.Id });
@@ -959,7 +1589,11 @@ public class CoursesController : BaseApiController
             CourseId = courseId,
             StudentId = student.Id,
             ProgressPercentage = 0.0,
-            Status = EnrollmentStatus.Active
+            Status = EnrollmentStatus.Active,
+            RequestedAt = DateTime.UtcNow,
+            ReviewedAt = DateTime.UtcNow,
+            ReviewedByInstructorId = actorId,
+            ReviewNotes = "Added directly by instructor."
         };
 
         await DbContext.Enrollments.AddAsync(enrollment);
@@ -970,6 +1604,8 @@ public class CoursesController : BaseApiController
 
     /// <summary>
     /// Gets all enrolled active students for a specific course.
+    /// Restricted to the course owner (or an Admin) — one instructor can never
+    /// enumerate another instructor's roster.
     /// </summary>
     [HttpGet("{courseId:guid}/enrolled-students")]
     [Authorize(Roles = "Instructor,Admin")]
@@ -979,6 +1615,11 @@ public class CoursesController : BaseApiController
         if (!courseExists)
         {
             return NotFound(new { message = "Course not found." });
+        }
+
+        if (!await IsCourseOwnerOrAdmin(courseId))
+        {
+            return Forbid();
         }
 
         var enrolledStudents = await DbContext.Enrollments
@@ -1066,6 +1707,12 @@ public class CoursesController : BaseApiController
             return NotFound(new { message = "Lesson not found." });
         }
 
+        var lessonCourseId = await DbContext.Modules
+            .Where(m => m.Id == lesson.ModuleId)
+            .Select(m => m.CourseId)
+            .FirstOrDefaultAsync();
+        if (await EnforceCourseContentAccess(lessonCourseId) is { } completeDenied) return completeDenied;
+
         var alreadyCompleted = await DbContext.LessonCompletions
             .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
 
@@ -1113,6 +1760,8 @@ public class CoursesController : BaseApiController
         {
             return NotFound(new { message = "Course not found." });
         }
+
+        if (await EnforceCourseContentAccess(courseId) is { } hierarchyDenied) return hierarchyDenied;
 
         var allQuizzes = await DbContext.Assessments
             .Where(a => a.CourseId == courseId)

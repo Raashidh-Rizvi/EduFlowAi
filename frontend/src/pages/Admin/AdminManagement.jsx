@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
+import ReviewModeration from './ReviewModeration';
 import { 
   Shield, 
   Users, 
@@ -32,11 +33,12 @@ import {
   CheckCircle,
   AlertCircle,
   TrendingUp,
+  Star,
   X
 } from 'lucide-react';
 
 export default function AdminManagement() {
-  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'config' | 'system' | 'ai-telemetry'
+  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'reviews' | 'config' | 'system' | 'ai-telemetry'
   const [searchFilter, setSearchFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
 
@@ -303,6 +305,25 @@ export default function AdminManagement() {
             <Users size={14} /> 
             <span>Directory ({usersList.length})</span>
           </button>
+          <button
+            onClick={() => setActiveSubTab('reviews')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-xs)',
+              backgroundColor: activeSubTab === 'reviews' ? 'var(--bg-card)' : 'transparent',
+              color: activeSubTab === 'reviews' ? 'var(--text-main)' : 'var(--text-muted)',
+              fontSize: '12.5px',
+              fontWeight: activeSubTab === 'reviews' ? '600' : '500',
+              border: activeSubTab === 'reviews' ? '1px solid var(--border-card)' : '1px solid transparent',
+              cursor: 'pointer'
+            }}
+          >
+            <Star size={14} />
+            <span>Reviews</span>
+          </button>
         </div>
       </div>
 
@@ -492,6 +513,9 @@ export default function AdminManagement() {
           </div>
         </div>
       )}
+
+      {/* 2. Course Review Moderation View */}
+      {activeSubTab === 'reviews' && <ReviewModeration />}
 
       {/* 2. AI & Agent Telemetry View */}
       {activeSubTab === 'ai-telemetry' && (

@@ -26,6 +26,21 @@ export const courseService = {
     return response.data;
   },
 
+  async publishCourse(courseId, isPublished) {
+    const response = await api.post(`/courses/${courseId}/publish`, { isPublished });
+    return response.data;
+  },
+
+  async getCourseReviews(courseId) {
+    const response = await api.get(`/courses/${courseId}/reviews`);
+    return response.data;
+  },
+
+  async createCourseReview(courseId, data) {
+    const response = await api.post(`/courses/${courseId}/reviews`, data);
+    return response.data;
+  },
+
   async getModules(courseId) {
     const response = await api.get(`/courses/${courseId}/modules`);
     return response.data;
