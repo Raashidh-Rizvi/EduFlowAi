@@ -74,9 +74,74 @@ public class ApplicationDbContext : DbContext
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    // Support Desk & Inquiries
+    public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<SupportTicketResponse> SupportTicketResponses => Set<SupportTicketResponse>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // --- Support Desk & Inquiries ---
+        modelBuilder.Entity<SupportTicket>(entity =>
+        {
+            entity.ToTable("SupportTickets");
+
+            entity.Property(t => t.Type)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .IsRequired();
+
+            entity.Property(t => t.Status)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .IsRequired();
+
+            entity.Property(t => t.Message)
+                  .HasMaxLength(5000)
+                  .IsRequired();
+
+            entity.Property(t => t.Version)
+                  .IsConcurrencyToken()
+                  .IsRequired();
+
+            entity.Property(t => t.ClientRequestId)
+                  .IsRequired();
+
+            entity.HasOne(t => t.SubmittedByUser)
+                  .WithMany(u => u.SubmittedSupportTickets)
+                  .HasForeignKey(t => t.SubmittedByUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(t => new { t.SubmittedByUserId, t.ClientRequestId })
+                  .IsUnique();
+
+            entity.HasIndex(t => new { t.SubmittedByUserId, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.Status, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.Type, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.CreatedAt, t.Id });
+        });
+
+        modelBuilder.Entity<SupportTicketResponse>(entity =>
+        {
+            entity.ToTable("SupportTicketResponses");
+
+            entity.Property(r => r.Message)
+                  .HasMaxLength(5000)
+                  .IsRequired();
+
+            entity.HasOne(r => r.SupportTicket)
+                  .WithMany(t => t.Responses)
+                  .HasForeignKey(r => r.SupportTicketId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.AdminUser)
+                  .WithMany(u => u.AuthoredSupportTicketResponses)
+                  .HasForeignKey(r => r.AdminUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => new { r.SupportTicketId, r.CreatedAt, r.Id });
+        });
 
         // --- Identity & Users ---
         modelBuilder.Entity<User>(entity =>

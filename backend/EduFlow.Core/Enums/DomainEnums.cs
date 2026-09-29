@@ -213,3 +213,19 @@ public enum TeamRole
     Member
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SupportTicketType
+{
+    Bug,
+    Dispute,
+    Feedback
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SupportTicketStatus
+{
+    Open,
+    InProgress,
+    Resolved
+}
+
