@@ -32,14 +32,23 @@ import {
   VolumeX,
   Users,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  UserCheck,
+  Inbox,
+  Clock,
+  ExternalLink,
+  MessageSquareText
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import RoleSwitcher from '../../components/common/RoleSwitcher';
+import StarRating from '../../components/marketplace/StarRating';
+import CourseReviews from '../../components/reviews/CourseReviews';
 import { aiService } from '../../services/aiService';
 import { courseService } from '../../services/courseService';
+import { enrollmentService } from '../../services/enrollmentService';
 import { quizService } from '../../services/quizService';
 import { gamificationService } from '../../services/gamificationService';
 import { getGeneratedQuizzes } from '../../utils/quizStorageHelper';
@@ -221,11 +230,193 @@ function HomeTab({ profile, onMissionClaim, onFreezeUse, onNavigate, onStartQuiz
   );
 }
 
-function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
+function EnrollmentStatusPill({ status }) {
+  const key = String(status || '').toUpperCase();
+  const styles = {
+    PENDING: { label: 'Pending approval', className: 'badge-warning' },
+    APPROVED: { label: 'Approved', className: 'badge-success' },
+    ACTIVE: { label: 'Approved', className: 'badge-success' },
+    COMPLETED: { label: 'Completed', className: 'badge-success' },
+    REJECTED: { label: 'Declined', className: 'badge-danger' },
+    CANCELLED: { label: 'Cancelled', className: 'badge-secondary' },
+    DROPPED: { label: 'Withdrawn', className: 'badge-secondary' }
+  };
+  const style = styles[key] || { label: key || 'Unknown', className: 'badge-secondary' };
+  return (
+    <span className={`badge-pill ${style.className}`} style={{ fontSize: '10.5px' }}>
+      {style.label}
+    </span>
+  );
+}
+
+function AwaitingApprovalCard({ course }) {
+  const status = String(course.enrollmentStatus || 'Pending');
+  const isPending = status === 'Pending';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <span className="badge-pill badge-primary">{course.code}</span>
+        <span style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{course.title}</span>
+        <EnrollmentStatusPill status={status} />
+      </div>
+
+      <div className="card-premium" style={{ padding: '20px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+        <div style={{
+          width: '40px', height: '40px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
+          background: isPending ? 'var(--warning-soft, var(--primary-soft))' : 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: isPending ? 'var(--warning, var(--primary))' : 'var(--text-muted)'
+        }}>
+          {isPending ? <Clock size={19} /> : <Lock size={19} />}
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', minWidth: 0 }}>
+          <div style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>
+            {isPending ? 'Waiting for instructor approval' : 'Course materials are locked'}
+          </div>
+          <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+            {isPending
+              ? 'Your enrollment request has been sent to the instructor. Course materials, PDFs and lesson completion unlock the moment it is approved.'
+              : status === 'Rejected'
+                ? 'Your enrollment request was declined. You can submit it again from the Enrollment tab if your circumstances change.'
+                : 'You do not have an approved enrollment for this course. Submit a new request from the Enrollment tab to regain access.'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EnrollmentRequestsTab({ requests, loading, busyCourseId, onCancel, onReRequest, onBrowse }) {
+  if (loading) {
+    return (
+      <div className="card-premium" style={{ padding: '36px 20px', textAlign: 'center', fontSize: '13px', color: 'var(--text-muted)' }}>
+        Loading your enrollment requests…
+      </div>
+    );
+  }
+
+  if (!requests.length) {
+    return (
+      <div className="card-premium" style={{ padding: '52px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          width: '48px', height: '48px', borderRadius: 'var(--radius-sm)',
+          background: 'var(--primary-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)'
+        }}>
+          <Inbox size={24} />
+        </div>
+        <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-main)' }}>No enrollment requests yet</div>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '380px', lineHeight: '1.6' }}>
+          Browse the course catalog and request a course — your instructor will approve or decline it.
+        </div>
+        <button className="btn-primary" onClick={onBrowse} style={{ fontSize: '12.5px' }}>
+          <ExternalLink size={14} /> Browse courses
+        </button>
+      </div>
+    );
+  }
+
+  const ordered = [...requests].sort(
+    (a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0)
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>My Enrollment Requests</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            Approval is required before a course opens its materials.
+          </div>
+        </div>
+        <button className="btn-secondary" onClick={onBrowse} style={{ fontSize: '12.5px' }}>
+          <ExternalLink size={14} /> Browse courses
+        </button>
+      </div>
+
+      {ordered.map(request => {
+        const status = String(request.status || 'Pending');
+        const isPending = status === 'Pending';
+        const isRejected = status === 'Rejected' || status === 'Cancelled' || status === 'Dropped';
+        const busy = busyCourseId === request.courseId;
+
+        return (
+          <div key={request.enrollmentId || request.courseId} className="card-premium" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '220px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap' }}>
+                  <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>{request.courseCode}</span>
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text-main)' }}>{request.courseTitle}</span>
+                  <EnrollmentStatusPill status={request.statusLabel || request.status} />
+                </div>
+
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '7px' }}>
+                  Requested {new Date(request.requestedAt).toLocaleDateString()}
+                  {request.reviewedAt && <> · Reviewed {new Date(request.reviewedAt).toLocaleDateString()}</>}
+                </div>
+
+                {request.reviewNotes && (
+                  <div style={{
+                    fontSize: '12px', color: 'var(--text-secondary)', marginTop: '9px',
+                    padding: '7px 11px', borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)'
+                  }}>
+                    {request.reviewNotes}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {isPending && (
+                  <button
+                    className="btn-ghost"
+                    disabled={busy}
+                    onClick={() => onCancel(request)}
+                    style={{ fontSize: '12.5px' }}
+                  >
+                    {busy ? 'Withdrawing…' : 'Withdraw'}
+                  </button>
+                )}
+                {isRejected && (
+                  <button
+                    className="btn-primary"
+                    disabled={busy}
+                    onClick={() => onReRequest(request)}
+                    style={{ fontSize: '12.5px' }}
+                  >
+                    {busy ? 'Sending…' : 'Request again'}
+                  </button>
+                )}
+                {!isPending && !isRejected && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--success)' }}>
+                    <UserCheck size={14} /> Access granted
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CurriculumTab({ courses, currentUser, onOpenPdf, onCompleteLesson, onStartQuiz }) {
   const [expandedMods, setExpandedMods] = useState({ 'm1': true, 'm2': true });
+  const [reviewsOpen, setReviewsOpen] = useState({});
 
   const toggleMod = (id) => {
     setExpandedMods(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleReviews = (id) => {
+    setReviewsOpen(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const hasAccess = (status) => {
+    const value = String(status || 'Active');
+    return value === 'Active' || value === 'Completed';
   };
 
   return (
@@ -248,14 +439,43 @@ function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
           </div>
         </div>
       ) : (
-        courses.map(course => (
+        courses.map(course => {
+          // A course whose enrollment is still awaiting (or denied by) the instructor
+          // never renders its module tree or lesson actions — the backend withholds the
+          // material anyway, and this keeps the portal honest about why.
+          if (!hasAccess(course.enrollmentStatus)) {
+            return <AwaitingApprovalCard key={course.id} course={course} />;
+          }
+
+          return (
           <div key={course.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <span className="badge-pill badge-primary">
                 {course.code}
               </span>
               <span style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>{course.title}</span>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {course.instructorName && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  By <strong style={{ color: 'var(--text-main)' }}>{course.instructorName}</strong>
+                </span>
+              )}
+              <StarRating value={course.averageRating || 0} count={course.ratingCount || 0} size={13} />
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => toggleReviews(course.id)}
+                style={{ padding: '5px 12px', fontSize: '12px', gap: '6px' }}
+                aria-expanded={!!reviewsOpen[course.id]}
+              >
+                <MessageSquareText size={13} /> {reviewsOpen[course.id] ? 'Hide reviews' : 'Rate & reviews'}
+              </button>
+            </div>
+
+            {reviewsOpen[course.id] && (
+              <CourseReviews courseId={course.id} currentUser={currentUser} />
+            )}
 
             {course.modules.map((mod, modIdx) => {
               const isExpanded = !!expandedMods[mod.id];
@@ -446,7 +666,8 @@ function CurriculumTab({ courses, onOpenPdf, onCompleteLesson, onStartQuiz }) {
               );
             })}
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );
@@ -1754,9 +1975,59 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   const [serverQuiz, setServerQuiz] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [courses, setCourses] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [busyCourseId, setBusyCourseId] = useState(null);
+  const navigate = useNavigate();
+
+  const refreshRequests = async () => {
+    try {
+      const list = await enrollmentService.getMyRequests();
+      setRequests(Array.isArray(list) ? list : []);
+    } catch {
+      // Keep whatever is already on screen rather than blanking the tab.
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
+  const patchCourseStatus = (courseId, status) => {
+    setCourses(prev => prev.map(c => (c.id === courseId ? { ...c, enrollmentStatus: status } : c)));
+  };
+
+  const handleCancelRequest = async (request) => {
+    setBusyCourseId(request.courseId);
+    try {
+      await enrollmentService.cancelEnrollment(request.courseId);
+      patchCourseStatus(request.courseId, 'Cancelled');
+      await refreshRequests();
+    } catch (err) {
+      console.warn('Could not withdraw the enrollment request:', err);
+      await refreshRequests();
+    } finally {
+      setBusyCourseId(null);
+    }
+  };
+
+  const handleReRequest = async (request) => {
+    setBusyCourseId(request.courseId);
+    try {
+      await enrollmentService.requestEnrollment(request.courseId);
+      patchCourseStatus(request.courseId, 'Pending');
+      await refreshRequests();
+    } catch (err) {
+      console.warn('Could not resubmit the enrollment request:', err);
+      await refreshRequests();
+    } finally {
+      setBusyCourseId(null);
+    }
+  };
 
   useEffect(() => {
     async function loadStudentData() {
+      // 0. Enrollment requests gate the curriculum and feed the Enrollment tab.
+      await refreshRequests();
+
       // 1. Load Enrolled Courses with Full Modules & Syllabus
       try {
         let rawCourses = [];
@@ -1774,11 +2045,19 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             })
           );
 
+          const statusByCourse = new Map();
+          rawCourses.forEach(c => statusByCourse.set(c.courseId || c.id, c.status));
+
           const mapped = fullCoursesDetails.map(c => ({
             id: c.id,
+            enrollmentStatus: statusByCourse.get(c.id) || 'Active',
             code: c.code || 'CS-301',
             title: c.title,
             description: c.description || '',
+            instructorId: c.instructorId || null,
+            instructorName: c.instructorName || null,
+            averageRating: c.averageRating || 0,
+            ratingCount: c.ratingCount || 0,
             modules: (c.modules || []).map((m, idx) => ({
               id: m.id || `m_${idx}`,
               title: m.title,
@@ -2038,6 +2317,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
 
   const TABS = [
     { id: 'curriculum', label: 'Curriculum', icon: BookOpen },
+    { id: 'enrollments', label: 'Enrollment', icon: UserCheck },
     { id: 'home', label: 'Dashboard', icon: Home },
     { id: 'focus', label: 'Focus & Flow', icon: Zap },
     { id: 'coach', label: 'AI Assistant', icon: Bot },
@@ -2101,9 +2381,20 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             {activeTab === 'curriculum' && (
               <CurriculumTab
                 courses={courses}
+                currentUser={user}
                 onOpenPdf={(doc) => setPdfDoc(doc)}
                 onCompleteLesson={handleCompleteLesson}
                 onStartQuiz={(quiz) => handleStartQuiz(quiz)}
+              />
+            )}
+            {activeTab === 'enrollments' && (
+              <EnrollmentRequestsTab
+                requests={requests}
+                loading={requestsLoading}
+                busyCourseId={busyCourseId}
+                onCancel={handleCancelRequest}
+                onReRequest={handleReRequest}
+                onBrowse={() => navigate('/courses')}
               />
             )}
             {activeTab === 'home' && (

@@ -15,7 +15,8 @@ test.beforeEach(async ({ page }) => {
     { source_file: 'search.pdf', course_id: 'course-a', display_title: 'Search lecture', total_chunks: 3 },
     { source_file: 'other.pdf', course_id: 'course-b', display_title: 'Other lecture', total_chunks: 2 }
   ] } }));
-  await page.goto('/');
+  // The AI Learning Assistant lives in the student console, not the public marketplace.
+  await page.goto('/console');
   await page.getByRole('button', { name: /AI Assistant|AI Coach/i }).first().click();
   await expect(page.getByText('AI Learning Assistant', { exact: true })).toBeVisible();
 });

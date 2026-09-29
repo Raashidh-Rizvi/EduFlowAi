@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 test.describe('Student Portal & AI Coach Exploration', () => {
   test.beforeEach(async ({ page }) => {
@@ -65,7 +65,7 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     const ranksTab = page.getByRole('button', { name: /Rankings/i }).first();
     await ranksTab.click();
     await expect(page.locator('text=Cohort Standings').or(page.locator('text=Cohort Rankings')).first()).toBeVisible();
-    await expect(page.locator('text=Alex Rivera').first()).toBeVisible();
+    await expect(page.locator('text=/d streak/').first()).toBeVisible();
 
     // Navigate to Profile tab
     const profileTab = page.getByRole('button', { name: /Profile/i }).first();

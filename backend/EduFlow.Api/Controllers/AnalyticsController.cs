@@ -24,18 +24,67 @@ public class AnalyticsController : ControllerBase
     }
 
     /// <summary>
+    /// Course-visibility scope resolved from the JWT only (never from request input).
+    /// null  => Admin (legitimately unscoped, sees the whole platform)
+    /// value => Instructor, scoped to the courses they own
+    /// Guid.Empty => unauthenticated/unresolvable identity (scoped to nothing)
+    /// </summary>
+    private Guid? InstructorScope
+    {
+        get
+        {
+            var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+            var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+            if (!Guid.TryParse(uidClaim, out var userId)) return Guid.Empty;
+            return role.Equals("Admin", StringComparison.OrdinalIgnoreCase) ? null : userId;
+        }
+    }
+
+    private IQueryable<Course> ScopedCourses()
+    {
+        var scope = InstructorScope;
+        var query = _dbContext.Courses.AsQueryable();
+        return scope.HasValue ? query.Where(c => c.InstructorId == scope.Value) : query;
+    }
+
+    /// <summary>
     /// Returns high-level dashboard KPIs for instructors and admins.
+    /// Instructor callers receive only metrics derived from their own courses.
     /// </summary>
     [HttpGet("dashboard-summary")]
     public async Task<IActionResult> GetDashboardSummary()
     {
-        var totalStudents = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Student);
+        var scope = InstructorScope;
+        var scopedCourseIds = scope.HasValue
+            ? await ScopedCourses().Select(c => c.Id).ToListAsync()
+            : null;
+
+        var totalStudents = scopedCourseIds == null
+            ? await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Student)
+            : await _dbContext.Enrollments.AsNoTracking()
+                .Where(e => scopedCourseIds.Contains(e.CourseId))
+                .Select(e => e.StudentId)
+                .Distinct()
+                .CountAsync();
+
         var totalInstructors = await _dbContext.Users.AsNoTracking().CountAsync(u => u.Role == UserRole.Instructor);
         var totalXpSum = await _dbContext.StudentXp.AsNoTracking().SumAsync(s => (long)s.TotalXp);
         var activeStreaks = await _dbContext.StudentStreaks.AsNoTracking().CountAsync(s => s.CurrentStreak > 0);
-        var pendingAi = await _dbContext.StudyPlans.AsNoTracking().CountAsync(s => s.Status == StudyPlanStatus.PendingInstructorApproval);
-        var totalCourses = await _dbContext.Courses.AsNoTracking().CountAsync(c => c.IsPublished);
-        var totalQuizzesPassed = await _dbContext.Submissions.AsNoTracking().CountAsync(s => s.Passed);
+
+        var pendingAi = scopedCourseIds == null
+            ? await _dbContext.StudyPlans.AsNoTracking().CountAsync(s => s.Status == StudyPlanStatus.PendingInstructorApproval)
+            : await _dbContext.StudyPlans.AsNoTracking()
+                .CountAsync(s => s.Status == StudyPlanStatus.PendingInstructorApproval
+                    && scopedCourseIds.Contains(s.CourseId));
+
+        var totalCourses = await ScopedCourses().AsNoTracking().CountAsync(c => c.IsPublished);
+
+        var totalQuizzesPassed = scopedCourseIds == null
+            ? await _dbContext.Submissions.AsNoTracking().CountAsync(s => s.Passed)
+            : await _dbContext.Submissions.AsNoTracking()
+                .CountAsync(s => s.Passed
+                    && s.Assessment != null
+                    && scopedCourseIds.Contains(s.Assessment.CourseId));
 
         return Ok(new
         {
@@ -101,11 +150,22 @@ public class AnalyticsController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GetAtRiskStudents()
     {
-        var lowScoreSubmissions = await _dbContext.Submissions
+        var scope = InstructorScope;
+        var submissionsQuery = _dbContext.Submissions
             .AsNoTracking()
             .Include(s => s.Student)
             .Include(s => s.Assessment)
-            .Where(s => !s.Passed)
+            .Where(s => !s.Passed);
+
+        // Instructors only see risk signals from students enrolled in their own courses.
+        if (scope.HasValue)
+        {
+            submissionsQuery = submissionsQuery
+                .Where(s => s.Assessment != null && s.Assessment.Course != null
+                    && s.Assessment.Course.InstructorId == scope.Value);
+        }
+
+        var lowScoreSubmissions = await submissionsQuery
             .OrderByDescending(s => s.SubmittedAt)
             .Take(10)
             .Select(s => new
@@ -188,6 +248,17 @@ public class AnalyticsController : ControllerBase
             return NotFound(new { message = "Course not found." });
         }
 
+        // Ownership: an Instructor may only read analytics for their own courses.
+        var uidClaim2 = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var role2 = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        var isCourseAdmin = role2.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        var isCourseOwner = Guid.TryParse(uidClaim2, out var courseViewerId)
+            && course.InstructorId == courseViewerId;
+        if (!isCourseAdmin && !isCourseOwner)
+        {
+            return Forbid();
+        }
+
         var enrollments = await _dbContext.Enrollments.Where(e => e.CourseId == id).ToListAsync();
         var totalEnrolled = enrollments.Count;
         var activeEnrolled = enrollments.Count(e => e.Status == EnrollmentStatus.Active);
@@ -228,7 +299,7 @@ public class AnalyticsController : ControllerBase
     [HttpGet("topic-mastery")]
     public async Task<IActionResult> GetTopicMasteryHeatmap()
     {
-        var courses = await _dbContext.Courses
+        var courses = await ScopedCourses()
             .Include(c => c.Modules)
             .Include(c => c.Assessments)
                 .ThenInclude(a => a.Submissions)

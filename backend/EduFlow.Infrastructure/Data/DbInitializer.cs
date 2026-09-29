@@ -286,6 +286,14 @@ public static class DbInitializer
                     Term = "Fall 2026",
                     InstructorId = instructorId,
                     IsPublished = true,
+                    Status = "Published",
+                    Difficulty = EduFlow.Core.Enums.DifficultyLevel.Medium,
+                    DurationHours = 18,
+                    Price = 0m,
+                    IsFree = true,
+                    AverageRating = 4.8,
+                    RatingCount = 2,
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1544383835-bda2bc66a55d?w=600",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -366,6 +374,187 @@ public static class DbInitializer
                 alexEnrollment.Status = EnrollmentStatus.Active;
                 context.SaveChanges();
             }
+
+            // -------------------------------------------------------------------------
+            // Second instructor (Instructor B) + owned course.
+            // Demonstrates that two instructors can never see or edit each other's data.
+            // -------------------------------------------------------------------------
+            var instructorBId = Guid.Parse("22222222-2222-2222-2222-222222222223");
+            var instructorB = context.Users.FirstOrDefault(u =>
+                u.Id == instructorBId || u.Email.ToLower() == "instructor.b@eduflow.ai");
+            if (instructorB == null)
+            {
+                instructorB = new User
+                {
+                    Id = instructorBId,
+                    FullName = "Dr. Marcus Hale",
+                    Email = "instructor.b@eduflow.ai",
+                    PasswordHash = validPasswordHash,
+                    Role = UserRole.Instructor,
+                    IsActive = true
+                };
+                context.Users.Add(instructorB);
+            }
+            else
+            {
+                instructorB.FullName = "Dr. Marcus Hale";
+                instructorB.PasswordHash = validPasswordHash;
+                instructorB.IsActive = true;
+            }
+            context.SaveChanges();
+
+            var courseBId = Guid.Parse("44444444-4444-4444-4444-444444444445");
+            var courseB = context.Courses.FirstOrDefault(c =>
+                c.Id == courseBId || c.Code == "SE-4100" || c.InstructorId == instructorB.Id);
+            if (courseB == null)
+            {
+                courseB = new Course
+                {
+                    Id = courseBId,
+                    Code = "SE-4100",
+                    Title = "Distributed Systems & Event-Driven Architecture",
+                    Description = "Design resilient distributed systems with message brokers, sagas, idempotent consumers, and observable event-driven pipelines.",
+                    Category = "Software Engineering",
+                    Term = "Fall 2026",
+                    ThumbnailUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600",
+                    InstructorId = instructorB.Id,
+                    IsPublished = true,
+                    Status = "Published",
+                    Difficulty = EduFlow.Core.Enums.DifficultyLevel.Hard,
+                    DurationHours = 24,
+                    Price = 49.99m,
+                    IsFree = false,
+                    AverageRating = 4.6,
+                    RatingCount = 3,
+                    CreatedAt = DateTime.UtcNow.AddDays(-30),
+                    UpdatedAt = DateTime.UtcNow.AddDays(-30)
+                };
+                context.Courses.Add(courseB);
+                context.SaveChanges();
+            }
+
+            // A pending enrollment request awaiting Instructor B's approval.
+            var pendingStudentId = Guid.Parse("33333333-3333-3333-3333-333333333334");
+            if (!context.Enrollments.Any(e => e.CourseId == courseB.Id && e.StudentId == pendingStudentId))
+            {
+                context.Enrollments.Add(new Enrollment
+                {
+                    CourseId = courseB.Id,
+                    StudentId = pendingStudentId,
+                    ProgressPercentage = 0.0,
+                    Status = EnrollmentStatus.Pending,
+                    CreatedAt = DateTime.UtcNow.AddDays(-2)
+                });
+                context.SaveChanges();
+            }
+
+            // An approved student on Instructor B's course (eligible to leave a review).
+            var courseBStudentId = Guid.Parse("33333333-3333-3333-3333-333333333335");
+            if (!context.Enrollments.Any(e => e.CourseId == courseB.Id && e.StudentId == courseBStudentId))
+            {
+                context.Enrollments.Add(new Enrollment
+                {
+                    CourseId = courseB.Id,
+                    StudentId = courseBStudentId,
+                    ProgressPercentage = 42.0,
+                    Status = EnrollmentStatus.Active,
+                    CreatedAt = DateTime.UtcNow.AddDays(-20)
+                });
+                context.SaveChanges();
+            }
+
+            // Sample student reviews (kept in sync with the denormalized rating columns).
+            var sampleReviews = new[]
+            {
+                new { CourseId = course.Id, StudentId = studentActual.Id, Rating = 5, Comment = "Best indexing deep-dive I've taken. The EXPLAIN ANALYZE labs were excellent." },
+                new { CourseId = course.Id, StudentId = Guid.Parse("33333333-3333-3333-3333-333333333334"), Rating = 4, Comment = "Great pacing and very clear module structure." },
+                new { CourseId = courseB.Id, StudentId = Guid.Parse("33333333-3333-3333-3333-333333333335"), Rating = 5, Comment = "Saga and idempotency patterns were immediately useful at work." }
+            };
+
+            foreach (var sr in sampleReviews)
+            {
+                // A review is only legitimate for a student enrolled in the course.
+                if (!context.Enrollments.Any(e => e.CourseId == sr.CourseId && e.StudentId == sr.StudentId))
+                {
+                    context.Enrollments.Add(new Enrollment
+                    {
+                        CourseId = sr.CourseId,
+                        StudentId = sr.StudentId,
+                        ProgressPercentage = 50.0,
+                        Status = EnrollmentStatus.Active,
+                        CreatedAt = DateTime.UtcNow.AddDays(-25)
+                    });
+                }
+
+                if (!context.CourseReviews.Any(r => r.CourseId == sr.CourseId && r.StudentId == sr.StudentId))
+                {
+                    context.CourseReviews.Add(new CourseReview
+                    {
+                        CourseId = sr.CourseId,
+                        StudentId = sr.StudentId,
+                        Rating = sr.Rating,
+                        Comment = sr.Comment
+                    });
+                }
+            }
+            context.SaveChanges();
+
+            foreach (var rid in new[] { course.Id, courseB.Id })
+            {
+                var courseRatings = context.CourseReviews
+                    .Where(r => r.CourseId == rid)
+                    .Select(r => r.Rating)
+                    .ToList();
+                if (courseRatings.Count == 0) continue;
+
+                var ownedCourse = context.Courses.First(c => c.Id == rid);
+                ownedCourse.RatingCount = courseRatings.Count;
+                ownedCourse.AverageRating = Math.Round(courseRatings.Average(), 2);
+            }
+            context.SaveChanges();
+
+            // Ensure public instructor profiles exist for the seeded instructors so
+            // every instructor has a unique public profile out of the box.
+            var instructorProfileSeeds = new[]
+            {
+                new
+                {
+                    UserId = instructorId,
+                    Headline = "Database systems and backend architecture",
+                    Bio = "Instructor of Advanced Database Architecture & EF Core. I teach how relational engines really work — storage, indexing, transactions and concurrency — with hands-on labs on PostgreSQL and EF Core.",
+                    Expertise = "PostgreSQL, EF Core, Indexing, Transactions, Concurrency"
+                },
+                new
+                {
+                    UserId = instructorB.Id,
+                    Headline = "Distributed systems and event-driven design",
+                    Bio = "Instructor of Distributed Systems & Event-Driven Architecture. I help engineers design resilient systems with message brokers, sagas, idempotent consumers and observable pipelines.",
+                    Expertise = "Distributed Systems, Messaging, Sagas, Observability"
+                }
+            };
+
+            foreach (var seed in instructorProfileSeeds)
+            {
+                var existingProfile = context.InstructorProfiles
+                    .FirstOrDefault(p => p.UserId == seed.UserId);
+                if (existingProfile == null)
+                {
+                    context.InstructorProfiles.Add(new InstructorProfile
+                    {
+                        UserId = seed.UserId,
+                        Headline = seed.Headline,
+                        Bio = seed.Bio,
+                        Expertise = seed.Expertise
+                    });
+                }
+                else if (string.IsNullOrWhiteSpace(existingProfile.Bio))
+                {
+                    existingProfile.Headline = seed.Headline;
+                    existingProfile.Bio = seed.Bio;
+                    existingProfile.Expertise = seed.Expertise;
+                }
+            }
+            context.SaveChanges();
 
             // Ensure baseline diagnostic assessment exists for CS-301
             var quizId = Guid.Parse("66666666-6666-6666-6666-666666666666");
@@ -783,6 +972,9 @@ public static class DbInitializer
                 );
                 context.SaveChanges();
             }
+
+            // Public storefront catalogue (published courses, curriculum, reviews).
+            MarketplaceSeedData.Seed(context);
         }
         catch
         {

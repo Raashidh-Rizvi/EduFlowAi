@@ -226,21 +226,23 @@ public class QuizzesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateQuiz([FromBody] CreateQuizRequest request)
     {
-        // Ownership check: instructor may only create quizzes on their own courses
-        if (!await IsCourseOwnerOrAdmin(request.CourseId))
+        // SECURITY: ownership is resolved from the JWT only. There is no seeded/default
+        // course id and no "first course in the database" fallback — an instructor must
+        // explicitly select one of their own courses.
+        if (request.CourseId == Guid.Empty)
         {
-            // Graceful fallback: if course lookup with empty Guid is attempted, let it fail on course not found
-            if (request.CourseId != Guid.Empty)
-                return Forbid();
+            return BadRequest(new { message = "A course must be selected for this quiz." });
         }
 
-        // 1. Verify that Course exists with robust fallback
-        var targetCourseId = request.CourseId != Guid.Empty ? request.CourseId : Guid.Parse("44444444-4444-4444-4444-444444444444");
-        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == targetCourseId)
-            ?? await DbContext.Courses.FirstOrDefaultAsync();
+        if (!await IsCourseOwnerOrAdmin(request.CourseId))
+        {
+            return Forbid();
+        }
+
+        var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
         if (course == null)
         {
-            return BadRequest(new { message = "Selected Course does not exist." });
+            return NotFound(new { message = "Selected Course does not exist." });
         }
         var courseId = course.Id;
 
@@ -612,6 +614,11 @@ public class QuizzesController : BaseApiController
         if (quiz == null)
         {
             return NotFound(new { message = "Quiz not found." });
+        }
+
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
         }
 
         var errors = new List<string>();
@@ -1488,7 +1495,8 @@ public class QuizzesController : BaseApiController
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
         if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
         {
-            studentId = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Default student
+            // Fail closed: never attribute a submission to a seeded/fabricated account.
+            return Unauthorized(new { message = "A verified user identity is required to submit a quiz." });
         }
 
         var quiz = await DbContext.Assessments

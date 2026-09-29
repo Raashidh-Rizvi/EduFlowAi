@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { Sparkles, Shield, UserCheck, GraduationCap, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Sparkles, Shield, UserCheck, GraduationCap, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, ChevronLeft } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { authService } from '../../services/authService';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login({ onLoginSuccess, initialMode = 'login' }) {
   const [email, setEmail] = useState('instructor@eduflow.ai');
   const [password, setPassword] = useState('Password123!');
   const [showPassword, setShowPassword] = useState(false);
-  const [isRegister, setIsRegister] = useState(false);
+  const [isRegister, setIsRegister] = useState(initialMode === 'register');
   const [fullName, setFullName] = useState('Dr. Sarah Jenkins');
   const [role, setRole] = useState('Instructor');
   const [loading, setLoading] = useState(false);
@@ -63,21 +64,13 @@ export default function Login({ onLoginSuccess }) {
         onLoginSuccess(res);
       }
     } catch (err) {
-      // Fallback for offline/standalone mode
-      const selected = demoAccounts.find(d => d.email.toLowerCase() === email.toLowerCase()) || {
-        name: fullName || 'User',
-        email: email,
-        role: role
-      };
-      const fallbackUser = {
-        userId: '22222222-2222-2222-2222-222222222222',
-        fullName: selected.name,
-        email: selected.email,
-        role: selected.role,
-        token: 'demo-jwt-token'
-      };
-      localStorage.setItem('eduflow_user', JSON.stringify(fallbackUser));
-      onLoginSuccess(fallbackUser);
+      // Never fabricate a local identity when authentication fails — the user id
+      // and role must always come from the backend for the credentials submitted.
+      const message =
+        err?.response?.data?.message ||
+        err?.friendlyMessage ||
+        'Authentication failed. Verify your credentials and that the API is reachable.';
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -98,6 +91,24 @@ export default function Login({ onLoginSuccess }) {
       <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50 }}>
         <ThemeToggle showLabel />
       </div>
+
+      <Link
+        to="/"
+        style={{
+          position: 'absolute',
+          top: '28px',
+          left: '28px',
+          zIndex: 50,
+          fontSize: '13px',
+          color: 'var(--text-muted)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          textDecoration: 'none'
+        }}
+      >
+        <ChevronLeft size={15} aria-hidden="true" /> Back to course catalog
+      </Link>
 
       <div style={{
         width: '100%',

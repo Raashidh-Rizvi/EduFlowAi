@@ -25,6 +25,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { courseService } from '../../services/courseService';
+import StarRating from '../../components/marketplace/StarRating';
 import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
 import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
@@ -295,12 +296,14 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
             fontWeight: '800',
             boxShadow: '0 4px 12px rgba(79, 70, 229, 0.35)'
           }}>
-            {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'SJ'}
+            {(currentUser?.fullName || currentUser?.name
+              ? (currentUser.fullName || currentUser.name).split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+              : 'U')}
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <h1 style={{ fontSize: '28px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', margin: 0 }}>
-                Good morning, <span className="text-gradient">{currentUser?.name || 'Dr. Sarah'}</span>
+                Good morning, <span className="text-gradient">{currentUser?.fullName || currentUser?.name || 'there'}</span>
               </h1>
               <span className="glass-badge" style={{ fontSize: '11px', fontWeight: '700', padding: '4px 8px', color: 'var(--primary)' }}>
                 {currentUser?.role === 'Admin' ? 'ADMINISTRATOR CONSOLE' : 'INSTRUCTOR CONSOLE'}
@@ -490,6 +493,14 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
                   <h3 style={{ fontSize: '17px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
                     {course.title}
                   </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }}>
+                    {course.instructorName && (
+                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        By <strong style={{ color: 'var(--text-main)' }}>{course.instructorName}</strong>
+                      </span>
+                    )}
+                    <StarRating value={course.averageRating || 0} count={course.ratingCount || 0} size={13} />
+                  </div>
                 </div>
 
                 <div style={{

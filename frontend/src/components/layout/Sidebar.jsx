@@ -14,17 +14,20 @@ import {
   ChevronUp,
   Shield,
   Settings,
-  Layers
+  Layers,
+  UserCheck
 } from 'lucide-react';
 import { BrandLogo } from '../common/BrandLogo';
 
-export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, currentUser, onLogout, onLogoClick }) {
+export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, pendingEnrollments = 0, currentUser, onLogout, onLogoClick }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
+  // Identity always comes from the authenticated user supplied by App (which
+  // sources it from GET /api/auth/me). Never default to a fabricated persona.
   const user = currentUser || {
-    fullName: 'Dr. Sarah Jenkins',
-    email: 'instructor@eduflow.ai',
-    role: 'Instructor'
+    fullName: '',
+    email: '',
+    role: ''
   };
 
   const isAdmin = user.role === 'Admin';
@@ -42,6 +45,14 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
       label: 'Academics & Content',
       items: [
         { id: 'courses', label: isAdmin ? 'Course Management' : 'Curriculum & Modules', icon: BookOpen, minRole: 'All' },
+        {
+          id: 'enrollment-requests',
+          label: 'Enrollment Requests',
+          icon: UserCheck,
+          badge: pendingEnrollments > 0 ? `${pendingEnrollments} New` : null,
+          badgeType: 'primary',
+          minRole: 'Instructor'
+        },
         { id: 'assessments', label: 'Assessments & Quizzes', icon: CheckCircle2, minRole: 'All' }
       ]
     },
@@ -119,7 +130,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingCount = 1, cur
       }}>
         {navSections.map((section, sIdx) => {
           const visibleItems = section.items.filter(item =>
-            !isAdmin || ['dashboard', 'courses', 'admin', 'communications'].includes(item.id)
+            !isAdmin || ['dashboard', 'courses', 'enrollment-requests', 'admin', 'communications'].includes(item.id)
           );
           if (visibleItems.length === 0) return null;
           return (
