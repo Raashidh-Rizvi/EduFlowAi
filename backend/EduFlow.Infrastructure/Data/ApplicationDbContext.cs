@@ -23,9 +23,11 @@ public class ApplicationDbContext : DbContext
     // Auth & Identity
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<InstructorProfile> InstructorProfiles => Set<InstructorProfile>();
 
     // Curriculum & Learning (Hierarchical)
     public DbSet<Course> Courses => Set<Course>();
+    public DbSet<CourseReview> CourseReviews => Set<CourseReview>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
@@ -92,15 +94,47 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<InstructorProfile>(entity =>
+        {
+            // Exactly one public profile per instructor account.
+            entity.HasIndex(p => p.UserId).IsUnique();
+            entity.Property(p => p.Bio).HasMaxLength(2000);
+            entity.Property(p => p.Headline).HasMaxLength(200);
+            entity.Property(p => p.Expertise).HasMaxLength(500);
+            entity.HasOne(p => p.User)
+                  .WithOne(u => u.InstructorProfile)
+                  .HasForeignKey<InstructorProfile>(p => p.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // --- Courses & Curriculum Hierarchy ---
         modelBuilder.Entity<Course>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
             entity.Property(c => c.Difficulty).HasConversion<string>();
+            entity.Property(c => c.Price).HasPrecision(18, 2);
             entity.HasOne(c => c.Instructor)
                   .WithMany()
                   .HasForeignKey(c => c.InstructorId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseReview>(entity =>
+        {
+            // One review per student per course.
+            entity.HasIndex(e => new { e.CourseId, e.StudentId }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_CourseReviews_Rating_Range", "\"Rating\" >= 1 AND \"Rating\" <= 5"));
+            entity.Property(e => e.Status).HasConversion<string>();
+            entity.HasIndex(e => new { e.CourseId, e.Status });
+            entity.HasOne(r => r.Course)
+                  .WithMany(c => c.Reviews)
+                  .HasForeignKey(r => r.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Student)
+                  .WithMany()
+                  .HasForeignKey(r => r.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Module>(entity =>
@@ -147,8 +181,13 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Enrollment>(entity =>
         {
+            // Database-level uniqueness: one enrollment row per (course, student) pair.
+            // The approval workflow mutates Status on this single row instead of inserting
+            // a second request, so a student can never hold duplicate active requests.
             entity.HasIndex(e => new { e.CourseId, e.StudentId }).IsUnique();
             entity.Property(e => e.Status).HasConversion<string>();
+            entity.HasIndex(e => e.Status);
+            entity.Property(e => e.ReviewNotes).HasMaxLength(1000);
             entity.HasOne(e => e.Course)
                   .WithMany(c => c.Enrollments)
                   .HasForeignKey(e => e.CourseId)
@@ -157,6 +196,10 @@ public class ApplicationDbContext : DbContext
                   .WithMany(u => u.Enrollments)
                   .HasForeignKey(e => e.StudentId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ReviewedByInstructor)
+                  .WithMany()
+                  .HasForeignKey(e => e.ReviewedByInstructorId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<LessonCompletion>(entity =>

@@ -12,6 +12,7 @@ using EduFlow.Core.DTOs;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Enums;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -27,12 +28,20 @@ public class AdminController : ControllerBase
     private readonly ApplicationDbContext _dbContext;
     private readonly IAuthService _authService;
     private readonly ILogger<AdminController> _logger;
+    private readonly IRatingService _ratingService;
 
-    public AdminController(ApplicationDbContext dbContext, IAuthService authService, ILogger<AdminController> logger)
+    public AdminController(
+        ApplicationDbContext dbContext,
+        IAuthService authService,
+        ILogger<AdminController> logger,
+        IRatingService? ratingService = null)
     {
         _dbContext = dbContext;
         _authService = authService;
         _logger = logger;
+        // Optional so hosts that only need user management keep working; the
+        // fallback computes the identical documented aggregation from the rows.
+        _ratingService = ratingService ?? new RatingService(dbContext);
     }
 
     [HttpPost("users")]
@@ -471,6 +480,125 @@ public class AdminController : ControllerBase
             recentWorkflows
         });
     }
+
+    // -------------------------------------------------------------------------
+    // COURSE REVIEW MODERATION
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Every student review on the platform, including the moderation state.
+    /// Optional filters: status (Pending/Approved/Rejected), courseId.
+    /// </summary>
+    [HttpGet("reviews")]
+    public async Task<IActionResult> GetAllReviews(
+        [FromQuery] string? status = null, [FromQuery] Guid? courseId = null, [FromQuery] int take = 100)
+    {
+        take = Math.Clamp(take, 1, 500);
+
+        var query = _dbContext.CourseReviews.AsNoTracking()
+            .Include(r => r.Student)
+            .Include(r => r.Course)
+            .AsQueryable();
+
+        if (courseId.HasValue)
+        {
+            query = query.Where(r => r.CourseId == courseId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse<ReviewStatus>(status, ignoreCase: true, out var parsedStatus))
+        {
+            query = query.Where(r => r.Status == parsedStatus);
+        }
+
+        var reviews = await query
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(take)
+            .ToListAsync();
+
+        return Ok(reviews.Select(MapAdminReview).ToList());
+    }
+
+    /// <summary>
+    /// Approves a review: it becomes publicly visible and starts counting toward
+    /// the course and instructor aggregates.
+    /// </summary>
+    [HttpPost("reviews/{id:guid}/approve")]
+    public async Task<IActionResult> ApproveReview(Guid id)
+        => await ModerateReviewAsync(id, ReviewStatus.Approved, "Review approved.");
+
+    /// <summary>
+    /// Rejects a review: it is hidden from the public lists and excluded from every
+    /// aggregate. The row is kept so the decision is auditable and reversible.
+    /// </summary>
+    [HttpPost("reviews/{id:guid}/reject")]
+    public async Task<IActionResult> RejectReview(Guid id, [FromBody] ModerateCourseReviewRequest? request = null)
+        => await ModerateReviewAsync(id, ReviewStatus.Rejected,
+            string.IsNullOrWhiteSpace(request?.Note) ? "Review rejected." : "Review rejected.");
+
+    /// <summary>Permanently removes a review (e.g. spam or abusive content).</summary>
+    [HttpDelete("reviews/{id:guid}")]
+    public async Task<IActionResult> DeleteReview(Guid id)
+    {
+        var review = await _dbContext.CourseReviews.FirstOrDefaultAsync(r => r.Id == id);
+        if (review == null)
+        {
+            return NotFound(new { message = "Review not found." });
+        }
+
+        var courseId = review.CourseId;
+        _dbContext.CourseReviews.Remove(review);
+        await _dbContext.SaveChangesAsync();
+        await _ratingService.RecalculateCourseAsync(courseId);
+
+        return Ok(new { message = "Review deleted." });
+    }
+
+    private async Task<IActionResult> ModerateReviewAsync(Guid id, ReviewStatus status, string message)
+    {
+        var review = await _dbContext.CourseReviews.FirstOrDefaultAsync(r => r.Id == id);
+        if (review == null)
+        {
+            return NotFound(new { message = "Review not found." });
+        }
+
+        var actorClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        Guid.TryParse(actorClaim, out var actorId);
+
+        review.Status = status;
+        review.ModeratedAt = DateTime.UtcNow;
+        review.ModeratedById = actorId == Guid.Empty ? null : actorId;
+        review.UpdatedAt = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        await _ratingService.RecalculateCourseAsync(review.CourseId);
+
+        var moderated = await _dbContext.CourseReviews.AsNoTracking()
+            .Where(r => r.Id == id)
+            .Include(r => r.Student)
+            .Include(r => r.Course)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            message,
+            review = moderated != null ? MapAdminReview(moderated) : null
+        });
+    }
+
+    private static AdminCourseReviewDto MapAdminReview(CourseReview r) => new(
+        r.Id,
+        r.CourseId,
+        r.Course?.Code ?? string.Empty,
+        r.Course?.Title ?? string.Empty,
+        r.StudentId,
+        r.Student?.FullName ?? "Student",
+        r.Rating,
+        r.Comment,
+        r.Status.ToString(),
+        r.CreatedAt,
+        r.UpdatedAt
+    );
 }
 
 public record ChangeRoleRequest(string NewRole);

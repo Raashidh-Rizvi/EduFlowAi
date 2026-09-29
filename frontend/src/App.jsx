@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation
+} from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import Navbar from './components/layout/Navbar';
+import MarketplaceLayout from './components/layout/MarketplaceLayout';
 import Dashboard from './pages/Dashboard/Dashboard';
 import AdminManagement from './pages/Admin/AdminManagement';
 import AiReview from './pages/AiReview/AiReview';
@@ -10,12 +14,33 @@ import Gamification from './pages/Gamification/Gamification';
 import Insights from './pages/Insights/Insights';
 import Communications from './pages/Communications/Communications';
 import Login from './pages/Auth/Login';
-import LandingPage from './pages/Landing/LandingPage';
+import HomePage from './pages/Marketplace/HomePage';
+import CatalogPage from './pages/Marketplace/CatalogPage';
+import CourseDetailsPage from './pages/Marketplace/CourseDetailsPage';
+import InstructorProfilePage from './pages/Marketplace/InstructorProfilePage';
+import PolicyPage from './pages/Marketplace/PolicyPage';
+import LearnEntry from './pages/Student/LearnEntry';
 import StudentPortal from './pages/Student/StudentPortal';
+import InstructorPortal from './pages/Instructor/InstructorPortal';
+import EnrollmentRequestsView from './pages/Instructor/views/EnrollmentRequestsView';
 import { authService } from './services/authService';
+import instructorService from './services/instructorService';
+import { AuthProvider } from './context/AuthContext';
 import { ShieldAlert } from 'lucide-react';
 
-export default function App() {
+function readStoredUser() {
+  try {
+    const stored = localStorage.getItem('eduflow_user');
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function AppRoutes() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [activeTab, setActiveTabState] = useState(() => {
     try {
       return sessionStorage.getItem('eduflow_active_tab') || 'dashboard';
@@ -30,15 +55,14 @@ export default function App() {
     } catch {}
     setActiveTabState(tab);
   };
-  const [showLogin, setShowLogin] = useState(false);
-  const [forceLanding, setForceLanding] = useState(false);
+
   const [unreadNotifications] = useState(3);
-  const [pendingAiProposals, setPendingAiProposals] = useState(() => {
+  const [pendingAiProposals] = useState(() => {
     try {
       const saved = localStorage.getItem('eduflow_ai_proposals_dynamic');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed.filter(p => p.status === 'PendingInstructorApproval').length;
+        if (Array.isArray(parsed)) return parsed.filter((p) => p.status === 'PendingInstructorApproval').length;
       }
     } catch {
       return 0;
@@ -46,214 +70,228 @@ export default function App() {
     return 0;
   });
 
-  const [currentUser, setCurrentUser] = useState(() => {
+  const [currentUser, setCurrentUser] = useState(readStoredUser);
+
+  // Instructor/Admin console: live badge count of enrollment requests still awaiting
+  // a decision, refreshed whenever the console mounts and after every decision.
+  const [pendingEnrollments, setPendingEnrollments] = useState(0);
+
+  const refreshPendingEnrollments = async () => {
+    if (!currentUser || (currentUser.role !== 'Instructor' && currentUser.role !== 'Admin')) {
+      setPendingEnrollments(0);
+      return;
+    }
     try {
-      const stored = localStorage.getItem('eduflow_user');
-      return stored ? JSON.parse(stored) : null;
+      const summary = await instructorService.getEnrollmentRequestSummary();
+      setPendingEnrollments(Number(summary?.pending) || 0);
     } catch {
-      return null;
+      setPendingEnrollments(0);
     }
-  });
+  };
 
-  const handleLogout = () => {
-    authService.logout();
-    localStorage.removeItem('eduflow_user');
+  useEffect(() => {
+    refreshPendingEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  // Session re-validation: the cached user in localStorage is only a rendering
+  // hint. Identity and role are re-fetched from the secure backend endpoint
+  // (GET /api/auth/me) on boot so a tampered or stale profile can never survive
+  // a page refresh, and the session stays valid until logout or expiry.
+  const [sessionChecked, setSessionChecked] = useState(
+    () => !localStorage.getItem('eduflow_token') && !localStorage.getItem('eduflow_refresh_token')
+  );
+
+  useEffect(() => {
+    if (sessionChecked) return;
+    let alive = true;
+    authService
+      .restoreSession()
+      .then((profile) => {
+        if (alive) setCurrentUser(profile);
+      })
+      .finally(() => {
+        if (alive) setSessionChecked(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionChecked]);
+
+  const nextPath = useMemo(() => {
+    const requested = new URLSearchParams(location.search).get('next');
+    return requested && requested.startsWith('/') ? requested : '/console';
+  }, [location.search]);
+
+  const handleLogout = useCallback(async () => {
+    // Revokes the refresh token server-side, then clears every local credential.
+    await authService.logout();
     setCurrentUser(null);
-  };
+    navigate('/login', { replace: true });
+  }, [navigate]);
 
-  const handleLoginSuccess = (user) => {
-    localStorage.setItem('eduflow_user', JSON.stringify(user));
+  const handleLoginSuccess = useCallback((user) => {
+    // `user` is the normalized profile returned by authService (already persisted
+    // together with the JWT + refresh token by the service layer).
     setCurrentUser(user);
-    if (user.role === 'Admin' || user.role === 'Instructor') {
-      setActiveTab('dashboard');
-    }
-  };
+    if (user.role === 'Admin' || user.role === 'Instructor') setActiveTab('dashboard');
+    navigate(nextPath, { replace: true });
+  }, [navigate, nextPath]);
 
-  const handleSwitchRole = async (targetRole) => {
-    const roleConfig = {
-      Student: {
-        email: 'student@eduflow.ai',
-        password: 'Password123!',
-        user: {
-          userId: '33333333-3333-3333-3333-333333333333',
-          id: '33333333-3333-3333-3333-333333333333',
-          fullName: 'Alex Rivera',
-          email: 'student@eduflow.ai',
-          role: 'Student',
-          token: 'demo-jwt-token-student'
-        },
-        tab: null
-      },
-      Instructor: {
-        email: 'instructor@eduflow.ai',
-        password: 'Password123!',
-        user: {
-          userId: '22222222-2222-2222-2222-222222222222',
-          id: '22222222-2222-2222-2222-222222222222',
-          fullName: 'Dr. Sarah Jenkins',
-          email: 'instructor@eduflow.ai',
-          role: 'Instructor',
-          token: 'demo-jwt-token-instructor'
-        },
-        tab: 'dashboard'
-      },
-      Admin: {
-        email: 'admin@eduflow.ai',
-        password: 'Password123!',
-        user: {
-          userId: '11111111-1111-1111-1111-111111111111',
-          id: '11111111-1111-1111-1111-111111111111',
-          fullName: 'System Administrator',
-          email: 'admin@eduflow.ai',
-          role: 'Admin',
-          token: 'demo-jwt-token-admin'
-        },
-        tab: 'admin'
-      }
+  const handleSwitchRole = useCallback(async (targetRole) => {
+    // Demo personas are re-authenticated against the backend — switching portal
+    // means logging in as that real account. The id/role shown afterwards always
+    // come from the server response; nothing is fabricated client-side.
+    const personaAccounts = {
+      Student: { email: 'student@eduflow.ai', password: 'Password123!', tab: null },
+      Instructor: { email: 'instructor@eduflow.ai', password: 'Password123!', tab: 'dashboard' },
+      Admin: { email: 'admin@eduflow.ai', password: 'Password123!', tab: 'admin' }
     };
 
-    const config = roleConfig[targetRole];
+    const config = personaAccounts[targetRole];
     if (!config) return;
+    if (currentUser?.role === targetRole) return;
 
-    let authenticatedUser = null;
     try {
-      const res = await authService.login({ email: config.email, password: config.password });
-      if (res && (res.token || res.role)) {
-        authenticatedUser = res;
-      }
+      const user = await authService.switchAccount({ email: config.email, password: config.password });
+      setCurrentUser(user);
+      if (config.tab) setActiveTab(config.tab);
+      navigate('/console', { replace: true });
     } catch (err) {
-      console.log(`[RoleSwitch] Backend auth offline or bypassed, applying verified demo persona for ${targetRole}`);
-    }
-
-    if (!authenticatedUser) {
-      authenticatedUser = config.user;
-    }
-
-    localStorage.setItem('eduflow_user', JSON.stringify(authenticatedUser));
-    if (authenticatedUser.token) {
-      localStorage.setItem('eduflow_token', authenticatedUser.token);
-    }
-
-    setCurrentUser(authenticatedUser);
-    setForceLanding(false);
-    setShowLogin(false);
-
-    if (config.tab) {
-      setActiveTab(config.tab);
-    }
-  };
-
-  // ── Not logged in or Force Landing ─────────────────────────────────────────
-  if (forceLanding || !currentUser) {
-    if (!currentUser && showLogin) {
-      return (
-        <div className="fade-in">
-          <Login onLoginSuccess={handleLoginSuccess} />
-        </div>
+      // Failed switch keeps the current session intact (switchAccount does not
+      // clear credentials on failure) and surfaces the backend's message.
+      console.error(
+        '[RoleSwitch] Portal switch failed:',
+        err?.response?.data?.message || err?.friendlyMessage || err?.message
       );
     }
+  }, [currentUser, navigate]);
+
+  const authValue = useMemo(
+    () => ({ currentUser, onLogout: handleLogout, onSwitchRole: handleSwitchRole, onLoginSuccess: handleLoginSuccess }),
+    [currentUser, handleLogout, handleSwitchRole, handleLoginSuccess]
+  );
+
+  // Render nothing but a shell until the stored session has been re-validated
+  // against the backend (prevents a stale/tampered cached role from flashing).
+  if (!sessionChecked) {
+    return <div className="fade-in" style={{ minHeight: '100vh' }} />;
+  }
+
+  // ── Console (instructor / admin / student workspace) ──────────────────────
+  const consoleView = (() => {
+    if (!currentUser) return <Navigate to="/login" replace />;
+
+    if (currentUser.role === 'Student') {
+      return <StudentPortal user={currentUser} onLogout={handleLogout} onSwitchRole={handleSwitchRole} />;
+    }
+
+    if (currentUser.role === 'Instructor') {
+      return (
+        <InstructorPortal
+          user={currentUser}
+          onLogout={handleLogout}
+          onSwitchRole={handleSwitchRole}
+          onLogoClick={() => navigate('/')}
+        />
+      );
+    }
+
+    // Admin is the only role that reaches the governance console. Any other
+    // (unexpected) role is denied rather than silently granted console access.
+    if (currentUser.role !== 'Admin') {
+      return <AccessDenied requiredRole="Administrator" />;
+    }
+
     return (
-      <div className="fade-in">
-        <LandingPage 
+      <div style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          pendingCount={pendingAiProposals}
+          pendingEnrollments={pendingEnrollments}
           currentUser={currentUser}
-          onLoginClick={() => {
-            if (currentUser) {
-              setForceLanding(false);
-            } else {
-              setShowLogin(true);
-            }
-          }} 
-          onSwitchRole={handleSwitchRole}
+          onLogout={handleLogout}
+          onLogoClick={() => navigate('/')}
         />
-      </div>
-    );
-  }
 
-  // ── Student Portal ─────────────────────────────────────────────────────────
-  if (currentUser.role === 'Student') {
-    return (
-      <div className="fade-in">
-        <StudentPortal 
-          user={currentUser} 
-          onLogout={handleLogout} 
-          onSwitchRole={handleSwitchRole}
-        />
-      </div>
-    );
-  }
+        <main style={{
+          flex: 1,
+          padding: '24px 32px',
+          overflowY: 'auto',
+          maxHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <div style={{ width: '100%', maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <Navbar
+              activeTab={activeTab}
+              unreadNotifications={unreadNotifications}
+              currentUser={currentUser}
+              onLogout={handleLogout}
+              onSwitchRole={handleSwitchRole}
+            />
 
-  // ── Instructor / Admin Console ─────────────────────────────────────────────
-  return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
-      {/* Smart Sidebar */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        pendingCount={pendingAiProposals}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onLogoClick={() => setForceLanding(true)}
-      />
+            <div style={{ flex: 1, paddingBottom: '32px' }}>
+              {activeTab === 'dashboard' && (
+                <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} currentUser={currentUser} />
+              )}
 
-      {/* Main Content Area with max-width containment */}
-      <main style={{
-        flex: 1,
-        padding: '24px 32px',
-        overflowY: 'auto',
-        maxHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <div style={{ width: '100%', maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <Navbar
-            activeTab={activeTab}
-            unreadNotifications={unreadNotifications}
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            onSwitchRole={handleSwitchRole}
-          />
+              {activeTab === 'admin' && currentUser.role === 'Admin' && <AdminManagement />}
+              {activeTab === 'admin' && currentUser.role !== 'Admin' && <AccessDenied requiredRole="Admin" />}
 
-          <div style={{ flex: 1, paddingBottom: '32px' }}>
-            {activeTab === 'dashboard' && (
-              <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} currentUser={currentUser} />
-            )}
-
-            {/* Admin-only page */}
-            {activeTab === 'admin' && currentUser.role === 'Admin' && (
-              <AdminManagement />
-            )}
-            {activeTab === 'admin' && currentUser.role !== 'Admin' && (
-              <AccessDenied requiredRole="Admin" />
-            )}
-
-            {/* Instructor + Admin pages */}
-            {activeTab === 'ai-review' && (
-              <AiReview />
-            )}
-
-            {activeTab === 'courses' && (
-              <Courses currentUser={currentUser} />
-            )}
-
-            {activeTab === 'assessments' && (
-              <Assessments currentUser={currentUser} />
-            )}
-
-            {activeTab === 'gamification' && (
-              <Gamification />
-            )}
-
-            {activeTab === 'insights' && (
-              <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />
-            )}
-
-            {activeTab === 'communications' && (
-              <Communications />
-            )}
+              {activeTab === 'ai-review' && <AiReview />}
+              {activeTab === 'enrollment-requests' && (
+                <EnrollmentRequestsView
+                  onNavigate={setActiveTab}
+                  onDecisionMade={refreshPendingEnrollments}
+                />
+              )}
+              {activeTab === 'courses' && <Courses currentUser={currentUser} />}
+              {activeTab === 'assessments' && <Assessments currentUser={currentUser} />}
+              {activeTab === 'gamification' && <Gamification />}
+              {activeTab === 'insights' && <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />}
+              {activeTab === 'communications' && <Communications />}
+            </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
+    );
+  })();
+
+  const authView = currentUser
+    ? <Navigate to={nextPath} replace />
+    : <Login onLoginSuccess={handleLoginSuccess} initialMode={new URLSearchParams(location.search).get('mode') === 'register' ? 'register' : 'login'} />;
+
+  return (
+    <AuthProvider value={authValue}>
+      <div className="fade-in">
+        <Routes>
+          <Route element={<MarketplaceLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/courses" element={<CatalogPage />} />
+            <Route path="/courses/:id" element={<CourseDetailsPage />} />
+            <Route path="/instructors/:id" element={<InstructorProfilePage />} />
+            <Route path="/policies/:slug" element={<PolicyPage />} />
+          </Route>
+
+          {/* Learning portal entry: server-verified enrollment gate, then the student console. */}
+          <Route path="/learn/:courseId" element={<LearnEntry />} />
+
+          <Route path="/login" element={authView} />
+          <Route path="/console" element={consoleView} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </AuthProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
 

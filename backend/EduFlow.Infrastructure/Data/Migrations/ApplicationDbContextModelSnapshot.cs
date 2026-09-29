@@ -17,7 +17,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "8.0.0")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -295,7 +295,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         {
                             Id = "FIRST_LESSON",
                             Category = "Learning",
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(500),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(3910),
                             Description = "Completed your first lesson in EduFlow AI",
                             IconUrl = "🚀",
                             Title = "First Step",
@@ -305,7 +305,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         {
                             Id = "QUIZ_MASTER",
                             Category = "Assessment",
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(3670),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(3919),
                             Description = "Achieved 100% on any interactive quiz",
                             IconUrl = "🎯",
                             Title = "Quiz Ace",
@@ -315,7 +315,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         {
                             Id = "SEVEN_DAY_STREAK",
                             Category = "Streak",
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(3676),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(3920),
                             Description = "Maintained a 7-day continuous learning streak",
                             IconUrl = "🔥",
                             Title = "Unstoppable",
@@ -325,7 +325,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         {
                             Id = "CHALLENGE_CHAMPION",
                             Category = "Milestone",
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(3678),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(3922),
                             Description = "Completed 5 daily challenges or boss encounters",
                             IconUrl = "🏆",
                             Title = "Boss Slayer",
@@ -335,7 +335,7 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         {
                             Id = "SQUAD_GOALS",
                             Category = "Social",
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(3680),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(3924),
                             Description = "Joined a student learning squad",
                             IconUrl = "🤝",
                             Title = "Team Player",
@@ -472,9 +472,15 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<double>("AverageRating")
+                        .HasColumnType("double precision");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<bool>("CertificateEnabled")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -491,13 +497,50 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("DurationHours")
+                        .HasColumnType("integer");
+
                     b.Property<Guid>("InstructorId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("IsFree")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsPublished")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("LearningOutcomesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PrerequisitesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("RatingCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ShortDescription")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TargetAudienceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Term")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -514,6 +557,9 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<int>("XpReward")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Code")
@@ -524,6 +570,56 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Courses");
+                });
+
+            modelBuilder.Entity("EduFlow.Core.Entities.CourseReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Comment")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("CourseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ModeratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ModeratedById")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("StudentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StudentId");
+
+                    b.HasIndex("CourseId", "Status");
+
+                    b.HasIndex("CourseId", "StudentId")
+                        .IsUnique();
+
+                    b.ToTable("CourseReviews", t =>
+                        {
+                            t.HasCheckConstraint("CK_CourseReviews_Rating_Range", "\"Rating\" >= 1 AND \"Rating\" <= 5");
+                        });
                 });
 
             modelBuilder.Entity("EduFlow.Core.Entities.Enrollment", b =>
@@ -541,6 +637,19 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.Property<double>("ProgressPercentage")
                         .HasColumnType("double precision");
 
+                    b.Property<DateTime?>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewNotes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedByInstructorId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -553,12 +662,60 @@ namespace EduFlow.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReviewedByInstructorId");
+
+                    b.HasIndex("Status");
+
                     b.HasIndex("StudentId");
 
                     b.HasIndex("CourseId", "StudentId")
                         .IsUnique();
 
                     b.ToTable("Enrollments");
+                });
+
+            modelBuilder.Entity("EduFlow.Core.Entities.InstructorProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Bio")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Expertise")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Headline")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("LinkedInUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WebsiteUrl")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("InstructorProfiles");
                 });
 
             modelBuilder.Entity("EduFlow.Core.Entities.Lesson", b =>
@@ -579,6 +736,9 @@ namespace EduFlow.Infrastructure.Data.Migrations
 
                     b.Property<int>("EstimatedMinutes")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IsFreePreview")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("ModuleId")
                         .HasColumnType("uuid");
@@ -1759,35 +1919,35 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         new
                         {
                             Id = new Guid("11111111-1111-1111-1111-111111111111"),
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(9514),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4060),
                             Email = "admin@eduflow.ai",
                             FullName = "System Administrator",
                             IsActive = true,
                             PasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK",
                             Role = "Admin",
-                            UpdatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 716, DateTimeKind.Utc).AddTicks(9516)
+                            UpdatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4060)
                         },
                         new
                         {
                             Id = new Guid("22222222-2222-2222-2222-222222222222"),
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 717, DateTimeKind.Utc).AddTicks(2515),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4067),
                             Email = "instructor@eduflow.ai",
                             FullName = "Dr. Sarah Jenkins",
                             IsActive = true,
                             PasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK",
                             Role = "Instructor",
-                            UpdatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 717, DateTimeKind.Utc).AddTicks(2517)
+                            UpdatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4067)
                         },
                         new
                         {
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
-                            CreatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 717, DateTimeKind.Utc).AddTicks(2525),
+                            CreatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4108),
                             Email = "student@eduflow.ai",
                             FullName = "Alex Rivera",
                             IsActive = true,
                             PasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK",
                             Role = "Student",
-                            UpdatedAt = new DateTime(2026, 9, 7, 10, 8, 56, 717, DateTimeKind.Utc).AddTicks(2526)
+                            UpdatedAt = new DateTime(2026, 9, 29, 4, 48, 50, 362, DateTimeKind.Utc).AddTicks(4108)
                         });
                 });
 
@@ -1942,6 +2102,25 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.Navigation("Instructor");
                 });
 
+            modelBuilder.Entity("EduFlow.Core.Entities.CourseReview", b =>
+                {
+                    b.HasOne("EduFlow.Core.Entities.Course", "Course")
+                        .WithMany("Reviews")
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EduFlow.Core.Entities.User", "Student")
+                        .WithMany()
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Course");
+
+                    b.Navigation("Student");
+                });
+
             modelBuilder.Entity("EduFlow.Core.Entities.Enrollment", b =>
                 {
                     b.HasOne("EduFlow.Core.Entities.Course", "Course")
@@ -1949,6 +2128,11 @@ namespace EduFlow.Infrastructure.Data.Migrations
                         .HasForeignKey("CourseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("EduFlow.Core.Entities.User", "ReviewedByInstructor")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByInstructorId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("EduFlow.Core.Entities.User", "Student")
                         .WithMany("Enrollments")
@@ -1958,7 +2142,20 @@ namespace EduFlow.Infrastructure.Data.Migrations
 
                     b.Navigation("Course");
 
+                    b.Navigation("ReviewedByInstructor");
+
                     b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("EduFlow.Core.Entities.InstructorProfile", b =>
+                {
+                    b.HasOne("EduFlow.Core.Entities.User", "User")
+                        .WithOne("InstructorProfile")
+                        .HasForeignKey("EduFlow.Core.Entities.InstructorProfile", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("EduFlow.Core.Entities.Lesson", b =>
@@ -2405,6 +2602,8 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.Navigation("Enrollments");
 
                     b.Navigation("Modules");
+
+                    b.Navigation("Reviews");
                 });
 
             modelBuilder.Entity("EduFlow.Core.Entities.Lesson", b =>
@@ -2461,6 +2660,8 @@ namespace EduFlow.Infrastructure.Data.Migrations
                     b.Navigation("Enrollments");
 
                     b.Navigation("InstructedCourses");
+
+                    b.Navigation("InstructorProfile");
 
                     b.Navigation("LessonCompletions");
 

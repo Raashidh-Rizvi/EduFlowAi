@@ -12,6 +12,7 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/gamification/squads")]
+[Authorize]
 public class TeamsController : ControllerBase
 {
     private readonly ITeamService _teamService;
