@@ -45,10 +45,17 @@ import {
 } from 'lucide-react';
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
 import { courseService } from '../../services/courseService';
+import AdminCourseManagement from './AdminCourseManagement';
 import { quizService } from '../../services/quizService';
 import { saveGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
+  return currentUser?.role === 'Admin'
+    ? <AdminCourseManagement />
+    : <InstructorCourses currentUser={currentUser} />;
+}
+
+function InstructorCourses({ currentUser }) {
   const [coursesList, setCoursesList] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
   const [viewMode, setViewMode] = useState('curriculum'); // 'curriculum' | 'journey'
