@@ -1,41 +1,49 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import Navbar from '../../components/layout/Navbar';
-import Courses from '../Courses/Courses';
-import Assessments from '../Assessments/Assessments';
-import AiReview from '../AiReview/AiReview';
-import Gamification from '../Gamification/Gamification';
-import Insights from '../Insights/Insights';
-import Communications from '../Communications/Communications';
-import InstructorSidebar from './InstructorSidebar';
-import DashboardView from './views/DashboardView';
-import MyCoursesView from './views/MyCoursesView';
-import CreateCourseView from './views/CreateCourseView';
-import EnrollmentRequestsView from './views/EnrollmentRequestsView';
-import MyStudentsView from './views/MyStudentsView';
-import ReviewsView from './views/ReviewsView';
-import ProfileView from './views/ProfileView';
-import instructorService from '../../services/instructorService';
-import { useUIVersion } from '../../context/UIVersionContext';
-import InstructorPortalV2 from './InstructorPortalV2';
+import React, { useCallback, useEffect, useState } from "react";
+import Navbar from "../../components/layout/Navbar";
+import Courses from "../Courses/Courses";
+import Assessments from "../Assessments/Assessments";
+import AiReview from "../AiReview/AiReview";
+import Gamification from "../Gamification/Gamification";
+import Insights from "../Insights/Insights";
+import Communications from "../Communications/Communications";
+import InstructorSidebar from "./InstructorSidebar";
+import DashboardView from "./views/DashboardView";
+import MyCoursesView from "./views/MyCoursesView";
+import CreateCourseView from "./views/CreateCourseView";
+import EnrollmentRequestsView from "./views/EnrollmentRequestsView";
+import MyStudentsView from "./views/MyStudentsView";
+import ReviewsView from "./views/ReviewsView";
+import ProfileView from "./views/ProfileView";
+import instructorService from "../../services/instructorService";
+import { useUIVersion } from "../../context/UIVersionContext";
+import InstructorPortalV2 from "./InstructorPortalV2";
+import HelpSupportDialog from "../../components/support/HelpSupportDialog";
 
-const SECTION_KEY = 'eduflow_instructor_section';
+const SECTION_KEY = "eduflow_instructor_section";
 
 const readPendingAi = () => {
   try {
-    const saved = localStorage.getItem('eduflow_ai_proposals_dynamic');
+    const saved = localStorage.getItem("eduflow_ai_proposals_dynamic");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter(p => p.status === 'PendingInstructorApproval').length;
+      if (Array.isArray(parsed))
+        return parsed.filter((p) => p.status === "PendingInstructorApproval")
+          .length;
     }
   } catch {}
   return 0;
 };
 
-export default function InstructorPortal({ user, onLogout, onSwitchRole, onLogoClick }) {
+export default function InstructorPortal({
+  user,
+  onLogout,
+  onSwitchRole,
+  onLogoClick,
+}) {
   const { uiVersion } = useUIVersion();
 
   // Delegate entirely to V2 portal when v2 is active
-  if (uiVersion === 'v2') {
+  if (uiVersion === "v2") {
     return (
       <InstructorPortalV2
         user={user}
@@ -47,20 +55,28 @@ export default function InstructorPortal({ user, onLogout, onSwitchRole, onLogoC
   }
 
   // ── V1 (original layout) ─────────────────────────────────────────────────
-  return <InstructorPortalV1 user={user} onLogout={onLogout} onSwitchRole={onSwitchRole} onLogoClick={onLogoClick} />;
+  return (
+    <InstructorPortalV1
+      user={user}
+      onLogout={onLogout}
+      onSwitchRole={onSwitchRole}
+      onLogoClick={onLogoClick}
+    />
+  );
 }
 
 function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
   const [section, setSectionState] = useState(() => {
     try {
       const stored = sessionStorage.getItem(SECTION_KEY);
-      return stored || 'dashboard';
+      return stored || "dashboard";
     } catch {
-      return 'dashboard';
+      return "dashboard";
     }
   });
   const [pendingEnrollments, setPendingEnrollments] = useState(0);
   const [pendingAiProposals] = useState(readPendingAi);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
 
   const setSection = useCallback((next) => {
     try {
@@ -68,7 +84,7 @@ function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
     } catch {}
     setSectionState(next);
     try {
-      const main = document.getElementById('instructor-main');
+      const main = document.getElementById("instructor-main");
       if (main) main.scrollTop = 0;
     } catch {}
   }, []);
@@ -88,46 +104,56 @@ function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
 
   const renderSection = () => {
     switch (section) {
-      case 'my-courses':
+      case "my-courses":
         return <MyCoursesView onNavigate={setSection} />;
-      case 'create-course':
+      case "create-course":
         return <CreateCourseView onNavigate={setSection} />;
-      case 'enrollment-requests':
+      case "enrollment-requests":
         return (
           <EnrollmentRequestsView
             onNavigate={setSection}
             onDecisionMade={refreshPendingEnrollments}
           />
         );
-      case 'my-students':
+      case "my-students":
         return <MyStudentsView />;
-      case 'reviews':
+      case "reviews":
         return <ReviewsView />;
-      case 'profile':
+      case "profile":
         return <ProfileView />;
-      case 'courses':
+      case "courses":
         return <Courses currentUser={user} />;
-      case 'assessments':
+      case "assessments":
         return <Assessments currentUser={user} />;
-      case 'ai-review':
+      case "ai-review":
         return <AiReview />;
-      case 'gamification':
+      case "gamification":
         return <Gamification />;
-      case 'insights':
-        return <Insights onTriggerRemedial={() => setSection('ai-review')} />;
-      case 'communications':
+      case "insights":
+        return <Insights onTriggerRemedial={() => setSection("ai-review")} />;
+      case "communications":
         return <Communications />;
-      case 'dashboard':
+      case "dashboard":
       default:
         return <DashboardView user={user} onNavigate={setSection} />;
     }
   };
 
   return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'row', minHeight: '100vh', width: '100%', backgroundColor: 'var(--bg-canvas)' }}>
+    <div
+      className="fade-in"
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        minHeight: "100vh",
+        width: "100%",
+        backgroundColor: "var(--bg-canvas)",
+      }}
+    >
       <InstructorSidebar
         activeSection={section}
         onNavigate={setSection}
+        onOpenSupport={() => setIsSupportOpen(true)}
         pendingEnrollments={pendingEnrollments}
         pendingAiProposals={pendingAiProposals}
         currentUser={user}
@@ -135,11 +161,27 @@ function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
         onLogoClick={onLogoClick}
       />
 
-      <main id="instructor-main" style={{
-        flex: 1, padding: '24px 32px', overflowY: 'auto', maxHeight: '100vh',
-        display: 'flex', flexDirection: 'column'
-      }}>
-        <div style={{ width: '100%', maxWidth: '1440px', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <main
+        id="instructor-main"
+        style={{
+          flex: 1,
+          padding: "24px 32px",
+          overflowY: "auto",
+          maxHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "1440px",
+            margin: "0 auto",
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           <Navbar
             activeTab={section}
             currentUser={user}
@@ -147,12 +189,17 @@ function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
             onSwitchRole={onSwitchRole}
           />
 
-          <div style={{ flex: 1, paddingBottom: '32px' }}>
+          <div style={{ flex: 1, paddingBottom: "32px" }}>
             {renderSection()}
           </div>
         </div>
       </main>
+
+      <HelpSupportDialog
+        isOpen={isSupportOpen}
+        onClose={() => setIsSupportOpen(false)}
+        currentUser={user}
+      />
     </div>
   );
 }
-

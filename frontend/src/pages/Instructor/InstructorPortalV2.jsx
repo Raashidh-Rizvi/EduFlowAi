@@ -1,50 +1,61 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import NavbarV2 from '../../components/layout/NavbarV2';
-import Courses from '../Courses/Courses';
-import Assessments from '../Assessments/Assessments';
-import AiReview from '../AiReview/AiReview';
-import Gamification from '../Gamification/Gamification';
-import Insights from '../Insights/Insights';
-import Communications from '../Communications/Communications';
-import InstructorSidebarV2 from './InstructorSidebarV2';
-import DashboardView from './views/DashboardView';
-import MyCoursesView from './views/MyCoursesView';
-import CreateCourseView from './views/CreateCourseView';
-import EnrollmentRequestsView from './views/EnrollmentRequestsView';
-import MyStudentsView from './views/MyStudentsView';
-import ReviewsView from './views/ReviewsView';
-import ProfileView from './views/ProfileView';
-import instructorService from '../../services/instructorService';
+import React, { useCallback, useEffect, useState } from "react";
+import NavbarV2 from "../../components/layout/NavbarV2";
+import Courses from "../Courses/Courses";
+import Assessments from "../Assessments/Assessments";
+import AiReview from "../AiReview/AiReview";
+import Gamification from "../Gamification/Gamification";
+import Insights from "../Insights/Insights";
+import Communications from "../Communications/Communications";
+import InstructorSidebarV2 from "./InstructorSidebarV2";
+import DashboardView from "./views/DashboardView";
+import MyCoursesView from "./views/MyCoursesView";
+import CreateCourseView from "./views/CreateCourseView";
+import EnrollmentRequestsView from "./views/EnrollmentRequestsView";
+import MyStudentsView from "./views/MyStudentsView";
+import ReviewsView from "./views/ReviewsView";
+import ProfileView from "./views/ProfileView";
+import instructorService from "../../services/instructorService";
+import HelpSupportDialog from "../../components/support/HelpSupportDialog";
 
-const SECTION_KEY = 'eduflow_instructor_section';
+const SECTION_KEY = "eduflow_instructor_section";
 
 const readPendingAi = () => {
   try {
-    const saved = localStorage.getItem('eduflow_ai_proposals_dynamic');
+    const saved = localStorage.getItem("eduflow_ai_proposals_dynamic");
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return parsed.filter(p => p.status === 'PendingInstructorApproval').length;
+      if (Array.isArray(parsed))
+        return parsed.filter((p) => p.status === "PendingInstructorApproval")
+          .length;
     }
   } catch {}
   return 0;
 };
 
-export default function InstructorPortalV2({ user, onLogout, onSwitchRole, onLogoClick }) {
+export default function InstructorPortalV2({
+  user,
+  onLogout,
+  onSwitchRole,
+  onLogoClick,
+}) {
   const [section, setSectionState] = useState(() => {
     try {
-      return sessionStorage.getItem(SECTION_KEY) || 'dashboard';
+      return sessionStorage.getItem(SECTION_KEY) || "dashboard";
     } catch {
-      return 'dashboard';
+      return "dashboard";
     }
   });
   const [pendingEnrollments, setPendingEnrollments] = useState(0);
   const [pendingAiProposals] = useState(readPendingAi);
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
 
   const setSection = useCallback((next) => {
-    try { sessionStorage.setItem(SECTION_KEY, next); } catch {}
+    try {
+      sessionStorage.setItem(SECTION_KEY, next);
+    } catch {}
     setSectionState(next);
     try {
-      const main = document.getElementById('instructor-main-v2');
+      const main = document.getElementById("instructor-main-v2");
       if (main) main.scrollTop = 0;
     } catch {}
   }, []);
@@ -64,36 +75,36 @@ export default function InstructorPortalV2({ user, onLogout, onSwitchRole, onLog
 
   const renderSection = () => {
     switch (section) {
-      case 'my-courses':
+      case "my-courses":
         return <MyCoursesView onNavigate={setSection} />;
-      case 'create-course':
+      case "create-course":
         return <CreateCourseView onNavigate={setSection} />;
-      case 'enrollment-requests':
+      case "enrollment-requests":
         return (
           <EnrollmentRequestsView
             onNavigate={setSection}
             onDecisionMade={refreshPendingEnrollments}
           />
         );
-      case 'my-students':
+      case "my-students":
         return <MyStudentsView />;
-      case 'reviews':
+      case "reviews":
         return <ReviewsView />;
-      case 'profile':
+      case "profile":
         return <ProfileView />;
-      case 'courses':
+      case "courses":
         return <Courses currentUser={user} />;
-      case 'assessments':
+      case "assessments":
         return <Assessments currentUser={user} />;
-      case 'ai-review':
+      case "ai-review":
         return <AiReview />;
-      case 'gamification':
+      case "gamification":
         return <Gamification />;
-      case 'insights':
-        return <Insights onTriggerRemedial={() => setSection('ai-review')} />;
-      case 'communications':
+      case "insights":
+        return <Insights onTriggerRemedial={() => setSection("ai-review")} />;
+      case "communications":
         return <Communications />;
-      case 'dashboard':
+      case "dashboard":
       default:
         return <DashboardView user={user} onNavigate={setSection} />;
     }
@@ -104,6 +115,7 @@ export default function InstructorPortalV2({ user, onLogout, onSwitchRole, onLog
       <InstructorSidebarV2
         activeSection={section}
         onNavigate={setSection}
+        onOpenSupport={() => setIsSupportOpen(true)}
         pendingEnrollments={pendingEnrollments}
         pendingAiProposals={pendingAiProposals}
         currentUser={user}
@@ -121,11 +133,21 @@ export default function InstructorPortalV2({ user, onLogout, onSwitchRole, onLog
         <div
           id="instructor-main-v2"
           className="v2-page-content"
-          style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - var(--v2-navbar-h))' }}
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            maxHeight: "calc(100vh - var(--v2-navbar-h))",
+          }}
         >
           {renderSection()}
         </div>
       </div>
+
+      <HelpSupportDialog
+        isOpen={isSupportOpen}
+        onClose={() => setIsSupportOpen(false)}
+        currentUser={user}
+      />
     </div>
   );
 }
