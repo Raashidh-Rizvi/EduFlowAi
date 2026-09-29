@@ -30,14 +30,17 @@ namespace EduFlow.Api.Controllers;
 [Authorize(Roles = "Instructor,Admin")]
 public class InstructorController : BaseApiController
 {
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IRatingService _ratingService;
     private readonly IPaymentVerificationService? _paymentVerificationService;
 
     public InstructorController(
         ApplicationDbContext dbContext,
         IRatingService ratingService,
-        IPaymentVerificationService? paymentVerificationService = null) : base(dbContext)
+        IPaymentVerificationService? paymentVerificationService = null,
+        IAuditLogWriter? auditLogWriter = null) : base(dbContext)
     {
+        _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
         _ratingService = ratingService;
         _paymentVerificationService = paymentVerificationService;
     }
@@ -330,39 +333,52 @@ public class InstructorController : BaseApiController
         // together, and the whole unit has to run inside the execution strategy: starting the
         // transaction outside IExecutionStrategy.ExecuteAsync is incompatible with the
         // EnableRetryOnFailure strategy configured for Npgsql and always throws.
-        var result = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        enrollment.Status = EnrollmentStatus.Active;
+        enrollment.ReviewedAt = DateTime.UtcNow;
+        enrollment.ReviewedByInstructorId = userId;
+        enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Approved by instructor." : request.Notes.Trim();
+        enrollment.UpdatedAt = DateTime.UtcNow;
+
+        DbContext.Notifications.Add(new Notification
         {
+            UserId = enrollment.StudentId,
+            Title = "Enrollment Approved",
+            Message = $"Your enrollment request for '{enrollment.Course?.Title}' was approved. You can start learning now.",
+            Type = "EnrollmentApproved"
+        });
+
+        this.RecordEnrollment(_auditLogWriter, "Enrollment.Approved", enrollment);
+        var auditId = DbContext.ChangeTracker.Entries<AuditLog>().Single(e => e.State == EntityState.Added).Entity.Id;
+        // Stable staged rows survive rollback; a committed audit proves the whole transaction committed.
+        var committed = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (await DbContext.AuditLogs.AsNoTracking().AnyAsync(a => a.Id == auditId)) return true;
             await using var transaction = DbContext.Database.IsRelational()
-                ? await DbContext.Database.BeginTransactionAsync()
+                ? await DbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable)
                 : null;
 
-            enrollment.Status = EnrollmentStatus.Active;
-            enrollment.ReviewedAt = DateTime.UtcNow;
-            enrollment.ReviewedByInstructorId = userId;
-            enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Approved by instructor." : request.Notes.Trim();
-            enrollment.UpdatedAt = DateTime.UtcNow;
-
-            DbContext.Notifications.Add(new Notification
-            {
-                UserId = enrollment.StudentId,
-                Title = "Enrollment Approved",
-                Message = $"Your enrollment request for '{enrollment.Course?.Title}' was approved. You can start learning now.",
-                Type = "EnrollmentApproved"
-            });
-
-            await DbContext.SaveChangesAsync();
+            // Recheck inside the transaction so concurrent decisions cannot both record success.
+            if (!await DbContext.Enrollments.AsNoTracking().AnyAsync(e =>
+                    e.Id == enrollmentId && e.Status == EnrollmentStatus.Pending)) return false;
+            await DbContext.SaveChangesAsync(acceptAllChangesOnSuccess: false);
             if (transaction != null) await transaction.CommitAsync();
+            return true;
 
-            return new
+        });
+
+        if (!committed)
+        {
+            DbContext.ChangeTracker.Clear();
+            return Conflict(new { message = "This enrollment request has already been decided." });
+        }
+        DbContext.ChangeTracker.AcceptAllChanges();
+        return Ok(new
             {
                 message = "Enrollment approved.",
                 enrollmentId = enrollment.Id,
                 status = enrollment.Status.ToString(),
                 statusLabel = enrollment.Status.ToApiLabel()
-            };
-        });
-
-        return Ok(result);
+            });
     }
 
     /// <summary>Rejects a pending enrollment on one of the instructor's own courses.</summary>
@@ -398,39 +414,52 @@ public class InstructorController : BaseApiController
         // Same reason as ApproveEnrollmentRequest: the transaction has to live inside the
         // execution strategy because EnableRetryOnFailure forbids user-initiated transactions
         // that are started outside IExecutionStrategy.ExecuteAsync.
-        var result = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        enrollment.Status = EnrollmentStatus.Rejected;
+        enrollment.ReviewedAt = DateTime.UtcNow;
+        enrollment.ReviewedByInstructorId = userId;
+        enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Rejected by instructor." : request.Notes.Trim();
+        enrollment.UpdatedAt = DateTime.UtcNow;
+
+        DbContext.Notifications.Add(new Notification
         {
+            UserId = enrollment.StudentId,
+            Title = "Enrollment Request Declined",
+            Message = $"Your enrollment request for '{enrollment.Course?.Title}' was declined. {enrollment.ReviewNotes}",
+            Type = "EnrollmentRejected"
+        });
+
+        this.RecordEnrollment(_auditLogWriter, "Enrollment.Rejected", enrollment);
+        var auditId = DbContext.ChangeTracker.Entries<AuditLog>().Single(e => e.State == EntityState.Added).Entity.Id;
+        // Stable staged rows survive rollback; a committed audit proves the whole transaction committed.
+        var committed = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            if (await DbContext.AuditLogs.AsNoTracking().AnyAsync(a => a.Id == auditId)) return true;
             await using var transaction = DbContext.Database.IsRelational()
-                ? await DbContext.Database.BeginTransactionAsync()
+                ? await DbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable)
                 : null;
 
-            enrollment.Status = EnrollmentStatus.Rejected;
-            enrollment.ReviewedAt = DateTime.UtcNow;
-            enrollment.ReviewedByInstructorId = userId;
-            enrollment.ReviewNotes = string.IsNullOrWhiteSpace(request?.Notes) ? "Rejected by instructor." : request.Notes.Trim();
-            enrollment.UpdatedAt = DateTime.UtcNow;
-
-            DbContext.Notifications.Add(new Notification
-            {
-                UserId = enrollment.StudentId,
-                Title = "Enrollment Request Declined",
-                Message = $"Your enrollment request for '{enrollment.Course?.Title}' was declined. {enrollment.ReviewNotes}",
-                Type = "EnrollmentRejected"
-            });
-
-            await DbContext.SaveChangesAsync();
+            // Recheck inside the transaction so concurrent decisions cannot both record success.
+            if (!await DbContext.Enrollments.AsNoTracking().AnyAsync(e =>
+                    e.Id == enrollmentId && e.Status == EnrollmentStatus.Pending)) return false;
+            await DbContext.SaveChangesAsync(acceptAllChangesOnSuccess: false);
             if (transaction != null) await transaction.CommitAsync();
+            return true;
 
-            return new
+        });
+
+        if (!committed)
+        {
+            DbContext.ChangeTracker.Clear();
+            return Conflict(new { message = "This enrollment request has already been decided." });
+        }
+        DbContext.ChangeTracker.AcceptAllChanges();
+        return Ok(new
             {
                 message = "Enrollment request rejected.",
                 enrollmentId = enrollment.Id,
                 status = enrollment.Status.ToString(),
                 statusLabel = enrollment.Status.ToApiLabel()
-            };
-        });
-
-        return Ok(result);
+            });
     }
 
     private IPaymentVerificationService ResolvePaymentGate()
