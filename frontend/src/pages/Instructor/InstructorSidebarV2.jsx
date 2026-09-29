@@ -4,6 +4,7 @@ import {
   Sparkles, CheckCircle2, Trophy, BarChart3, Bell, LogOut, ChevronRight
 } from 'lucide-react';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { useUIVersion } from '../../context/UIVersionContext';
 
 const NAV_SECTIONS = [
   {
@@ -46,6 +47,7 @@ export default function InstructorSidebarV2({
   onLogoClick,
 }) {
   const user = currentUser || {};
+  const { uiVersion, setUIVersion } = useUIVersion();
   const getInitials = (name) => {
     if (!name) return 'IN';
     const parts = name.split(' ').filter(Boolean);
@@ -126,6 +128,36 @@ export default function InstructorSidebarV2({
           </div>
           <ChevronRight size={14} color="var(--v2-text-muted)" />
         </div>
+
+        {/* UI Version Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', padding: '8px 12px', borderRadius: '9px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(139,92,246,0.15)' }}>
+          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--v2-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>UI</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {['v1', 'v2'].map(v => (
+              <button
+                key={v}
+                onClick={() => setUIVersion(v)}
+                style={{
+                  padding: '3px 10px',
+                  borderRadius: '99px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  border: '1px solid',
+                  borderColor: uiVersion === v ? 'rgba(139,92,246,0.8)' : 'rgba(139,92,246,0.2)',
+                  background: uiVersion === v ? 'var(--v2-accent-1)' : 'transparent',
+                  color: uiVersion === v ? '#fff' : 'var(--v2-text-muted)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           onClick={onLogout}
           style={{

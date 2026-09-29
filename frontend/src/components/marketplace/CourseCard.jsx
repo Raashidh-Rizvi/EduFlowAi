@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Clock, BarChart3, Users, BookOpen, ArrowRight } from 'lucide-react';
+import { Clock, BarChart3, Users, BookOpen, Layers, ArrowRight, BadgeCheck } from 'lucide-react';
 import StarRating from './StarRating';
 import Avatar from './Avatar';
 import { formatDurationHours, formatPrice, formatCount, levelLabel } from '../../utils/marketplaceFormat';
@@ -32,6 +32,8 @@ export default function CourseCard({ course, style = {}, className = '' }) {
   const isFree = price === 'Free';
   const instructorName = course.instructorName || 'EduFlow Instructor';
   const lessonsCount = Number(course.lessonCount) || 0;
+  const modulesCount = Number(course.moduleCount) || 0;
+  const blurb = course.shortDescription || course.description || '';
 
   return (
     <article className={`mk-card glass-card-hover ${className}`.trim()} style={style}>
@@ -68,9 +70,12 @@ export default function CourseCard({ course, style = {}, className = '' }) {
           <Link to={`/courses/${course.id}`}>{course.title}</Link>
         </h3>
 
+        {blurb && <p className="mk-card__blurb">{blurb.length > 96 ? `${blurb.slice(0, 96).trimEnd()}…` : blurb}</p>}
+
         <div className="mk-card__instructor">
           <Avatar name={instructorName} src={course.instructorAvatarUrl} size={24} />
           <span>{instructorName}</span>
+          <BadgeCheck size={14} aria-hidden="true" style={{ color: 'var(--primary)', flexShrink: 0 }} />
         </div>
 
         <StarRating value={course.averageRating} count={course.ratingCount} size={13} />
@@ -84,6 +89,12 @@ export default function CourseCard({ course, style = {}, className = '' }) {
             <Users size={13} aria-hidden="true" />
             {formatCount(course.enrollmentCount)} enrolled
           </li>
+          {modulesCount > 0 && (
+            <li title="Number of modules">
+              <Layers size={13} aria-hidden="true" />
+              {modulesCount} modules
+            </li>
+          )}
           {lessonsCount > 0 && (
             <li title="Number of lessons">
               <BookOpen size={13} aria-hidden="true" />

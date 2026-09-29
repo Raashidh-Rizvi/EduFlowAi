@@ -25,7 +25,9 @@ export const marketplaceService = {
 
   /**
    * Paginated, filterable list of published courses.
-   * @param {{search?:string, category?:string, level?:string, price?:string, sort?:string, page?:number, pageSize?:number}} params
+   * @param {{search?:string, category?:string, level?:string, price?:string, sort?:string,
+   *          instructor?:string, minDuration?:number, maxDuration?:number, minRating?:number,
+   *          recentlyAdded?:boolean, page?:number, pageSize?:number}} params
    */
   async getCourses(params = {}) {
     const query = {};
@@ -61,6 +63,18 @@ export const marketplaceService = {
   /** Self-service enrollment (creates a pending request awaiting approval). */
   async enroll(courseId) {
     const response = await api.post(`/courses/${courseId}/enroll`);
+    return response.data;
+  },
+
+  /** Server-computed XP breakdown for a course (configured total + lesson/quiz sums). */
+  async getXpSummary(courseId) {
+    const response = await api.get(`/courses/${courseId}/xp-summary`);
+    return response.data;
+  },
+
+  /** Body of a lesson the instructor marked as Free Preview (anonymous access allowed). */
+  async getFreePreviewLesson(lessonId) {
+    const response = await api.get(`/courses/lessons/${lessonId}/preview`);
     return response.data;
   }
 };

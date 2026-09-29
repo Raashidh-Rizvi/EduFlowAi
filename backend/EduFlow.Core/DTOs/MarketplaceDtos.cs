@@ -64,7 +64,11 @@ public record MarketplaceCourseDto(
     string InstructorName,
     string? InstructorAvatarUrl,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    string ShortDescription = "",
+    string Language = "English",
+    int XpReward = 0,
+    bool CertificateEnabled = false
 );
 
 /// <summary>Cursor page of marketplace courses plus the totals needed for pagination.</summary>
@@ -83,7 +87,8 @@ public record MarketplaceModuleDto(
     string Description,
     int OrderIndex,
     int QuizCount,
-    IReadOnlyList<MarketplaceLessonDto> Lessons
+    IReadOnlyList<MarketplaceLessonDto> Lessons,
+    int AssignmentCount = 0
 );
 
 /// <summary>One lesson inside a marketplace curriculum module.</summary>
@@ -91,7 +96,9 @@ public record MarketplaceLessonDto(
     Guid Id,
     string Title,
     int OrderIndex,
-    int EstimatedMinutes
+    int EstimatedMinutes,
+    int XpReward = 0,
+    bool IsFreePreview = false
 );
 
 /// <summary>An approved student review shown under the course.</summary>
@@ -130,5 +137,14 @@ public record MarketplaceCourseDetailDto(
     DateTime UpdatedAt,
     IReadOnlyList<MarketplaceModuleDto> Modules,
     IReadOnlyList<MarketplaceReviewDto> Reviews,
-    MarketplaceInstructorDto Instructor
+    MarketplaceInstructorDto Instructor,
+    string ShortDescription = "",
+    string Language = "English",
+    int XpReward = 0,
+    bool CertificateEnabled = false,
+    IReadOnlyList<string>? LearningOutcomes = null,
+    IReadOnlyList<string>? Prerequisites = null,
+    IReadOnlyList<string>? TargetAudience = null,
+    int AssignmentCount = 0,
+    int QuizCount = 0
 );

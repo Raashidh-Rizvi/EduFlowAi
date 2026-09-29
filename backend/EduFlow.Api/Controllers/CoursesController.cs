@@ -181,7 +181,14 @@ public class CoursesController : BaseApiController
                 c.Price,
                 c.IsFree,
                 courseRating.AverageRating,
-                courseRating.ReviewCount
+                courseRating.ReviewCount,
+                c.ShortDescription,
+                string.IsNullOrWhiteSpace(c.Language) ? "English" : c.Language,
+                c.XpReward,
+                c.CertificateEnabled,
+                DeserializeStringList(c.LearningOutcomesJson),
+                DeserializeStringList(c.PrerequisitesJson),
+                DeserializeStringList(c.TargetAudienceJson)
             ));
         }
 
@@ -365,6 +372,7 @@ public class CoursesController : BaseApiController
             Code = code,
             Title = request.Title.Trim(),
             Description = request.Description ?? string.Empty,
+            ShortDescription = (request.ShortDescription ?? string.Empty).Trim(),
             Category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim(),
             Term = !string.IsNullOrWhiteSpace(request.Term) ? request.Term : "Fall 2026",
             ThumbnailUrl = request.ThumbnailUrl,
@@ -372,6 +380,12 @@ public class CoursesController : BaseApiController
             DurationHours = Math.Max(0, request.DurationHours),
             Price = request.IsFree ? 0m : Math.Max(0m, request.Price),
             IsFree = request.IsFree,
+            Language = string.IsNullOrWhiteSpace(request.Language) ? "English" : request.Language.Trim(),
+            XpReward = Math.Max(0, request.XpReward),
+            CertificateEnabled = request.CertificateEnabled,
+            LearningOutcomesJson = SerializeStringList(request.LearningOutcomes),
+            PrerequisitesJson = SerializeStringList(request.Prerequisites),
+            TargetAudienceJson = SerializeStringList(request.TargetAudience),
             InstructorId = requestingUserId,   // ownership comes from the authenticated user only
             IsPublished = false,               // courses start as drafts; use /publish to go live
             Status = "Draft"
@@ -410,7 +424,14 @@ public class CoursesController : BaseApiController
             Status: course.Status,
             DurationHours: course.DurationHours,
             Price: course.Price,
-            IsFree: course.IsFree
+            IsFree: course.IsFree,
+            ShortDescription: course.ShortDescription,
+            Language: string.IsNullOrWhiteSpace(course.Language) ? "English" : course.Language,
+            XpReward: course.XpReward,
+            CertificateEnabled: course.CertificateEnabled,
+            LearningOutcomes: DeserializeStringList(course.LearningOutcomesJson),
+            Prerequisites: DeserializeStringList(course.PrerequisitesJson),
+            TargetAudience: DeserializeStringList(course.TargetAudienceJson)
         );
 
         return CreatedAtAction(nameof(GetCourseById), new { id = course.Id }, dto);
@@ -419,6 +440,30 @@ public class CoursesController : BaseApiController
     /// <summary>Maps a client-supplied difficulty string onto the domain enum (defaults to Medium).</summary>
     private static DifficultyLevel ParseDifficulty(string? value)
         => Enum.TryParse<DifficultyLevel>(value, ignoreCase: true, out var parsed) ? parsed : DifficultyLevel.Medium;
+
+    /// <summary>Serializes a nullable string list to compact JSON (empty list for null input).</summary>
+    private static string SerializeStringList(List<string>? items)
+    {
+        var cleaned = (items ?? new List<string>())
+            .Where(i => !string.IsNullOrWhiteSpace(i))
+            .Select(i => i.Trim())
+            .ToList();
+        return System.Text.Json.JsonSerializer.Serialize(cleaned);
+    }
+
+    /// <summary>Reads a JSON string list stored on a course; never returns null.</summary>
+    private static List<string> DeserializeStringList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
 
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "Instructor,Admin")]
@@ -436,10 +481,23 @@ public class CoursesController : BaseApiController
             return Forbid();
         }
 
-        course.Code = request.Code;
-        course.Title = request.Title;
-        course.Description = request.Description;
-        course.Category = request.Category;
+        if (string.IsNullOrWhiteSpace(request.Code) || string.IsNullOrWhiteSpace(request.Title))
+        {
+            return BadRequest(new { message = "Course code and title are required." });
+        }
+
+        var code = request.Code.Trim();
+        var codeTaken = await DbContext.Courses.AnyAsync(c => c.Code == code && c.Id != id);
+        if (codeTaken)
+        {
+            return Conflict(new { message = $"A course with code '{code}' already exists." });
+        }
+
+        course.Code = code;
+        course.Title = request.Title.Trim();
+        course.Description = request.Description ?? string.Empty;
+        course.ShortDescription = (request.ShortDescription ?? string.Empty).Trim();
+        course.Category = string.IsNullOrWhiteSpace(request.Category) ? "General" : request.Category.Trim();
         if (!string.IsNullOrWhiteSpace(request.Term))
         {
             course.Term = request.Term;
@@ -449,6 +507,18 @@ public class CoursesController : BaseApiController
         course.DurationHours = Math.Max(0, request.DurationHours);
         course.IsFree = request.IsFree;
         course.Price = request.IsFree ? 0m : Math.Max(0m, request.Price);
+        course.Language = string.IsNullOrWhiteSpace(request.Language) ? course.Language : request.Language.Trim();
+        course.XpReward = Math.Max(0, request.XpReward);
+        course.CertificateEnabled = request.CertificateEnabled;
+        course.LearningOutcomesJson = SerializeStringList(request.LearningOutcomes);
+        course.PrerequisitesJson = SerializeStringList(request.Prerequisites);
+        course.TargetAudienceJson = SerializeStringList(request.TargetAudience);
+        // Editing must never silently flip publish state, but the legacy Status string is
+        // normalised so it can never contradict IsPublished.
+        if (course.IsPublished != string.Equals(course.Status, "Published", StringComparison.OrdinalIgnoreCase))
+        {
+            course.Status = course.IsPublished ? "Published" : "Draft";
+        }
         // Ownership is immutable through this endpoint: InstructorId is never assigned from the request.
         course.UpdatedAt = DateTime.UtcNow;
 
@@ -477,7 +547,14 @@ public class CoursesController : BaseApiController
             Status: course.Status,
             DurationHours: course.DurationHours,
             Price: course.Price,
-            IsFree: course.IsFree
+            IsFree: course.IsFree,
+            ShortDescription: course.ShortDescription,
+            Language: string.IsNullOrWhiteSpace(course.Language) ? "English" : course.Language,
+            XpReward: course.XpReward,
+            CertificateEnabled: course.CertificateEnabled,
+            LearningOutcomes: DeserializeStringList(course.LearningOutcomesJson),
+            Prerequisites: DeserializeStringList(course.PrerequisitesJson),
+            TargetAudience: DeserializeStringList(course.TargetAudienceJson)
         );
 
         return Ok(dto);
@@ -890,6 +967,87 @@ public class CoursesController : BaseApiController
         return Ok(dto);
     }
 
+    /// <summary>
+    /// Public preview of a single lesson the instructor marked as Free Preview.
+    /// Only the lesson body and title are exposed — attachments stay enrollment-gated —
+    /// and the parent course must be published. Any other lesson id returns 403 with
+    /// an enrollment hint rather than its content.
+    /// </summary>
+    [HttpGet("lessons/{lessonId:guid}/preview")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetFreePreviewLesson(Guid lessonId)
+    {
+        var lesson = await DbContext.Lessons.AsNoTracking()
+            .FirstOrDefaultAsync(l => l.Id == lessonId && l.IsFreePreview);
+        if (lesson == null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                message = "This lesson is not available as a free preview.",
+                requiresEnrollment = true
+            });
+        }
+
+        var course = await DbContext.Courses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Modules.Any(m => m.Id == lesson.ModuleId));
+        if (course == null || !course.IsPublished)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        return Ok(new
+        {
+            lesson.Id,
+            lesson.Title,
+            lesson.Content,
+            lesson.VideoUrl,
+            lesson.EstimatedMinutes,
+            lesson.OrderIndex,
+            courseId = course.Id,
+            courseTitle = course.Title,
+            // Attachments deliberately omitted: preview must never leak the full material.
+            pdfUrl = (string?)null,
+            isFreePreview = true
+        });
+    }
+
+    /// <summary>
+    /// Server-computed XP summary for a published course. The course's configured
+    /// XpReward is the headline figure; the breakdown sums real lesson XpReward values
+    /// and live quiz XpReward values, so the storefront can never show fabricated totals.
+    /// </summary>
+    [HttpGet("{id:guid}/xp-summary")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetCourseXpSummary(Guid id)
+    {
+        var course = await DbContext.Courses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == id);
+        if (course == null)
+        {
+            return NotFound(new { message = "Course not found." });
+        }
+
+        var lessonXp = await DbContext.Lessons.AsNoTracking()
+            .Where(l => l.Module != null && l.Module.CourseId == id)
+            .SumAsync(l => (int?)l.XpReward) ?? 0;
+
+        var quizXp = await DbContext.Assessments.AsNoTracking()
+            .Where(a => a.CourseId == id)
+            .SumAsync(a => (int?)a.XpReward) ?? 0;
+
+        return Ok(new
+        {
+            courseId = course.Id,
+            configuredCourseXp = course.XpReward,
+            lessonXp,
+            quizXp,
+            earnedFromLessonsAndQuizzes = lessonXp + quizXp,
+            // The headline shown on the course page: instructor-configured total when
+            // present, otherwise the live sum of lesson + quiz rewards.
+            displayTotal = course.XpReward > 0 ? course.XpReward : lessonXp + quizXp
+        });
+    }
+
     [HttpPost("modules/{moduleId:guid}/lessons")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateLesson(Guid moduleId, [FromBody] CreateLessonRequest request)
@@ -915,7 +1073,8 @@ public class CoursesController : BaseApiController
             AttachmentFileName = request.AttachmentFileName,
             XpReward = request.XpReward,
             EstimatedMinutes = request.EstimatedMinutes,
-            OrderIndex = request.OrderIndex
+            OrderIndex = request.OrderIndex,
+            IsFreePreview = request.IsFreePreview
         };
 
         await DbContext.Lessons.AddAsync(lesson);
@@ -947,6 +1106,7 @@ public class CoursesController : BaseApiController
         lesson.XpReward = request.XpReward;
         lesson.EstimatedMinutes = request.EstimatedMinutes;
         lesson.OrderIndex = request.OrderIndex;
+        if (request.IsFreePreview.HasValue) lesson.IsFreePreview = request.IsFreePreview.Value;
         lesson.UpdatedAt = DateTime.UtcNow;
 
         await DbContext.SaveChangesAsync();

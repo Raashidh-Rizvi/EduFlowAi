@@ -1,9 +1,10 @@
 import React from 'react';
 import {
   LayoutDashboard, BookOpen, PlusCircle, UserCheck, Users, Star, UserCog,
-  Sparkles, CheckCircle2, Trophy, BarChart3, Bell, ChevronRight
+  Sparkles, CheckCircle2, Trophy, BarChart3, Bell, ChevronRight, Layers2
 } from 'lucide-react';
 import { BrandLogo } from '../../components/common/BrandLogo';
+import { useUIVersion } from '../../context/UIVersionContext';
 
 export const INSTRUCTOR_SECTIONS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'Workspace' },
@@ -31,6 +32,7 @@ export default function InstructorSidebar({
   onLogoClick
 }) {
   const user = currentUser || {};
+  const { uiVersion, setUIVersion } = useUIVersion();
   const groups = [...new Set(INSTRUCTOR_SECTIONS.map(s => s.group))];
   const badgeFor = (id) => {
     if (id === 'enrollment-requests' && pendingEnrollments > 0) return `${pendingEnrollments} New`;
@@ -104,6 +106,36 @@ export default function InstructorSidebar({
               {user.fullName || 'Instructor'}
             </div>
           </div>
+
+          {/* UI Version Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>UI Version</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {['v1', 'v2'].map(v => (
+                <button
+                  key={v}
+                  onClick={() => setUIVersion(v)}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: '99px',
+                    fontSize: '10.5px',
+                    fontWeight: 700,
+                    border: '1px solid',
+                    borderColor: uiVersion === v ? 'var(--primary)' : 'var(--border-subtle)',
+                    background: uiVersion === v ? 'var(--primary)' : 'transparent',
+                    color: uiVersion === v ? '#fff' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button
             onClick={onLogout}
             className="btn-ghost"

@@ -20,8 +20,25 @@ const SORTS = [
   { value: 'rating', label: 'Highest rated' },
   { value: 'newest', label: 'Newest' },
   { value: 'title', label: 'Course title (A–Z)' },
+  { value: 'duration-asc', label: 'Shortest duration' },
+  { value: 'duration-desc', label: 'Longest duration' },
   { value: 'price-asc', label: 'Price: low to high' },
   { value: 'price-desc', label: 'Price: high to low' }
+];
+
+const DURATION_RANGES = [
+  { value: '', label: 'Any duration' },
+  { value: '0-5', label: 'Under 5 hours' },
+  { value: '5-15', label: '5–15 hours' },
+  { value: '15-30', label: '15–30 hours' },
+  { value: '30-', label: 'Over 30 hours' }
+];
+
+const RATING_FILTERS = [
+  { value: '', label: 'Any rating' },
+  { value: '4.5', label: '★★★★★ 4.5 & up' },
+  { value: '4', label: '★★★★ 4.0 & up' },
+  { value: '3.5', label: '★★★ 3.5 & up' }
 ];
 
 const PRICE_OPTIONS = [
@@ -40,8 +57,15 @@ export default function CatalogPage() {
   const level = searchParams.get('level') || '';
   const price = searchParams.get('price') || '';
   const instructor = searchParams.get('instructor') || '';
+  const duration = searchParams.get('duration') || '';
+  const minRating = searchParams.get('minRating') || '';
+  const recentlyAdded = searchParams.get('recent') === '1';
   const sort = searchParams.get('sort') || 'popular';
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
+
+  const [durationMin, durationMax] = duration
+    ? duration.split('-').map((part) => (part === '' ? null : Number(part)))
+    : [null, null];
 
   const [searchInput, setSearchInput] = useState(query);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -84,6 +108,10 @@ export default function CatalogPage() {
           level,
           price,
           instructor,
+          minDuration: durationMin,
+          maxDuration: durationMax,
+          minRating: minRating ? Number(minRating) : null,
+          recentlyAdded: recentlyAdded || null,
           sort,
           page,
           pageSize: PAGE_SIZE
@@ -107,7 +135,7 @@ export default function CatalogPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, category, level, price, instructor, sort, page]);
+  }, [query, category, level, price, instructor, duration, minRating, recentlyAdded, sort, page]);
 
   useEffect(() => () => window.clearTimeout(debounceRef.current), []);
 
@@ -118,8 +146,8 @@ export default function CatalogPage() {
   };
 
   const activeFilterCount = useMemo(
-    () => [category, level, price !== 'all' ? price : '', instructor].filter(Boolean).length,
-    [category, level, price, instructor]
+    () => [category, level, price !== 'all' ? price : '', instructor, duration, minRating, recentlyAdded ? 'recent' : ''].filter(Boolean).length,
+    [category, level, price, instructor, duration, minRating, recentlyAdded]
   );
 
   const clearFilters = () => {
@@ -190,6 +218,64 @@ export default function CatalogPage() {
               </button>
             </li>
           ))}
+        </ul>
+      </div>
+
+      <div className="mk-filters__group">
+        <h3>Duration</h3>
+        <ul className="mk-filters__list">
+          {DURATION_RANGES.map((item) => (
+            <li key={item.label}>
+              <button
+                type="button"
+                className={duration === item.value ? 'is-active' : ''}
+                onClick={() => updateParams({ duration: item.value })}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mk-filters__group">
+        <h3>Rating</h3>
+        <ul className="mk-filters__list">
+          {RATING_FILTERS.map((item) => (
+            <li key={item.label}>
+              <button
+                type="button"
+                className={minRating === item.value ? 'is-active' : ''}
+                onClick={() => updateParams({ minRating: item.value })}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mk-filters__group">
+        <h3>Availability</h3>
+        <ul className="mk-filters__list">
+          <li>
+            <button
+              type="button"
+              className={!recentlyAdded ? 'is-active' : ''}
+              onClick={() => updateParams({ recent: '' })}
+            >
+              All courses
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              className={recentlyAdded ? 'is-active' : ''}
+              onClick={() => updateParams({ recent: '1' })}
+            >
+              Recently added
+            </button>
+          </li>
         </ul>
       </div>
 

@@ -77,6 +77,10 @@ public class Course : BaseEntity
     public string Code { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>One-to-two sentence marketing summary shown on course cards and search results.</summary>
+    public string ShortDescription { get; set; } = string.Empty;
+
     public string Category { get; set; } = "Computer Science";
     public string Term { get; set; } = "Fall 2026";
     public string? ThumbnailUrl { get; set; }
@@ -101,6 +105,25 @@ public class Course : BaseEntity
 
     public Guid InstructorId { get; set; }
     public User? Instructor { get; set; }
+
+    /// <summary>Instructor-authored learning outcomes rendered as the "What you'll learn" checklist.</summary>
+    public string LearningOutcomesJson { get; set; } = "[]";
+
+    /// <summary>Instructor-authored requirements students should meet before enrolling.</summary>
+    public string PrerequisitesJson { get; set; } = "[]";
+
+    /// <summary>Instructor-authored description of who this course targets.</summary>
+    public string TargetAudienceJson { get; set; } = "[]";
+
+    /// <summary>Primary instruction language displayed on the course page.</summary>
+    public string Language { get; set; } = "English";
+
+    /// <summary>Total XP a student can earn from this course. Display-only guidance:
+    /// actual awards are always computed server-side from lesson/quiz/assessment events.</summary>
+    public int XpReward { get; set; } = 0;
+
+    /// <summary>Whether finishing this course grants a certificate of completion.</summary>
+    public bool CertificateEnabled { get; set; } = false;
 
     public ICollection<Module> Modules { get; set; } = new List<Module>();
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
@@ -196,6 +219,13 @@ public class Lesson : BaseEntity
     public int XpReward { get; set; } = 25;
     public int EstimatedMinutes { get; set; } = 20;
     public int OrderIndex { get; set; }
+
+    /// <summary>
+    /// When true, the lesson body may be read WITHOUT enrollment (anonymous preview),
+    /// provided the parent course is published. Instructors mark this from the
+    /// curriculum editor to advertise their course.
+    /// </summary>
+    public bool IsFreePreview { get; set; } = false;
 
     public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
 }

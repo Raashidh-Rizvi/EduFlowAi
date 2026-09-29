@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, Clock, BookOpen, Layers, Users, BarChart3,
-  CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, Loader2, GraduationCap, Send
+  CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, Loader2, GraduationCap, Send,
+  Zap, Award, Target, Globe2, Eye, Lock, X, BadgeCheck, ListChecks
 } from 'lucide-react';
 import Avatar from '../../components/marketplace/Avatar';
 import StarRating from '../../components/marketplace/StarRating';
@@ -16,31 +17,146 @@ import {
   formatMinutes, formatPrice, formatCount, levelLabel, timeAgo
 } from '../../utils/marketplaceFormat';
 
-function deriveOutcomes(course) {
-  const outcomes = [];
-  (course.modules || []).forEach((module) => {
-    if (module.title) outcomes.push(`Explain the core ideas behind ${module.title}`);
-    (module.lessons || []).slice(0, 1).forEach((lesson) => {
-      if (lesson.title) outcomes.push(`Apply ${lesson.title} in a practical exercise`);
+/**
+ * Keeps the document head in sync with the loaded course: title, meta
+ * description, Open Graph tags and a canonical URL, so a shared course link
+ * previews correctly everywhere. Restores nothing on unmount — the next page
+ * overwrites the tags it owns.
+ */
+function useCourseDocumentMeta(course) {
+  useEffect(() => {
+    if (!course) return undefined;
+    const title = `${course.title} | EduFlow`;
+    const description = (course.shortDescription || course.description || '').slice(0, 160);
+    const canonical = `${window.location.origin}/courses/${course.id}`;
+
+    document.title = title;
+
+    const setMeta = (selector, attr, content) => {
+      let tag = document.head.querySelector(selector);
+      if (!tag) {
+        tag = document.createElement('meta');
+        const [, name] = selector.match(/\[(?:name|property)="([^"]+)"\]/) || [];
+        if (selector.includes('property=')) tag.setAttribute('property', name);
+        else tag.setAttribute('name', name);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', content);
+      tag.setAttribute(attr, content);
+    };
+
+    setMeta('meta[name="description"]', 'content', description);
+    setMeta('meta[property="og:title"]', 'content', title);
+    setMeta('meta[property="og:description"]', 'content', description);
+    setMeta('meta[property="og:type"]', 'content', 'website');
+    setMeta('meta[property="og:url"]', 'content', canonical);
+    if (course.thumbnailUrl) {
+      setMeta('meta[property="og:image"]', 'content', course.thumbnailUrl);
+    }
+
+    let link = document.head.querySelector('link[rel="canonical"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.setAttribute('rel', 'canonical');
+      document.head.appendChild(link);
+    }
+    link.setAttribute('href', canonical);
+
+    // Course structured data (schema.org) for search engines.
+    const LD_ID = 'eduflow-course-jsonld';
+    document.getElementById(LD_ID)?.remove();
+    const ld = document.createElement('script');
+    ld.id = LD_ID;
+    ld.type = 'application/ld+json';
+    ld.textContent = JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Course',
+      name: course.title,
+      description,
+      provider: { '@type': 'Organization', name: 'EduFlow' },
+      inLanguage: course.language || 'English',
+      ...(course.averageRating > 0
+        ? { aggregateRating: { '@type': 'AggregateRating', ratingValue: course.averageRating, reviewCount: course.ratingCount || 1 } }
+        : {})
     });
-  });
-  if (course.description) outcomes.push(`Summarize ${course.title} and when to use it on real projects`);
-  return [...new Set(outcomes)].slice(0, 6);
+    document.head.appendChild(ld);
+
+    return () => {
+      document.getElementById(LD_ID)?.remove();
+    };
+  }, [course]);
 }
 
-function derivePrerequisites(course) {
-  const category = course.category || 'the subject';
-  switch (levelLabel(course.difficulty)) {
-    case 'Beginner':
-      return ['No prior experience required — the course starts from the basics.', 'A computer with a modern browser and a stable internet connection.'];
-    case 'Advanced':
-      return [`Solid working knowledge of ${category} concepts and terminology.`, 'Hands-on experience shipping at least one small project.'];
-    default:
-      return [
-        `Comfortable with introductory ${category} material (coursework or self-study).`,
-        'Willingness to follow along with the practical labs.'
-      ];
-  }
+/** Modal that streams a single free-preview lesson body to an anonymous visitor. */
+function FreePreviewModal({ preview, loading, error, onClose }) {
+  if (!loading && !error && !preview) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={preview ? `Free preview: ${preview.title}` : 'Free preview'}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1100,
+        backgroundColor: 'rgba(10, 15, 30, 0.8)', backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="mk-preview__dialog"
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          background: 'var(--bg-card, #fff)', color: 'var(--text-main, #111)',
+          borderRadius: 'var(--radius-lg, 16px)', maxWidth: '760px', width: '100%',
+          maxHeight: '86vh', overflowY: 'auto', padding: '26px 28px', position: 'relative',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.35)'
+        }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close preview"
+          style={{ position: 'absolute', top: 14, right: 14, border: 'none', background: 'transparent', cursor: 'pointer' }}
+        >
+          <X size={20} />
+        </button>
+
+        {loading && (
+          <p style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+            <Loader2 size={16} className="spin" aria-hidden="true" /> Loading preview…
+          </p>
+        )}
+
+        {error && (
+          <p style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, color: 'var(--danger, #b91c1c)' }}>
+            <Lock size={16} aria-hidden="true" /> {error}
+          </p>
+        )}
+
+        {preview && (
+          <>
+            <span className="mk-chip mk-chip--category" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Eye size={12} aria-hidden="true" /> Free Preview
+            </span>
+            <h2 style={{ margin: '12px 0 6px', fontSize: 22, fontFamily: 'var(--font-display, inherit)' }}>{preview.title}</h2>
+            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-muted, #666)' }}>
+              {preview.courseTitle} · {preview.estimatedMinutes ? `${preview.estimatedMinutes} min read` : 'Self-paced'}
+            </p>
+            <div className="mk-preview__body" style={{
+              marginTop: 18, fontSize: 14.5, lineHeight: 1.7, whiteSpace: 'pre-wrap', color: 'var(--text-main, #111)'
+            }}>
+              {preview.content}
+            </div>
+            <div style={{ marginTop: 22, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Link to={`/courses/${preview.courseId}`} className="btn-primary" onClick={onClose}>
+                Enroll to unlock every lesson
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function DetailSkeleton() {
@@ -80,12 +196,18 @@ export default function CourseDetailsPage() {
   const { currentUser } = useAuth();
 
   const [course, setCourse] = useState(null);
+  const [xpSummary, setXpSummary] = useState(null);
   const [similar, setSimilar] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openModules, setOpenModules] = useState({});
   const [enrollment, setEnrollment] = useState(null);
   const [enrollState, setEnrollState] = useState({ status: 'idle', message: '' });
+
+  // Free-preview lesson modal state
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
 
   const [reviewDraft, setReviewDraft] = useState({ rating: 5, comment: '' });
   const [reviewState, setReviewState] = useState({ status: 'idle', message: '' });
@@ -101,6 +223,10 @@ export default function CourseDetailsPage() {
 
       const firstModule = detail?.modules?.[0];
       setOpenModules(firstModule ? { [firstModule.id]: true } : {});
+
+      marketplaceService.getXpSummary(id)
+        .then(setXpSummary)
+        .catch(() => setXpSummary(null));
 
       marketplaceService.getSimilarCourses(id, detail?.category, 4)
         .then(setSimilar)
@@ -120,6 +246,13 @@ export default function CourseDetailsPage() {
     load();
     window.scrollTo({ top: 0 });
   }, [load]);
+
+  useCourseDocumentMeta(course);
+
+  // Route the "Continue Learning" CTA through the enrollment-gated student portal.
+  const goToLearning = () => {
+    navigate(`/learn/${id}`);
+  };
 
   // Which enrollment state does the signed-in student already have?
   // The student's own review (if any) is prefetched so the form edits it.
@@ -156,6 +289,10 @@ export default function CourseDetailsPage() {
       navigate(`/login?next=${encodeURIComponent(`/courses/${id}`)}`);
       return;
     }
+    if (currentUser.role !== 'Student') {
+      setEnrollState({ status: 'error', message: 'Only student accounts can request enrollment.' });
+      return;
+    }
     setEnrollState({ status: 'loading', message: '' });
     try {
       const result = await marketplaceService.enroll(id);
@@ -170,6 +307,30 @@ export default function CourseDetailsPage() {
         message: err?.friendlyMessage || 'We could not submit your enrollment. Please try again.'
       });
     }
+  };
+
+  const handleOpenPreview = async (lessonId) => {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreview({});
+    try {
+      const data = await marketplaceService.getFreePreviewLesson(lessonId);
+      setPreview(data);
+    } catch (err) {
+      setPreview(null);
+      setPreviewError(
+        err?.response?.status === 403
+          ? 'This lesson is not available as a free preview.'
+          : 'We could not load this preview right now.'
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreview(null);
+    setPreviewError(null);
   };
 
   const handleReviewSubmit = async (event) => {
@@ -268,6 +429,12 @@ export default function CourseDetailsPage() {
   const totalModules = (course.modules || []).length;
   const reviews = course.reviews || [];
   const instructor = course.instructor || {};
+  // Self-service enrollment and reviews are student-only. The server re-validates
+  // both (ownership, published state, enrollment status, one review per student),
+  // this gate only keeps the UI honest for staff and anonymous visitors.
+  const isStudent = currentUser?.role === 'Student';
+  const canEnroll = Boolean(currentUser) && isStudent;
+  const canReview = isStudent;
   const outcomes = course.learningOutcomes?.length ? course.learningOutcomes : deriveOutcomes(course);
   const prerequisites = course.prerequisites?.length ? course.prerequisites : derivePrerequisites(course);
   const enrolledLabel =
@@ -351,7 +518,12 @@ export default function CourseDetailsPage() {
             type="button"
             className="btn-primary mk-detail__enroll"
             onClick={handleEnroll}
-            disabled={enrollState.status === 'loading' || enrollment?.status === 'Active' || enrollment?.status === 'Pending'}
+            disabled={
+              enrollState.status === 'loading' ||
+              enrollment?.status === 'Active' ||
+              enrollment?.status === 'Pending' ||
+              (Boolean(currentUser) && !canEnroll)
+            }
           >
             {enrollState.status === 'loading' ? (
               <><Loader2 size={16} className="spin" aria-hidden="true" /> Submitting…</>
@@ -359,10 +531,14 @@ export default function CourseDetailsPage() {
               'Awaiting approval'
             ) : enrollment ? (
               'Continue learning'
-            ) : currentUser ? (
-              isFree ? 'Enroll for free' : `Enroll — ${price}`
-            ) : (
+            ) : !currentUser ? (
               'Log in to enroll'
+            ) : !canEnroll ? (
+              'Staff account — not enrollable'
+            ) : isFree ? (
+              'Enroll for free'
+            ) : (
+              `Enroll — ${price}`
             )}
           </button>
 
@@ -536,6 +712,27 @@ export default function CourseDetailsPage() {
               </div>
             </div>
 
+            {!canReview && !myReview ? (
+              <div className="mk-reviews__form">
+                <h3>Leave a review</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 14px', lineHeight: 1.6 }}>
+                  {!currentUser
+                    ? 'Log in with a student account to review this course.'
+                    : currentUser?.role === 'Instructor'
+                      ? 'Instructors and admins cannot leave reviews — only enrolled students can.'
+                      : 'Only students with an approved enrollment can leave a review.'}
+                </p>
+                {!currentUser && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => navigate(`/login?next=${encodeURIComponent(`/courses/${id}`)}`)}
+                  >
+                    Log in to review
+                  </button>
+                )}
+              </div>
+            ) : (
             <form className="mk-reviews__form" onSubmit={handleReviewSubmit}>
               <h3>{myReview ? 'Your review' : 'Leave a review'}</h3>
               <div className="mk-reviews__stars" role="radiogroup" aria-label="Your rating">
@@ -560,7 +757,7 @@ export default function CourseDetailsPage() {
                 rows={3}
                 maxLength={800}
                 aria-label="Your review"
-                disabled={!currentUser}
+                disabled={!canReview}
               />
               <div className="mk-reviews__form-foot">
                 <button type="submit" className="btn-primary" disabled={reviewState.status === 'loading'}>
@@ -582,6 +779,7 @@ export default function CourseDetailsPage() {
                 )}
               </div>
             </form>
+            )}
 
             {reviews.length === 0 ? (
               <EmptyState icon={Star} title="No reviews yet" message="Be the first learner to rate this course." />

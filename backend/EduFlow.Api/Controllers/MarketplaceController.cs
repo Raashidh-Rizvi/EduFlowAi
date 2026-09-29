@@ -208,8 +208,9 @@ public class MarketplaceController : BaseApiController
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Published courses with search, category / level / price / instructor
-    /// filters, sorting and paging. Response shape matches the storefront grid.
+    /// Published courses with search, category / level / price / duration / rating /
+    /// instructor / recently-added filters, sorting and paging. Response shape matches
+    /// the storefront grid.
     /// </summary>
     [HttpGet("courses")]
     [AllowAnonymous]
@@ -219,6 +220,10 @@ public class MarketplaceController : BaseApiController
         [FromQuery] string? level = null,
         [FromQuery] string? price = null,
         [FromQuery] string? instructor = null,
+        [FromQuery] int? minDuration = null,
+        [FromQuery] int? maxDuration = null,
+        [FromQuery] double? minRating = null,
+        [FromQuery] bool? recentlyAdded = null,
         [FromQuery] string? sort = "popular",
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 9)
@@ -227,7 +232,10 @@ public class MarketplaceController : BaseApiController
         pageSize = Math.Clamp(pageSize, 1, 48);
 
         var query = DbContext.Courses.AsNoTracking()
-            .Where(c => c.IsPublished);
+            .Where(c => c.IsPublished)
+            // Course "status" on the storefront is always Published: the marketplace
+            // contract hides drafts, so this is the only status a public card can have.
+            .Where(c => c.Status == "Published");
 
         var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
         if (term != null)
@@ -235,8 +243,13 @@ public class MarketplaceController : BaseApiController
             query = query.Where(c =>
                 c.Title.ToLower().Contains(term)
                 || c.Description.ToLower().Contains(term)
+                || c.ShortDescription.ToLower().Contains(term)
                 || c.Category.ToLower().Contains(term)
-                || c.Code.ToLower().Contains(term));
+                || c.Code.ToLower().Contains(term)
+                || c.Language.ToLower().Contains(term)
+                || c.LearningOutcomesJson.ToLower().Contains(term)
+                || c.PrerequisitesJson.ToLower().Contains(term)
+                || c.Instructor.FullName.ToLower().Contains(term));
         }
 
         if (!string.IsNullOrWhiteSpace(category))
@@ -258,6 +271,16 @@ public class MarketplaceController : BaseApiController
             query = query.Where(c => !c.IsFree && c.Price > 0);
         }
 
+        if (minDuration.HasValue)
+        {
+            query = query.Where(c => c.DurationHours >= minDuration.Value);
+        }
+
+        if (maxDuration.HasValue)
+        {
+            query = query.Where(c => c.DurationHours <= maxDuration.Value);
+        }
+
         if (Guid.TryParse(instructor, out var instructorId))
         {
             query = query.Where(c => c.InstructorId == instructorId);
@@ -271,6 +294,18 @@ public class MarketplaceController : BaseApiController
             .ToListAsync();
 
         var items = await ProjectAsync(courses);
+
+        if (minRating.HasValue && minRating.Value > 0)
+        {
+            items = items.Where(c => c.AverageRating >= minRating.Value).ToList();
+        }
+
+        if (recentlyAdded == true)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-30);
+            var recent = items.Where(c => c.CreatedAt >= cutoff).ToList();
+            items = recent.Count > 0 ? recent : items.OrderByDescending(c => c.CreatedAt).Take(pageSize).ToList();
+        }
 
         items = ApplySort(items, sort);
 
@@ -301,18 +336,27 @@ public class MarketplaceController : BaseApiController
 
         var item = (await ProjectAsync(new List<Course> { course })).First();
 
+        var courseAssessments = await DbContext.Assessments.AsNoTracking()
+            .Where(a => a.CourseId == course.Id)
+            .Select(a => new { a.ModuleScopeId, a.XpReward })
+            .ToListAsync();
+        var quizCount = courseAssessments.Count;
+
         var modules = course.Modules.Select(m => new MarketplaceModuleDto(
             m.Id,
             m.Title,
             m.Description ?? string.Empty,
             m.OrderIndex,
-            DbContext.Assessments.AsNoTracking().Count(a => a.ModuleScopeId == m.Id),
+            courseAssessments.Count(a => a.ModuleScopeId == m.Id),
             m.Lessons.Select(l => new MarketplaceLessonDto(
                 l.Id,
                 l.Title,
                 l.OrderIndex,
-                l.EstimatedMinutes
-            )).ToList()
+                l.EstimatedMinutes,
+                l.XpReward,
+                l.IsFreePreview
+            )).ToList(),
+            courseAssessments.Count(a => a.ModuleScopeId == m.Id)
         )).ToList();
 
         var reviews = await DbContext.CourseReviews.AsNoTracking()
@@ -358,7 +402,16 @@ public class MarketplaceController : BaseApiController
             item.UpdatedAt,
             modules,
             reviewDtos,
-            instructor
+            instructor,
+            course.ShortDescription,
+            string.IsNullOrWhiteSpace(course.Language) ? "English" : course.Language,
+            course.XpReward,
+            course.CertificateEnabled,
+            ParseJsonList(course.LearningOutcomesJson),
+            ParseJsonList(course.PrerequisitesJson),
+            ParseJsonList(course.TargetAudienceJson),
+            quizCount,
+            quizCount
         ));
     }
 
@@ -443,7 +496,11 @@ public class MarketplaceController : BaseApiController
                 c.Instructor?.FullName ?? "Instructor",
                 c.Instructor?.AvatarUrl,
                 c.CreatedAt,
-                c.UpdatedAt
+                c.UpdatedAt,
+                c.ShortDescription,
+                string.IsNullOrWhiteSpace(c.Language) ? "English" : c.Language,
+                c.XpReward,
+                c.CertificateEnabled
             );
         }).ToList();
     }
@@ -461,6 +518,8 @@ public class MarketplaceController : BaseApiController
                 .ToList(),
             "newest" => items.OrderByDescending(c => c.CreatedAt).ThenBy(c => c.Title).ToList(),
             "title" => items.OrderBy(c => c.Title).ToList(),
+            "duration-asc" => items.OrderBy(c => c.DurationHours).ThenBy(c => c.Title).ToList(),
+            "duration-desc" => items.OrderByDescending(c => c.DurationHours).ThenBy(c => c.Title).ToList(),
             "price-asc" => items.OrderBy(c => c.Price).ThenBy(c => c.Title).ToList(),
             "price-desc" => items.OrderByDescending(c => c.Price).ThenBy(c => c.Title).ToList(),
             _ => items
@@ -517,4 +576,18 @@ public class MarketplaceController : BaseApiController
         => (raw ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
+
+    /// <summary>Reads a JSON string-list column; never returns null to the storefront.</summary>
+    private static IReadOnlyList<string> ParseJsonList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
 }

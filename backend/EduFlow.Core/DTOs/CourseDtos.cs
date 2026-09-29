@@ -28,7 +28,14 @@ public record CourseDto(
     decimal Price = 0m,
     bool IsFree = true,
     double AverageRating = 0.0,
-    int RatingCount = 0
+    int RatingCount = 0,
+    string ShortDescription = "",
+    string Language = "English",
+    int XpReward = 0,
+    bool CertificateEnabled = false,
+    IReadOnlyList<string>? LearningOutcomes = null,
+    IReadOnlyList<string>? Prerequisites = null,
+    IReadOnlyList<string>? TargetAudience = null
 );
 
 public record CourseDetailDto(
@@ -98,7 +105,14 @@ public record CreateCourseRequest(
     string Difficulty = "Medium",
     int DurationHours = 0,
     decimal Price = 0m,
-    bool IsFree = true
+    bool IsFree = true,
+    string? ShortDescription = null,
+    string Language = "English",
+    int XpReward = 0,
+    bool CertificateEnabled = false,
+    List<string>? LearningOutcomes = null,
+    List<string>? Prerequisites = null,
+    List<string>? TargetAudience = null
 );
 
 public record CreateModuleRequest(
@@ -125,7 +139,8 @@ public record CreateLessonRequest(
     int EstimatedMinutes,
     int OrderIndex,
     string? PdfUrl = null,
-    string? AttachmentFileName = null
+    string? AttachmentFileName = null,
+    bool IsFreePreview = false
 );
 
 public record UpdateLessonRequest(
@@ -136,7 +151,8 @@ public record UpdateLessonRequest(
     int EstimatedMinutes,
     int OrderIndex,
     string? PdfUrl = null,
-    string? AttachmentFileName = null
+    string? AttachmentFileName = null,
+    bool? IsFreePreview = null
 );
 
 public record PdfUploadResultDto(

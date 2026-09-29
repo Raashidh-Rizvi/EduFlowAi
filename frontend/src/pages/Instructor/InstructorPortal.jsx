@@ -15,6 +15,8 @@ import MyStudentsView from './views/MyStudentsView';
 import ReviewsView from './views/ReviewsView';
 import ProfileView from './views/ProfileView';
 import instructorService from '../../services/instructorService';
+import { useUIVersion } from '../../context/UIVersionContext';
+import InstructorPortalV2 from './InstructorPortalV2';
 
 const SECTION_KEY = 'eduflow_instructor_section';
 
@@ -30,6 +32,25 @@ const readPendingAi = () => {
 };
 
 export default function InstructorPortal({ user, onLogout, onSwitchRole, onLogoClick }) {
+  const { uiVersion } = useUIVersion();
+
+  // Delegate entirely to V2 portal when v2 is active
+  if (uiVersion === 'v2') {
+    return (
+      <InstructorPortalV2
+        user={user}
+        onLogout={onLogout}
+        onSwitchRole={onSwitchRole}
+        onLogoClick={onLogoClick}
+      />
+    );
+  }
+
+  // ── V1 (original layout) ─────────────────────────────────────────────────
+  return <InstructorPortalV1 user={user} onLogout={onLogout} onSwitchRole={onSwitchRole} onLogoClick={onLogoClick} />;
+}
+
+function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
   const [section, setSectionState] = useState(() => {
     try {
       const stored = sessionStorage.getItem(SECTION_KEY);
@@ -134,3 +155,4 @@ export default function InstructorPortal({ user, onLogout, onSwitchRole, onLogoC
     </div>
   );
 }
+
