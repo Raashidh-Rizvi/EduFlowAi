@@ -85,7 +85,7 @@ export default function InstructorSidebarV2({
                 >
                   <Icon
                     size={16}
-                    color={isActive ? '#C4B5FD' : 'var(--v2-text-muted)'}
+                    color={isActive ? 'var(--v2-text-active)' : 'var(--v2-text-muted)'}
                     style={{ flexShrink: 0 }}
                   />
                   <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -98,7 +98,7 @@ export default function InstructorSidebarV2({
                       padding: '2px 7px',
                       borderRadius: '99px',
                       background: 'rgba(139,92,246,0.2)',
-                      color: '#C4B5FD',
+                      color: 'var(--v2-accent-text)',
                       border: '1px solid rgba(139,92,246,0.35)',
                       flexShrink: 0,
                     }}>
@@ -130,7 +130,7 @@ export default function InstructorSidebarV2({
         </div>
 
         {/* UI Version Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', padding: '8px 12px', borderRadius: '9px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(139,92,246,0.15)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', padding: '8px 12px', borderRadius: '9px', background: 'var(--v2-overlay-1)', border: '1px solid rgba(139,92,246,0.15)' }}>
           <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--v2-text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>UI</span>
           <div style={{ display: 'flex', gap: '4px' }}>
             {['v1', 'v2'].map(v => (
@@ -176,7 +176,7 @@ export default function InstructorSidebarV2({
             cursor: 'pointer',
             transition: 'all 0.15s ease',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(236,72,153,0.1)'; e.currentTarget.style.color = '#F472B6'; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(236,72,153,0.1)'; e.currentTarget.style.color = 'var(--v2-danger-text)'; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--v2-text-muted)'; }}
         >
           <LogOut size={14} /> Sign out

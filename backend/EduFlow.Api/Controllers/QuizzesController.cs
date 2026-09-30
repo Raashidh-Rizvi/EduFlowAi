@@ -1048,6 +1048,7 @@ public class QuizzesController : BaseApiController
             scope_level = request.ScopeType.ToString(),
             difficulty = request.Difficulty,
             question_count = count,
+            num_questions = count,
             time_limit_minutes = request.TimeLimitMinutes,
             pass_percentage = request.PassingScorePercent > 0 ? request.PassingScorePercent : 70,
             pdf_path = physicalSlidePath,
@@ -1106,6 +1107,15 @@ public class QuizzesController : BaseApiController
                         {
                             options.Add(opt.GetString() ?? "");
                         }
+                    }
+
+                    // ai-agent returns correct_index (0-based) instead of correct_answer text.
+                    if (!qToken.TryGetProperty("correct_answer", out _) && options.Count > 0
+                        && qToken.TryGetProperty("correct_index", out var correctIndexProp)
+                        && correctIndexProp.TryGetInt32(out var correctIndex)
+                        && correctIndex >= 0 && correctIndex < options.Count)
+                    {
+                        correct = options[correctIndex];
                     }
 
                     var metadataDict = new Dictionary<string, object>

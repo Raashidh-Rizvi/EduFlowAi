@@ -2193,6 +2193,18 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
         target = localList[0];
       }
     }
+    if (!target) {
+      // Mount effect may still be loading - resolve the quiz on demand.
+      try {
+        const qList = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444').catch(() => []);
+        const combined = [...getGeneratedQuizzes('44444444-4444-4444-4444-444444444444'), ...(qList || [])];
+        if (combined.length > 0) {
+          target = combined[0];
+        }
+      } catch {
+        target = null;
+      }
+    }
     if (target && (!target.questions || target.questions.length === 0)) {
       const localMatches = getGeneratedQuizzes();
       const foundLocal = localMatches.find(q => q.id === target.id || q.title === target.title);

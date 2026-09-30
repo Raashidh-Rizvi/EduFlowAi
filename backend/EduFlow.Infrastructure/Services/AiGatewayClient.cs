@@ -150,9 +150,11 @@ public class AiGatewayClient : IAiGatewayClient
 
     public async Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default)
     {
+        // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/slides/generate-quiz")
+        var url = $"{_baseUrl}/api/v1/ai/slides/generate-quiz";
         try
         {
-            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/generate-quiz", requestPayload, ct);
+            var response = await _httpClient.PostAsJsonAsync(url, requestPayload, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode)
             {
@@ -171,7 +173,7 @@ public class AiGatewayClient : IAiGatewayClient
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", $"{_baseUrl}/generate-quiz");
+            _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", url);
             return JsonSerializer.Serialize(new
             {
                 status = "error",
