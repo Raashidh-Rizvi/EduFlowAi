@@ -2239,7 +2239,9 @@ function CoachTab({ studentId, courseId }) {
                         marginBottom: "5px",
                       }}
                     >
-                      📑 Verifiable Slide Citations & Exploration:
+                      {msg.citations.some((c) => c.page_number === 0 || c.source_file?.startsWith("http"))
+                        ? "🌐 Verified External Web Sources & Citations:"
+                        : "📑 Verifiable Slide Citations & Exploration:"}
                     </div>
                     <div
                       style={{
@@ -2263,42 +2265,72 @@ function CoachTab({ studentId, courseId }) {
                             style={{
                               padding: "3px 8px",
                               borderRadius: "4px",
-                              backgroundColor: "rgba(59, 130, 246, 0.12)",
-                              border: "1px solid rgba(59, 130, 246, 0.25)",
+                              backgroundColor: c.source_file?.startsWith("http")
+                                ? "rgba(16, 185, 129, 0.12)"
+                                : "rgba(59, 130, 246, 0.12)",
+                              border: c.source_file?.startsWith("http")
+                                ? "1px solid rgba(16, 185, 129, 0.3)"
+                                : "1px solid rgba(59, 130, 246, 0.25)",
                               fontSize: "11px",
                               fontWeight: "600",
-                              color: "var(--primary)",
+                              color: c.source_file?.startsWith("http")
+                                ? "#10b981"
+                                : "var(--primary)",
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "4px",
                             }}
                           >
-                            Slide {c.page_number} (
-                            {Math.round(c.relevance_score * 100)}% match)
+                            {c.page_number > 0
+                              ? `Slide ${c.page_number} (${Math.round(c.relevance_score * 100)}% match)`
+                              : `🌐 ${c.preview_text || "Web Source"} (${Math.round(c.relevance_score * 100)}% match)`}
                           </span>
-                          <button
-                            disabled={
-                              isLoading ||
-                              (selectedDeck && c.source_file !== selectedDeck)
-                            }
-                            onClick={() =>
-                              sendMessage(
-                                `Can you explain Slide ${c.page_number} in simple terms with a real-world example?`,
-                              )
-                            }
-                            className="btn-ghost"
-                            style={{
-                              padding: "2px 8px",
-                              fontSize: "10px",
-                              fontWeight: "600",
-                              borderRadius: "var(--radius-sm)",
-                              border: "1px dashed var(--border-subtle)",
-                              color: "var(--text-muted)",
-                              cursor: "pointer",
-                            }}
-                          >
-                            🔍 Deep Dive Slide {c.page_number}
-                          </button>
+                          {c.source_file?.startsWith("http") ? (
+                            <a
+                              href={c.source_file}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-ghost"
+                              style={{
+                                padding: "2px 8px",
+                                fontSize: "10px",
+                                fontWeight: "600",
+                                borderRadius: "var(--radius-sm)",
+                                border: "1px dashed var(--border-subtle)",
+                                color: "var(--primary)",
+                                textDecoration: "none",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              🔗 Open Source ↗
+                            </a>
+                          ) : (
+                            <button
+                              disabled={
+                                isLoading ||
+                                (selectedDeck && c.source_file !== selectedDeck)
+                              }
+                              onClick={() =>
+                                sendMessage(
+                                  `Can you explain Slide ${c.page_number} in simple terms with a real-world example?`,
+                                )
+                              }
+                              className="btn-ghost"
+                              style={{
+                                padding: "2px 8px",
+                                fontSize: "10px",
+                                fontWeight: "600",
+                                borderRadius: "var(--radius-sm)",
+                                border: "1px dashed var(--border-subtle)",
+                                color: "var(--text-muted)",
+                                cursor: "pointer",
+                              }}
+                            >
+                              🔍 Deep Dive Slide {c.page_number}
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

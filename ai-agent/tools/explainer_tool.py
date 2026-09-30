@@ -23,11 +23,26 @@ class ExplainerTool:
                        and section.page_start <= c["metadata"]["page_number"] <= section.page_end))]
         if not chunks:
             raise LearningUnavailable("No indexed content was found for this topic. Please regenerate the breakdown and retry.")
-        answer = generate(self.rag,
-            f"Explain {query!r} in simple beginner-friendly English in at most 200 words. "
-            "Include a simple definition, one example if supported by the excerpts, and a key takeaway. "
-            "Cite exact slide numbers. If the excerpts do not explain the requested topic, say so clearly.",
-            lecture_context(chunks), max_tokens=900, conversation_history=conversation_history)
+        prompt = (
+            f"Explain {query!r} in clear, beginner-friendly English with rich depth and practical understanding.\n\n"
+            "Format the response using this clean, structured layout:\n"
+            "Simple Definition -\n"
+            "[Provide a clear, intuitive definition of the concept in 2-3 sentences]\n\n"
+            "Real-World Example -\n"
+            "[Provide a concrete, practical real-world analogy or scenario grounded in the lecture material]\n\n"
+            "Key Breakdown -\n"
+            "• [First core mechanism or principle, citing slide numbers like (Slide X)]\n"
+            "• [Second core mechanism or principle, citing slide numbers like (Slide Y)]\n"
+            "• [Third key insight or distinction, if covered in the slides]\n\n"
+            "Key Takeaway -\n"
+            "[One essential summary point to remember for exams]\n\n"
+            "GUIDELINES:\n"
+            "1. Ground all facts strictly in the provided course excerpts.\n"
+            "2. Cite exact slide numbers throughout the explanation.\n"
+            "3. If the excerpts do not contain enough information, state that clearly."
+        )
+        answer = generate(self.rag, prompt,
+            lecture_context(chunks), max_tokens=2048, conversation_history=conversation_history)
         citations = [SlideCitation(
             page_number=c["metadata"]["page_number"], source_file=request.source_file,
             preview_text=c["text"].replace("\n", " ")[:160],
