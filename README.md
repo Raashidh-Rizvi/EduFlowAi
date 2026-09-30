@@ -1,87 +1,22 @@
 # EduFlow AI
 
-EduFlow AI is a gamified education project for SE3090. It combines course learning, assessments, progress/rewards and adaptive AI guidance for System Admin, Instructor and Student users.
+Education platform combining courses, assessments, student progress and AI-assisted learning across React, ASP.NET Core, PostgreSQL, Python/RAG and Flutter.
 
-**Implementation is partial.** Documentation describes both existing code and intended behavior; no complete cross-platform workflow, deployment or passing test result is implied by this entry point.
+Start with the [documentation source of truth](docs/00_SOURCE_OF_TRUTH.md), [catalog](docs/INDEX.md), [current status](docs/current/IMPLEMENTATION_STATUS.md), and [responsibility matrix](docs/current/RESPONSIBILITY_MATRIX.md).
 
-## Start here
+The approved AI direction is Learning Agent + Quiz Generator Agent using shared RAG/Chroma. Learning Agent is verified within its recorded scope; distinct Quiz Generator completion and Admin/User/Course software verification remain pending. The entire project and assignment compliance are not certified complete.
 
-- [Documentation start guide](docs/README.md) — reading order and source-of-truth rules
-- [Complete documentation catalog](docs/INDEX.md)
-- [Run and setup](docs/project/18_RUN_AND_SETUP.md)
-- [Implementation status and evidence](docs/project/17_IMPLEMENTATION_STATUS.md)
-- [Current responsibility matrix](docs/responsibilities/RESPONSIBILITY_MATRIX.md)
-- [Project overview](docs/project/01_PROJECT_OVERVIEW.md)
+## Local development
 
-The team has three current business-component owners; written group-size approval remains **TO CONFIRM**. The four core AI workflow roles remain Planner → Domain Analysis → Action/Tool → Validation/Safety, with authorized human approval where required. Ownership assignments do not prove historical contribution.
+Follow the [current setup guide](docs/current/LOCAL_SETUP_GUIDE.md) before starting services. From repository root, `npm run dev` launches React (2174), ASP.NET (5204) and Python (8000). PostgreSQL/configuration and local lecture indexing are separate prerequisites. Do not run competing server instances or overwrite existing private configuration.
 
-## Repository layout
+Learning browser requests follow **React → ASP.NET Core → Python**.
 
-~~~
-backend/                 ASP.NET Core API, shared core, EF Core infrastructure and tests
-frontend/                React web application
-mobile/                  Flutter application
-ai-agent/                Internal Python/FastAPI/LangGraph service
-.github/workflows/       CI configuration
-docs/
-  README.md              Start here
-  INDEX.md               Complete catalog
-  reference/             Official assignment and supporting references
-  responsibilities/      Current ownership and individual trackers
-  project/               Canonical technical design, plan, status and run guide
-  legacy/                Historical material; never current instructions
-~~~
+## Repository entry points
 
-## Quick Local Setup & How to Run 🚀
-
-For the step-by-step installation and environment configuration guide, read the **[Local Setup Guide](LOCAL_SETUP_GUIDE.md)** or the **[Application Run & Deployment Guide](docs/project/18_RUN_AND_SETUP.md)**.
-
-### Option A: Unified Dev Runner (Run All Services Concurrently)
-```powershell
-# From repository root:
-node dev-runner.js
-```
-*Starts React Frontend (port 2174), ASP.NET Core API (port 5204), and Python AI Agent (port 8888) simultaneously with live reloading.*
-
----
-
-### Option B: Run Subsystems Individually
-
-#### 1. Python AI Agent Subsystem (`ai-agent`)
-```powershell
-cd ai-agent
-python -m venv venv
-.\venv\Scripts\Activate.ps1   # Linux/Mac: source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-- **Endpoints**: [http://localhost:8888/health](http://localhost:8888/health) | Docs: [http://localhost:8888/docs](http://localhost:8888/docs)
-
-#### 2. ASP.NET Core Backend API (`backend`)
-```powershell
-cd backend
-dotnet restore
-dotnet ef database update --project EduFlow.Infrastructure --startup-project EduFlow.Api
-dotnet run --project EduFlow.Api --launch-profile http
-```
-- **Endpoints**: [http://localhost:5204/swagger](http://localhost:5204/swagger)
-
-#### 3. React Web Frontend (`frontend`)
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-- **Web App**: [http://localhost:2174](http://localhost:2174)
-
----
-
-## Subsystem entry points
-
-- [Backend](backend/README.md)
-- [React frontend](frontend/README.md)
-- [Flutter mobile](mobile/README.md)
-- [Agentic AI service](ai-agent/README.md)
-
-Use current source and reproducible evidence to establish actual behavior. Do not treat archived blueprints, example test outputs or dependency declarations as proof of implementation.
-
+- [Backend](backend/README.md): business API, EF Core/PostgreSQL and AI gateway.
+- [Frontend](frontend/README.md): Admin, Instructor and Student interfaces.
+- [Python AI](ai-agent/README.md): Learning Agent, tools and shared RAG.
+- [Mobile](mobile/README.md): Flutter source; integration status is scoped.
+- [Member documentation](docs/INDEX.md#member-documentation): attributed contribution evidence.
+- [Official references](docs/INDEX.md#official-references) and [historical archive](docs/legacy/README.md): distinct authority, not competing implementation plans.

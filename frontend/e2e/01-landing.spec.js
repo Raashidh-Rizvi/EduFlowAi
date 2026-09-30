@@ -14,15 +14,18 @@ test.describe('Landing Page Exploration', () => {
     await expect(page.locator('header')).toContainText('EduFlow');
 
     // Verify Hero Heading
-    const heroHeading = page.locator('h1');
+    const heroHeading = page.locator('h1').first();
     await expect(heroHeading).toBeVisible();
-    await expect(heroHeading).toContainText('Transform');
-    await expect(heroHeading).toContainText('AI Agents');
+    await expect(heroHeading).toContainText('Discover courses that');
+    await expect(heroHeading).toContainText('move you forward');
 
-    // Verify key badges & stats
-    await expect(page.getByText('Next-Gen Learning Platform')).toBeVisible();
-    await expect(page.getByText('10k+ Users')).toBeVisible();
-    await expect(page.getByText('24/7', { exact: true })).toBeVisible();
+    // Live eyebrow + platform stats (rendered from GET /api/marketplace/stats)
+    await expect(page.locator('.mk-eyebrow').first()).toContainText('published courses live');
+    const heroStats = page.locator('.mk-hero__stats');
+    await expect(heroStats).toContainText('Courses');
+    await expect(heroStats).toContainText('Instructors');
+    await expect(heroStats).toContainText('Enrollments');
+    await expect(heroStats).toContainText('Avg. rating');
 
     // Verify CTAs
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
@@ -35,8 +38,8 @@ test.describe('Landing Page Exploration', () => {
   test('should navigate to the Login / Auth screen when clicking CTA', async ({ page }) => {
     await page.goto('/');
 
-    // Click "Try Now" button in header
-    const tryNowBtn = page.getByRole('button', { name: /Try Now/i }).first();
+    // Click the hero CTA ("Get Started Free" / "Try Now")
+    const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
 
     // Verify Login page appears

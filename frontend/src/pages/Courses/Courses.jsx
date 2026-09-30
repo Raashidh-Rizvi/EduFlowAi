@@ -41,14 +41,24 @@ import {
   FileSpreadsheet,
   ListChecks,
   UserPlus,
-  Search
+  Search,
+  Pencil
 } from 'lucide-react';
 import { downloadPdf, preparePdfForViewing } from '../../utils/pdfHelper';
+import StarRating from '../../components/marketplace/StarRating';
+import CourseReviews from '../../components/reviews/CourseReviews';
 import { courseService } from '../../services/courseService';
+import AdminCourseManagement from './AdminCourseManagement';
 import { quizService } from '../../services/quizService';
-import { saveGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
+import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
+  return currentUser?.role === 'Admin'
+    ? <AdminCourseManagement />
+    : <InstructorCourses currentUser={currentUser} />;
+}
+
+function InstructorCourses({ currentUser }) {
   const [coursesList, setCoursesList] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
   const [viewMode, setViewMode] = useState('curriculum'); // 'curriculum' | 'journey'
@@ -270,6 +280,14 @@ export default function Courses({ currentUser }) {
   // ── POST-QUIZ AUTOMATED MARKING SCHEME & RUBRIC MODAL STATE ───────────────
   const [showMarkingSchemeModal, setShowMarkingSchemeModal] = useState(false);
   const [markingSchemeResult, setMarkingSchemeResult] = useState(null);
+
+  // ── INSTRUCTOR QUIZ REVIEW / EDIT & RENAME STATE ──────────────────────────
+  const [showEditQuizModal, setShowEditQuizModal] = useState(false);
+  const [editingQuizMeta, setEditingQuizMeta] = useState(null); // { quizItem, module, isFinal }
+  const [editQuizTitle, setEditQuizTitle] = useState('');
+  const [editQuizDesc, setEditQuizDesc] = useState('');
+  const [editQuizQuestions, setEditQuizQuestions] = useState([]);
+  const [isSavingQuizEdit, setIsSavingQuizEdit] = useState(false);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -675,6 +693,17 @@ export default function Courses({ currentUser }) {
     });
   };
 
+  const handleRemoveDraftQuestion = (idx) => {
+    setGeneratedDraft(prev => ({ ...prev, questions: prev.questions.filter((_, i) => i !== idx) }));
+  };
+
+  const handleAddDraftQuestion = () => {
+    setGeneratedDraft(prev => ({
+      ...prev,
+      questions: [...prev.questions, { id: `q-new-${Date.now()}`, prompt: '', type: 'MultipleChoice', options: ['Option A', 'Option B', 'Option C', 'Option D'], correctAnswer: 'Option A', explanation: '', points: 10 }]
+    }));
+  };
+
   const handleApproveAndPublishAiQuiz = async () => {
     if (!generatedDraft || generatedDraft.questions.length === 0) {
       alert('Please generate questions first before publishing.');
@@ -786,6 +815,161 @@ export default function Courses({ currentUser }) {
     } catch {
       // safely preserved in localStorage and component state
     }
+  };
+
+  // ── INSTRUCTOR QUIZ REVIEW / EDIT & RENAME HANDLERS ────────────────────
+  // Opens the review modal pre-filled with the quiz's current questions so the
+  // instructor can rename it, edit the description, and tweak every question
+  // (prompt, options, correct answer, points, explanation) before saving.
+  const handleOpenReviewQuiz = async (quizItem, mod = null, isFinal = false) => {
+    setEditingQuizMeta({ quizItem, module: mod, isFinal });
+    setEditQuizTitle(quizItem.title || '');
+    setEditQuizDesc(quizItem.description || '');
+    setShowEditQuizModal(true);
+
+    // Start with whatever is already in local state so the modal opens instantly
+    setEditQuizQuestions(
+      (quizItem.questions && quizItem.questions.length > 0)
+        ? quizItem.questions.map(q => ({ ...q }))
+        : []
+    );
+
+    // Backend quizzes store questions server-side — hydrate the full detail if needed
+    if ((!quizItem.questions || quizItem.questions.length === 0) && quizItem.id && quizItem.id.length === 36) {
+      try {
+        const detail = await quizService.getQuizById(quizItem.id);
+        if (detail && detail.questions && detail.questions.length > 0) {
+          const typeLabel = (t) => {
+            const map = { 0: 'MultipleChoice', 1: 'MultipleSelect', 2: 'FillInBlank', 3: 'ShortAnswer', 4: 'Matching', 5: 'TrueFalse', 6: 'Dropdown' };
+            const metaType = (() => { try { return detail.metadataJson ? JSON.parse(detail.metadataJson).questionType : null; } catch { return null; } })();
+            return typeof t === 'number' ? (map[t] || 'MultipleChoice') : (metaType || t || 'MultipleChoice');
+          };
+          setEditQuizQuestions(detail.questions.map(q => ({
+            id: q.id,
+            prompt: q.prompt || '',
+            type: typeLabel(q.type),
+            options: q.options && q.options.length > 0 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
+            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            explanation: q.explanation || '',
+            points: q.points || 10,
+            slideCitation: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).slideCitation : null; } catch { return null; } })(),
+            markingScheme: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).markingScheme : null; } catch { return null; } })()
+          })));
+        }
+      } catch (err) {
+        console.warn('Could not hydrate quiz details for review:', err);
+      }
+    }
+  };
+
+  const handleUpdateEditQuizQuestion = (idx, field, val) => {
+    setEditQuizQuestions(prev => {
+      const updatedQ = [...prev];
+      updatedQ[idx] = { ...updatedQ[idx], [field]: val };
+      return updatedQ;
+    });
+  };
+
+  const handleRemoveEditQuizQuestion = (idx) => {
+    setEditQuizQuestions(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleAddEditQuizQuestion = () => {
+    setEditQuizQuestions(prev => ([
+      ...prev,
+      { id: `q-new-${Date.now()}`, prompt: '', type: 'MultipleChoice', options: ['Option A', 'Option B', 'Option C', 'Option D'], correctAnswer: 'Option A', explanation: '', points: 10 }
+    ]));
+  };
+
+  const handleSaveQuizReview = async () => {
+    if (!editingQuizMeta) return;
+    const { quizItem, module: quizModule, isFinal } = editingQuizMeta;
+    const newTitle = (editQuizTitle || '').trim();
+
+    if (!newTitle) {
+      alert('Quiz title cannot be empty.');
+      return;
+    }
+    if (editQuizQuestions.length === 0) {
+      alert('A quiz must contain at least one question.');
+      return;
+    }
+    if (editQuizQuestions.some(q => !q.prompt || !q.prompt.trim())) {
+      alert('Every question needs a prompt before saving.');
+      return;
+    }
+
+    setIsSavingQuizEdit(true);
+    const oldTitle = quizItem.title;
+    const updatedQuiz = {
+      ...quizItem,
+      title: newTitle,
+      description: editQuizDesc || quizItem.description,
+      questionsCount: editQuizQuestions.length,
+      questions: editQuizQuestions.map((q, idx) => ({ ...q, id: q.id || `q-item-${idx + 1}` }))
+    };
+
+    // 1. Update local course state (module quizzes list, moduleAssessment, topic & final assessment)
+    setCoursesList(prev => prev.map(c => {
+      if (c.id !== currentCourse?.id) return c;
+      if (isFinal) return { ...c, finalAssessment: updatedQuiz };
+      if (!quizModule) return c;
+      const updatedMods = (c.modules || []).map(m => {
+        if (m.id !== quizModule.id) return m;
+        return {
+          ...m,
+          quizzes: (m.quizzes || []).map(q => (q.id === quizItem.id || q.title === oldTitle) ? updatedQuiz : q),
+          moduleAssessment: m.moduleAssessment && (m.moduleAssessment.id === quizItem.id || m.moduleAssessment.title === oldTitle)
+            ? updatedQuiz
+            : m.moduleAssessment,
+          topics: (m.topics || []).map(t => t.quiz && (t.quiz.id === quizItem.id || t.quiz.title === oldTitle) ? { ...t, quiz: updatedQuiz } : t)
+        };
+      });
+      return { ...c, modules: updatedMods };
+    }));
+
+    // 2. Sync localStorage mirror so Assessments & Quizzes tab stays consistent
+    updateGeneratedQuiz(quizItem.id, { title: newTitle, description: updatedQuiz.description, questions: updatedQuiz.questions }, oldTitle);
+    window.dispatchEvent(new Event('eduflow_quiz_created'));
+
+    // 3. Persist to backend when this quiz actually lives there (GUID id)
+    if (quizItem.id && quizItem.id.length === 36) {
+      try {
+        const scopeTypeEnum = updatedQuiz.scopeType === 'Course' ? 0 : updatedQuiz.scopeType === 'Topic' ? 1 : 2;
+        const scopeIdVal = (updatedQuiz.scopeId && String(updatedQuiz.scopeId).length === 36) ? updatedQuiz.scopeId : (quizModule?.id && quizModule.id.length === 36 ? quizModule.id : currentCourse.id);
+        await quizService.updateQuiz(quizItem.id, {
+          courseId: currentCourse.id,
+          title: newTitle,
+          description: updatedQuiz.description || `Assessment for ${quizModule?.title || currentCourse.title}`,
+          timeLimitMinutes: Number(updatedQuiz.timeLimitMinutes || updatedQuiz.timeLimit || 15),
+          passingScorePercent: Number(updatedQuiz.passPercentage || updatedQuiz.passingScorePercent || updatedQuiz.passThreshold || 70),
+          xpReward: Number(updatedQuiz.xpReward || 50),
+          coinReward: Number(updatedQuiz.coinReward || 20),
+          scopeType: scopeTypeEnum,
+          scopeId: scopeIdVal,
+          questions: updatedQuiz.questions.map((q, idx) => ({
+            prompt: q.prompt,
+            type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : q.type === 'TrueFalse' ? 2 : 0,
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            explanation: q.explanation || '',
+            points: Number(q.points) || 10,
+            orderIndex: idx + 1,
+            metadataJson: JSON.stringify({ slideCitation: q.slideCitation, markingScheme: q.markingScheme, questionType: q.type })
+          }))
+        });
+        showToast(`✅ Quiz "${newTitle}" updated${oldTitle !== newTitle ? ` (renamed from "${oldTitle}")` : ''}!`);
+      } catch (err) {
+        console.warn('Backend quiz update failed, changes kept locally:', err);
+        showToast(`⚠️ Saved locally, but backend sync failed: ${err.response?.data?.message || err.message}`);
+      }
+    } else {
+      showToast(`✅ Quiz "${newTitle}" updated successfully!`);
+    }
+
+    setShowEditQuizModal(false);
+    setEditingQuizMeta(null);
+    setIsSavingQuizEdit(false);
   };
 
   // ── INTERACTIVE QUIZ QUEST RUNNER HANDLERS ────────────────────────────────
@@ -1577,6 +1761,14 @@ export default function Courses({ currentUser }) {
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: '1.5' }}>
             {currentCourse.description}
           </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '8px' }}>
+            {currentCourse.instructorName && (
+              <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                By <strong style={{ color: 'var(--text-main)' }}>{currentCourse.instructorName}</strong>
+              </span>
+            )}
+            <StarRating value={currentCourse.averageRating || 0} count={currentCourse.ratingCount || 0} size={14} />
+          </div>
         </div>
 
         {/* Course Aggregate Metrics */}
@@ -1630,7 +1822,7 @@ export default function Courses({ currentUser }) {
             <button
               onClick={() => setShowModuleModal(true)}
               className="btn-secondary"
-              style={{ padding: '9px 16px', fontSize: '12.5px', gap: '6px' }}
+              style={{ padding: '9px 16px', fontSize: '12px', gap: '6px' }}
             >
               <Plus size={14} /> 
               <span>Add Module</span>
@@ -1638,6 +1830,9 @@ export default function Courses({ currentUser }) {
           </div>
         </div>
       </div>
+
+      {/* ── 2b. COURSE RATINGS & REVIEWS ────────────────────────────────────── */}
+      <CourseReviews courseId={currentCourse.id} currentUser={currentUser} />
 
       {/* ── 3. COURSE-LEVEL FINAL ASSESSMENT CARD ──────────────────────────── */}
       {currentCourse.finalAssessment && (
@@ -1684,21 +1879,34 @@ export default function Courses({ currentUser }) {
           </div>
 
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => handleStartSlideQuestRunner(currentCourse.finalAssessment, { title: currentCourse.title })}
-              className="btn-primary"
-              style={{
-                padding: '7px 16px',
-                fontSize: '12px',
-                fontWeight: '700',
-                gap: '6px',
-                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-              }}
-            >
-              <Play size={13} fill="currentColor" />
-              <span>🎮 Take Quiz Quest</span>
-            </button>
+            {!(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+              <button
+                onClick={() => handleStartSlideQuestRunner(currentCourse.finalAssessment, { title: currentCourse.title })}
+                className="btn-primary"
+                style={{
+                  padding: '7px 16px',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                <Play size={13} fill="currentColor" />
+                <span>🎮 Take Quiz Quest</span>
+              </button>
+            )}
+            {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+              <button
+                onClick={() => handleOpenReviewQuiz(currentCourse.finalAssessment, null, true)}
+                className="btn-secondary"
+                style={{ padding: '7px 14px', fontSize: '12px', fontWeight: '700', gap: '6px' }}
+                title="Review & edit final assessment questions, rename quiz"
+              >
+                <Edit3 size={14} />
+                <span>Review / Edit</span>
+              </button>
+            )}
             <button
               onClick={() => handleOpenCourseAiQuiz()}
               className="btn-secondary"
@@ -1968,9 +2176,21 @@ export default function Courses({ currentUser }) {
                                     {quizItem.questionsCount || quizItem.questions?.length || 5} Questions • {quizItem.timeLimitMinutes || quizItem.timeLimit || 15} Mins • Pass: {quizItem.passPercentage || quizItem.passingScorePercent || 70}%
                                   </span>
                                 </div>
-                                <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', margin: '3px 0 1px' }}>
-                                  {quizItem.title}
-                                </h4>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', margin: '3px 0 1px' }}>
+                                    {quizItem.title}
+                                  </h4>
+                                  {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                                    <button
+                                      onClick={() => handleOpenReviewQuiz(quizItem, mod)}
+                                      className="btn-ghost"
+                                      title="Rename Quiz"
+                                      style={{ padding: '2px 6px', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                                    >
+                                      <Pencil size={12} />
+                                    </button>
+                                  )}
+                                </div>
                                 <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
                                   Covers topics in {mod.title}. +{quizItem.xpReward || 50} XP reward upon completion.
                                 </p>
@@ -1978,30 +2198,44 @@ export default function Courses({ currentUser }) {
                             </div>
 
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <button
-                                onClick={() => handleStartSlideQuestRunner(quizItem, mod)}
-                                className="btn-primary"
-                                style={{
-                                  padding: '5px 12px',
-                                  fontSize: '11.5px',
-                                  fontWeight: '700',
-                                  gap: '5px',
-                                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-                                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                                }}
-                              >
-                                <Play size={12} fill="currentColor" />
-                                <span>Take Quiz</span>
-                              </button>
-                              {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                              {!(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
                                 <button
-                                  onClick={() => handleOpenModuleAiQuiz(mod, quizItem.isBossBattle)}
-                                  className="btn-secondary"
-                                  style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                                  onClick={() => handleStartSlideQuestRunner(quizItem, mod)}
+                                  className="btn-primary"
+                                  style={{
+                                    padding: '5px 12px',
+                                    fontSize: '11.5px',
+                                    fontWeight: '700',
+                                    gap: '5px',
+                                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                                  }}
                                 >
-                                  <Bot size={13} />
-                                  <span>Edit / Regenerate</span>
+                                  <Play size={12} fill="currentColor" />
+                                  <span>Take Quiz</span>
                                 </button>
+                              )}
+                              {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenReviewQuiz(quizItem, mod)}
+                                    className="btn-secondary"
+                                    style={{ padding: '5px 12px', fontSize: '11.5px', fontWeight: '700', gap: '5px' }}
+                                    title="Review & edit questions, rename quiz"
+                                  >
+                                    <Edit3 size={13} />
+                                    <span>Review / Edit</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenModuleAiQuiz(mod, quizItem.isBossBattle)}
+                                    className="btn-secondary"
+                                    style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                                    title="Regenerate this quiz with AI"
+                                  >
+                                    <Bot size={13} />
+                                    <span>AI Regenerate</span>
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -2133,9 +2367,6 @@ export default function Courses({ currentUser }) {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <CheckCircle2 size={14} color="var(--primary)" />
                                     <strong style={{ color: 'var(--text-main)' }}>{topic.quiz.title}</strong>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                      ({topic.quiz.questionsCount} Questions • {topic.quiz.difficulty})
-                                    </span>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: '700' }}>
@@ -2147,7 +2378,7 @@ export default function Courses({ currentUser }) {
                                       style={{ padding: '3px 8px', fontSize: '10.5px', gap: '4px', background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)' }}
                                     >
                                       <Play size={10} fill="currentColor" />
-                                      <span>Play</span>
+                                      {currentUser?.role === 'Instructor' || currentUser?.role === 'Admin' ? <span>Preview</span> : <span>Play</span>}
                                     </button>
                                     <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>
                                       +{topic.quiz.xpReward} XP
@@ -2657,7 +2888,52 @@ export default function Courses({ currentUser }) {
               {/* ── GENERATED DRAFT REVIEW & HUMAN-IN-THE-LOOP APPROVAL ── */}
               {generatedDraft && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  
+
+                  {/* Draft Title & Description (rename before publish) */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Quiz Title (Rename before publishing):
+                      </label>
+                      <input
+                        value={generatedDraft.title || ''}
+                        onChange={e => setGeneratedDraft(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="e.g. AiML 2014 Lec 1 Assessment"
+                        style={{
+                          width: '100%',
+                          padding: '9px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '13px',
+                          fontWeight: '700'
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                        Quiz Description:
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={generatedDraft.description || ''}
+                        onChange={e => setGeneratedDraft(prev => ({ ...prev, description: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '9px 12px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: 'var(--text-main)',
+                          fontSize: '12.5px',
+                          resize: 'vertical',
+                          fontFamily: 'inherit'
+                        }}
+                      />
+                    </div>
+                  </div>
+
                   {/* Validation Agent Banner */}
                   {validationReport && (
                     <div style={{
@@ -2736,6 +3012,14 @@ export default function Courses({ currentUser }) {
                                 textAlign: 'center'
                               }}
                             />
+                            <button
+                              onClick={() => handleRemoveDraftQuestion(idx)}
+                              className="btn-ghost"
+                              title="Remove this question"
+                              style={{ padding: '4px 6px', color: '#EF4444', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </div>
 
@@ -2957,6 +3241,14 @@ export default function Courses({ currentUser }) {
 
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button
+                    onClick={handleAddDraftQuestion}
+                    className="btn-secondary"
+                    style={{ padding: '9px 16px', fontSize: '13px', gap: '6px' }}
+                  >
+                    <Plus size={14} />
+                    <span>Add Question</span>
+                  </button>
+                  <button
                     onClick={handleGenerateAiQuizDraft}
                     className="btn-secondary"
                     disabled={isGeneratingQuiz}
@@ -2986,6 +3278,382 @@ export default function Courses({ currentUser }) {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* ── 5b. INSTRUCTOR QUIZ REVIEW / EDIT & RENAME MODAL ───────────────── */}
+      {showEditQuizModal && editingQuizMeta && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(10, 15, 30, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-card)',
+            borderRadius: 'var(--radius-lg)',
+            width: '96vw',
+            height: '94vh',
+            maxWidth: '1100px',
+            boxShadow: 'var(--shadow-popover)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'rgba(79, 70, 229, 0.15)',
+                  color: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Edit3 size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                    Review & Edit Quiz
+                  </h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', margin: 0 }}>
+                    Rename the quiz, tweak questions, options & answers, then save. Students see the update instantly.
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowEditQuizModal(false)} className="btn-ghost" style={{ padding: '8px', fontSize: '16px' }}>✕</button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* Quiz Metadata: rename + description */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                    Quiz Title (Rename):
+                  </label>
+                  <input
+                    value={editQuizTitle}
+                    onChange={e => setEditQuizTitle(e.target.value)}
+                    placeholder="Enter new quiz title..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--bg-canvas)',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-main)',
+                      fontSize: '14px',
+                      fontWeight: '700'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)', display: 'block', marginBottom: '6px' }}>
+                    Description:
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editQuizDesc}
+                    onChange={e => setEditQuizDesc(e.target.value)}
+                    placeholder="What does this quiz cover?"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--bg-canvas)',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--text-main)',
+                      fontSize: '12.5px',
+                      resize: 'vertical',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <span style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--text-main)' }}>
+                  Questions ({editQuizQuestions.length})
+                </span>
+                <button
+                  onClick={handleAddEditQuizQuestion}
+                  className="btn-secondary"
+                  style={{ padding: '5px 12px', fontSize: '12px', gap: '5px' }}
+                >
+                  <Plus size={13} />
+                  <span>Add Question</span>
+                </button>
+              </div>
+
+              {/* Editable Question Cards */}
+              {editQuizQuestions.length === 0 ? (
+                <div style={{ padding: '28px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px', border: '1px dashed var(--border-card)', borderRadius: 'var(--radius-md)' }}>
+                  No questions loaded yet. Click "Add Question" to create one manually.
+                </div>
+              ) : (
+                editQuizQuestions.map((q, idx) => (
+                  <div
+                    key={q.id || idx}
+                    style={{
+                      padding: '18px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-card)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary)' }}>
+                        Question {idx + 1} {q.type ? `• ${q.type}` : ''}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-muted)' }}>Points:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={q.points || 10}
+                          onChange={e => handleUpdateEditQuizQuestion(idx, 'points', parseInt(e.target.value) || 10)}
+                          style={{
+                            width: '60px',
+                            padding: '4px 8px',
+                            backgroundColor: 'var(--bg-canvas)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-xs)',
+                            color: 'var(--secondary)',
+                            fontWeight: '700',
+                            fontSize: '12.5px',
+                            textAlign: 'center'
+                          }}
+                        />
+                        <button
+                          onClick={() => handleRemoveEditQuizQuestion(idx)}
+                          className="btn-ghost"
+                          title="Remove this question"
+                          style={{ padding: '4px 6px', color: '#EF4444', cursor: 'pointer' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Prompt */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                        Question Text:
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={q.prompt || ''}
+                        onChange={e => handleUpdateEditQuizQuestion(idx, 'prompt', e.target.value)}
+                        placeholder="Enter full question text..."
+                        style={{
+                          width: '100%',
+                          padding: '12px 14px',
+                          backgroundColor: 'var(--bg-canvas)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-xs)',
+                          color: 'var(--text-main)',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          lineHeight: '1.6',
+                          resize: 'vertical',
+                          fontFamily: 'inherit'
+                        }}
+                      />
+                    </div>
+
+                    {/* Options or Answer */}
+                    {q.type === 'ShortAnswer' ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                          Expected Answer:
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={q.correctAnswer || ''}
+                          onChange={e => handleUpdateEditQuizQuestion(idx, 'correctAnswer', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            backgroundColor: 'var(--bg-canvas)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-xs)',
+                            color: '#10B981',
+                            fontWeight: '600',
+                            fontSize: '13px',
+                            resize: 'vertical',
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                      </div>
+                    ) : q.options && q.options.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                          Answer Choices (click check icon to mark correct):
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          {q.options.map((opt, optIdx) => {
+                            const isCorrect = opt === q.correctAnswer;
+                            return (
+                              <div
+                                key={optIdx}
+                                style={{
+                                  padding: '8px 12px',
+                                  borderRadius: 'var(--radius-xs)',
+                                  backgroundColor: isCorrect ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-canvas)',
+                                  border: isCorrect ? '1.5px solid #10B981' : '1px solid var(--border-subtle)',
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: '10px'
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateEditQuizQuestion(idx, 'correctAnswer', opt)}
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    color: isCorrect ? '#10B981' : 'var(--text-muted)',
+                                    padding: 0,
+                                    marginTop: '3px'
+                                  }}
+                                  title={isCorrect ? 'Correct Answer' : 'Set as Correct Answer'}
+                                >
+                                  <CheckCircle2 size={18} />
+                                </button>
+                                <textarea
+                                  rows={2}
+                                  value={opt}
+                                  onChange={e => {
+                                    const newOpts = [...q.options];
+                                    const wasCorrect = q.correctAnswer === opt;
+                                    newOpts[optIdx] = e.target.value;
+                                    handleUpdateEditQuizQuestion(idx, 'options', newOpts);
+                                    if (wasCorrect) handleUpdateEditQuizQuestion(idx, 'correctAnswer', e.target.value);
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    padding: '2px 4px',
+                                    backgroundColor: 'transparent',
+                                    border: 'none',
+                                    outline: 'none',
+                                    color: isCorrect ? '#10B981' : 'var(--text-main)',
+                                    fontSize: '13px',
+                                    fontWeight: isCorrect ? '700' : '500',
+                                    lineHeight: '1.4',
+                                    resize: 'vertical',
+                                    fontFamily: 'inherit'
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {/* Explanation / Rationale */}
+                    <div style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--bg-canvas)',
+                      borderRadius: 'var(--radius-xs)',
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}>
+                      <strong style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                        💡 Explanation:
+                      </strong>
+                      <textarea
+                        rows={2}
+                        value={q.explanation || ''}
+                        onChange={e => handleUpdateEditQuizQuestion(idx, 'explanation', e.target.value)}
+                        placeholder="Rationale / teaching note shown after submission..."
+                        style={{
+                          width: '100%',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          outline: 'none',
+                          color: 'var(--text-secondary)',
+                          fontSize: '12px',
+                          lineHeight: '1.4',
+                          resize: 'vertical',
+                          fontFamily: 'inherit'
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Sticky Footer */}
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--border-subtle)',
+              backgroundColor: 'var(--bg-surface)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexShrink: 0
+            }}>
+              <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                Edits are saved to the live curriculum and synced to the Assessments & Quizzes tab.
+              </span>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setShowEditQuizModal(false)}
+                  className="btn-secondary"
+                  style={{ padding: '9px 16px', fontSize: '13px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveQuizReview}
+                  disabled={isSavingQuizEdit}
+                  className="btn-primary"
+                  style={{
+                    padding: '10px 22px',
+                    fontSize: '13.5px',
+                    fontWeight: '700',
+                    gap: '8px',
+                    backgroundColor: '#10B981',
+                    borderColor: '#10B981',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                  }}
+                >
+                  <CheckCircle2 size={16} />
+                  <span>{isSavingQuizEdit ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

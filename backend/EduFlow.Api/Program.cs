@@ -1,5 +1,6 @@
 using System.Text;
 using EduFlow.Core.Interfaces;
+using EduFlow.Core.Options;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -32,6 +33,16 @@ builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
+// Enrollment approval must never bypass payment verification. Swap this registration for a
+// provider-backed implementation when a payment gateway is introduced.
+builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
+builder.Services.AddScoped<IRatingService, RatingService>();
+builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
+builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
+
+// 2b. Review moderation behaviour (see docs/current/RATINGS_AND_REVIEWS.md)
+builder.Services.Configure<ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));
 
 // 3. JWT Authentication & Authorization
 var jwtSecret = builder.Configuration["JwtSettings:Secret"];

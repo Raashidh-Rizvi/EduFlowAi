@@ -59,6 +59,44 @@ export const saveGeneratedQuiz = (quizObj) => {
   }
 };
 
+/**
+ * Update an already-persisted quiz in localStorage (edit questions, rename title, etc.).
+ * Pass `matchTitle` when the caller only knows the original title (e.g. locally-created quiz ids).
+ * Broadcasts 'eduflow_quiz_updated' so every open view refreshes instantly.
+ */
+export const updateGeneratedQuiz = (quizId, updates = {}, matchTitle = null) => {
+  try {
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    if (!existingRaw) return null;
+    const list = JSON.parse(existingRaw);
+
+    let updatedQuiz = null;
+    const newList = list.map(q => {
+      const isMatch = q.id === quizId || (matchTitle && q.title === matchTitle);
+      if (!isMatch) return q;
+
+      updatedQuiz = {
+        ...q,
+        ...updates,
+        questionsCount: updates.questionsCount
+          ?? (updates.questions ? updates.questions.length : q.questionsCount),
+        // Keep mirrored legacy fields in sync after a rename
+        ...(updates.title ? { title: updates.title } : {})
+      };
+      return updatedQuiz;
+    });
+
+    if (!updatedQuiz) return null;
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+    window.dispatchEvent(new CustomEvent('eduflow_quiz_updated', { detail: updatedQuiz }));
+    return updatedQuiz;
+  } catch (err) {
+    console.warn('Failed to update generated quiz in localStorage:', err);
+    return null;
+  }
+};
+
 export const getGeneratedQuizzes = (courseId = null) => {
   try {
     const existingRaw = localStorage.getItem(STORAGE_KEY);

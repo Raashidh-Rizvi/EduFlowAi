@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 
 test.describe('Authentication & Role Switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -45,7 +45,7 @@ test.describe('Authentication & Role Switching', () => {
 
     // Should navigate to Instructor dashboard
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: /AI Study Approvals/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /AI (Study Approvals|Review \& Approvals)/i })).toBeVisible();
 
     await page.screenshot({ path: 'e2e/screenshots/03-instructor-dashboard.png' });
   });
@@ -70,12 +70,8 @@ test.describe('Authentication & Role Switching', () => {
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible();
 
-    // Open User Profile Pill in Navbar to reveal popover
-    await page.locator('header').locator('text=Dr. Sarah Jenkins').click();
-
-    // Click Sign Out button inside the popover
-    const signOutBtn = page.getByRole('button', { name: /Sign Out/i }).first();
-    await signOutBtn.click();
+    // Sign out via the console Sign out button (navbar pill shows the DB display name)
+    await page.getByRole('button', { name: /Sign out/i }).first().click();
 
     // Should return to Login or Landing Page
     await expect(page.locator('text=Sign in to Platform').first()).toBeVisible({ timeout: 10000 });

@@ -1,31 +1,17 @@
 # EduFlow AI — Backend
 
-The ASP.NET Core public API connects authenticated clients to PostgreSQL and the internal AI service. The API project targets .NET 10. Authorization, migrations, reward integrity and workflow execution remain PARTIAL; see [implementation status](../docs/project/17_IMPLEMENTATION_STATUS.md).
+ASP.NET Core public API, business services, EF Core/PostgreSQL and internal AI gateway. The API targets **.NET 8**; repository `global.json` selects SDK **10.0.401**. Follow actual project files and the [current setup guide](../docs/current/LOCAL_SETUP_GUIDE.md).
 
-## Local commands
+From repository root:
 
-Run from the repository root with a compatible .NET 10 SDK and the required PostgreSQL/service configuration. Review the [whole-system run guide](../docs/project/18_RUN_AND_SETUP.md) first; startup initialization can affect demo data.
-
-~~~powershell
+```powershell
 dotnet restore backend/EduFlow.slnx
 dotnet build backend/EduFlow.slnx
-dotnet test backend/EduFlow.slnx
 dotnet run --project backend/EduFlow.Api --launch-profile http
-~~~
+```
 
-The checked-in HTTP launch profile uses localhost:5204. Runtime binding can be overridden; use the server's actual startup output. These are commands to run, not recorded successful results.
+Default HTTP port: 5204. The root `npm run dev` already launches this service; do not start a duplicate. Database migrations/startup initialization can change data and are not health checks.
 
-## Key entry points
+[Program.cs](EduFlow.Api/Program.cs), [controllers](EduFlow.Api/Controllers/), [services](EduFlow.Infrastructure/Services/), and [tests](EduFlow.Tests/) are implementation evidence. Learning gateway tests passed in the recorded run; Admin/User/Course Management and other business workflows are not certified complete by those tests.
 
-- [API startup](EduFlow.Api/Program.cs)
-- [Controllers](EduFlow.Api/Controllers/)
-- [Domain entities](EduFlow.Core/Entities/Entities.cs) and [interfaces](EduFlow.Core/Interfaces/)
-- [ApplicationDbContext](EduFlow.Infrastructure/Data/ApplicationDbContext.cs)
-- [Services](EduFlow.Infrastructure/Services/)
-- [Tests](EduFlow.Tests/)
-
-Program.cs, identity contracts, DbContext, migrations and AI gateway are shared infrastructure. Method-level ownership comes from the matrix; runtime Admin permission does not transfer academic authorship.
-
-## Canonical documentation
-
-[Start here](../docs/README.md) · [Responsibility matrix](../docs/responsibilities/RESPONSIBILITY_MATRIX.md) · [Architecture](../docs/project/03_ARCHITECTURE.md) · [Database](../docs/project/05_DATABASE_SCHEMA.md) · [API contracts](../docs/project/06_API_CONTRACTS.md) · [Security](../docs/project/07_SECURITY_AND_PRIVACY.md) · [Integration](../docs/project/08_COMPONENT_INTEGRATION.md)
+[Authority](../docs/00_SOURCE_OF_TRUTH.md) · [Catalog](../docs/INDEX.md) · [Actual Learning API contracts](../docs/current/API_CONTRACTS.md) · [Current status](../docs/current/IMPLEMENTATION_STATUS.md)

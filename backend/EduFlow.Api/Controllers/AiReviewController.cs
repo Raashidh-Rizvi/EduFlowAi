@@ -121,19 +121,18 @@ public class AiReviewController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> OrchestrateStudyPlan([FromBody] StudyPlanRequest request)
     {
-        // 1. Resolve student ID safely (prioritize specified valid student, then fallback to student in DB)
-        Guid studentId;
-        if (!string.IsNullOrWhiteSpace(request.student_id) && Guid.TryParse(request.student_id, out var parsedReqId) && await DbContext.Users.AnyAsync(u => u.Id == parsedReqId))
+        // 1. Resolve the target student from the request only. There is no "first student
+        // in the database" fallback — a study plan must never be written for an arbitrary
+        // account that happens to exist.
+        if (string.IsNullOrWhiteSpace(request.student_id)
+            || !Guid.TryParse(request.student_id, out var studentId)
+            || !await DbContext.Users.AnyAsync(u => u.Id == studentId && u.Role == UserRole.Student))
         {
-            studentId = parsedReqId;
-        }
-        else
-        {
-            var studentUser = await DbContext.Users.FirstOrDefaultAsync(u => u.Role == UserRole.Student);
-            studentId = studentUser?.Id ?? Guid.Parse("33333333-3333-3333-3333-333333333333");
+            return BadRequest(new { message = "A valid student_id is required." });
         }
 
-        // 2. Resolve course safely (lookup by code like "CS-301", Guid, or prefix, fallback to first course in DB)
+        // 2. Resolve the course from the request only (Guid or course code).
+        // No "first course in the database" fallback.
         Course? course = null;
         if (!string.IsNullOrWhiteSpace(request.course_id))
         {
@@ -146,10 +145,6 @@ public class AiReviewController : BaseApiController
                 var targetCode = request.course_id.Split(':')[0].Trim();
                 course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Code.ToLower() == targetCode.ToLower() || c.Code.ToLower() == request.course_id.ToLower());
             }
-        }
-        if (course == null)
-        {
-            course = await DbContext.Courses.FirstOrDefaultAsync();
         }
 
         if (course == null)
@@ -462,10 +457,64 @@ public class AiReviewController : BaseApiController
     [Authorize]
     public async Task<IActionResult> ChatWithCoach([FromBody] CoachChatApiRequest request)
     {
-        var responseJson = await _aiGatewayClient.ChatWithCoachAsync(request);
-        return Ok(JsonDocument.Parse(responseJson).RootElement);
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.ChatWithCoachAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpPost("learn")]
+    [Authorize]
+    public async Task<IActionResult> Learn([FromBody] LearningAgentApiRequest request)
+    {
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.LearnAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpGet("learning/slide-decks")]
+    [Authorize]
+    public async Task<IActionResult> GetLearningSlideDecks()
+    {
+        var response = await _aiGatewayClient.GetLearningSlideDecksAsync(HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
+    }
+
+    [HttpPost("rag/chat")]
+    [Authorize]
+    public async Task<IActionResult> RagChat([FromBody] RagChatApiRequest request)
+    {
+        var (userId, _) = GetCurrentUser();
+        if (userId == Guid.Empty) return Unauthorized();
+        var response = await _aiGatewayClient.RagChatAsync(
+            request with { student_id = userId.ToString() }, HttpContext.RequestAborted);
+        return new ContentResult { StatusCode = response.StatusCode, ContentType = "application/json", Content = response.Body };
     }
 }
+
+public record RagChatApiRequest(
+    string question,
+    string? course_id = null,
+    string? module_id = null,
+    string? source_file = null,
+    int max_citations = 3,
+    string? student_id = null,
+    string? session_id = null
+);
+
+public record LearningAgentApiRequest(
+    string? student_id,
+    string? course_id,
+    string source_file,
+    string request_type,
+    string? session_id = null,
+    string? sub_lecture_id = null,
+    string? topic = null,
+    string? message = null
+);
 
 public record StudyPlanRequest(
     string student_id,
@@ -494,10 +543,11 @@ public record ReviseProposalRequest(
 );
 
 public record CoachChatApiRequest(
-    string student_id,
+    string? student_id,
     string course_id,
     string message,
-    string? source_file = null
+    string? source_file = null,
+    string? session_id = null
 );
 
 public record GenerateQuizApiRequest(

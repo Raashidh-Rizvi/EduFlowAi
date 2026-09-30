@@ -23,9 +23,11 @@ public class ApplicationDbContext : DbContext
     // Auth & Identity
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<InstructorProfile> InstructorProfiles => Set<InstructorProfile>();
 
     // Curriculum & Learning (Hierarchical)
     public DbSet<Course> Courses => Set<Course>();
+    public DbSet<CourseReview> CourseReviews => Set<CourseReview>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
@@ -72,9 +74,74 @@ public class ApplicationDbContext : DbContext
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    // Support Desk & Inquiries
+    public DbSet<SupportTicket> SupportTickets => Set<SupportTicket>();
+    public DbSet<SupportTicketResponse> SupportTicketResponses => Set<SupportTicketResponse>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // --- Support Desk & Inquiries ---
+        modelBuilder.Entity<SupportTicket>(entity =>
+        {
+            entity.ToTable("SupportTickets");
+
+            entity.Property(t => t.Type)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .IsRequired();
+
+            entity.Property(t => t.Status)
+                  .HasConversion<string>()
+                  .HasMaxLength(20)
+                  .IsRequired();
+
+            entity.Property(t => t.Message)
+                  .HasMaxLength(5000)
+                  .IsRequired();
+
+            entity.Property(t => t.Version)
+                  .IsConcurrencyToken()
+                  .IsRequired();
+
+            entity.Property(t => t.ClientRequestId)
+                  .IsRequired();
+
+            entity.HasOne(t => t.SubmittedByUser)
+                  .WithMany(u => u.SubmittedSupportTickets)
+                  .HasForeignKey(t => t.SubmittedByUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(t => new { t.SubmittedByUserId, t.ClientRequestId })
+                  .IsUnique();
+
+            entity.HasIndex(t => new { t.SubmittedByUserId, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.Status, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.Type, t.CreatedAt, t.Id });
+            entity.HasIndex(t => new { t.CreatedAt, t.Id });
+        });
+
+        modelBuilder.Entity<SupportTicketResponse>(entity =>
+        {
+            entity.ToTable("SupportTicketResponses");
+
+            entity.Property(r => r.Message)
+                  .HasMaxLength(5000)
+                  .IsRequired();
+
+            entity.HasOne(r => r.SupportTicket)
+                  .WithMany(t => t.Responses)
+                  .HasForeignKey(r => r.SupportTicketId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(r => r.AdminUser)
+                  .WithMany(u => u.AuthoredSupportTicketResponses)
+                  .HasForeignKey(r => r.AdminUserId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(r => new { r.SupportTicketId, r.CreatedAt, r.Id });
+        });
 
         // --- Identity & Users ---
         modelBuilder.Entity<User>(entity =>
@@ -92,15 +159,47 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<InstructorProfile>(entity =>
+        {
+            // Exactly one public profile per instructor account.
+            entity.HasIndex(p => p.UserId).IsUnique();
+            entity.Property(p => p.Bio).HasMaxLength(2000);
+            entity.Property(p => p.Headline).HasMaxLength(200);
+            entity.Property(p => p.Expertise).HasMaxLength(500);
+            entity.HasOne(p => p.User)
+                  .WithOne(u => u.InstructorProfile)
+                  .HasForeignKey<InstructorProfile>(p => p.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
         // --- Courses & Curriculum Hierarchy ---
         modelBuilder.Entity<Course>(entity =>
         {
             entity.HasIndex(c => c.Code).IsUnique();
             entity.Property(c => c.Difficulty).HasConversion<string>();
+            entity.Property(c => c.Price).HasPrecision(18, 2);
             entity.HasOne(c => c.Instructor)
                   .WithMany()
                   .HasForeignKey(c => c.InstructorId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseReview>(entity =>
+        {
+            // One review per student per course.
+            entity.HasIndex(e => new { e.CourseId, e.StudentId }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint(
+                "CK_CourseReviews_Rating_Range", "\"Rating\" >= 1 AND \"Rating\" <= 5"));
+            entity.Property(e => e.Status).HasConversion<string>();
+            entity.HasIndex(e => new { e.CourseId, e.Status });
+            entity.HasOne(r => r.Course)
+                  .WithMany(c => c.Reviews)
+                  .HasForeignKey(r => r.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Student)
+                  .WithMany()
+                  .HasForeignKey(r => r.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Module>(entity =>
@@ -147,8 +246,13 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Enrollment>(entity =>
         {
+            // Database-level uniqueness: one enrollment row per (course, student) pair.
+            // The approval workflow mutates Status on this single row instead of inserting
+            // a second request, so a student can never hold duplicate active requests.
             entity.HasIndex(e => new { e.CourseId, e.StudentId }).IsUnique();
             entity.Property(e => e.Status).HasConversion<string>();
+            entity.HasIndex(e => e.Status);
+            entity.Property(e => e.ReviewNotes).HasMaxLength(1000);
             entity.HasOne(e => e.Course)
                   .WithMany(c => c.Enrollments)
                   .HasForeignKey(e => e.CourseId)
@@ -157,6 +261,10 @@ public class ApplicationDbContext : DbContext
                   .WithMany(u => u.Enrollments)
                   .HasForeignKey(e => e.StudentId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ReviewedByInstructor)
+                  .WithMany()
+                  .HasForeignKey(e => e.ReviewedByInstructorId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<LessonCompletion>(entity =>

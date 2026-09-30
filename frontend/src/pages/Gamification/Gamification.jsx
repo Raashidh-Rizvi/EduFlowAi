@@ -48,7 +48,11 @@ const RANDOM_NAMES = [
   'Vector Vanguard'
 ];
 
-
+// Roster shown by the squad builder until GET /api/gamification/eligible-students
+// resolves, and when that endpoint returns nothing. Kept empty on purpose: the real
+// roster always comes from the API, and a fabricated one would be offered as if it
+// were live data.
+const DEFAULT_FALLBACK_STUDENTS = [];
 
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'

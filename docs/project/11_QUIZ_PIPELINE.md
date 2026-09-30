@@ -1,8 +1,12 @@
+> **RETAINED HISTORICAL DESIGN — OWNER REVIEW PENDING (2026-09-28).** The body below is preserved domain/design material, not verified current implementation or an active task list. Historical labels such as "canonical", "current", "implemented" and "enforced" apply to its earlier snapshot only. Any old agent topology, route, library, database or completion claim is historical/proposed until checked against current source. Do not restore removed architecture. Follow the [source of truth](../00_SOURCE_OF_TRUTH.md), [catalog](../INDEX.md) and [current status](../current/IMPLEMENTATION_STATUS.md). Other members' subsystem completion is not certified here.
+
+> **Specific interpretation:** The Planner/Domain Analysis diagrams in the retained body are historical workflow proposals, not current agent requirements. Quiz Generator remains assigned to Member 2 with distinct-agent verification pending.
+
 # EduFlow AI – Quiz Pipeline
 
-> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
+> **Canonical design/reference document.** Read [Start here](../README.md) and the [responsibility matrix](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md). Use [implementation status](../legacy/project/17_IMPLEMENTATION_STATUS.md) and current source/evidence to distinguish implemented behavior from targets. Examples and proposed routes are not certified runtime results.
 
-> **Reconciliation note:** The [current matrix](../responsibilities/RESPONSIBILITY_MATRIX.md) assigns academic definitions, grading contracts, generation/review and publishing to Student 2; learner attempts/results and rewards to Student 3; and lifecycle/validation safeguards to Student 1. The lifecycle below is a target: current AI generation can publish without review, attempts/timers are incomplete, and normal .NET submission does not invoke the Python AI evaluator. Do not claim this complete pipeline or its anti-cheat controls are implemented.
+> **Reconciliation note:** The [current matrix](../legacy/responsibilities/RESPONSIBILITY_MATRIX.md) assigns academic definitions, grading contracts, generation/review and publishing to Student 2; learner attempts/results and rewards to Student 3; and lifecycle/validation safeguards to Student 1. The lifecycle below is a target: current AI generation can publish without review, attempts/timers are incomplete, and normal .NET submission does not invoke the Python AI evaluator. Do not claim this complete pipeline or its anti-cheat controls are implemented.
 
 > This document describes the complete lifecycle of a quiz in EduFlow AI — from AI-assisted generation through instructor review to student delivery and grading.
 

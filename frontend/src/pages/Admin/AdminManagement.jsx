@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
+import ReviewModeration from './ReviewModeration';
+import { useUIVersion } from '../../context/UIVersionContext';
 import { 
   Shield, 
   Users, 
@@ -32,15 +34,129 @@ import {
   CheckCircle,
   AlertCircle,
   TrendingUp,
+  Star,
+  Palette,
   X
 } from 'lucide-react';
 
 export default function AdminManagement() {
-  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'config' | 'system' | 'ai-telemetry'
+  const [activeSubTab, setActiveSubTab] = useState('users'); // 'users' | 'reviews' | 'ui-theme'
+  const { uiVersion, setUIVersion } = useUIVersion();
   const [searchFilter, setSearchFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
 
   const [usersList, setUsersList] = useState([]);
+
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ fullName: '', email: '', password: '', role: 'Student' });
+  const [creatingUser, setCreatingUser] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const addUserDialog = useRef(null);
+  const createInFlight = useRef(false);
+  const usersRequest = useRef(0);
+
+  useEffect(() => {
+    if (showAddUser) addUserDialog.current?.showModal();
+    else addUserDialog.current?.close();
+  }, [showAddUser]);
+
+  const closeAddUser = () => {
+    if (createInFlight.current) return;
+    setShowAddUser(false);
+    setNewUser({ fullName: '', email: '', password: '', role: 'Student' });
+    setCreateError('');
+  };
+
+  const handleCreateUser = async (event) => {
+    event.preventDefault();
+    if (createInFlight.current) return;
+    setCreateError('');
+    const payload = { ...newUser, fullName: newUser.fullName.trim(), email: newUser.email.trim() };
+    if (!payload.fullName || !payload.email || !payload.password.trim()) {
+      setCreateError('Full name, email, and password are required.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+$/.test(payload.email)) {
+      setCreateError('Enter a valid email address.');
+      return;
+    }
+    if (payload.password.length < 8 || new TextEncoder().encode(payload.password).length > 72) {
+      setCreateError('Password must be at least 8 characters and at most 72 UTF-8 bytes.');
+      return;
+    }
+    if (!['Student', 'Instructor', 'Admin'].includes(payload.role)) {
+      setCreateError('Select a valid role.');
+      return;
+    }
+    createInFlight.current = true;
+    setCreatingUser(true);
+    try {
+      const { data: user } = await api.post('/admin/users', payload);
+      // Use the saved account returned by the server; keep the Admin session intact.
+      usersRequest.current += 1;
+      setUsersList(current => [{
+        id: user.id, name: user.fullName, email: user.email, role: user.role,
+        status: user.isActive ? 'Active' : 'Suspended',
+        joined: new Date(user.createdAt).toISOString().split('T')[0]
+      }, ...current.filter(existing => existing.id !== user.id)]);
+      setSearchFilter('');
+      setRoleFilter('All');
+      setCreateSuccess('User created successfully.');
+      setShowAddUser(false);
+      setNewUser({ fullName: '', email: '', password: '', role: 'Student' });
+    } catch (error) {
+      const data = error.response?.data;
+      const validationErrors = data?.errors ? Object.values(data.errors).flat().join(' ') : '';
+      setCreateError(validationErrors || data?.message || error.friendlyMessage || 'Unable to create user. Please try again.');
+    } finally {
+      createInFlight.current = false;
+      setCreatingUser(false);
+    }
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deleteSuccess, setDeleteSuccess] = useState('');
+  const deleteDialog = useRef(null);
+  const deleteInFlight = useRef(false);
+  let currentAdminId = '';
+  try {
+    const sessionUser = JSON.parse(localStorage.getItem('eduflow_user') || 'null');
+    currentAdminId = String(sessionUser?.userId || sessionUser?.id || '').toLowerCase();
+  } catch {}
+
+  useEffect(() => {
+    if (deleteTarget) deleteDialog.current?.showModal();
+    else deleteDialog.current?.close();
+  }, [deleteTarget]);
+
+  const closeDeleteDialog = () => {
+    if (deleteInFlight.current) return;
+    setDeleteTarget(null);
+    setDeleteError('');
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || deleteInFlight.current) return;
+    deleteInFlight.current = true;
+    setDeletingUser(true);
+    setDeleteError('');
+    try {
+      await api.delete(`/admin/users/${deleteTarget.id}`);
+      usersRequest.current += 1;
+      setUsersList(current => current.filter(user => user.id !== deleteTarget.id));
+      setDeleteSuccess('User permanently deleted.');
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(error.response?.data?.message || error.friendlyMessage ||
+        'Unable to delete user. Please try again.');
+    } finally {
+      deleteInFlight.current = false;
+      setDeletingUser(false);
+    }
+  };
 
   // AI Telemetry State
   const [aiTelemetry, setAiTelemetry] = useState(null);
@@ -61,6 +177,7 @@ export default function AdminManagement() {
   }, [activeSubTab]);
 
   const fetchUsers = async () => {
+    const requestId = ++usersRequest.current;
     try {
       const response = await api.get('/admin/users');
       // Map API response to match UI format
@@ -73,7 +190,7 @@ export default function AdminManagement() {
         xp: `${u.totalXp} XP`,
         joined: new Date(u.createdAt).toISOString().split('T')[0]
       }));
-      setUsersList(mapped);
+      if (requestId === usersRequest.current) setUsersList(mapped);
     } catch (err) {
       console.warn('Failed to fetch users:', err);
     }
@@ -152,13 +269,13 @@ export default function AdminManagement() {
             <span className="badge-pill badge-danger">
               ROOT RBAC ACCESS
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Platform Security & Policy Engine</span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>User Directory & Access</span>
           </div>
           <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
-            Platform Governance & Administration
+            User Management
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '4px', maxWidth: '640px' }}>
-            Manage identity directory, elevate role scopes, monitor AI model token usage & costs, observe multi-agent workflows, and enforce deterministic safety constraints.
+            Manage user details, roles, and account status.
           </p>
         </div>
 
@@ -192,66 +309,255 @@ export default function AdminManagement() {
             <span>Directory ({usersList.length})</span>
           </button>
           <button
-            onClick={() => setActiveSubTab('ai-telemetry')}
+            onClick={() => setActiveSubTab('reviews')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
               borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'ai-telemetry' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'var(--text-muted)',
+              backgroundColor: activeSubTab === 'reviews' ? 'var(--bg-card)' : 'transparent',
+              color: activeSubTab === 'reviews' ? 'var(--text-main)' : 'var(--text-muted)',
               fontSize: '12.5px',
-              fontWeight: activeSubTab === 'ai-telemetry' ? '700' : '500',
-              border: activeSubTab === 'ai-telemetry' ? '1px solid var(--primary)' : '1px solid transparent',
-              cursor: 'pointer',
-              boxShadow: activeSubTab === 'ai-telemetry' ? '0 0 10px rgba(99, 102, 241, 0.15)' : 'none'
-            }}
-          >
-            <Brain size={14} color={activeSubTab === 'ai-telemetry' ? 'var(--primary)' : 'currentColor'} /> 
-            <span>AI & Agent Telemetry</span>
-            <span className="badge-pill badge-primary" style={{ fontSize: '10px', padding: '1px 5px' }}>NEW</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('config')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'config' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'config' ? 'var(--text-main)' : 'var(--text-muted)',
-              fontSize: '12.5px',
-              fontWeight: activeSubTab === 'config' ? '600' : '500',
-              border: activeSubTab === 'config' ? '1px solid var(--border-card)' : '1px solid transparent',
+              fontWeight: activeSubTab === 'reviews' ? '600' : '500',
+              border: activeSubTab === 'reviews' ? '1px solid var(--border-card)' : '1px solid transparent',
               cursor: 'pointer'
             }}
           >
-            <SlidersHorizontal size={14} /> 
-            <span>Platform Policy</span>
+            <Star size={14} />
+            <span>Reviews</span>
           </button>
           <button
-            onClick={() => setActiveSubTab('system')}
+            onClick={() => setActiveSubTab('ui-theme')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
               padding: '6px 12px',
               borderRadius: 'var(--radius-xs)',
-              backgroundColor: activeSubTab === 'system' ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === 'system' ? 'var(--text-main)' : 'var(--text-muted)',
+              backgroundColor: activeSubTab === 'ui-theme' ? 'var(--bg-card)' : 'transparent',
+              color: activeSubTab === 'ui-theme' ? 'var(--primary)' : 'var(--text-muted)',
               fontSize: '12.5px',
-              fontWeight: activeSubTab === 'system' ? '600' : '500',
-              border: activeSubTab === 'system' ? '1px solid var(--border-card)' : '1px solid transparent',
+              fontWeight: activeSubTab === 'ui-theme' ? '600' : '500',
+              border: activeSubTab === 'ui-theme' ? '1px solid var(--primary-border)' : '1px solid transparent',
               cursor: 'pointer'
             }}
           >
-            <Server size={14} /> 
-            <span>Telemetry</span>
+            <Palette size={14} />
+            <span>UI Theme</span>
           </button>
         </div>
       </div>
+
+      {createSuccess && <div role="status" className="badge-pill badge-success">{createSuccess}</div>}
+      <dialog
+        ref={addUserDialog}
+        aria-labelledby="add-user-title"
+        onCancel={(event) => { event.preventDefault(); closeAddUser(); }}
+        className="card-premium"
+        style={{ padding: '28px', width: 'min(480px, calc(100vw - 32px))', maxHeight: '90vh', overflowY: 'auto', margin: 'auto', color: 'var(--text-main)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)' }}
+      >
+        <form onSubmit={handleCreateUser} aria-busy={creatingUser} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h2 id="add-user-title" style={{ fontSize: '20px', fontWeight: '800' }}>Add User</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Create an account and assign its role.</p>
+          {createError && <div role="alert" style={{ color: 'var(--danger)', fontSize: '13px' }}>{createError}</div>}
+          <fieldset disabled={creatingUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: 0, border: 0 }}>
+            <label htmlFor="new-user-name">Full Name</label>
+            <input id="new-user-name" className="form-input" autoFocus required maxLength={200} autoComplete="off" value={newUser.fullName} onChange={event => setNewUser({ ...newUser, fullName: event.target.value })} />
+            <label htmlFor="new-user-email">Email</label>
+            <input id="new-user-email" className="form-input" type="email" required maxLength={254} autoComplete="off" value={newUser.email} onChange={event => setNewUser({ ...newUser, email: event.target.value })} />
+            <label htmlFor="new-user-password">Password</label>
+            <input id="new-user-password" className="form-input" type="password" required minLength={8} maxLength={72} autoComplete="new-password" aria-describedby="new-user-password-help" value={newUser.password} onChange={event => setNewUser({ ...newUser, password: event.target.value })} />
+            <small id="new-user-password-help" style={{ color: 'var(--text-muted)' }}>At least 8 characters; at most 72 UTF-8 bytes.</small>
+            <label htmlFor="new-user-role">Role</label>
+            <select id="new-user-role" className="form-select" required value={newUser.role} onChange={event => setNewUser({ ...newUser, role: event.target.value })}>
+              <option value="Student">Student</option>
+              <option value="Instructor">Instructor</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </fieldset>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" className="btn-secondary" disabled={creatingUser} onClick={closeAddUser}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={creatingUser}>{creatingUser ? 'Creating...' : 'Create User'}</button>
+          </div>
+        </form>
+      </dialog>
+
+      {deleteSuccess && <div role="status" className="badge-pill badge-success">{deleteSuccess}</div>}
+      <dialog
+        ref={deleteDialog}
+        aria-labelledby="delete-user-title"
+        aria-describedby="delete-user-warning"
+        onCancel={event => { event.preventDefault(); closeDeleteDialog(); }}
+        className="card-premium"
+        style={{ padding: '28px', width: 'min(480px, calc(100vw - 32px))', maxHeight: '90vh', overflowY: 'auto', margin: 'auto', color: 'var(--text-main)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)' }}
+      >
+        <div aria-busy={deletingUser} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <h2 id="delete-user-title" style={{ fontSize: '20px', fontWeight: '800' }}>Permanently delete user?</h2>
+          <p><strong>{deleteTarget?.name}</strong><br />{deleteTarget?.email}</p>
+          <p id="delete-user-warning" style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+            This permanently removes the account and cannot be undone. Accounts with existing platform activity cannot be deleted; use Suspend instead.
+          </p>
+          {deleteError && <div role="alert" style={{ color: 'var(--danger)', fontSize: '13px' }}>{deleteError}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" autoFocus className="btn-secondary" disabled={deletingUser} onClick={closeDeleteDialog}>Cancel</button>
+            <button type="button" className="btn-danger" disabled={deletingUser} onClick={handleDeleteUser}>
+              {deletingUser ? 'Deleting...' : 'Permanently Delete'}
+            </button>
+          </div>
+        </div>
+      </dialog>
+
+      {/* 0. UI Theme Version Switcher */}
+      {activeSubTab === 'ui-theme' && (
+        <div className="card-premium" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <Palette size={18} color="var(--primary)" />
+              <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--text-main)', margin: 0 }}>
+                UI Theme Version
+              </h3>
+              <span className="badge-pill badge-primary" style={{ fontSize: '10px', padding: '2px 8px' }}>
+                Active: {uiVersion.toUpperCase()}
+              </span>
+            </div>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, maxWidth: '580px' }}>
+              Switch the global application UI version. The setting applies immediately and is persisted across sessions.
+              Only Admins can change this.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px' }}>
+            {/* V1 Option */}
+            <div
+              onClick={() => setUIVersion('v1')}
+              style={{
+                border: `2px solid ${uiVersion === 'v1' ? 'var(--primary)' : 'var(--border-card)'}`,
+                borderRadius: 'var(--radius-lg)',
+                padding: '22px',
+                cursor: 'pointer',
+                background: uiVersion === 'v1' ? 'var(--primary-soft)' : 'var(--bg-surface)',
+                boxShadow: uiVersion === 'v1' ? '0 0 24px rgba(139,92,246,0.2)' : 'none',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>V1</span>
+                {uiVersion === 'v1' && (
+                  <CheckCircle size={18} color="var(--primary)" />
+                )}
+              </div>
+              {/* V1 mini preview */}
+              <div style={{
+                height: '110px', borderRadius: '10px', overflow: 'hidden',
+                background: '#0A0A16', border: '1px solid rgba(139,92,246,0.2)',
+                display: 'flex', position: 'relative'
+              }}>
+                {/* Sidebar preview */}
+                <div style={{ width: '38%', background: 'rgba(15,15,30,0.4)', borderRight: '1px solid rgba(139,92,246,0.2)', padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <div style={{ width: '70%', height: '7px', borderRadius: '99px', background: 'rgba(139,92,246,0.5)', marginBottom: '6px' }} />
+                  {[1,2,3,4].map(i => (
+                    <div key={i} style={{ width: `${60 + i * 5}%`, height: '6px', borderRadius: '99px', background: i === 1 ? 'rgba(139,92,246,0.6)' : 'rgba(255,255,255,0.1)' }} />
+                  ))}
+                </div>
+                {/* Main preview */}
+                <div style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  <div style={{ height: '22px', borderRadius: '99px', background: 'rgba(255,255,255,0.06)', marginBottom: '4px' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', flex: 1 }}>
+                    {[1,2,3,4].map(i => <div key={i} style={{ background: 'rgba(25,22,52,0.7)', borderRadius: '6px' }} />)}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>Classic Glass</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Floating sidebar • Rounded glassmorphism • Gradient navbar
+                </div>
+              </div>
+            </div>
+
+            {/* V2 Option */}
+            <div
+              onClick={() => setUIVersion('v2')}
+              style={{
+                border: `2px solid ${uiVersion === 'v2' ? '#8B5CF6' : 'var(--border-card)'}`,
+                borderRadius: 'var(--radius-lg)',
+                padding: '22px',
+                cursor: 'pointer',
+                background: uiVersion === 'v2' ? 'rgba(139,92,246,0.12)' : 'var(--bg-surface)',
+                boxShadow: uiVersion === 'v2' ? '0 0 24px rgba(139,92,246,0.25)' : 'none',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>V2</span>
+                  <span className="badge-pill badge-primary" style={{ fontSize: '9.5px', padding: '2px 7px' }}>NEW</span>
+                </div>
+                {uiVersion === 'v2' && (
+                  <CheckCircle size={18} color="#8B5CF6" />
+                )}
+              </div>
+              {/* V2 mini preview */}
+              <div style={{
+                height: '110px', borderRadius: '10px', overflow: 'hidden',
+                background: '#0D0B1E', border: '1px solid rgba(139,92,246,0.25)',
+                display: 'flex', position: 'relative'
+              }}>
+                {/* Sidebar preview - flat flush */}
+                <div style={{ width: '32%', background: '#100D22', borderRight: '1px solid rgba(139,92,246,0.15)', padding: '8px 0', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ width: '65%', height: '7px', borderRadius: '2px', background: 'rgba(139,92,246,0.5)', margin: '0 8px 6px' }} />
+                  {[1,2,3,4].map(i => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 8px', position: 'relative' }}>
+                      {i === 1 && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '2px', background: '#8B5CF6', borderRadius: '0 2px 2px 0' }} />}
+                      <div style={{ width: '5px', height: '5px', borderRadius: '2px', background: i === 1 ? '#C4B5FD' : 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                      <div style={{ flex: 1, height: '5px', borderRadius: '2px', background: i === 1 ? 'rgba(139,92,246,0.4)' : 'rgba(255,255,255,0.08)' }} />
+                    </div>
+                  ))}
+                </div>
+                {/* Main preview */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ height: '22px', background: 'rgba(16,13,34,0.75)', borderBottom: '1px solid rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', padding: '0 6px', gap: '4px' }}>
+                    <div style={{ flex: 1, height: '7px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }} />
+                    <div style={{ width: '16px', height: '7px', borderRadius: '4px', background: 'rgba(139,92,246,0.5)' }} />
+                  </div>
+                  <div style={{ flex: 1, padding: '6px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                    {[1,2,3,4].map(i => <div key={i} style={{ background: 'rgba(25,22,52,0.85)', borderRadius: '5px', border: '1px solid rgba(139,92,246,0.12)' }} />)}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)' }}>Modern Dashboard</div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Flush sidebar • Sticky top navbar • Deep violet palette
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            padding: '14px 18px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--success-soft)',
+            border: '1px solid var(--success-border)',
+            fontSize: '13px',
+            color: 'var(--success)',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <CheckCircle2 size={15} />
+            Currently active: <strong>{uiVersion === 'v2' ? 'V2 — Modern Dashboard' : 'V1 — Classic Glass'}</strong>. Change takes effect immediately.
+          </div>
+        </div>
+      )}
 
       {/* 1. User Management View */}
       {activeSubTab === 'users' && (
@@ -297,7 +603,7 @@ export default function AdminManagement() {
                 Showing {filteredUsers.length} of {usersList.length} Accounts
               </span>
               <button 
-                onClick={() => alert('Add User Modal will open here. You can add Instructors or Students.')} 
+                onClick={() => { setCreateSuccess(''); setCreateError(''); setShowAddUser(true); }}
                 className="btn-primary"
                 style={{ padding: '6px 12px', fontSize: '12px', gap: '6px' }}
               >
@@ -313,7 +619,6 @@ export default function AdminManagement() {
                 <tr style={{ borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   <th style={{ padding: '10px 12px' }}>User Details</th>
                   <th style={{ padding: '10px 12px' }}>Role Scope</th>
-                  <th style={{ padding: '10px 12px' }}>Experience Points</th>
                   <th style={{ padding: '10px 12px' }}>Account Status</th>
                   <th style={{ padding: '10px 12px' }}>Enrolled On</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>
@@ -345,10 +650,6 @@ export default function AdminManagement() {
                       </select>
                     </td>
 
-                    <td style={{ padding: '12px', color: 'var(--secondary)', fontWeight: '600' }}>
-                      {user.xp}
-                    </td>
-
                     <td style={{ padding: '12px' }}>
                       <span className={`badge-pill ${user.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>
                         {user.status}
@@ -367,6 +668,16 @@ export default function AdminManagement() {
                       >
                         {user.status === 'Active' ? 'Suspend' : 'Activate'}
                       </button>
+                      <button
+                        type="button"
+                        className="btn-danger"
+                        disabled={deletingUser || user.id.toLowerCase() === currentAdminId}
+                        title={user.id.toLowerCase() === currentAdminId ? 'You cannot delete your own account.' : 'Permanently delete unused account'}
+                        onClick={() => { setDeleteError(''); setDeleteSuccess(''); setCreateSuccess(''); setDeleteTarget(user); }}
+                        style={{ padding: '5px 10px', fontSize: '11.5px', marginLeft: '8px' }}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -375,6 +686,9 @@ export default function AdminManagement() {
           </div>
         </div>
       )}
+
+      {/* 2. Course Review Moderation View */}
+      {activeSubTab === 'reviews' && <ReviewModeration />}
 
       {/* 2. AI & Agent Telemetry View */}
       {activeSubTab === 'ai-telemetry' && (

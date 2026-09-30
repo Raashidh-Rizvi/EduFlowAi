@@ -28,6 +28,9 @@ from models.schemas import (
     GenerateSlideQuizResponse
 )
 from rag.rag_service import SimpleRagService
+from agents.learning_agent import LearningAgent
+from models.schemas import LearningRequest, LearningResponse
+from tools.learning_support import LearningUnavailable
 
 # Initialize FastAPI Application
 app = FastAPI(
@@ -47,6 +50,21 @@ app.add_middleware(
 
 # Initialize Simple RAG Engine
 rag_service = SimpleRagService()
+learning_agent = LearningAgent(rag_service)
+
+
+@app.post("/api/v1/agent/learn", response_model=LearningResponse, tags=["Learning Agent"])
+def learn(request: LearningRequest):
+    try:
+        return learning_agent.learn(request)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except LearningUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        raise HTTPException(status_code=503, detail="The learning service could not complete this request. Please retry.")
 
 
 # -----------------------------------------------------------------------------
@@ -106,9 +124,11 @@ def rag_chat(request: RagChatRequest):
     Returns the answer and verifiable slide/page citations.
     """
     try:
-        response = rag_service.chat(
+        response = learning_agent.chat(
             question=request.question,
-            course_id=None if request.source_file else request.course_id,
+            student_id=request.student_id,
+            session_id=request.session_id,
+            course_id=request.course_id,
             module_id=request.module_id,
             source_file=request.source_file,
             max_citations=request.max_citations
@@ -126,9 +146,11 @@ def ai_coach_chat(request: CoachChatRequest):
     Supports optional Strict Lecture Deck Scoping (request.source_file).
     """
     try:
-        response = rag_service.chat(
+        response = learning_agent.chat(
             question=request.message,
-            course_id=None if request.source_file else (request.course_id or "it3012-se"),
+            student_id=request.student_id,
+            session_id=request.session_id,
+            course_id=request.course_id or (None if request.source_file else "it3012-se"),
             source_file=request.source_file
         )
         first_citation = response.citations[0] if response.citations else None
