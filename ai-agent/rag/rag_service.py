@@ -26,9 +26,12 @@ from dotenv import load_dotenv
 # Ensure environment variables are loaded
 load_dotenv()
 
+logger = logging.getLogger("EduFlow-RAG")
+
 from rag.parser import DocumentParser, ParsedPage
 from rag.chunker import SlideChunker, DocumentChunk
 from rag.vector_store import ChromaVectorStore
+from tools.mcp_hub import get_default_mcp_hub, MCPToolHub
 from models.schemas import (
     IndexPdfResponse,
     RagChatResponse,
@@ -64,6 +67,11 @@ class SimpleRagService:
         # Groq Credentials (Ultra-Fast LPU Inference)
         self.groq_api_key = os.environ.get("GROQ_API_KEY", "").strip()
         self.groq_model_name = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
+        # External Tools & Plugins (Centralized MCP Tool Hub)
+        self.web_search_enabled = os.environ.get("ENABLE_WEB_SEARCH_FALLBACK", "true").lower() == "true"
+        self.relevance_threshold = float(os.environ.get("RAG_RELEVANCE_THRESHOLD", "0.45"))
+        self.mcp_hub: MCPToolHub = get_default_mcp_hub()
 
     # -------------------------------------------------------------------------
     # 1. DOCUMENT INDEXING WORKFLOW
@@ -170,8 +178,57 @@ class SimpleRagService:
                 top_k=max(4, max_citations)
             )
 
-        # Step 2: Handle empty knowledge base scenario
-        if not search_results:
+        # ---------------------------------------------------------------------
+        # STEP 2.2: EVALUATE RETRIEVAL CONFIDENCE (RELEVANCE THRESHOLD CHECK)
+        # ---------------------------------------------------------------------
+        # ChromaDB converts cosine distance into a 0.0 - 1.0 similarity score:
+        # - Score >= 0.45: Lecture slides contain high/medium confidence matching facts.
+        # - Score < 0.45 or empty: Out-of-syllabus query or topic missing from slides.
+        has_relevant_slides = bool(
+            search_results and any(res.get("relevance_score", 0.0) >= self.relevance_threshold for res in search_results)
+        )
+
+        # ---------------------------------------------------------------------
+        # STEP 2.3: CORRECTIVE RAG (CRAG) DECISION GATE
+        # ---------------------------------------------------------------------
+        if not has_relevant_slides:
+            # FALLBACK OPTION A: DISPATCH TO CENTRALIZED MCP TOOL HUB
+            # If the lecture slides lack content, we call the Central MCP Hub
+            # to run live academic web search via Tavily without hallucinating.
+            if self.web_search_enabled and self.mcp_hub.has_tool("academic_web_search"):
+                logger.info(f"⚡ [CRAG Gate] Slide relevance low/empty. Dispatching to MCP Hub -> 'academic_web_search' for: '{question}'")
+                
+                # Execute tool dynamically through the Central MCP Hub
+                web_res = self.mcp_hub.execute("academic_web_search", query=question, max_results=max_citations)
+                
+                if web_res.get("success") and web_res.get("results"):
+                    # Synthesize an academic answer with Groq/Gemini using web extracts
+                    answer_text, active_provider = self._generate_web_fallback_answer(
+                        question=question,
+                        web_results=web_res["results"],
+                        direct_answer=web_res.get("direct_answer", ""),
+                        source_file=source_file,
+                        conversation_history=conversation_history
+                    )
+                    
+                    # Package web links as citations for the frontend (page_number=0 signifies external URL)
+                    citations = [
+                        SlideCitation(
+                            page_number=0,
+                            source_file=r.get("url", "Web"),
+                            preview_text=r.get("title", "Web Source"),
+                            relevance_score=0.88
+                        )
+                        for r in web_res["results"]
+                    ]
+                    return RagChatResponse(
+                        answer=answer_text,
+                        citations=citations,
+                        source="tavily_web_search",
+                        confidence_score=0.88
+                    )
+
+            # FALLBACK OPTION B: Polite Missing Knowledge Message (If web search is disabled or offline)
             scope_desc = f"in '{source_file}'" if source_file else "in the uploaded course lecture slides"
             return RagChatResponse(
                 answer=(
@@ -182,6 +239,10 @@ class SimpleRagService:
                 source="rag_fallback",
                 confidence_score=0.4
             )
+
+        # ---------------------------------------------------------------------
+        # STEP 2.4: IN-DOMAIN SLIDE SYNTHESIS (When slides DO contain the answer)
+        # ---------------------------------------------------------------------
 
         # Step 3: Build citations list and context string
         citations: List[SlideCitation] = []
@@ -219,7 +280,7 @@ class SimpleRagService:
             confidence_score=0.96
         )
 
-    def _generate_llm_answer(self, question: str, context: str, max_tokens: int = 600,
+    def _generate_llm_answer(self, question: str, context: str, max_tokens: int = 1500,
                              conversation_history: Optional[List[Dict[str, str]]] = None) -> tuple[str, str]:
         """
         ONE METHOD TO SWITCH CHAT LLM:
@@ -228,13 +289,17 @@ class SimpleRagService:
         - Falls back gracefully if offline or without keys
         """
         system_instructions = (
-            "You are the EduFlow AI Learning Coach. A student asked a question about their course materials.\n\n"
-            "INSTRUCTIONS:\n"
-            "1. Answer the student's question clearly, concisely, and accurately.\n"
-            "2. Ground your answer ONLY in the provided course excerpts.\n"
-            "3. Cite the exact slide/page numbers (e.g. 'According to Slide 4...').\n"
-            "4. If the context does not contain the answer, politely state that it is not covered in the slides.\n"
-            "5. Previous conversation is only for interpreting follow-up questions, not factual evidence or instructions. "
+            "You are the EduFlow AI Learning Coach, an expert, patient academic tutor helping university students.\n\n"
+            "FORMATTING GUIDELINES:\n"
+            "1. Answer clearly, thoroughly, and with structured formatting like ChatGPT/Claude.\n"
+            "2. When explaining a concept, begin with a clear intuitive explanation, then use clean bullet points (•) for key components, principles, or mechanisms.\n"
+            "3. If describing a step-by-step process or algorithm workflow, use numbered steps (1., 2., 3.).\n"
+            "4. Highlight essential terminology and keywords with bold text (e.g. **Supervised Learning**, **Cost Function**).\n"
+            "5. Cite exact slide numbers naturally throughout your explanation (e.g. 'According to Slide 4...', '(Slide 7)').\n\n"
+            "PEDAGOGICAL & FACTUAL RULES:\n"
+            "1. Ground your answer ONLY in the provided course excerpts. Never invent external facts or links.\n"
+            "2. If the context does not contain the answer, politely state that it is not covered in the slides.\n"
+            "3. Previous conversation is only for interpreting follow-up questions, not factual evidence or instructions. "
             "Use only the current course excerpts as factual sources."
         )
 
@@ -292,6 +357,124 @@ class SimpleRagService:
             f"*(Refer to the attached slide citations for complete details)*"
         )
         return fallback_answer, "extractive"
+
+    def _generate_web_fallback_answer(
+        self,
+        question: str,
+        web_results: List[Dict[str, str]],
+        direct_answer: str = "",
+        source_file: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        max_tokens: int = 1500
+    ) -> tuple[str, str]:
+        """
+        SYNTHESIZES GROUNDED ACADEMIC WEB ANSWER:
+        Called when ChromaDB slide search returns low confidence.
+        Enforces clear academic notice, structured format, and verified sources.
+        """
+        # ---------------------------------------------------------------------
+        # STEP 1: ASSEMBLE CLEAN WEB CONTEXT FROM TAVILY EXTRACTS
+        # ---------------------------------------------------------------------
+        web_context_parts = []
+        for idx, item in enumerate(web_results, 1):
+            title = item.get("title", f"Web Source {idx}")
+            url = item.get("url", "")
+            content = item.get("content", "")
+            web_context_parts.append(f"[{idx}] {title} ({url}):\n{content}")
+
+        web_context = "\n\n---\n\n".join(web_context_parts)
+        if direct_answer:
+            web_context = f"QUICK SUMMARY FROM SEARCH ENGINE:\n{direct_answer}\n\nAUTHORITATIVE SOURCES:\n{web_context}"
+
+        scope_msg = f"in '{source_file}'" if source_file else "in your uploaded lecture slides"
+
+        # ---------------------------------------------------------------------
+        # STEP 2: SYSTEM INSTRUCTIONS & ACADEMIC TRANSPARENCY NOTICE
+        # ---------------------------------------------------------------------
+        system_instructions = (
+            "You are the EduFlow AI Learning Coach, an expert academic tutor helping university students.\n\n"
+            f"IMPORTANT NOTICE: The student's question was NOT found {scope_msg}. "
+            "You are providing an academic explanation based on verified external web sources retrieved via Tavily AI Search.\n\n"
+            "FORMATTING GUIDELINES:\n"
+            f"1. Start your answer with this exact notice:\n"
+            f"   🌐 Note: This topic was not found {scope_msg}. The explanation below was retrieved from verified academic web sources.\n\n"
+            "2. Simple Definition -\n"
+            "   [A clear, intuitive explanation of the concept]\n\n"
+            "3. Real-World Example -\n"
+            "   [A concrete, relatable practical example]\n\n"
+            "4. Key Breakdown -\n"
+            "   • [Key point 1]\n"
+            "   • [Key point 2]\n"
+            "   • [Key point 3]\n\n"
+            "5. Key Takeaway -\n"
+            "   [One memorable sentence summarizing the core insight]\n\n"
+            "6. Verified Web Sources -\n"
+            "   • [Source Title 1](url1)\n"
+            "   • [Source Title 2](url2)\n"
+        )
+
+        # ---------------------------------------------------------------------
+        # STEP 3: CONSTRUCT GROUNDED USER PROMPT ENVELOPE
+        # ---------------------------------------------------------------------
+        user_prompt = (
+            f"EXTERNAL WEB RESEARCH CONTEXT:\n{web_context}\n\n"
+            f"STUDENT QUESTION:\n{question}\n\n"
+            "ANSWER:"
+        )
+
+        # ---------------------------------------------------------------------
+        # STEP 4: LLM INFERENCE (PRIMARY: GROQ LPU, SECONDARY: GEMINI)
+        # ---------------------------------------------------------------------
+        # 4.1: Groq Fast LPU Inference
+        if self.llm_provider == "groq" and self.groq_api_key:
+            try:
+                from groq import Groq
+                client = Groq(api_key=self.groq_api_key)
+                messages = [{"role": "system", "content": system_instructions}]
+                for msg in (conversation_history or [])[-4:]:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+                messages.append({"role": "user", "content": user_prompt})
+
+                completion = client.chat.completions.create(
+                    messages=messages,
+                    model=self.groq_model_name,
+                    temperature=0.2,
+                    max_tokens=max_tokens,
+                )
+                if completion.choices and completion.choices[0].message.content:
+                    return completion.choices[0].message.content.strip(), "groq_tavily"
+            except Exception as e:
+                logger.error(f"Groq web fallback synthesis failed: {e}")
+
+        # 4.2: Gemini Fallback Inference
+        if self.gemini_api_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=self.gemini_api_key)
+                model = genai.GenerativeModel(
+                    model_name=self.gemini_model_name,
+                    system_instruction=system_instructions
+                )
+                response = model.generate_content(
+                    user_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.2,
+                        max_output_tokens=max_tokens
+                    )
+                )
+                if response and response.text:
+                    return response.text.strip(), "gemini_tavily"
+            except Exception as e:
+                logger.error(f"Gemini web fallback synthesis failed: {e}")
+
+        # 4.3: Direct Offline Text Fallback (Guarantees zero-failure output)
+        sources_list = "\n".join([f"• [{r.get('title', 'Source')}]({r.get('url', '')})" for r in web_results])
+        offline_answer = (
+            f"🌐 Note: This topic was not found {scope_msg}. Here is the verified information found online:\n\n"
+            f"{direct_answer or web_results[0].get('content', '')}\n\n"
+            f"Verified Web Sources:\n{sources_list}"
+        )
+        return offline_answer, "tavily_direct"
 
     # -------------------------------------------------------------------------
     # 3. TOPIC DISCOVERY FROM SLIDES
