@@ -122,7 +122,7 @@ export default function NavbarV2({ activeTab, unreadNotifications = 3, currentUs
             fontSize: '11.5px'
           }}>
             <span style={{ color: 'var(--v2-text-muted)' }}>Role:</span>
-            <span style={{ fontWeight: 700, color: isAdmin ? '#F472B6' : '#C4B5FD' }}>{user.role}</span>
+            <span style={{ fontWeight: 700, color: isAdmin ? 'var(--v2-danger-text)' : 'var(--v2-accent-text)' }}>{user.role}</span>
           </div>
 
           {/* Switch portal */}
@@ -143,8 +143,8 @@ export default function NavbarV2({ activeTab, unreadNotifications = 3, currentUs
                       borderRadius: '7px',
                       border: '1px solid',
                       borderColor: user.role === r ? 'rgba(139,92,246,0.6)' : 'rgba(139,92,246,0.2)',
-                      background: user.role === r ? 'rgba(139,92,246,0.2)' : 'rgba(255,255,255,0.03)',
-                      color: user.role === r ? '#C4B5FD' : 'var(--v2-text-muted)',
+                      background: user.role === r ? 'rgba(139,92,246,0.2)' : 'var(--v2-overlay-1)',
+                      color: user.role === r ? 'var(--v2-accent-text)' : 'var(--v2-text-muted)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
                     }}
@@ -164,7 +164,7 @@ export default function NavbarV2({ activeTab, unreadNotifications = 3, currentUs
                 display: 'flex', alignItems: 'center', gap: '7px',
                 width: '100%', padding: '8px 12px',
                 borderRadius: '9px', border: '1px solid rgba(236,72,153,0.25)',
-                background: 'rgba(236,72,153,0.1)', color: '#F472B6',
+                background: 'rgba(236,72,153,0.1)', color: 'var(--v2-danger-text)',
                 fontSize: '12.5px', fontWeight: 600, cursor: 'pointer',
                 transition: 'all 0.15s ease',
               }}

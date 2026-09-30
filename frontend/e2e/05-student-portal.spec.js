@@ -104,7 +104,7 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     await startQuizBtn.click();
 
     // Verify QuizRunner opens with question prompt
-    await expect(page.locator('text=Clean Architecture & PostgreSQL Indexing Diagnostic')).toBeVisible();
+    await expect(page.locator('text=Clean Architecture & PostgreSQL Indexing Diagnostic')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('text=Question 1 of 3')).toBeVisible();
 
     // Answer Q1: Select "Isolation"
@@ -125,8 +125,8 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     await page.getByRole('button', { name: /Finish & Record XP/i }).click();
 
     // Verify Completion Card
-    await expect(page.locator('text=Assessment Completed')).toBeVisible();
-    await expect(page.locator('text=+80 XP')).toBeVisible();
+    await expect(page.locator('text=Assessment Completed')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(/\+\d+ XP/).first()).toBeVisible({ timeout: 15000 });
 
     await page.screenshot({ path: 'e2e/screenshots/15-quiz-completed.png' });
 

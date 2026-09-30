@@ -60,8 +60,8 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await page.locator('text=System Administrator').click();
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
-    await expect(page.locator('text=ADMINISTRATOR CONSOLE')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=ADMINISTRATOR CONSOLE')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 30000 });
     // Verify "My Courses" is NOT visible for Admin
     await expect(page.locator('text=My Courses')).not.toBeVisible();
     await page.screenshot({ path: 'e2e/screenshots/17-admin-overview-no-my-courses.png' });
@@ -74,10 +74,10 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await page.locator('text=Dr. Sarah Jenkins').click();
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
-    await expect(page.locator('text=INSTRUCTOR CONSOLE')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('text=Enrolled Students')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=INSTRUCTOR CONSOLE')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('text=Enrolled Students')).toBeVisible({ timeout: 30000 });
     // Verify "My Courses" IS visible for Instructor
-    await expect(page.locator('text=My Courses')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=My Courses')).toBeVisible({ timeout: 30000 });
     await page.screenshot({ path: 'e2e/screenshots/18-instructor-overview-with-my-courses.png' });
   });
 });

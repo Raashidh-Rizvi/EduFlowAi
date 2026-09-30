@@ -111,7 +111,7 @@ export default function InstructorSidebarV2({
                 >
                   <Icon
                     size={16}
-                    color={isActive ? "#C4B5FD" : "var(--v2-text-muted)"}
+                    color={isActive ? "var(--v2-text-active)" : "var(--v2-text-muted)"}
                     style={{ flexShrink: 0 }}
                   />
                   <span
@@ -132,7 +132,7 @@ export default function InstructorSidebarV2({
                         padding: "2px 7px",
                         borderRadius: "99px",
                         background: "rgba(139,92,246,0.2)",
-                        color: "#C4B5FD",
+                        color: "var(--v2-accent-text)",
                         border: "1px solid rgba(139,92,246,0.35)",
                         flexShrink: 0,
                       }}
@@ -219,8 +219,8 @@ export default function InstructorSidebarV2({
             justifyContent: "space-between",
             marginTop: "10px",
             padding: "8px 12px",
-            borderRadius: "9px",
-            background: "rgba(255,255,255,0.03)",
+            borderRadius: "99px",
+            background: "var(--v2-overlay-1)",
             border: "1px solid rgba(139,92,246,0.15)",
           }}
         >
@@ -285,13 +285,19 @@ export default function InstructorSidebarV2({
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = "rgba(236,72,153,0.1)";
-            e.currentTarget.style.color = "#F472B6";
+            e.currentTarget.style.color = "var(--v2-danger-text)";
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = "transparent";
             e.currentTarget.style.color = "var(--v2-text-muted)";
           }}
         >
+          <LogOut size={14} /> Sign out
+        </button>
+      </div>
+    </aside>
+  );
+} >
           <LogOut size={14} /> Sign out
         </button>
       </div>

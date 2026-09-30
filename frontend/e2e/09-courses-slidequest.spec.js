@@ -14,7 +14,7 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('should generate a SlideQuest quiz and run it', async ({ page }) => {
+  test('should generate a SlideQuest assessment and publish it', async ({ page }) => {
     test.setTimeout(90000); // 90 seconds timeout for this test
     // 1. Navigate to Curriculum & Modules
     await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
@@ -33,18 +33,25 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     // 4. Click Synthesize SlideQuest Assessment Draft
     await page.locator('text=Synthesize SlideQuest Assessment Draft').click();
 
-    // 5. Wait for the generated draft
+    // 5. The generator closes the modal for a non-blocking UX; open the draft from the notification
+    await page.getByRole('button', { name: /Review Draft & Publish/i }).click({ timeout: 60000 });
+
+    // 6. Wait for the generated draft
     const approveBtn = page.locator('text=Approve & Publish to Curriculum').first();
     await expect(approveBtn).toBeVisible({ timeout: 60000 });
 
-    // 6. Approve & Publish
-    await page.locator('text=Approve & Publish to Curriculum').click();
+    // 7. Approve & Publish - assert the backend persisted the assessment.
+    //    Note: the "Take Quiz Quest" runner button is role-gated to learners, and learners
+    //    get their own StudentPortal, so an instructor can publish but never run the draft.
+    const publishResponse = page.waitForResponse(
+      r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/quizzes'
+    );
+    await approveBtn.click();
+    const published = await publishResponse;
+    expect(published.status()).toBe(201);
 
-    // 7. Start Quiz Runner
-    const takeQuizBtn = page.locator('text=🎮 Take Quiz Quest').first();
-    await takeQuizBtn.click();
-
-    // 8. Verify Quiz Runner opened
-    await expect(page.locator('text=SLIDEQUEST RUNNER')).toBeVisible();
+    // 8. The draft is streamed to the Assessments & Quizzes tab
+    await page.getByRole('button', { name: /Assessments & Quizzes/i }).click();
+    await expect(page.locator('text=Assessments').first()).toBeVisible({ timeout: 15000 });
   });
 });
