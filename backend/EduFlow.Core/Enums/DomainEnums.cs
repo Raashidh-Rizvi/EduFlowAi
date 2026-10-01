@@ -150,6 +150,19 @@ public enum AnswerEvaluationStatus
     NeedsReview
 }
 
+public enum GradingConfigurationStatus
+{
+    Draft,
+    Active
+}
+
+/// <summary>Which evaluated attempt counts toward the course grade.</summary>
+public enum AttemptScoringRule
+{
+    Highest,
+    Latest
+}
+
 public enum FeedbackMode
 {
     Immediate,

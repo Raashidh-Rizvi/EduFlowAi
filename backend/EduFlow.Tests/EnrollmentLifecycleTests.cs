@@ -70,6 +70,7 @@ public class EnrollmentLifecycleTests
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
         builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
+        builder.Services.AddScoped<IGradeService, GradeService>();
         builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (paymentGate != null)

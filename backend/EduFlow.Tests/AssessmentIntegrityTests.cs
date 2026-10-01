@@ -73,6 +73,7 @@ public class AssessmentIntegrityTests
         builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
         builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
+        builder.Services.AddScoped<IGradeService, GradeService>();
         builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<ITeamService, TeamService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
@@ -103,6 +104,11 @@ public class AssessmentIntegrityTests
         builder.Services.AddControllers().AddApplicationPart(typeof(QuizzesController).Assembly);
 
         var app = builder.Build();
+        using (var scope = app.Services.CreateScope())
+        {
+            // Applies model seed data (e.g. the institution default grading policy).
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
+        }
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();
@@ -902,6 +908,63 @@ public class AssessmentIntegrityTests
         var raw = await (await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result")).Content.ReadAsStringAsync();
         Assert.DoesNotContain("B-tree", raw.Replace("Which index type", ""));
         Assert.DoesNotContain("B-trees keep keys ordered", raw);
+    }
+
+    // =========================================================================
+    // Grading (PR 4)
+    // =========================================================================
+
+    [Fact]
+    public async Task CourseGrade_FollowsEvaluatedAttempts_ThroughTheConfiguredWeights()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var instructor = await LoginAs(app, f.Instructor);
+        using var student = await LoginAs(app, f.Student);
+
+        // Students cannot configure grading or read anyone else's grade.
+        Assert.Equal(HttpStatusCode.Forbidden, (await student.PutAsJsonAsync($"/api/courses/{f.Course.Id}/grading",
+            new { attemptScoring = 0, weights = new[] { new { assessmentId = f.Quiz.Id, weightPercent = 100 } } })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await student.GetAsync($"/api/courses/{f.Course.Id}/grade?studentId={f.Outsider.Id}")).StatusCode);
+
+        // Before activation there is no grade.
+        Assert.Equal("NotConfigured", (await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/grade")))
+            .GetProperty("gradingStatus").GetString());
+
+        Assert.Equal(HttpStatusCode.OK, (await instructor.PutAsJsonAsync($"/api/courses/{f.Course.Id}/grading",
+            new { attemptScoring = 0, weights = new[] { new { assessmentId = f.Quiz.Id, weightPercent = 100 } } })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await instructor.PostAsync($"/api/courses/{f.Course.Id}/grading/activate", null)).StatusCode);
+
+        // MCQ correct (10/20) and a short answer awaiting marking: no course percentage yet.
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit",
+            SubmitBody(f, shortAnswer: "Log records are flushed before pages.")))).GetProperty("attemptId").GetGuid();
+        var pending = await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/grade"));
+        Assert.Equal(0m, pending.GetProperty("coursePercentage").GetDecimal());
+        Assert.Equal("F", pending.GetProperty("grade").GetString());
+
+        // Marking completes the attempt; the course grade follows.
+        Assert.Equal(HttpStatusCode.OK, (await instructor.PostAsJsonAsync(
+            $"/api/quizzes/attempts/{attemptId}/answers/{f.Short.Id}/mark", new { awardedMarks = 7 })).StatusCode);
+        var graded = await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/grade"));
+        Assert.Equal(85m, graded.GetProperty("coursePercentage").GetDecimal());
+        Assert.Equal("A+", graded.GetProperty("grade").GetString());
+        Assert.True(graded.GetProperty("isComplete").GetBoolean());
+
+        var roster = await Json(await instructor.GetAsync($"/api/courses/{f.Course.Id}/grades"));
+        Assert.Equal("A+", roster.EnumerateArray().Single().GetProperty("calculatedGrade").GetString());
+    }
+
+    [Fact]
+    public async Task WeightedQuiz_CannotBeDeletedWhileGradingIsActive()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, status: QuizStatus.Draft);
+        using var instructor = await LoginAs(app, f.Instructor);
+        await instructor.PutAsJsonAsync($"/api/courses/{f.Course.Id}/grading",
+            new { attemptScoring = 0, weights = new[] { new { assessmentId = f.Quiz.Id, weightPercent = 100 } } });
+        await instructor.PostAsync($"/api/courses/{f.Course.Id}/grading/activate", null);
+
+        Assert.Equal(HttpStatusCode.Conflict, (await instructor.DeleteAsync($"/api/quizzes/{f.Quiz.Id}")).StatusCode);
     }
 
     // =========================================================================

@@ -51,6 +51,7 @@ import CourseReviews from "../../components/reviews/CourseReviews";
 import { aiService } from "../../services/aiService";
 import { courseService } from "../../services/courseService";
 import { enrollmentService } from "../../services/enrollmentService";
+import { gradingService } from "../../services/gradingService";
 import { quizService } from "../../services/quizService";
 import { gamificationService } from "../../services/gamificationService";
 
@@ -931,6 +932,14 @@ function CurriculumTab({
                 >
                   {course.title}
                 </span>
+                {course.courseGrade?.gradingStatus === "Active" && (
+                  <span
+                    className="badge-pill badge-success"
+                    title={`Weighted ${course.courseGrade.coursePercentage}% of the course; ${course.courseGrade.assessedWeight}% assessed so far`}
+                  >
+                    Grade {course.courseGrade.grade} • {course.courseGrade.coursePercentage}%
+                  </span>
+                )}
               </div>
               <div
                 style={{
@@ -3789,8 +3798,13 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             })),
           }));
           if (mapped.length > 0) {
-            setCourses(mapped);
-            loadedCourses = mapped;
+            // Course grades come from the server's grade service; missing grading shows nothing.
+            const grades = await Promise.all(
+              mapped.map((c) => gradingService.getGrade(c.id).catch(() => null)),
+            );
+            const withGrades = mapped.map((c, i) => ({ ...c, courseGrade: grades[i] }));
+            setCourses(withGrades);
+            loadedCourses = withGrades;
           }
         }
       } catch (err) {

@@ -105,3 +105,48 @@ documented on each evaluator class). Compared with the old controller logic:
 - **Publish validation** checks answer keys through the same snapshot the marker uses. For
   example, a multiple-choice question must have exactly one correct answer, and it must be
   one of the options.
+
+## PR 4 — Grading and course results
+
+Migration: `GradingPoliciesAndCourseResults`. Additive only:
+
+- New tables `GradingPolicies`, `GradeBands`, `CourseGradingConfigurations`, `CourseResults`
+  and `GradeOverrides`.
+- New column `Assessments.GradeWeightPercent` (nullable; null means the assessment isn't graded).
+- Seeds the **institution default scale** as data: A+ ≥85, A ≥80, A- ≥75, B+ ≥70, B ≥65,
+  B- ≥60, C+ ≥55, C ≥50, C- ≥45, D ≥40, F ≥0. A band covers its minimum (inclusive) up to the
+  next band's minimum (exclusive), so 84.99% is an A.
+
+### Rules
+
+- **Draft weights** may total less than 100%, never more.
+  `POST /api/courses/{id}/grading/activate` requires exactly 100%. Weights are never
+  normalized or auto-filled.
+- **Active configurations:** while grading is active, a weight change that breaks 100% is
+  rejected. A weighted assessment can't be deleted (HTTP 409).
+- **Course percentage** = Σ(assessment % × weight / 100) using **evaluated** attempts only.
+  The course's attempt rule picks the highest (default) or latest attempt. Assessments
+  without a result count as 0. `currentPercentage` reports the same weighted figure over only
+  the assessed weight.
+- **When results are recalculated:**
+  - when an attempt becomes fully evaluated, and on every manual mark, in the same transaction;
+  - for the whole course on activation and on any configuration change.
+- **Course scales:** a course may replace the default with its own scale through
+  `PUT /api/courses/{id}/grading` with `bands`. The institution default is never modified.
+- **Overrides:** `POST /api/courses/{id}/grades/{studentId}/override` requires a reason and
+  a grade that exists in the course scale. Each override stores the previous grade, new
+  grade, actor and time (`GradeOverrides`) and is audited as `CourseResult.Overridden`.
+  Recalculation keeps the override; the calculated grade is always reported alongside it.
+
+### Endpoints
+
+| Method | Path | Access |
+|---|---|---|
+| GET/PUT | `/api/courses/{id}/grading` | Course instructor, admin |
+| POST | `/api/courses/{id}/grading/activate` | Course instructor, admin |
+| GET | `/api/courses/{id}/grade` | Student: own grade. Course instructor: `?studentId=` |
+| GET | `/api/courses/{id}/grades` | Course instructor, admin |
+| POST | `/api/courses/{id}/grades/{studentId}/override` | Course instructor, admin |
+
+**Deployment:** nothing needs configuring before deploying. Courses stay ungraded until an
+instructor assigns weights and activates grading.

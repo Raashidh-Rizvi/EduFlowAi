@@ -673,6 +673,17 @@ public class QuizzesController : BaseApiController
             });
         }
 
+        // Removing a weighted assessment would leave active grading weights below 100%.
+        if (quiz.GradeWeightPercent != null && await DbContext.CourseGradingConfigurations.AnyAsync(c =>
+                c.CourseId == quiz.CourseId && c.Status == GradingConfigurationStatus.Active))
+        {
+            return Conflict(new
+            {
+                message = "This quiz carries grade weight in an active grading configuration. Reassign its weight before deleting it.",
+                code = "ASSESSMENT_WEIGHTED"
+            });
+        }
+
         DbContext.Assessments.Remove(quiz);
         AuditAssessment("Assessment.Deleted", quiz.Id);
         await DbContext.SaveChangesAsync();

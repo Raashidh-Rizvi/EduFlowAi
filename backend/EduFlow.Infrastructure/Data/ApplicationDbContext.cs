@@ -43,6 +43,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
     public DbSet<MarkAdjustment> MarkAdjustments => Set<MarkAdjustment>();
+    public DbSet<GradingPolicy> GradingPolicies => Set<GradingPolicy>();
+    public DbSet<GradeBand> GradeBands => Set<GradeBand>();
+    public DbSet<CourseGradingConfiguration> CourseGradingConfigurations => Set<CourseGradingConfiguration>();
+    public DbSet<CourseResult> CourseResults => Set<CourseResult>();
+    public DbSet<GradeOverride> GradeOverrides => Set<GradeOverride>();
 
     // Gamification Engine
     public DbSet<StudentXp> StudentXp => Set<StudentXp>();
@@ -318,6 +323,10 @@ public class ApplicationDbContext : DbContext
                   .WithMany(ci => ci.Assessments)
                   .HasForeignKey(a => a.ContentItemScopeId)
                   .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(a => a.GradeWeightPercent).HasPrecision(5, 2);
+            entity.ToTable(t => t.HasCheckConstraint("CK_Assessments_GradeWeight_Range",
+                "\"GradeWeightPercent\" IS NULL OR (\"GradeWeightPercent\" > 0 AND \"GradeWeightPercent\" <= 100)"));
         });
 
         modelBuilder.Entity<QuizConfiguration>(entity =>
@@ -386,6 +395,85 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(sa => new { sa.SubmissionId, sa.QuestionId }).IsUnique();
             entity.ToTable(t => t.HasCheckConstraint("CK_SubmissionAnswers_Marks_Range",
                 "\"PointsAwarded\" >= 0 AND \"PointsAwarded\" <= \"MaxMarks\""));
+        });
+
+        // --- Grading ---
+        modelBuilder.Entity<GradingPolicy>(entity =>
+        {
+            entity.Property(p => p.Name).HasMaxLength(100);
+            entity.HasOne(p => p.Course)
+                  .WithMany()
+                  .HasForeignKey(p => p.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(p => p.CourseId);
+        });
+
+        modelBuilder.Entity<GradeBand>(entity =>
+        {
+            entity.Property(b => b.Label).HasMaxLength(10);
+            entity.Property(b => b.MinPercentage).HasPrecision(5, 2);
+            entity.HasOne(b => b.GradingPolicy)
+                  .WithMany(p => p.Bands)
+                  .HasForeignKey(b => b.GradingPolicyId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(b => new { b.GradingPolicyId, b.Label }).IsUnique();
+            entity.HasIndex(b => new { b.GradingPolicyId, b.MinPercentage }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_GradeBands_MinPercentage_Range",
+                "\"MinPercentage\" >= 0 AND \"MinPercentage\" <= 100"));
+        });
+
+        modelBuilder.Entity<CourseGradingConfiguration>(entity =>
+        {
+            entity.Property(c => c.Status).HasConversion<string>();
+            entity.Property(c => c.AttemptScoring).HasConversion<string>();
+            entity.HasIndex(c => c.CourseId).IsUnique();
+            entity.HasOne(c => c.Course)
+                  .WithMany()
+                  .HasForeignKey(c => c.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(c => c.GradingPolicy)
+                  .WithMany()
+                  .HasForeignKey(c => c.GradingPolicyId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseResult>(entity =>
+        {
+            entity.Property(r => r.CoursePercentage).HasPrecision(5, 2);
+            entity.Property(r => r.CurrentPercentage).HasPrecision(5, 2);
+            entity.Property(r => r.AssessedWeight).HasPrecision(5, 2);
+            entity.Property(r => r.CalculatedGrade).HasMaxLength(10);
+            entity.Property(r => r.OverrideGrade).HasMaxLength(10);
+            entity.Ignore(r => r.EffectiveGrade);
+            entity.HasIndex(r => new { r.CourseId, r.StudentId }).IsUnique();
+            entity.HasOne(r => r.Course)
+                  .WithMany()
+                  .HasForeignKey(r => r.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Student)
+                  .WithMany()
+                  .HasForeignKey(r => r.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_CourseResults_CoursePercentage_Range", "\"CoursePercentage\" >= 0 AND \"CoursePercentage\" <= 100");
+                t.HasCheckConstraint("CK_CourseResults_AssessedWeight_Range", "\"AssessedWeight\" >= 0 AND \"AssessedWeight\" <= 100");
+            });
+        });
+
+        modelBuilder.Entity<GradeOverride>(entity =>
+        {
+            entity.Property(o => o.PreviousGrade).HasMaxLength(10);
+            entity.Property(o => o.NewGrade).HasMaxLength(10);
+            entity.Property(o => o.Reason).HasMaxLength(1000);
+            entity.HasOne(o => o.CourseResult)
+                  .WithMany(r => r.Overrides)
+                  .HasForeignKey(o => o.CourseResultId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(o => o.Actor)
+                  .WithMany()
+                  .HasForeignKey(o => o.ActorId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<MarkAdjustment>(entity =>
@@ -560,6 +648,26 @@ public class ApplicationDbContext : DbContext
             new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250, CreatedAt = catalogueDate },
             new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75, CreatedAt = catalogueDate }
         );
+
+        // 3. Institution default grading scale (configuration data; courses may define their own)
+        var defaultPolicyId = GradingDefaults.InstitutionPolicyId;
+        modelBuilder.Entity<GradingPolicy>().HasData(new GradingPolicy
+        {
+            Id = defaultPolicyId,
+            Name = "Institution default",
+            IsInstitutionDefault = true,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        });
+        modelBuilder.Entity<GradeBand>().HasData(GradingDefaults.Bands.Select((band, i) => new GradeBand
+        {
+            Id = new Guid($"6a0e1b00-0000-4000-8000-{i + 1:D12}"),
+            GradingPolicyId = defaultPolicyId,
+            Label = band.Label,
+            MinPercentage = band.MinPercentage,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        }).ToArray());
 
         // Demo accounts are NOT part of the model: they are created only by the Development
         // seeder (DbInitializer.SeedDevelopmentData), never by migrations.

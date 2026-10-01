@@ -22,19 +22,22 @@ public class AttemptGradingService : IAttemptGradingService
     private readonly IGamificationService _gamificationService;
     private readonly IAssessmentAccessService _accessService;
     private readonly IAuditLogWriter _auditLogWriter;
+    private readonly IGradeService _gradeService;
 
     public AttemptGradingService(
         ApplicationDbContext dbContext,
         IEvaluationService evaluationService,
         IGamificationService gamificationService,
         IAssessmentAccessService accessService,
-        IAuditLogWriter auditLogWriter)
+        IAuditLogWriter auditLogWriter,
+        IGradeService gradeService)
     {
         _dbContext = dbContext;
         _evaluationService = evaluationService;
         _gamificationService = gamificationService;
         _accessService = accessService;
         _auditLogWriter = auditLogWriter;
+        _gradeService = gradeService;
     }
 
     public async Task<GradedAttempt> SubmitAsync(
@@ -89,6 +92,13 @@ public class AttemptGradingService : IAttemptGradingService
             var reward = marks.IsFullyEvaluated
                 ? await AwardRewardAsync(assessment, attempt, outcomes.Select(o => (o.Question, o.Result.IsCorrect)), ct)
                 : null;
+
+            // The course result follows the evaluated attempt in the same transaction.
+            if (marks.IsFullyEvaluated)
+            {
+                await _gradeService.RecalculateAsync(assessment.CourseId, attempt.StudentId, ct);
+                await _dbContext.SaveChangesAsync(ct);
+            }
 
             if (transaction != null) await transaction.CommitAsync(ct);
             return new GradedAttempt(attempt, outcomes, marks, reward);
@@ -189,6 +199,15 @@ public class AttemptGradingService : IAttemptGradingService
         {
             var outcomes = attempt.Answers.Select(a => (Snapshot(a), a.IsCorrect));
             await AwardRewardAsync(attempt.Assessment, attempt, outcomes, ct);
+        }
+
+        // Any change to an evaluated attempt's marks flows into the course result. The grade
+        // service reads attempts from the database, so the new marks are saved first (the
+        // surrounding transaction still makes the whole operation atomic).
+        if (marks.IsFullyEvaluated)
+        {
+            await _dbContext.SaveChangesAsync(ct);
+            await _gradeService.RecalculateAsync(attempt.Assessment.CourseId, attempt.StudentId, ct);
         }
 
         await _dbContext.SaveChangesAsync(ct);

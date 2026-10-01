@@ -307,6 +307,9 @@ public class Assessment : BaseEntity
     public string? GenerationWorkflowId { get; set; }
     public DateTime? DueDate { get; set; }
 
+    /// <summary>Share of the course grade (0-100), or null when the assessment is not graded.</summary>
+    public decimal? GradeWeightPercent { get; set; }
+
     // Optional finer-grained target inside the module
     public Guid? ContentItemScopeId { get; set; }
     public ContentItem? ContentItemScope { get; set; }
@@ -435,6 +438,99 @@ public class MarkAdjustment : BaseEntity
     public string Reason { get; set; } = string.Empty;
 }
 
+
+// -----------------------------------------------------------------------------
+// 3b. Grading: policies, weights, course results
+// -----------------------------------------------------------------------------
+
+/// <summary>
+/// A grading scale. The institution default has no <see cref="CourseId"/>; a course may own
+/// a custom policy. Thresholds are data, never code.
+/// </summary>
+public class GradingPolicy : BaseEntity
+{
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsInstitutionDefault { get; set; }
+
+    public ICollection<GradeBand> Bands { get; set; } = new List<GradeBand>();
+}
+
+/// <summary>
+/// A grade awarded for percentages from <see cref="MinPercentage"/> (inclusive) up to the next
+/// higher band's minimum (exclusive). The lowest band must start at 0.
+/// </summary>
+public class GradeBand : BaseEntity
+{
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal MinPercentage { get; set; }
+}
+
+/// <summary>
+/// How a course turns assessment results into a course grade: the grading policy, which
+/// attempt counts, and (on each assessment) its weight. Weights may be incomplete while
+/// <see cref="Status"/> is Draft; activation requires them to total exactly 100.
+/// </summary>
+public class CourseGradingConfiguration : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public GradingConfigurationStatus Status { get; set; } = GradingConfigurationStatus.Draft;
+    public AttemptScoringRule AttemptScoring { get; set; } = AttemptScoringRule.Highest;
+    public DateTime? ActivatedAt { get; set; }
+    public Guid? ActivatedById { get; set; }
+}
+
+/// <summary>
+/// A student's course result, derived from evaluated attempts by the grade service and never
+/// written by clients. A manual override is recorded alongside, never in place of, the
+/// calculated grade.
+/// </summary>
+public class CourseResult : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+
+    /// <summary>Weighted percentage over the full 100% (assessments without a result count as 0).</summary>
+    public decimal CoursePercentage { get; set; }
+
+    /// <summary>Weighted percentage over only the weight already assessed (null when nothing is assessed).</summary>
+    public decimal? CurrentPercentage { get; set; }
+
+    /// <summary>Total weight of assessments that have an evaluated attempt.</summary>
+    public decimal AssessedWeight { get; set; }
+    public string CalculatedGrade { get; set; } = string.Empty;
+    public string? OverrideGrade { get; set; }
+
+    /// <summary>True when every weighted assessment has an evaluated attempt.</summary>
+    public bool IsComplete { get; set; }
+    public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
+
+    public string EffectiveGrade => OverrideGrade ?? CalculatedGrade;
+
+    public ICollection<GradeOverride> Overrides { get; set; } = new List<GradeOverride>();
+}
+
+/// <summary>Audit trail of manual grade overrides (original value, new value, reason, actor).</summary>
+public class GradeOverride : BaseEntity
+{
+    public Guid CourseResultId { get; set; }
+    public CourseResult? CourseResult { get; set; }
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public string PreviousGrade { get; set; } = string.Empty;
+
+    /// <summary>The override grade, or null when an override was removed.</summary>
+    public string? NewGrade { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
 
 // -----------------------------------------------------------------------------
 // 4. Gamification: XP, Levels, Badges, Streaks & Challenges
