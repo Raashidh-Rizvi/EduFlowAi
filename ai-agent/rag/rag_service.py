@@ -145,10 +145,10 @@ class SimpleRagService:
         Supports both Gemini and Groq, with optional Strict Slide Deck Scoping.
         """
         # Step 1: Retrieve best-matching slide chunks from ChromaDB
-        # Prior user questions help resolve follow-ups; metadata scope stays unchanged.
-        retrieval_question = "\n".join(
-            [m["content"] for m in (conversation_history or []) if m["role"] == "user"] + [question]
-        )
+        # Prior user questions help resolve follow-ups; contextualize query to capture core topic
+        search_query = self._contextualize_query(question, conversation_history)
+        retrieval_question = f"{search_query}\n{question}" if search_query != question else question
+
         search_results = self.vector_store.search(
             query=retrieval_question,
             course_id=course_id,
@@ -196,10 +196,10 @@ class SimpleRagService:
             # If the lecture slides lack content, we call the Central MCP Hub
             # to run live academic web search via Tavily without hallucinating.
             if self.web_search_enabled and self.mcp_hub.has_tool("academic_web_search"):
-                logger.info(f"⚡ [CRAG Gate] Slide relevance low/empty. Dispatching to MCP Hub -> 'academic_web_search' for: '{question}'")
+                logger.info(f"⚡ [CRAG Gate] Slide relevance low/empty. Dispatching to MCP Hub -> 'academic_web_search' for: '{search_query}' (Original: '{question}')")
                 
-                # Execute tool dynamically through the Central MCP Hub
-                web_res = self.mcp_hub.execute("academic_web_search", query=question, max_results=max_citations)
+                # Execute tool dynamically through the Central MCP Hub using contextualized query
+                web_res = self.mcp_hub.execute("academic_web_search", query=search_query, max_results=max_citations)
                 
                 if web_res.get("success") and web_res.get("results"):
                     # Synthesize an academic answer with Groq/Gemini using web extracts
@@ -282,8 +282,8 @@ class SimpleRagService:
         # Corrective RAG (CRAG) self-heals by querying Tavily Web Search via MCP!
         if self._is_missing_knowledge_answer(answer_text):
             if self.web_search_enabled and self.mcp_hub.has_tool("academic_web_search"):
-                logger.info(f"⚡ [CRAG Self-Correction] Slide excerpts lack content for '{question}'. Triggering Tavily Web Fallback.")
-                web_res = self.mcp_hub.execute("academic_web_search", query=question, max_results=max_citations)
+                logger.info(f"⚡ [CRAG Self-Correction] Slide excerpts lack content for '{question}'. Triggering Tavily Web Fallback for: '{search_query}'.")
+                web_res = self.mcp_hub.execute("academic_web_search", query=search_query, max_results=max_citations)
                 if web_res.get("success") and web_res.get("results"):
                     fallback_text, active_provider = self._generate_web_fallback_answer(
                         question=question,
@@ -383,6 +383,112 @@ class SimpleRagService:
             return True
 
         return False
+
+    def _contextualize_query(
+        self,
+        question: str,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> str:
+        """
+        ANAPHORA RESOLUTION & SEARCH QUERY REWRITING:
+        If a student asks a follow-up question (e.g. 'give one more realworld example',
+        'why does this happen?', 'how does it work?'), the raw question lacks the core subject.
+        This method rewrites follow-ups into a standalone search query using conversation history,
+        ensuring Tavily web search targets the correct academic subject rather than filler words.
+        """
+        clean_q = question.strip()
+        if not conversation_history:
+            return clean_q
+
+        q_lower = clean_q.lower()
+        follow_up_tokens = {
+            "it", "this", "that", "these", "those", "they", "them",
+            "one more", "another", "more", "example", "why", "how", "what about",
+            "explain more", "give me", "tell me more", "what else", "compare",
+            "difference", "contrast", "second", "third", "additional", "else"
+        }
+        words = re.findall(r'\b\w+\b', q_lower)
+        is_short = len(words) <= 6
+        has_follow_up_token = any(token in q_lower for token in follow_up_tokens)
+
+        # Standalone, detailed questions without pronouns do not need rewriting
+        if not is_short and not has_follow_up_token:
+            return clean_q
+
+        # Extract previous user queries from history
+        user_msgs = [m.get("content", "") for m in conversation_history if m.get("role") == "user"]
+        last_user_q = user_msgs[-1] if user_msgs else ""
+
+        # Option A: Fast LLM Query Reformulation (Groq LPU < 0.2s or Gemini)
+        if self.llm_provider == "groq" and self.groq_api_key:
+            try:
+                from groq import Groq
+                client = Groq(api_key=self.groq_api_key, timeout=4.0, max_retries=0)
+                recent_history = conversation_history[-3:]
+                history_text = "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')[:160]}" for m in recent_history])
+                prompt = (
+                    "You are a search query rewriting engine for an AI academic tutor.\n"
+                    "Given the recent conversation and a student's follow-up question, "
+                    "output ONLY a standalone academic search query (3 to 6 words) that includes the main topic and intent.\n"
+                    "Do NOT answer the question. Do NOT include quotation marks, markdown, or explanations.\n\n"
+                    f"Conversation:\n{history_text}\n\n"
+                    f"Follow-up Question: {clean_q}\n\n"
+                    "Standalone Search Query:"
+                )
+                completion = client.chat.completions.create(
+                    model=self.groq_model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.0,
+                    max_tokens=25
+                )
+                if completion.choices and completion.choices[0].message.content:
+                    rewritten = completion.choices[0].message.content.strip().strip('"\'`\n')
+                    rewritten = re.sub(r'^(Standalone Search Query:|\bQuery:\b)', '', rewritten, flags=re.IGNORECASE).strip()
+                    if rewritten and len(rewritten) >= 3 and "\n" not in rewritten:
+                        logger.info(f"⚡ [Query Contextualizer] Rewrote '{clean_q}' -> '{rewritten}' via Groq")
+                        return rewritten
+            except Exception as e:
+                logger.warning(f"Groq query contextualizer failed ({e}); using heuristic fallback.")
+
+        elif self.gemini_api_key:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=self.gemini_api_key)
+                model = genai.GenerativeModel(self.gemini_model_name)
+                recent_history = conversation_history[-3:]
+                history_text = "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')[:160]}" for m in recent_history])
+                prompt = (
+                    "Given the recent conversation and a student's follow-up question, "
+                    "output ONLY a standalone academic search query (3 to 6 words) that captures the main topic and intent.\n"
+                    "No quotes or explanations.\n\n"
+                    f"Conversation:\n{history_text}\n\n"
+                    f"Follow-up: {clean_q}\n\n"
+                    "Query:"
+                )
+                response = model.generate_content(prompt, generation_config={"max_output_tokens": 25, "temperature": 0.0})
+                if response and response.text:
+                    rewritten = response.text.strip().strip('"\'`\n')
+                    rewritten = re.sub(r'^(Standalone Search Query:|\bQuery:\b)', '', rewritten, flags=re.IGNORECASE).strip()
+                    if rewritten and len(rewritten) >= 3 and "\n" not in rewritten:
+                        logger.info(f"⚡ [Query Contextualizer] Rewrote '{clean_q}' -> '{rewritten}' via Gemini")
+                        return rewritten
+            except Exception as e:
+                logger.warning(f"Gemini query contextualizer failed ({e}); using heuristic fallback.")
+
+        # Option B: Deterministic Heuristic Fallback (Instant, Offline, 100% Reliable)
+        if last_user_q:
+            subject = re.sub(
+                r'^(can you\s+)?(explain|what is|what are|describe|tell me about|how does|why is|give me a breakdown of)\s+',
+                '',
+                last_user_q,
+                flags=re.IGNORECASE
+            ).strip('?.! ')
+            if subject and len(subject) > 2:
+                combined = f"{subject} {clean_q}"
+                logger.info(f"⚡ [Query Contextualizer] Heuristic fallback: '{clean_q}' -> '{combined}'")
+                return combined
+
+        return clean_q
 
     def _clean_text_artifacts(self, text: str) -> str:
         """
@@ -515,17 +621,24 @@ class SimpleRagService:
             "FORMATTING GUIDELINES:\n"
             f"1. Start your answer with this exact notice:\n"
             f"   🌐 Note: This topic was not found {scope_msg}. The explanation below was retrieved from verified academic web sources.\n\n"
-            "2. Simple Definition -\n"
+            "2. If introducing or explaining a core concept from scratch, structure your answer as:\n"
+            "   Simple Definition -\n"
             "   [A clear, intuitive explanation of the concept]\n\n"
-            "3. Real-World Example -\n"
+            "   Real-World Example -\n"
             "   [A concrete, relatable practical example]\n\n"
-            "4. Key Breakdown -\n"
-            "   • [Key point 1]\n"
-            "   • [Key point 2]\n"
-            "   • [Key point 3]\n\n"
-            "5. Key Takeaway -\n"
+            "   Key Breakdown -\n"
+            "   • [Key mechanism or point 1]\n"
+            "   • [Key mechanism or point 2]\n"
+            "   • [Key mechanism or point 3]\n\n"
+            "   Key Takeaway -\n"
             "   [One memorable sentence summarizing the core insight]\n\n"
-            "6. Verified Web Sources -\n"
+            "3. If the student is asking a follow-up question (such as asking for an additional real-world example, asking 'why', or comparing):\n"
+            "   - Address the student's specific request directly and with deep technical clarity.\n"
+            "   - If they asked for another real-world example, introduce the new real-world example directly (e.g. MRI scanners, lasers, quantum encryption) with its underlying mechanism and practical impact.\n"
+            "   - Do NOT provide a meta-definition of words like 'real-world example' or 'give'. Always stay focused on the subject matter.\n"
+            "   - Provide a Key Breakdown and Key Takeaway relevant to the follow-up.\n\n"
+            "4. Verified Web Sources -\n"
+            "   End with the verified web sources:\n"
             "   • [Source Title 1](url1)\n"
             "   • [Source Title 2](url2)\n"
         )
@@ -572,8 +685,16 @@ class SimpleRagService:
                     model_name=self.gemini_model_name,
                     system_instruction=system_instructions
                 )
+                history_snippets = []
+                if conversation_history:
+                    for m in conversation_history[-4:]:
+                        history_snippets.append(f"{m.get('role', 'user').upper()}: {m.get('content', '')[:300]}")
+                gemini_prompt = (
+                    f"CONVERSATION HISTORY:\n{chr(10).join(history_snippets)}\n\n{user_prompt}"
+                    if history_snippets else user_prompt
+                )
                 response = model.generate_content(
-                    user_prompt,
+                    gemini_prompt,
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.2,
                         max_output_tokens=max_tokens
