@@ -1808,6 +1808,8 @@ function CoachTab({ studentId, courseId }) {
   const [slideDecks, setSlideDecks] = useState([]);
   const [selectedDeck, setSelectedDeck] = useState("");
   const [selectedTopic, setSelectedTopic] = useState(null);
+  const [isToolsExpanded, setIsToolsExpanded] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [deckError, setDeckError] = useState("");
   const [deckLoadAttempt, setDeckLoadAttempt] = useState(0);
 
@@ -2245,130 +2247,193 @@ function CoachTab({ studentId, courseId }) {
         overflow: "hidden",
       }}
     >
-      <div style={{ flexShrink: 0, marginBottom: "8px" }}>
-        <div
-          style={{
-            fontSize: "17px",
-            fontWeight: "800",
-            color: "var(--text-main)",
-          }}
-        >
-          AI Learning Assistant
-        </div>
-        <div
-          style={{
-            fontSize: "11.5px",
-            color: "var(--text-muted)",
-            marginTop: "1px",
-          }}
-        >
-          Context-aware tutoring for your curriculum modules.
-        </div>
-      </div>
-
-      {/* TARGETED LECTURE SCOPE BAR */}
+      {/* ─── MINIMALIST UNIFIED CONTROL BAR (Height ~38px) ─── */}
       <div
         style={{
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "8px",
+          gap: "10px",
           padding: "6px 12px",
-          marginBottom: "8px",
+          marginBottom: "6px",
           background: "var(--bg-surface)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-sm)",
           fontSize: "12px",
         }}
       >
+        {/* Left: AI Icon + Title + Lecture Dropdown */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: "8px",
             flex: 1,
-            minWidth: "240px",
+            minWidth: 0,
           }}
         >
-          <span
+          <div
             style={{
-              fontWeight: "700",
-              color: "var(--text-muted)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Lecture Focus:
-          </span>
-          <select
-            value={selectedDeck}
-            disabled={isLoading}
-            onChange={(e) => {
-              setSelectedDeck(e.target.value);
-              setSelectedTopic(null);
-            }}
-            style={{
-              padding: "4px 8px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border-subtle)",
-              background: "var(--bg-main)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontWeight: "800",
               color: "var(--text-main)",
-              fontSize: "12px",
-              outline: "none",
-              cursor: "pointer",
+              fontSize: "13px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <Bot size={16} color="var(--primary)" />
+            <span>AI Assistant</span>
+          </div>
+
+          <div
+            style={{
+              height: "14px",
+              width: "1px",
+              background: "var(--border-subtle)",
+              flexShrink: 0,
+            }}
+          />
+
+          {/* Compact Lecture Focus Selector */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
               flex: 1,
+              minWidth: 0,
             }}
           >
-            <option value="">
-              🌐 All Enrolled Lectures (Global Course Scope)
-            </option>
-            {slideDecks.map((d, i) => (
-              <option key={i} value={d.source_file}>
-                📑 {d.display_title} ({d.total_chunks} slides)
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: "700",
+                color: "var(--text-muted)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Focus:
+            </span>
+            <select
+              value={selectedDeck}
+              disabled={isLoading}
+              onChange={(e) => {
+                setSelectedDeck(e.target.value);
+                setSelectedTopic(null);
+              }}
+              style={{
+                padding: "3px 8px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+                background: "var(--bg-main)",
+                color: "var(--text-main)",
+                fontSize: "11.5px",
+                outline: "none",
+                cursor: "pointer",
+                flex: 1,
+                minWidth: 0,
+                textOverflow: "ellipsis",
+              }}
+            >
+              <option value="">
+                🌐 All Enrolled Lectures (Global Course Scope)
               </option>
-            ))}
-          </select>
+              {slideDecks.map((d, i) => (
+                <option key={i} value={d.source_file}>
+                  📑 {d.display_title} ({d.total_chunks} slides)
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        {selectedDeck ? (
-          <span
-            style={{
-              fontSize: "11px",
-              padding: "2px 8px",
-              borderRadius: "var(--radius-full)",
-              backgroundColor: "rgba(16, 185, 129, 0.12)",
-              border: "1px solid rgba(16, 185, 129, 0.3)",
-              color: "#10B981",
-              fontWeight: "600",
-              whiteSpace: "nowrap",
-            }}
-          >
-            🎯 Strict Lecture Focus
-          </span>
-        ) : (
-          <span
-            style={{
-              fontSize: "11px",
-              padding: "2px 8px",
-              borderRadius: "var(--radius-full)",
-              backgroundColor: "rgba(59, 130, 246, 0.1)",
-              border: "1px solid rgba(59, 130, 246, 0.25)",
-              color: "var(--primary)",
-              fontWeight: "600",
-              whiteSpace: "nowrap",
-            }}
-          >
-            🌐 Global Scope
-          </span>
-        )}
+
+        {/* Right Controls: Scope badge + Collapsible Study Tools Button */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            flexShrink: 0,
+          }}
+        >
+          {selectedDeck ? (
+            <span
+              style={{
+                fontSize: "10.5px",
+                padding: "2px 8px",
+                borderRadius: "var(--radius-full)",
+                backgroundColor: "rgba(16, 185, 129, 0.12)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                color: "#10B981",
+                fontWeight: "600",
+                whiteSpace: "nowrap",
+              }}
+            >
+              🎯 Strict Focus
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: "10.5px",
+                padding: "2px 8px",
+                borderRadius: "var(--radius-full)",
+                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                border: "1px solid rgba(59, 130, 246, 0.25)",
+                color: "var(--primary)",
+                fontWeight: "600",
+                whiteSpace: "nowrap",
+              }}
+            >
+              🌐 Global
+            </span>
+          )}
+
+          {selectedDeck && (
+            <button
+              onClick={() => setIsToolsExpanded((prev) => !prev)}
+              className="btn-ghost"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                padding: "3px 9px",
+                fontSize: "11px",
+                fontWeight: "700",
+                borderRadius: "var(--radius-sm)",
+                border: isToolsExpanded
+                  ? "1px solid var(--primary-border)"
+                  : "1px solid var(--border-subtle)",
+                background: isToolsExpanded
+                  ? "var(--primary-soft)"
+                  : "var(--bg-main)",
+                color: isToolsExpanded ? "var(--primary)" : "var(--text-muted)",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              title="Toggle lecture study plan and topic breakdown"
+            >
+              <span>Study Tools</span>
+              <ChevronDown
+                size={13}
+                style={{
+                  transform: isToolsExpanded ? "rotate(180deg)" : "none",
+                  transition: "transform 0.2s ease",
+                }}
+              />
+            </button>
+          )}
+        </div>
       </div>
 
       {deckError && (
         <div
           role="alert"
           style={{
-            marginBottom: "10px",
-            fontSize: "12px",
+            marginBottom: "6px",
+            fontSize: "11.5px",
             color: "var(--text-muted)",
           }}
         >
@@ -2381,65 +2446,157 @@ function CoachTab({ studentId, courseId }) {
           </button>
         </div>
       )}
-      {selectedDeck && (
+
+      {/* COLLAPSIBLE STUDY TOOLS ACCORDION (Hidden by default to give 100% focus to chat) */}
+      {selectedDeck && isToolsExpanded && (
         <div
           style={{
+            flexShrink: 0,
+            marginBottom: "8px",
+            padding: "10px 12px",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--primary-border)",
+            borderRadius: "var(--radius-sm)",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
             display: "flex",
-            flexWrap: "wrap",
+            flexDirection: "column",
             gap: "8px",
-            marginBottom: "10px",
           }}
         >
-          <button
-            className="btn-ghost"
-            disabled={isLoading}
-            onClick={() => requestLearning("plan")}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
           >
-            Complete Lecture Study Plan
-          </button>
-          <button
-            className="btn-ghost"
-            disabled={isLoading}
-            onClick={() => requestLearning("breakdown")}
-          >
-            Break Into Topics
-          </button>
+            <span
+              style={{
+                fontSize: "11.5px",
+                fontWeight: "700",
+                color: "var(--primary)",
+              }}
+            >
+              ⚡ Lecture Tools:{" "}
+              {slideDecks.find((d) => d.source_file === selectedDeck)
+                ?.display_title || "Active Deck"}
+            </span>
+            <button
+              onClick={() => setIsToolsExpanded(false)}
+              className="btn-ghost"
+              style={{
+                padding: "2px 6px",
+                fontSize: "11px",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            <button
+              className="btn-ghost"
+              disabled={isLoading}
+              onClick={() => {
+                requestLearning("plan");
+                setIsToolsExpanded(false);
+              }}
+              style={{
+                padding: "4px 10px",
+                fontSize: "11px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+                background: "var(--bg-main)",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              📅 Complete Study Plan
+            </button>
+            <button
+              className="btn-ghost"
+              disabled={isLoading}
+              onClick={() => {
+                requestLearning("breakdown");
+                setIsToolsExpanded(false);
+              }}
+              style={{
+                padding: "4px 10px",
+                fontSize: "11px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+                background: "var(--bg-main)",
+                fontWeight: "600",
+                cursor: "pointer",
+              }}
+            >
+              📑 Break Into Topics
+            </button>
+          </div>
+
           {selectedTopic && (
             <div
               style={{
-                width: "100%",
-                padding: "8px",
+                padding: "8px 10px",
                 border: "1px solid var(--primary-border)",
                 borderRadius: "var(--radius-sm)",
                 background: "var(--primary-soft)",
-                fontSize: "12px",
+                fontSize: "11.5px",
+                marginTop: "2px",
               }}
             >
-              <strong>
-                Selected: {selectedTopic.topic || selectedTopic.title}
-              </strong>
-              <span style={{ color: "var(--text-muted)", marginLeft: "8px" }}>
-                Slides {selectedTopic.page_start}–{selectedTopic.page_end}
-              </span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <strong>
+                  Selected Topic:{" "}
+                  {selectedTopic.topic || selectedTopic.title}
+                </strong>
+                <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>
+                  Slides {selectedTopic.page_start}–{selectedTopic.page_end}
+                </span>
+              </div>
               <div
                 style={{
                   display: "flex",
                   flexWrap: "wrap",
-                  gap: "8px",
+                  gap: "6px",
                   marginTop: "6px",
                 }}
               >
                 <button
                   className="btn-ghost"
                   disabled={isLoading}
-                  onClick={() => requestLearning("plan", selectedTopic)}
+                  onClick={() => {
+                    requestLearning("plan", selectedTopic);
+                    setIsToolsExpanded(false);
+                  }}
+                  style={{
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
                 >
                   Study This Topic
                 </button>
                 <button
                   className="btn-ghost"
                   disabled={isLoading}
-                  onClick={() => requestLearning("explain", selectedTopic)}
+                  onClick={() => {
+                    requestLearning("explain", selectedTopic);
+                    setIsToolsExpanded(false);
+                  }}
+                  style={{
+                    padding: "3px 8px",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                  }}
                 >
                   Explain This Topic
                 </button>
@@ -2480,9 +2637,13 @@ function CoachTab({ studentId, courseId }) {
             >
               <div
                 style={{
-                  maxWidth: "80%",
-                  padding: "10px 14px",
-                  borderRadius: "var(--radius-sm)",
+                  maxWidth: msg.sender === "user" ? "82%" : "100%",
+                  width: msg.sender === "ai" ? "100%" : undefined,
+                  padding: msg.sender === "user" ? "9px 14px" : "13px 18px",
+                  borderRadius:
+                    msg.sender === "user"
+                      ? "16px 16px 4px 16px"
+                      : "12px",
                   background:
                     msg.sender === "user"
                       ? "var(--primary)"
@@ -2492,8 +2653,12 @@ function CoachTab({ studentId, courseId }) {
                       ? "1px solid var(--border-subtle)"
                       : "none",
                   color: msg.sender === "user" ? "#FFFFFF" : "var(--text-main)",
-                  fontSize: "12.5px",
-                  lineHeight: "1.5",
+                  fontSize: "13px",
+                  lineHeight: "1.6",
+                  boxShadow:
+                    msg.sender === "ai"
+                      ? "0 1px 4px rgba(0, 0, 0, 0.04)"
+                      : "none",
                 }}
               >
                 <div
@@ -2613,8 +2778,9 @@ function CoachTab({ studentId, courseId }) {
                     <div
                       style={{
                         display: "flex",
-                        flexDirection: "column",
+                        flexWrap: "wrap",
                         gap: "6px",
+                        alignItems: "center",
                       }}
                     >
                       {msg.citations.map((c, idx) => (
@@ -2779,7 +2945,7 @@ function CoachTab({ studentId, courseId }) {
           onClick={() => scrollToBottom("smooth")}
           style={{
             position: "absolute",
-            bottom: "80px",
+            bottom: "58px",
             right: "14px",
             zIndex: 10,
             background: "var(--bg-surface)",
@@ -2815,38 +2981,44 @@ function CoachTab({ studentId, courseId }) {
           gap: "6px",
         }}
       >
-        {/* Horizontal Quick Prompts */}
-        <div
-          style={{
-            display: "flex",
-            gap: "6px",
-            overflowX: "auto",
-            whiteSpace: "nowrap",
-            scrollbarWidth: "none",
-            msOverflowStyle: "none",
-            padding: "2px 0",
-          }}
-        >
-          {PROMPTS.map((p, i) => (
-            <button
-              key={i}
-              onClick={() => sendMessage(p)}
-              disabled={isLoading}
-              className="btn-ghost"
-              style={{
-                padding: "3px 10px",
-                fontSize: "11px",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: "var(--radius-full)",
-                flexShrink: 0,
-                cursor: "pointer",
-                background: "var(--bg-surface)",
-              }}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        {/* Horizontal Quick Prompts - automatically minimized once chat begins */}
+        {(messages.length <= 1 || showSuggestions) && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              overflowX: "auto",
+              whiteSpace: "nowrap",
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+              padding: "2px 0",
+            }}
+          >
+            {PROMPTS.map((p, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  sendMessage(p);
+                  setShowSuggestions(false);
+                }}
+                disabled={isLoading}
+                className="btn-ghost"
+                style={{
+                  padding: "3px 10px",
+                  fontSize: "11px",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-full)",
+                  flexShrink: 0,
+                  cursor: "pointer",
+                  background: "var(--bg-surface)",
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* ChatGPT Style Floating Input Card */}
         <div
@@ -2862,6 +3034,38 @@ function CoachTab({ studentId, courseId }) {
             transition: "border-color 0.15s ease, box-shadow 0.15s ease",
           }}
         >
+          {messages.length > 1 && (
+            <button
+              onClick={() => setShowSuggestions((prev) => !prev)}
+              type="button"
+              className="btn-ghost"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 8px",
+                fontSize: "11px",
+                fontWeight: "600",
+                borderRadius: "var(--radius-full)",
+                border: showSuggestions
+                  ? "1px solid var(--primary-border)"
+                  : "1px solid var(--border-subtle)",
+                background: showSuggestions
+                  ? "var(--primary-soft)"
+                  : "transparent",
+                color: showSuggestions
+                  ? "var(--primary)"
+                  : "var(--text-muted)",
+                cursor: "pointer",
+                flexShrink: 0,
+                transition: "all 0.15s ease",
+              }}
+              title="Toggle question suggestion ideas"
+            >
+              <span>💡</span>
+              <span className="hidden-mobile">Ideas</span>
+            </button>
+          )}
           <input
             ref={inputRef}
             value={input}
@@ -4576,9 +4780,10 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
         height: activeTab === "coach" ? "100vh" : undefined,
         overflow: activeTab === "coach" ? "hidden" : undefined,
         backgroundColor: "var(--bg-canvas)",
-        maxWidth: "720px",
+        maxWidth: activeTab === "coach" ? "1040px" : "720px",
         margin: "0 auto",
         position: "relative",
+        transition: "max-width 0.2s ease",
       }}
     >
       {/* Student Top Bar */}
@@ -4587,11 +4792,11 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "12px 20px",
+          padding: activeTab === "coach" ? "8px 16px" : "12px 20px",
           background: "var(--bg-surface)",
           borderBottom: "1px solid var(--border-subtle)",
           flexShrink: 0,
-          gap: "12px",
+          gap: "10px",
           flexWrap: "wrap",
         }}
       >
@@ -4657,9 +4862,9 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       <div
         style={{
           flex: 1,
-          padding: activeTab === "coach" ? "10px 16px 0" : "18px 20px",
+          padding: activeTab === "coach" ? "6px 14px 0" : "18px 20px",
           overflowY: activeTab === "coach" ? "hidden" : "auto",
-          paddingBottom: activeTab === "coach" ? "64px" : "80px",
+          paddingBottom: activeTab === "coach" ? "56px" : "80px",
           display: activeTab === "coach" ? "flex" : "block",
           flexDirection: activeTab === "coach" ? "column" : undefined,
           minHeight: 0,
@@ -4863,7 +5068,8 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           left: "50%",
           transform: "translateX(-50%)",
           width: "100%",
-          maxWidth: "720px",
+          maxWidth: activeTab === "coach" ? "1040px" : "720px",
+          transition: "max-width 0.2s ease",
           background: "var(--bg-surface)",
           borderTop: "1px solid var(--border-subtle)",
           display: "flex",
