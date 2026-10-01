@@ -82,7 +82,7 @@ class LearningAgent:
                         course_id=course_id, topic=topic, message=question,
                         student_id=student_id, session_id=session_id
                     ))
-                    if exp_resp.answer:
+                    if exp_resp.answer and not self.rag._is_missing_knowledge_answer(exp_resp.answer):
                         return RagChatResponse(
                             answer=exp_resp.answer,
                             citations=exp_resp.citations,

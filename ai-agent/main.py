@@ -154,12 +154,16 @@ def ai_coach_chat(request: CoachChatRequest):
             source_file=request.source_file
         )
         first_citation = response.citations[0] if response.citations else None
-        suggested_action = (
-            f"Review Slide {first_citation.page_number} ({first_citation.source_file})"
-            if first_citation
-            else "Review your enrolled course slides."
-        )
-        topic = first_citation.source_file if first_citation else "Course Slides"
+        if first_citation:
+            if first_citation.page_number == 0 or str(first_citation.source_file).startswith("http"):
+                suggested_action = f"Explore external reference: {first_citation.preview_text or 'Web Source'}"
+                topic = first_citation.preview_text or "Web Search"
+            else:
+                suggested_action = f"Review Slide {first_citation.page_number} ({first_citation.source_file})"
+                topic = first_citation.source_file
+        else:
+            suggested_action = "Review your enrolled course slides."
+            topic = "Course Slides"
 
         return CoachChatResponse(
             reply=response.answer,

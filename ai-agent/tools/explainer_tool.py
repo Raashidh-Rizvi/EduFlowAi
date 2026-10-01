@@ -39,7 +39,7 @@ class ExplainerTool:
             "GUIDELINES:\n"
             "1. Ground all facts strictly in the provided course excerpts.\n"
             "2. Cite exact slide numbers throughout the explanation.\n"
-            "3. If the excerpts do not contain enough information, state that clearly."
+            "3. If the excerpts do not contain enough information, begin with '[NOT COVERED IN SLIDES]' and state that clearly."
         )
         answer = generate(self.rag, prompt,
             lecture_context(chunks), max_tokens=2048, conversation_history=conversation_history)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Home,
   Map,
@@ -39,6 +39,8 @@ import {
   ExternalLink,
   MessageSquareText,
   LifeBuoy,
+  Copy,
+  Check,
 } from "lucide-react";
 import HelpSupportDialog from "../../components/support/HelpSupportDialog";
 import { useNavigate } from "react-router-dom";
@@ -1723,6 +1725,77 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
   );
 }
 
+function CodeSnippetCard({ code }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        margin: "8px 0",
+        padding: "10px 16px",
+        borderRadius: "16px",
+        background: "rgba(125, 125, 125, 0.08)",
+        border: "1px solid var(--border-subtle)",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontSize: "13px",
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          wordBreak: "break-word",
+          whiteSpace: "pre-wrap",
+          color: "var(--text-main)",
+        }}
+      >
+        {code}
+      </div>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="btn-ghost"
+        title="Copy to clipboard"
+        style={{
+          padding: "4px 8px",
+          borderRadius: "8px",
+          border: "none",
+          background: copied ? "rgba(16, 185, 129, 0.15)" : "transparent",
+          color: copied ? "#10b981" : "var(--text-muted)",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: "4px",
+          fontSize: "11px",
+          fontWeight: "600",
+          transition: "all 0.15s ease",
+          flexShrink: 0,
+        }}
+      >
+        {copied ? (
+          <>
+            <Check size={13} />
+            <span>Copied</span>
+          </>
+        ) : (
+          <Copy size={13} />
+        )}
+      </button>
+    </div>
+  );
+}
+
 function CoachTab({ studentId, courseId }) {
   const [sessionId] = useState(() => crypto.randomUUID());
   const [messages, setMessages] = useState([
@@ -1769,12 +1842,287 @@ function CoachTab({ studentId, courseId }) {
   ];
 
   const [isLoading, setIsLoading] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const scrollToBottom = (behavior = "smooth") => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: "end" });
+    }
+  };
+
+  // Automatically scroll to bottom whenever messages or loading state changes
+  useEffect(() => {
+    scrollToBottom("smooth");
+  }, [messages, isLoading]);
+
+  // Keep input focused so user can type the next question immediately without clicking
+  useEffect(() => {
+    if (!isLoading) {
+      inputRef.current?.focus();
+    }
+  }, [isLoading]);
+
+  // Track if user scrolled up to show "Jump to latest" button
+  const handleChatScroll = () => {
+    if (!chatContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 120;
+    setShowScrollBottom(!isNearBottom);
+  };
+
+  // Production-grade ChatGPT-style Message Formatter:
+  // - Converts **bold** into bold <strong> without asterisks
+  // - Converts *italic* / *title* into styled <em> without asterisks
+  // - Strips any stray lone asterisks completely
+  // - Converts [title](url) and raw URLs into clickable links (↗)
+  // - Removes citation artifacts like 【1†L1-L5】
+  // - Formats section headers (Simple Definition, Real-World Example, etc.) cleanly
+  // - Formats code blocks and logic expressions (e.g. P -> Q) with copy-to-clipboard cards
+  const renderFormattedMessage = (text) => {
+    if (!text) return null;
+
+    // 1. Strip raw citation artifacts like 【1†L1-L5】
+    const cleanText = text.replace(/【[^】]*】/g, "").trim();
+
+    // 2. Parse fenced code blocks: ```code```
+    const parts = cleanText.split(/(```[\s\S]*?```)/g);
+
+    return parts.map((part, partIdx) => {
+      if (!part) return null;
+
+      // Handle fenced code block
+      if (part.startsWith("```") && part.endsWith("```")) {
+        const rawCode = part.slice(3, -3).replace(/^[a-zA-Z0-9_-]*\n/, "").trim();
+        return <CodeSnippetCard key={`code-${partIdx}`} code={rawCode} />;
+      }
+
+      // Handle prose lines
+      const lines = part.split("\n");
+      return lines.map((line, lineIdx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={`space-${partIdx}-${lineIdx}`} style={{ height: "6px" }} />;
+        }
+
+        // Academic Web Notice Banner (🌐 Note: ...)
+        if (trimmed.startsWith("🌐 Note:") || trimmed.startsWith("🌐")) {
+          return (
+            <div
+              key={`note-${partIdx}-${lineIdx}`}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "8px",
+                backgroundColor: "rgba(59, 130, 246, 0.08)",
+                border: "1px solid rgba(59, 130, 246, 0.25)",
+                fontSize: "12px",
+                lineHeight: "1.5",
+                marginBottom: "8px",
+                color: "var(--text-main)",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "6px",
+              }}
+            >
+              <span>{trimmed}</span>
+            </div>
+          );
+        }
+
+        // Logic statement pill (e.g., P -> Q, A => B, etc. like the screenshot)
+        if (
+          /^(?:[A-Za-z0-9_\(\)]+\s*(?:->|→|=>|∧|∨|¬|⊢)\s*[A-Za-z0-9_\(\)]+)$/.test(trimmed) &&
+          trimmed.length < 50
+        ) {
+          return <CodeSnippetCard key={`logic-${partIdx}-${lineIdx}`} code={trimmed} />;
+        }
+
+        // Clean Markdown / Numbered Headers (e.g. "6. Why do we need CNF?", "### Title")
+        const isMarkdownHeader = /^#{1,6}\s+/.test(trimmed);
+        const isNumberedHeader = /^\d+\.\s+[^:]+[:?]?$/.test(trimmed);
+        const isSectionHeader =
+          /^(Simple Definition|Real[‑-]World Example|Key Breakdown|Key Takeaway|Verified Web Sources)[\s–\-:]*$/i.test(
+            trimmed,
+          );
+
+        if (isMarkdownHeader || isNumberedHeader || isSectionHeader) {
+          const title = trimmed
+            .replace(/^#{1,6}\s+/, "")
+            .replace(/^[–\-]\s*/, "")
+            .replace(/[\s–\-:]+$/, "");
+          return (
+            <div
+              key={`head-${partIdx}-${lineIdx}`}
+              style={{
+                fontWeight: "800",
+                fontSize: "14px",
+                color: "var(--text-main)",
+                marginTop: "10px",
+                marginBottom: "4px",
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {title}
+            </div>
+          );
+        }
+
+        // Bullet line detection (• or - or *)
+        const isBullet = /^[•\-*]\s+/.test(trimmed);
+        const lineContent = isBullet ? trimmed.replace(/^[•\-*]\s+/, "") : line;
+
+        // Parse inline tokens: Links, URLs, Inline Code, Bold-Italic, Bold, Italic
+        const tokenRegex =
+          /(\[[^\]]+\]\([^\)]+\)|https?:\/\/[^\s\)]+|`[^`]+`|\*\*\*[^*]+\*\*\*|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+        const subTokens = lineContent.split(tokenRegex);
+
+        const renderedTokens = subTokens.map((token, tokIdx) => {
+          if (!token) return null;
+
+          // Markdown Link: [Title](URL)
+          const linkMatch = token.match(/^\[([^\]]+)\]\(([^\)]+)\)$/);
+          if (linkMatch) {
+            return (
+              <a
+                key={tokIdx}
+                href={linkMatch[2]}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "var(--primary)",
+                  textDecoration: "underline",
+                  fontWeight: "600",
+                  wordBreak: "break-all",
+                }}
+              >
+                {linkMatch[1]} ↗
+              </a>
+            );
+          }
+
+          // Raw URL: https://...
+          if (token.startsWith("http://") || token.startsWith("https://")) {
+            return (
+              <a
+                key={tokIdx}
+                href={token}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: "var(--primary)",
+                  textDecoration: "underline",
+                  fontWeight: "600",
+                  wordBreak: "break-all",
+                }}
+              >
+                {token} ↗
+              </a>
+            );
+          }
+
+          // Inline Code: `code`
+          if (token.startsWith("`") && token.endsWith("`") && token.length >= 2) {
+            return (
+              <code
+                key={tokIdx}
+                style={{
+                  background: "rgba(125, 125, 125, 0.12)",
+                  padding: "2px 6px",
+                  borderRadius: "4px",
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: "12px",
+                  color: "var(--text-main)",
+                }}
+              >
+                {token.slice(1, -1)}
+              </code>
+            );
+          }
+
+          // Bold Italic: ***text***
+          if (token.startsWith("***") && token.endsWith("***") && token.length >= 6) {
+            return (
+              <strong key={tokIdx} style={{ fontWeight: "700" }}>
+                <em style={{ fontStyle: "italic" }}>{token.slice(3, -3)}</em>
+              </strong>
+            );
+          }
+
+          // Bold: **text**
+          if (token.startsWith("**") && token.endsWith("**") && token.length >= 4) {
+            return (
+              <strong key={tokIdx} style={{ fontWeight: "700", color: "var(--text-main)" }}>
+                {token.slice(2, -2)}
+              </strong>
+            );
+          }
+
+          // Italic / Emphasis: *text* (Strip stars, render clean italic/bold)
+          if (token.startsWith("*") && token.endsWith("*") && token.length >= 2) {
+            return (
+              <em
+                key={tokIdx}
+                style={{
+                  fontStyle: "italic",
+                  fontWeight: "600",
+                  color: "var(--text-main)",
+                }}
+              >
+                {token.slice(1, -1)}
+              </em>
+            );
+          }
+
+          // Plain text: strip any remaining stray asterisks
+          return token.replace(/\*/g, "");
+        });
+
+        if (isBullet) {
+          return (
+            <div
+              key={`bullet-${partIdx}-${lineIdx}`}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: "8px",
+                marginBottom: "4px",
+                paddingLeft: "4px",
+                lineHeight: "1.55",
+              }}
+            >
+              <span style={{ color: "var(--primary)", fontWeight: "bold" }}>•</span>
+              <div style={{ flex: 1 }}>{renderedTokens}</div>
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={`line-${partIdx}-${lineIdx}`}
+            style={{
+              marginBottom: "4px",
+              lineHeight: "1.55",
+              color: "var(--text-main)",
+            }}
+          >
+            {renderedTokens}
+          </div>
+        );
+      });
+    });
+  };
 
   const sendMessage = async (text) => {
     if (!text.trim() || isLoading) return;
     setMessages((m) => [...m, { sender: "user", text }]);
     setInput("");
     setIsLoading(true);
+    setTimeout(() => {
+      scrollToBottom("smooth");
+      inputRef.current?.focus();
+    }, 30);
 
     try {
       const activeDeck = slideDecks.find((d) => d.source_file === selectedDeck);
@@ -1812,6 +2160,10 @@ function CoachTab({ studentId, courseId }) {
       ]);
     } finally {
       setIsLoading(false);
+      setTimeout(() => {
+        scrollToBottom("smooth");
+        inputRef.current?.focus();
+      }, 50);
     }
   };
 
@@ -1830,6 +2182,10 @@ function CoachTab({ studentId, courseId }) {
       ...m,
       { sender: "user", text: label, learningDeck: selectedDeck },
     ]);
+    setTimeout(() => {
+      scrollToBottom("smooth");
+      inputRef.current?.focus();
+    }, 30);
     try {
       const activeDeck = slideDecks.find((d) => d.source_file === selectedDeck);
       const result = await aiService.learn({
@@ -1871,6 +2227,10 @@ function CoachTab({ studentId, courseId }) {
       ]);
     } finally {
       setIsLoading(false);
+      setTimeout(() => {
+        scrollToBottom("smooth");
+        inputRef.current?.focus();
+      }, 50);
     }
   };
 
@@ -1879,14 +2239,16 @@ function CoachTab({ studentId, courseId }) {
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "calc(100vh - 200px)",
-        minHeight: "480px",
+        height: "100%",
+        minHeight: 0,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      <div style={{ marginBottom: "10px" }}>
+      <div style={{ flexShrink: 0, marginBottom: "8px" }}>
         <div
           style={{
-            fontSize: "18px",
+            fontSize: "17px",
             fontWeight: "800",
             color: "var(--text-main)",
           }}
@@ -1895,9 +2257,9 @@ function CoachTab({ studentId, courseId }) {
         </div>
         <div
           style={{
-            fontSize: "12px",
+            fontSize: "11.5px",
             color: "var(--text-muted)",
-            marginTop: "2px",
+            marginTop: "1px",
           }}
         >
           Context-aware tutoring for your curriculum modules.
@@ -1907,13 +2269,14 @@ function CoachTab({ studentId, courseId }) {
       {/* TARGETED LECTURE SCOPE BAR */}
       <div
         style={{
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexWrap: "wrap",
           gap: "8px",
-          padding: "8px 12px",
-          marginBottom: "10px",
+          padding: "6px 12px",
+          marginBottom: "8px",
           background: "var(--bg-surface)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-sm)",
@@ -2087,6 +2450,8 @@ function CoachTab({ studentId, courseId }) {
       )}
 
       <div
+        ref={chatContainerRef}
+        onScroll={handleChatScroll}
         aria-live="polite"
         style={{
           flex: 1,
@@ -2095,7 +2460,9 @@ function CoachTab({ studentId, courseId }) {
           display: "flex",
           flexDirection: "column",
           gap: "10px",
+          paddingRight: "4px",
           paddingBottom: "12px",
+          scrollBehavior: "smooth",
         }}
       >
         {messages
@@ -2131,9 +2498,9 @@ function CoachTab({ studentId, courseId }) {
               >
                 <div
                   role={msg.error ? "alert" : undefined}
-                  style={{ whiteSpace: "pre-wrap" }}
+                  style={{ display: "flex", flexDirection: "column" }}
                 >
-                  {msg.text}
+                  {renderFormattedMessage(msg.text)}
                 </div>
                 {msg.error && (
                   <button
@@ -2353,7 +2720,24 @@ function CoachTab({ studentId, courseId }) {
                     }}
                   >
                     <Sparkles size={12} />
-                    <span>Suggested Action: {msg.action}</span>
+                    <span>
+                      Suggested Action:{" "}
+                      {msg.action?.includes("http") ? (
+                        <a
+                          href={msg.action.match(/https?:\/\/[^\s\)]+/)?.[0]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            color: "var(--primary)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          {msg.action.replace("Review Slide 0", "Explore external reference")} ↗
+                        </a>
+                      ) : (
+                        msg.action?.replace("Review Slide 0", "Explore external reference")
+                      )}
+                    </span>
                   </div>
                 )}
               </div>
@@ -2363,76 +2747,175 @@ function CoachTab({ studentId, courseId }) {
           <div
             role="status"
             style={{
-              padding: "10px",
+              padding: "10px 14px",
+              borderRadius: "var(--radius-sm)",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+              maxWidth: "80%",
               fontSize: "12px",
               color: "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
             }}
           >
-            Reading your lecture and preparing a response…
+            <div
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: "var(--primary)",
+                animation: "pulse 1.5s infinite",
+              }}
+            />
+            Reading your lecture and synthesizing answer…
           </div>
         )}
+        <div ref={messagesEndRef} style={{ height: "1px", width: "100%", flexShrink: 0 }} />
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "6px",
-          flexWrap: "wrap",
-          marginBottom: "8px",
-        }}
-      >
-        {PROMPTS.map((p, i) => (
-          <button
-            key={i}
-            onClick={() => sendMessage(p)}
-            className="btn-ghost"
-            style={{
-              padding: "4px 10px",
-              fontSize: "11px",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: "var(--radius-full)",
-            }}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          gap: "8px",
-          padding: "8px 12px",
-          background: "var(--bg-surface)",
-          borderRadius: "var(--radius-sm)",
-          border: "1px solid var(--border-subtle)",
-        }}
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage(input)}
-          placeholder={
-            selectedDeck
-              ? "Ask a question about this specific lecture..."
-              : "Ask a technical or conceptual question..."
-          }
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            color: "var(--text-main)",
-            fontSize: "12.5px",
-          }}
-        />
+      {showScrollBottom && (
         <button
-          onClick={() => sendMessage(input)}
-          className="btn-ghost"
-          style={{ padding: "4px", color: "var(--primary)" }}
+          onClick={() => scrollToBottom("smooth")}
+          style={{
+            position: "absolute",
+            bottom: "80px",
+            right: "14px",
+            zIndex: 10,
+            background: "var(--bg-surface)",
+            border: "1px solid var(--primary-border)",
+            borderRadius: "var(--radius-full)",
+            padding: "5px 12px",
+            fontSize: "11px",
+            fontWeight: "700",
+            color: "var(--primary)",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            cursor: "pointer",
+            backdropFilter: "blur(8px)",
+          }}
         >
-          <Send size={16} />
+          <ChevronDown size={14} />
+          <span>Latest answer</span>
         </button>
+      )}
+
+      {/* FIXED BOTTOM INPUT DOCK - ChatGPT / WhatsApp Style */}
+      <div
+        style={{
+          flexShrink: 0,
+          paddingTop: "6px",
+          paddingBottom: "2px",
+          background: "var(--bg-canvas)",
+          borderTop: "1px solid var(--border-subtle)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "6px",
+        }}
+      >
+        {/* Horizontal Quick Prompts */}
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            overflowX: "auto",
+            whiteSpace: "nowrap",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            padding: "2px 0",
+          }}
+        >
+          {PROMPTS.map((p, i) => (
+            <button
+              key={i}
+              onClick={() => sendMessage(p)}
+              disabled={isLoading}
+              className="btn-ghost"
+              style={{
+                padding: "3px 10px",
+                fontSize: "11px",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-full)",
+                flexShrink: 0,
+                cursor: "pointer",
+                background: "var(--bg-surface)",
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* ChatGPT Style Floating Input Card */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "8px 14px",
+            background: "var(--bg-surface)",
+            borderRadius: "24px",
+            border: "1.5px solid var(--border-subtle)",
+            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.05)",
+            transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+          }}
+        >
+          <input
+            ref={inputRef}
+            value={input}
+            disabled={isLoading}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage(input);
+              }
+            }}
+            placeholder={
+              isLoading
+                ? "AI Assistant is thinking..."
+                : selectedDeck
+                  ? "Ask a question about this lecture (Press Enter to send)..."
+                  : "Ask anything about your curriculum (Press Enter to send)..."
+            }
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              color: "var(--text-main)",
+              fontSize: "13px",
+              lineHeight: "1.4",
+            }}
+          />
+          <button
+            onClick={() => sendMessage(input)}
+            disabled={isLoading || !input.trim()}
+            style={{
+              width: "32px",
+              height: "32px",
+              borderRadius: "50%",
+              border: "none",
+              background:
+                input.trim() && !isLoading
+                  ? "var(--primary)"
+                  : "var(--bg-card-hover, rgba(120, 120, 120, 0.12))",
+              color: input.trim() && !isLoading ? "#FFFFFF" : "var(--text-muted)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: input.trim() && !isLoading ? "pointer" : "default",
+              transition: "all 0.15s ease",
+              flexShrink: 0,
+            }}
+            title="Send message (Enter)"
+            aria-label="Send message"
+          >
+            <Send size={15} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -4090,6 +4573,8 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
         display: "flex",
         flexDirection: "column",
         minHeight: "100vh",
+        height: activeTab === "coach" ? "100vh" : undefined,
+        overflow: activeTab === "coach" ? "hidden" : undefined,
         backgroundColor: "var(--bg-canvas)",
         maxWidth: "720px",
         margin: "0 auto",
@@ -4172,9 +4657,12 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       <div
         style={{
           flex: 1,
-          padding: "18px 20px",
-          overflowY: "auto",
-          paddingBottom: "80px",
+          padding: activeTab === "coach" ? "10px 16px 0" : "18px 20px",
+          overflowY: activeTab === "coach" ? "hidden" : "auto",
+          paddingBottom: activeTab === "coach" ? "64px" : "80px",
+          display: activeTab === "coach" ? "flex" : "block",
+          flexDirection: activeTab === "coach" ? "column" : undefined,
+          minHeight: 0,
         }}
       >
         {activeQuiz ? (
