@@ -22,6 +22,7 @@ from rag.parser import DocumentParser, ParsedPage
 from rag.chunker import SlideChunker
 from rag.vector_store import ChromaVectorStore
 from rag.rag_service import SimpleRagService
+import main as main_module
 from main import app
 
 
@@ -128,14 +129,9 @@ class TestSimpleRagPipeline:
         assert len(cat_res.topics) >= 1
         assert cat_res.total_slides == 3
 
-        # 4. Generate grounded quiz
-        quiz_res = service.generate_quiz(
-            slide_path=TEST_DOC_PATH,
-            module_title="Architecture & Indexing",
-            num_questions=3
-        )
-        assert len(quiz_res.questions) == 3
-        assert quiz_res.questions[0].slide_citation is not None
+        # Quiz generation now lives in GeminiQuizGenerationService
+        # (see tests/test_quiz_generation.py); SimpleRagService no longer
+        # exposes a template-based generate_quiz.
 
 
 class TestFastApiEndpoints:
@@ -184,7 +180,8 @@ class TestFastApiEndpoints:
         assert len(chat_data["citations"]) > 0
         assert chat_data["citations"][0]["page_number"] in [1, 2, 3]
 
-    def test_slide_topics_and_quiz_endpoints(self):
+    def test_slide_topics_and_quiz_endpoints(self, monkeypatch):
+        import json
         client = TestClient(app)
         
         # Test categorize topics endpoint
@@ -192,6 +189,30 @@ class TestFastApiEndpoints:
         assert cat_res.status_code == 200
         cat_data = cat_res.json()
         assert len(cat_data["topics"]) >= 1
+
+        # Quiz generation now goes through Gemini with strict validation;
+        # stub the model call so the test stays offline.
+        def fake_gemini_call(_prompt, temperature=0.4):
+            return json.dumps({
+                "title": "Architecture Assessment",
+                "target_topics": ["Dependency Inversion"],
+                "questions": [
+                    {
+                        "question_text": f"Sample grounded question {i + 1}?",
+                        "question_type": "MULTIPLE_CHOICE",
+                        "blooms_taxonomy_level": "Understanding",
+                        "options": ["Right", "Wrong 1", "Wrong 2", "Wrong 3"],
+                        "correct_answer": "Right",
+                        "explanation": "Grounded in slide content.",
+                        "marking_scheme": "10 points for the correct option.",
+                        "slide_citation": f"Slide {i + 1}: Topic",
+                        "points": 10,
+                    }
+                    for i in range(2)
+                ],
+            })
+
+        monkeypatch.setattr(main_module.quiz_generation_service, "_call_gemini_json", fake_gemini_call)
 
         # Test slide quiz generation endpoint
         quiz_res = client.post("/api/v1/ai/slides/generate-quiz", json={

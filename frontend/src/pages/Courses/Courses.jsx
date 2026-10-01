@@ -661,6 +661,9 @@ function InstructorCourses({ currentUser }) {
         setGeneratedDraft({
           title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
           description: `Strictly grounded in lecture slides (${topicsToInclude.join(', ')}) with transparent marking scheme & auto-evaluation.`,
+          // The backend already persisted this draft quiz (Status=Draft, awaiting
+          // instructor review). Approval must publish THIS quiz, not create a new one.
+          serverQuizId: res.id || res.quizId || null,
           questions
         });
 
@@ -721,8 +724,79 @@ function InstructorCourses({ currentUser }) {
     const targetCourseId = currentCourse.id;
     const courseCode = currentCourse.courseCode || currentCourse.code || '';
 
+    // The generation step already persisted a server-side Draft quiz; approving
+    // publishes THAT quiz. Re-creating it here used to duplicate every AI quiz.
+    const serverQuizId = typeof generatedDraft.serverQuizId === 'string' && generatedDraft.serverQuizId.length === 36
+      ? generatedDraft.serverQuizId
+      : null;
+
+    // Every assessment is stored in a module; a course-level quiz names its module too.
+    const moduleIdVal = aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36 ? aiQuizScope.moduleId : null;
+    const scopeTypeEnum = toScopeTypeValue(aiQuizScope.scopeLevel === 'Course' ? 'Course' : 'Module');
+    const scopeIdVal = aiQuizScope.scopeLevel === 'Course' ? targetCourseId : moduleIdVal;
+
+    const questionPayload = generatedDraft.questions.map((q, idx) => ({
+      prompt: q.prompt,
+      type: toQuestionTypeValue(q.type),
+      options: q.options || [],
+      correctAnswer: q.correctAnswer || '',
+      explanation: q.explanation || '',
+      points: q.points || 10,
+      orderIndex: idx + 1,
+      metadataJson: JSON.stringify({
+        slideCitation: q.slideCitation,
+        markingScheme: q.markingScheme,
+        questionType: q.type
+      })
+    }));
+
+    let createdQuizId = null;
+    try {
+      if (serverQuizId) {
+        // Apply the instructor's review edits to the existing server draft…
+        await quizService.updateQuiz(serverQuizId, {
+          courseId: targetCourseId,
+          title: generatedDraft.title,
+          description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
+          timeLimitMinutes: Number(aiTimeLimit),
+          passingScorePercent: Number(aiPassMark),
+          xpReward: Number(aiXpReward),
+          coinReward: Number(aiCoinReward),
+          scopeType: scopeTypeEnum,
+          scopeId: scopeIdVal,
+          moduleId: moduleIdVal,
+          status: 'Draft',
+          questions: questionPayload
+        });
+        // …then publish through the validated, audited lifecycle endpoint.
+        await quizService.publishQuiz(serverQuizId);
+      } else {
+        // No server draft (e.g. a legacy local-only review): create it now.
+        const created = await quizService.createQuiz({
+          courseId: targetCourseId,
+          title: generatedDraft.title,
+          description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
+          timeLimitMinutes: Number(aiTimeLimit),
+          passingScorePercent: Number(aiPassMark),
+          xpReward: Number(aiXpReward),
+          coinReward: Number(aiCoinReward),
+          scopeType: scopeTypeEnum,
+          scopeId: scopeIdVal,
+          moduleId: moduleIdVal,
+          questions: questionPayload
+        });
+        createdQuizId = created?.id || null;
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Publishing failed.';
+      alert(`Could not publish the AI quiz: ${errMsg}`);
+      return; // Stay in review mode — never fake a successful publish locally.
+    }
+
+    const finalQuizId = serverQuizId || createdQuizId || `q-${Date.now()}`;
+
     const newQuizObj = {
-      id: `q-${Date.now()}`,
+      id: finalQuizId,
       courseId: targetCourseId,
       courseCode: courseCode,
       title: generatedDraft.title,
@@ -787,43 +861,6 @@ function InstructorCourses({ currentUser }) {
     setCoursesList(updatedCourses);
     setShowAiQuizModal(false);
     showToast(`🎉 "${generatedDraft.title}" approved & published to ${aiQuizScope.scopeLevel}! Streamed to Assessments tab.`);
-
-    // Sync with backend API in background
-    try {
-      // Every assessment is stored in a module; a course-level quiz names its module too.
-      const moduleIdVal = aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36 ? aiQuizScope.moduleId : null;
-      const scopeTypeEnum = toScopeTypeValue(aiQuizScope.scopeLevel === 'Course' ? 'Course' : 'Module');
-      const scopeIdVal = aiQuizScope.scopeLevel === 'Course' ? targetCourseId : moduleIdVal;
-
-      await quizService.createQuiz({
-        courseId: targetCourseId,
-        title: generatedDraft.title,
-        description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
-        timeLimitMinutes: Number(aiTimeLimit),
-        passingScorePercent: Number(aiPassMark),
-        xpReward: Number(aiXpReward),
-        coinReward: Number(aiCoinReward),
-        scopeType: scopeTypeEnum,
-        scopeId: scopeIdVal,
-        moduleId: moduleIdVal,
-        questions: generatedDraft.questions.map((q, idx) => ({
-          prompt: q.prompt,
-          type: toQuestionTypeValue(q.type),
-          options: q.options || [],
-          correctAnswer: q.correctAnswer || '',
-          explanation: q.explanation || '',
-          points: q.points || 10,
-          orderIndex: idx + 1,
-          metadataJson: JSON.stringify({
-            slideCitation: q.slideCitation,
-            markingScheme: q.markingScheme,
-            questionType: q.type
-          })
-        }))
-      });
-    } catch {
-      // safely preserved in localStorage and component state
-    }
   };
 
   // ── INSTRUCTOR QUIZ REVIEW / EDIT & RENAME HANDLERS ────────────────────

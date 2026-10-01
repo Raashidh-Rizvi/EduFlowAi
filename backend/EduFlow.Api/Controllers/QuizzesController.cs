@@ -989,11 +989,26 @@ public class QuizzesController : BaseApiController
         string? physicalSlidePath = ResolveWebRootFile(request.SlideUrl ?? request.PdfUrl);
 
         // Fallback: if slide not found in request, check module in database
+        Module? dbModule;
         if (string.IsNullOrEmpty(physicalSlidePath))
         {
-            var dbModule = await DbContext.Modules.FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
+            dbModule = await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
             physicalSlidePath = ResolveWebRootFile(dbModule?.PdfUrl);
         }
+        else
+        {
+            dbModule = await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
+        }
+
+        // The generator must ground questions in the module's REAL content:
+        // description, topic titles and content item text resolved from the database.
+        var moduleContext = BuildModuleContext(dbModule);
 
         string resolvedTopic = (!string.IsNullOrWhiteSpace(request.Topic) && request.Topic != "All Topics")
             ? request.Topic
@@ -1014,6 +1029,8 @@ public class QuizzesController : BaseApiController
             pass_percentage = request.PassingScorePercent > 0 ? request.PassingScorePercent : 70,
             pdf_path = physicalSlidePath,
             slide_path = physicalSlidePath,
+            module_context = moduleContext,
+            learning_objectives = request.LearningObjectives ?? new List<string>(),
             selected_topics = request.SelectedTopics,
             question_types = request.QuestionTypes ?? new List<string> { "MULTIPLE_CHOICE", "TRUE_FALSE", "MULTIPLE_SELECT" }
         };
@@ -1029,7 +1046,7 @@ public class QuizzesController : BaseApiController
             {
                 if (aiResult.TryGetProperty("message", out var msgProp))
                 {
-                    aiErrorDetail = msgProp.GetString();
+                    aiErrorDetail = ExtractPythonErrorDetail(msgProp.GetString());
                 }
             }
             else if (aiResult.TryGetProperty("detail", out var detailProp))
@@ -1051,6 +1068,15 @@ public class QuizzesController : BaseApiController
                     var explanation = qToken.TryGetProperty("explanation", out var exp) ? exp.GetString() ?? "AI Explanation" : "AI Explanation";
                     var markingScheme = qToken.TryGetProperty("marking_scheme", out var ms) ? ms.GetString() ?? explanation : explanation;
                     var slideCitation = qToken.TryGetProperty("slide_citation", out var sc) ? sc.GetString() ?? $"Curriculum for {resolvedTopic}" : $"Curriculum for {resolvedTopic}";
+                    var bloomsLevel = qToken.TryGetProperty("blooms_taxonomy_level", out var bloomsProp) ? bloomsProp.GetString() : null;
+                    var aiLearningObjective = qToken.TryGetProperty("learning_objective", out var loProp) ? loProp.GetString() : null;
+
+                    // Keep the AI's proposed mark value instead of a hardcoded 10.
+                    int questionPoints = 10;
+                    if (qToken.TryGetProperty("points", out var pointsProp) && pointsProp.TryGetInt32(out var parsedPoints))
+                    {
+                        questionPoints = Math.Clamp(parsedPoints, 1, 100);
+                    }
 
                     var qType = QuestionType.MultipleChoice;
                     var upperType = qTypeStr.ToUpperInvariant();
@@ -1086,6 +1112,11 @@ public class QuizzesController : BaseApiController
                         ["questionType"] = qTypeStr
                     };
 
+                    if (!string.IsNullOrWhiteSpace(bloomsLevel))
+                    {
+                        metadataDict["bloomsTaxonomy"] = bloomsLevel;
+                    }
+
                     if (qToken.TryGetProperty("matching_pairs", out var pairsArray))
                     {
                         metadataDict["matchingPairs"] = pairsArray.ToString();
@@ -1099,9 +1130,11 @@ public class QuizzesController : BaseApiController
                         CorrectAnswer = correct,
                         Explanation = explanation,
                         Difficulty = quiz.Difficulty,
-                        Points = 10,
+                        Points = questionPoints,
                         OrderIndex = i + 1,
-                        LearningObjective = $"LO-0{(i % 3) + 1}",
+                        // Persist the AI-provided objective; fabricating LO-0x codes would
+                        // collapse skill mastery across every AI quiz in every course.
+                        LearningObjective = string.IsNullOrWhiteSpace(aiLearningObjective) ? null : aiLearningObjective!.Trim(),
                         MetadataJson = JsonSerializer.Serialize(metadataDict)
                     };
 
@@ -1233,6 +1266,17 @@ public class QuizzesController : BaseApiController
         var targetType = request.TargetType ?? question.Type;
         var targetDiff = request.TargetDifficulty ?? question.Difficulty;
 
+        // Ground regeneration in the same real course content the quiz belongs to.
+        var regenModule = question.Assessment == null
+            ? null
+            : await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == question.Assessment.ModuleId);
+        var regenSlidePath = ResolveWebRootFile(regenModule?.PdfUrl);
+        var regenCourse = await DbContext.Courses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == question.Assessment!.CourseId);
+
         // -------------------------------------------------------------------------
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
         // -------------------------------------------------------------------------
@@ -1245,7 +1289,14 @@ public class QuizzesController : BaseApiController
             target_type = MapQuestionTypeToPython(targetType),
             target_difficulty = targetDiff.ToString().ToUpperInvariant(),
             learning_objective = question.LearningObjective,
-            source_content_id = question.SourceContentId?.ToString()
+            source_content_id = question.SourceContentId?.ToString(),
+            course_id = question.Assessment?.CourseId.ToString(),
+            course_title = regenCourse?.Title,
+            module_title = regenModule?.Title ?? focus,
+            module_context = BuildModuleContext(regenModule),
+            slide_path = regenSlidePath,
+            pdf_path = regenSlidePath,
+            source_question_text = question.Prompt
         };
 
         string newPrompt = string.Empty;
@@ -1262,12 +1313,25 @@ public class QuizzesController : BaseApiController
             var responseString = await _aiGatewayClient.RegenerateQuestionAsync(questionId.ToString(), pythonPayload);
             var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
 
-            // The gateway client returns its own offline JSON (tagged "source": "fallback")
-            // when the AI microservice is unreachable. Treat that as a failed call.
-            bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
-                && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
+            // Python/gateway errors are surfaced verbatim; the original question is
+            // left untouched so an AI outage can never silently rewrite a question.
+            if (aiResult.TryGetProperty("status", out var statusProp)
+                && string.Equals(statusProp.GetString(), "error", StringComparison.OrdinalIgnoreCase))
+            {
+                var errorDetail = aiResult.TryGetProperty("message", out var messageProp)
+                    ? ExtractPythonErrorDetail(messageProp.GetString())
+                    : null;
+                return StatusCode(StatusCodes.Status502BadGateway, new
+                {
+                    message = string.IsNullOrWhiteSpace(errorDetail)
+                        ? "AI question regeneration is unavailable. The original question was left unchanged."
+                        : errorDetail,
+                    status = "error",
+                    code = "AI_REGENERATION_FAILED"
+                });
+            }
 
-            if (!isGatewayFallback && aiResult.TryGetProperty("question", out var qToken))
+            if (aiResult.TryGetProperty("question", out var qToken))
             {
                 newPrompt = qToken.TryGetProperty("question_text", out var textProp) ? (textProp.GetString() ?? "") : "";
                 var qTypeStr = qToken.TryGetProperty("question_type", out var qTypeProp) ? qTypeProp.GetString() : null;
@@ -1358,6 +1422,71 @@ public class QuizzesController : BaseApiController
             question.MetadataJson,
             question.Options.Select(o => new QuestionOptionDto(o.Id, o.OptionText, o.IsCorrect, o.DisplayOrder)).ToList()
         ));
+    }
+
+    /// <summary>
+    /// Unwraps the FastAPI error detail the gateway forwards inside "message"
+    /// (e.g. {{"detail":"GEMINI_API_KEY is not configured..."}}) so instructors
+    /// see the real reason instead of raw JSON.
+    /// </summary>
+    private static string? ExtractPythonErrorDetail(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+        if (raw.TrimStart().StartsWith("{"))
+        {
+            try
+            {
+                using var nested = JsonDocument.Parse(raw);
+                if (nested.RootElement.TryGetProperty("detail", out var detailEl))
+                {
+                    return detailEl.GetString() ?? raw;
+                }
+            }
+            catch
+            {
+                // Not JSON after all; show the raw text.
+            }
+        }
+        return raw;
+    }
+
+    /// <summary>
+    /// Real course content for AI grounding, resolved from the database:
+    /// module description, topic titles and content item text. Never placeholder
+    /// titles-only context — the generator must see what students actually study.
+    /// </summary>
+    private static string BuildModuleContext(Module? module)
+    {
+        if (module == null)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(module.Description))
+        {
+            parts.Add($"Module description: {module.Description.Trim()}");
+        }
+        foreach (var topic in module.Topics.OrderBy(t => t.DisplayOrder))
+        {
+            var line = string.IsNullOrWhiteSpace(topic.Description)
+                ? $"Topic: {topic.Title}"
+                : $"Topic: {topic.Title} - {topic.Description.Trim()}";
+            parts.Add(line);
+        }
+        foreach (var item in module.ContentItems.OrderBy(c => c.DisplayOrder))
+        {
+            var body = (item.Content ?? string.Empty).Replace("\r", " ").Replace("\n", " ").Trim();
+            parts.Add(string.IsNullOrWhiteSpace(body)
+                ? $"Content item: {item.Title}"
+                : $"Content item: {item.Title} - {body}");
+        }
+
+        var context = string.Join("\n", parts);
+        return context.Length > 4000 ? context[..4000] : context;
     }
 
     // -------------------------------------------------------------------------

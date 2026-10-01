@@ -280,46 +280,111 @@ class CategorizeTopicsResponse(BaseModel):
 
 class QuizQuestionItem(BaseModel):
     """
-    QUIZ QUESTION: Represents a single multiple-choice question created by the AI.
-    
+    QUIZ QUESTION: A single AI-generated question, validated before it leaves the service.
+
+    The .NET backend accepts both `correct_answer` (option text, preferred) and
+    `correct_index` (0-based fallback), so both are populated for choice questions.
+
     Fields:
         question_id (int): Number of the question (1, 2, 3...).
-        question_text (str): The actual question text grounded in slide content.
-        blooms_taxonomy_level (str): Academic difficulty level ('Understanding', 'Application').
-        options (List[str]): 4 multiple-choice answers [Option A, Option B, Option C, Option D].
-        correct_index (int): Index of the correct answer (0 = Option A, 1 = Option B, etc.).
-        explanation (str): Why the correct answer is right, citing the slide text.
+        question_text (str): The actual question text grounded in course material.
+        question_type (str): MULTIPLE_CHOICE | MULTIPLE_SELECT | TRUE_FALSE |
+                             FILL_IN_THE_BLANK | SHORT_ANSWER | MATCHING.
+        blooms_taxonomy_level (str): Academic level ('Remembering', 'Understanding',
+                                     'Applying', 'Analyzing', 'Evaluating', 'Creating').
+        options (List[str]): Answer options (empty for short-answer/fill-in questions).
+        correct_answer (Optional[str]): Exact option text, or the accepted answer.
+        correct_index (Optional[int]): Index of the correct answer for choice questions.
+        explanation (str): Why the correct answer is right, citing the source material.
+        marking_scheme (Optional[str]): How marks are awarded for this question.
+        learning_objective (Optional[str]): Objective this question assesses.
         slide_citation (Optional[str]): Slide reference (e.g. 'Slide 4: Index Optimization').
-        points (int): XP or mark value (default: 10 points).
+        matching_pairs (Optional[List[Dict[str, str]]]): left/right pairs for MATCHING.
+        points (int): Mark value (1-100, default 10).
     """
     question_id: int
     question_text: str
+    question_type: str = "MULTIPLE_CHOICE"
     blooms_taxonomy_level: str = "Understanding"
-    options: List[str]
-    correct_index: int
-    explanation: str
+    options: List[str] = []
+    correct_answer: Optional[str] = None
+    correct_index: Optional[int] = None
+    explanation: str = ""
+    marking_scheme: Optional[str] = None
+    learning_objective: Optional[str] = None
     slide_citation: Optional[str] = None
+    matching_pairs: Optional[List[Dict[str, str]]] = None
     points: int = 10
 
 
 class GenerateSlideQuizRequest(BaseModel):
     """
-    INCOMING FORM: Request from instructor to generate quiz questions from slides.
-    
+    INCOMING FORM: Request from the .NET backend to generate a quiz draft.
+
+    The .NET `GenerateAiQuiz` payload sends both snake_case duplicates of some
+    fields (`question_count`/`num_questions`, `selected_topics`/`target_topics`,
+    `slide_path`/`pdf_path`); all of them are bound here so instructor choices
+    are never silently dropped.
+
     Fields:
-        slide_path (Optional[str]): Full disk path to the lecture slides.
-        module_id (Optional[str]): Module ID.
-        module_title (Optional[str]): Title of the module (e.g. 'Database Architecture').
-        target_topics (List[str]): Specific topics the instructor wants questions about.
-        num_questions (int): Number of questions to generate (default: 5).
-        difficulty (str): Difficulty calibration ('Easy', 'Medium', 'Hard').
+        slide_path / pdf_path (Optional[str]): Disk path to the lecture slides.
+        module_id (Optional[str]): Module GUID.
+        module_title (Optional[str]): Title of the module.
+        module_description (Optional[str]): Module description from the database.
+        module_context (Optional[str]): Real course content (topic titles, content
+            item text) sent by the .NET backend to ground generation without slides.
+        course_id (Optional[str]): Course GUID.
+        course_title (Optional[str]): Course title.
+        topic_title (Optional[str]): The specific topic the instructor selected.
+        scope_type / scope_level (Optional[str]): Module | Topic | ContentItem | Course.
+        target_topics / selected_topics (List[str]): Instructor-selected topics.
+        num_questions / question_count (int): Number of questions to generate.
+        difficulty (str): 'Easy', 'Medium' or 'Hard'.
+        question_types (List[str]): Allowed question formats the instructor picked.
+        learning_objectives (List[str]): Objectives the quiz should assess.
+        time_limit_minutes / pass_percentage: Config echo (informational).
     """
     slide_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     module_id: Optional[str] = None
     module_title: Optional[str] = "Course Module"
+    module_description: Optional[str] = None
+    module_context: Optional[str] = None
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
+    topic_title: Optional[str] = None
+    scope_type: Optional[str] = None
+    scope_level: Optional[str] = None
     target_topics: List[str] = []
+    selected_topics: Optional[List[str]] = None
     num_questions: int = 5
+    question_count: Optional[int] = None
     difficulty: str = "Medium"
+    question_types: Optional[List[str]] = None
+    learning_objectives: List[str] = []
+    time_limit_minutes: Optional[int] = None
+    pass_percentage: Optional[int] = None
+
+    def effective_question_count(self) -> int:
+        """Instructor-requested question count, bounded to a sane range."""
+        count = self.question_count if self.question_count and self.question_count > 0 else self.num_questions
+        return max(1, min(count, 30))
+
+    def effective_target_topics(self) -> List[str]:
+        """Instructor-selected topics; 'All Topics' is a UI placeholder, not a topic."""
+        raw = self.selected_topics if self.selected_topics is not None else self.target_topics
+        return [t for t in (raw or []) if t and t.strip() and t.strip().lower() != "all topics"]
+
+    def effective_slide_path(self) -> Optional[str]:
+        return self.slide_path or self.pdf_path
+
+    def effective_question_types(self) -> List[str]:
+        """Allowed question formats; defaults to the three objective formats."""
+        allowed = {"MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE",
+                   "FILL_IN_THE_BLANK", "SHORT_ANSWER", "MATCHING"}
+        requested = [t.strip().upper() for t in (self.question_types or []) if t and t.strip()]
+        usable = [t for t in requested if t in allowed]
+        return usable or ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"]
 
 
 class GenerateSlideQuizResponse(BaseModel):
@@ -345,6 +410,59 @@ class GenerateSlideQuizResponse(BaseModel):
     difficulty: str
     total_points: int
     validation_passed: bool = True
-    status: str = "Ready"
-    source: str = "rag"
+    status: str = "PendingInstructorApproval"
+    source: str = "gemini"
     questions: List[QuizQuestionItem]
+
+
+# -----------------------------------------------------------------------------
+# SINGLE-QUESTION REGENERATION (instructor review step)
+# -----------------------------------------------------------------------------
+
+class SingleQuestionRegenerateRequest(BaseModel):
+    """
+    INCOMING FORM: .NET `POST /api/v1/ai/questions/{question_id}/regenerate`.
+
+    Carries the instructor's intent plus optional grounding material resolved by
+    the .NET backend (module description, content items, slide path) so the new
+    question is grounded in the same course content as the original.
+    """
+    question_id: Optional[str] = None
+    focus_topic: Optional[str] = None
+    prompt_guidance: Optional[str] = None
+    target_type: Optional[str] = None
+    target_difficulty: Optional[str] = None
+    learning_objective: Optional[str] = None
+    source_content_id: Optional[str] = None
+    course_id: Optional[str] = None
+    course_title: Optional[str] = None
+    module_title: Optional[str] = None
+    module_context: Optional[str] = None
+    slide_path: Optional[str] = None
+    pdf_path: Optional[str] = None
+    source_question_text: Optional[str] = None
+
+    def effective_slide_path(self) -> Optional[str]:
+        return self.slide_path or self.pdf_path
+
+
+class RegeneratedQuestionItem(BaseModel):
+    """A single replacement question. Mirrors the fields the .NET parser reads."""
+    question_id: Optional[str] = None
+    question_text: str
+    question_type: str = "MULTIPLE_CHOICE"
+    blooms_taxonomy_level: str = "Applying"
+    options: List[str] = []
+    correct_answer: str
+    explanation: str = ""
+    distractor_rationales: List[str] = []
+    marking_scheme: Optional[str] = None
+    learning_objective: Optional[str] = None
+    slide_citation: Optional[str] = None
+
+
+class SingleQuestionRegenerateResponse(BaseModel):
+    """Outgoing receipt for single-question regeneration."""
+    question: RegeneratedQuestionItem
+    validation_passed: bool = True
+    source: str = "gemini"

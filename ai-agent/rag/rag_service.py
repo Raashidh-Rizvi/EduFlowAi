@@ -34,9 +34,7 @@ from models.schemas import (
     RagChatResponse,
     SlideCitation,
     SlideTopicItem,
-    CategorizeTopicsResponse,
-    QuizQuestionItem,
-    GenerateSlideQuizResponse
+    CategorizeTopicsResponse
 )
 
 
@@ -345,84 +343,4 @@ class SimpleRagService:
             total_slides=total_slides,
             topics=topics,
             source="rag"
-        )
-
-    # -------------------------------------------------------------------------
-    # 4. SLIDE-GROUNDED QUIZ GENERATION
-    # -------------------------------------------------------------------------
-
-    def generate_quiz(
-        self,
-        slide_path: Optional[str] = None,
-        module_title: str = "Course Module",
-        target_topics: Optional[List[str]] = None,
-        num_questions: int = 5,
-        difficulty: str = "Medium"
-    ) -> GenerateSlideQuizResponse:
-        import uuid
-        quiz_id = str(uuid.uuid4())
-        workflow_id = f"wf-qz-{uuid.uuid4().hex[:8]}"
-
-        pages: List[ParsedPage] = []
-        if slide_path and os.path.exists(slide_path):
-            pages = self.parser.parse(slide_path)
-
-        questions: List[QuizQuestionItem] = []
-
-        if pages:
-            step = max(1, len(pages) // num_questions)
-            for idx in range(num_questions):
-                p_idx = min(len(pages) - 1, idx * step)
-                page = pages[p_idx]
-                q_id = idx + 1
-
-                q_text = f"According to {page.title} (Slide {page.page_number}), what is the primary role of this concept?"
-                options = [
-                    f"It provides the core execution and invariant boundaries outlined in {page.title}.",
-                    "It bypasses system verification for faster unverified processing.",
-                    "It replaces persistent storage with non-durable temporary variables.",
-                    "It disables architectural layering to couple UI directly to databases."
-                ]
-
-                questions.append(QuizQuestionItem(
-                    question_id=q_id,
-                    question_text=q_text,
-                    blooms_taxonomy_level="Application" if idx % 2 == 1 else "Understanding",
-                    options=options,
-                    correct_index=0,
-                    explanation=f"Refer to Slide {page.page_number} ({page.title}): {page.text[:120]}...",
-                    slide_citation=f"Slide {page.page_number}: {page.title}",
-                    points=10
-                ))
-        else:
-            default_topics = target_topics or ["Clean Architecture", "Dependency Inversion"]
-            for idx in range(num_questions):
-                topic = default_topics[idx % len(default_topics)]
-                questions.append(QuizQuestionItem(
-                    question_id=idx + 1,
-                    question_text=f"In {topic}, which design principle prevents high-level policy code from depending on low-level database details?",
-                    blooms_taxonomy_level="Application",
-                    options=[
-                        "Dependency Inversion Principle",
-                        "Single-Table Direct Coupling",
-                        "Global Shared Mutable State",
-                        "Hardcoded Raw SQL Inlining"
-                    ],
-                    correct_index=0,
-                    explanation="Dependency Inversion decouples high-level business rules from low-level infrastructure via interfaces.",
-                    slide_citation="Lecture Slides: Core Principles",
-                    points=10
-                ))
-
-        return GenerateSlideQuizResponse(
-            quiz_id=quiz_id,
-            workflow_id=workflow_id,
-            title=f"Diagnostic Assessment: {module_title} ({difficulty})",
-            target_topics=target_topics or ["Foundations", "Architecture"],
-            difficulty=difficulty,
-            total_points=num_questions * 10,
-            validation_passed=True,
-            status="Ready",
-            source="rag",
-            questions=questions
         )

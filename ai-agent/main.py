@@ -25,9 +25,16 @@ from models.schemas import (
     CategorizeTopicsRequest,
     CategorizeTopicsResponse,
     GenerateSlideQuizRequest,
-    GenerateSlideQuizResponse
+    GenerateSlideQuizResponse,
+    SingleQuestionRegenerateRequest,
+    SingleQuestionRegenerateResponse
 )
 from rag.rag_service import SimpleRagService
+from agents.gemini_quiz_generation_service import (
+    GeminiQuizGenerationService,
+    QuizGenerationUnavailable,
+    QuizGenerationValidationError,
+)
 from agents.learning_agent import LearningAgent
 from models.schemas import LearningRequest, LearningResponse
 from tools.learning_support import LearningUnavailable
@@ -51,6 +58,9 @@ app.add_middleware(
 # Initialize Simple RAG Engine
 rag_service = SimpleRagService()
 learning_agent = LearningAgent(rag_service)
+
+# Quiz generation always goes through Gemini with strict schema validation.
+quiz_generation_service = GeminiQuizGenerationService(rag_service)
 
 
 @app.post("/api/v1/agent/learn", response_model=LearningResponse, tags=["Learning Agent"])
@@ -205,15 +215,41 @@ def categorize_topics(request: CategorizeTopicsRequest):
 @app.post("/api/v1/ai/slides/generate-quiz", response_model=GenerateSlideQuizResponse, tags=["Slides"])
 def generate_slide_quiz(request: GenerateSlideQuizRequest):
     """
-    Generates diagnostic quiz questions grounded directly in lecture slides.
+    Generates an instructor quiz draft grounded in real course material.
+
+    Calls Gemini with a strict JSON schema and validates every question before
+    returning it. There is deliberately NO template fallback: if Gemini is
+    unavailable or its output fails validation, the call fails so the .NET
+    backend can surface the error instead of persisting fake questions.
     """
     try:
-        return rag_service.generate_quiz(
-            slide_path=request.slide_path,
-            module_title=request.module_title or "Course Module",
-            target_topics=request.target_topics,
-            num_questions=request.num_questions,
-            difficulty=request.difficulty
-        )
+        return quiz_generation_service.generate_quiz(request)
+    except QuizGenerationUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except QuizGenerationValidationError as e:
+        raise HTTPException(status_code=502, detail=f"AI quiz output failed validation: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Quiz generation error: {str(e)}")
+
+
+@app.post("/api/v1/ai/questions/{question_id}/regenerate", response_model=SingleQuestionRegenerateResponse, tags=["Slides"])
+def regenerate_quiz_question(question_id: str, request: SingleQuestionRegenerateRequest):
+    """
+    Regenerates a single question for the instructor review step.
+
+    Same grounding and validation rules as full quiz generation. The .NET
+    backend treats any failure here as "leave the original question unchanged".
+    """
+    request.question_id = request.question_id or question_id
+    try:
+        return quiz_generation_service.regenerate_question(request)
+    except QuizGenerationUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except QuizGenerationValidationError as e:
+        raise HTTPException(status_code=502, detail=f"AI question output failed validation: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Question regeneration error: {str(e)}")
