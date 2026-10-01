@@ -105,12 +105,26 @@ def test_rag_integration():
             print(f"    - [{c.preview_text}] -> {c.source_file}")
         print(f"\n  • Full Response:\n{'-'*50}\n{resp_b.answer}\n{'-'*50}")
         
-        success = (resp_b.source == "tavily_web_search") or ("tavily" in resp_b.source)
-        if success:
+        success_b = (resp_b.source == "tavily_web_search") or ("tavily" in resp_b.source)
+        if success_b:
             print("\n  🎉 SUCCESS: Out-of-domain question automatically triggered Tavily Web Fallback!")
         else:
             print(f"\n  ⚠️ Source was '{resp_b.source}' (Check relevance threshold)")
-        return success
+
+        # Sub-test C: Query with partial semantic overlap but missing definition ('explain node')
+        print(f"\n[Test C] Query with partial semantic overlap but missing definition ('explain node'):")
+        test_c_q = "explain node"
+        resp_c = rag.chat(question=test_c_q, source_file=test_file, max_citations=2)
+        print(f"  • Source Provider: {resp_c.source}")
+        print(f"  • Citations Count: {len(resp_c.citations)}")
+        print(f"  • Answer Preview:  {resp_c.answer[:160]}...")
+        success_c = (resp_c.source == "tavily_web_search") or ("tavily" in resp_c.source)
+        if success_c:
+            print("  🎉 SUCCESS: 'explain node' successfully triggered Tavily Web Fallback!")
+        else:
+            print(f"  ⚠️ Source was '{resp_c.source}'")
+
+        return success_b and success_c
     except Exception as e:
         print(f"  ❌ RAG Integration error: {e}")
         import traceback

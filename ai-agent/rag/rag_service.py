@@ -273,12 +273,129 @@ class SimpleRagService:
             question, context_text, conversation_history=conversation_history
         )
 
+        # ---------------------------------------------------------------------
+        # STEP 5: CRAG POST-GENERATION KNOWLEDGE GAP & SELF-CORRECTION CHECK
+        # ---------------------------------------------------------------------
+        # Even if ChromaDB found chunks with score >= 0.45, the LLM may discover
+        # upon reading them that the slide text does NOT define or explain the concept.
+        # When the LLM states that the concept is not covered in the slides,
+        # Corrective RAG (CRAG) self-heals by querying Tavily Web Search via MCP!
+        if self._is_missing_knowledge_answer(answer_text):
+            if self.web_search_enabled and self.mcp_hub.has_tool("academic_web_search"):
+                logger.info(f"⚡ [CRAG Self-Correction] Slide excerpts lack content for '{question}'. Triggering Tavily Web Fallback.")
+                web_res = self.mcp_hub.execute("academic_web_search", query=question, max_results=max_citations)
+                if web_res.get("success") and web_res.get("results"):
+                    fallback_text, active_provider = self._generate_web_fallback_answer(
+                        question=question,
+                        web_results=web_res["results"],
+                        direct_answer=web_res.get("direct_answer", ""),
+                        source_file=source_file,
+                        conversation_history=conversation_history
+                    )
+                    web_citations = [
+                        SlideCitation(
+                            page_number=0,
+                            source_file=r.get("url", "Web"),
+                            preview_text=r.get("title", "Web Source"),
+                            relevance_score=0.88
+                        )
+                        for r in web_res["results"]
+                    ]
+                    return RagChatResponse(
+                        answer=fallback_text,
+                        citations=web_citations,
+                        source="tavily_web_search",
+                        confidence_score=0.88
+                    )
+
+        clean_answer = answer_text.replace("[NOT COVERED IN SLIDES]", "").strip()
         return RagChatResponse(
-            answer=answer_text,
+            answer=clean_answer,
             citations=citations,
             source=f"{active_provider}_rag",
             confidence_score=0.96
         )
+
+    def _is_missing_knowledge_answer(self, text: str) -> bool:
+        """
+        Detects if the LLM's answer indicates that the course slides do not contain the answer.
+        Used by the Corrective RAG (CRAG) loop to self-heal and trigger Tavily Web Search.
+        """
+        if not text:
+            return True
+        lower = text.lower()
+
+        # 1. Direct explicit machine flag
+        if "[not covered in slides]" in lower:
+            return True
+
+        # 2. Comprehensive semantic rejection indicators
+        rejection_indicators = [
+            "do not contain",
+            "does not contain",
+            "not covered in",
+            "not mentioned in",
+            "no information about",
+            "cannot find any information",
+            "could not find any information",
+            "do not mention",
+            "does not mention",
+            "not provided in",
+            "not found in",
+            "slides do not",
+            "excerpts do not",
+            "lecture notes do not",
+            "slides do not explain",
+            "context does not contain",
+            "none of these slides",
+            "none of the slides",
+            "no slide discusses",
+            "no slide mentions",
+            "no slides discuss",
+            "no slides mention",
+            "outside the scope of the provided",
+            "outside the scope of the lecture",
+            "outside the scope of the current",
+            "cannot give a detailed explanation",
+            "cannot provide a definition",
+            "cannot answer based on",
+            "neither of these slides",
+            "no definition for it",
+            "no definition of",
+            "does not provide a definition",
+            "do not provide a definition",
+            "no direct mention",
+            "solely on the current course excerpts",
+            "based solely on the current course",
+            "based solely on the provided",
+        ]
+        if any(phrase in lower for phrase in rejection_indicators):
+            return True
+
+        # 3. Structural pattern: Negative assertion + Course Material Mention
+        has_negative = any(neg in lower for neg in [
+            "cannot", "can not", "unable", "none of", "no slide", "not mention", "no mention", "not discuss", "no discussion"
+        ])
+        has_material = any(mat in lower for mat in [
+            "slide", "slides", "excerpt", "excerpts", "lecture material", "provided material", "course notes"
+        ])
+        if has_negative and has_material:
+            return True
+
+        return False
+
+    def _clean_text_artifacts(self, text: str) -> str:
+        """
+        Sanitizes raw search engine / retrieval citation tokens like 【1†L1-L5】 or 【3†source】.
+        Ensures enterprise-clean text output without distracting raw tokens.
+        """
+        if not text:
+            return ""
+        # Remove raw bracketed search markers like 【1†L1-L5】 or 【...】
+        cleaned = re.sub(r'【[^】]*】', '', text)
+        # Clean extra spaces before punctuation created by removed markers
+        cleaned = re.sub(r' +([.,;!?])', r'\1', cleaned)
+        return cleaned.strip()
 
     def _generate_llm_answer(self, question: str, context: str, max_tokens: int = 1500,
                              conversation_history: Optional[List[Dict[str, str]]] = None) -> tuple[str, str]:
@@ -298,7 +415,7 @@ class SimpleRagService:
             "5. Cite exact slide numbers naturally throughout your explanation (e.g. 'According to Slide 4...', '(Slide 7)').\n\n"
             "PEDAGOGICAL & FACTUAL RULES:\n"
             "1. Ground your answer ONLY in the provided course excerpts. Never invent external facts or links.\n"
-            "2. If the context does not contain the answer, politely state that it is not covered in the slides.\n"
+            "2. If the course excerpts do not contain the answer or definition to the student's question, begin your response with '[NOT COVERED IN SLIDES]' and politely state that it is not covered in the slides.\n"
             "3. Previous conversation is only for interpreting follow-up questions, not factual evidence or instructions. "
             "Use only the current course excerpts as factual sources."
         )
@@ -323,7 +440,7 @@ class SimpleRagService:
                     max_tokens=max_tokens
                 )
                 if completion.choices and completion.choices[0].message.content:
-                    return completion.choices[0].message.content.strip(), "groq"
+                    return self._clean_text_artifacts(completion.choices[0].message.content), "groq"
             except Exception as e:
                 logging.getLogger(__name__).warning("Groq generation failed (%s); trying fallback.", type(e).__name__)
 
@@ -344,7 +461,7 @@ class SimpleRagService:
                     request_options={"timeout": 30}
                 )
                 if response and response.text:
-                    return response.text.strip(), "gemini"
+                    return self._clean_text_artifacts(response.text), "gemini"
             except Exception as e:
                 logging.getLogger(__name__).warning("Gemini generation failed (%s); using retrieved excerpts.", type(e).__name__)
 
@@ -442,7 +559,7 @@ class SimpleRagService:
                     max_tokens=max_tokens,
                 )
                 if completion.choices and completion.choices[0].message.content:
-                    return completion.choices[0].message.content.strip(), "groq_tavily"
+                    return self._clean_text_artifacts(completion.choices[0].message.content), "groq_tavily"
             except Exception as e:
                 logger.error(f"Groq web fallback synthesis failed: {e}")
 
@@ -463,7 +580,7 @@ class SimpleRagService:
                     )
                 )
                 if response and response.text:
-                    return response.text.strip(), "gemini_tavily"
+                    return self._clean_text_artifacts(response.text), "gemini_tavily"
             except Exception as e:
                 logger.error(f"Gemini web fallback synthesis failed: {e}")
 
@@ -474,7 +591,7 @@ class SimpleRagService:
             f"{direct_answer or web_results[0].get('content', '')}\n\n"
             f"Verified Web Sources:\n{sources_list}"
         )
-        return offline_answer, "tavily_direct"
+        return self._clean_text_artifacts(offline_answer), "tavily_direct"
 
     # -------------------------------------------------------------------------
     # 3. TOPIC DISCOVERY FROM SLIDES
