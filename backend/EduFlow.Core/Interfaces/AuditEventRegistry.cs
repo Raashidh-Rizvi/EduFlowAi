@@ -23,7 +23,11 @@ public static class AuditEventRegistry
             ["Enrollment.Rejected"] = new[] { "courseId", "studentId" },
             ["Enrollment.Added"] = new[] { "courseId", "studentId" },
             ["Enrollment.Dropped"] = new[] { "courseId", "studentId" },
-            ["Enrollment.Cancelled"] = new[] { "courseId", "studentId" }
+            ["Enrollment.Cancelled"] = new[] { "courseId", "studentId" },
+            ["Submission.Marked"] = new[] { "questionId", "previousMarks", "newMarks" },
+            ["Assessment.Published"] = Array.Empty<string>(),
+            ["Assessment.Archived"] = Array.Empty<string>(),
+            ["Assessment.Deleted"] = Array.Empty<string>()
         });
 
     public static bool IsSafeValue(string key, JsonElement value)
@@ -32,7 +36,8 @@ public static class AuditEventRegistry
         var text = value.GetString() ?? "";
         return key switch
         {
-            "courseId" or "studentId" or "responseId" => Guid.TryParseExact(text, "D", out var id) && id != Guid.Empty,
+            "courseId" or "studentId" or "responseId" or "questionId" => Guid.TryParseExact(text, "D", out var id) && id != Guid.Empty,
+            "previousMarks" or "newMarks" => int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var marks) && marks >= 0,
             "type" => text is "Bug" or "Dispute" or "Feedback",
             "oldStatus" or "newStatus" => text is "Open" or "InProgress" or "Resolved",
             "changedFields" => text.Length <= 1024 && text.Split(',').All(CourseFields.Contains),

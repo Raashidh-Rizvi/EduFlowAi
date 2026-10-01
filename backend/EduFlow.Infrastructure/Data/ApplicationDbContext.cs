@@ -42,6 +42,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
+    public DbSet<MarkAdjustment> MarkAdjustments => Set<MarkAdjustment>();
 
     // Gamification Engine
     public DbSet<StudentXp> StudentXp => Set<StudentXp>();
@@ -385,6 +386,22 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(sa => new { sa.SubmissionId, sa.QuestionId }).IsUnique();
             entity.ToTable(t => t.HasCheckConstraint("CK_SubmissionAnswers_Marks_Range",
                 "\"PointsAwarded\" >= 0 AND \"PointsAwarded\" <= \"MaxMarks\""));
+        });
+
+        modelBuilder.Entity<MarkAdjustment>(entity =>
+        {
+            entity.Property(m => m.PreviousStatus).HasConversion<string>();
+            entity.Property(m => m.Reason).HasMaxLength(1000);
+            entity.HasOne(m => m.SubmissionAnswer)
+                  .WithMany(a => a.MarkAdjustments)
+                  .HasForeignKey(m => m.SubmissionAnswerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            // Deleting the marker's account keeps the history row (the AuditLog keeps the actor id).
+            entity.HasOne(m => m.Actor)
+                  .WithMany()
+                  .HasForeignKey(m => m.ActorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(m => m.SubmissionAnswerId);
         });
 
 

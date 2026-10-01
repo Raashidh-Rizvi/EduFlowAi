@@ -12,6 +12,7 @@ using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -67,6 +68,9 @@ public class EnrollmentLifecycleTests
         builder.Services.AddScoped<IGamificationService, GamificationService>();
         builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
+        builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
+        builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
+        builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (paymentGate != null)
             builder.Services.AddScoped<IPaymentVerificationService>(_ => paymentGate);

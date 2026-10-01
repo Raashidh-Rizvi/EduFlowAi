@@ -408,6 +408,31 @@ public class SubmissionAnswer : BaseEntity
     public string? Feedback { get; set; }
     public EvaluationMethod EvaluationMethod { get; set; } = EvaluationMethod.Deterministic;
     public AnswerEvaluationStatus EvaluationStatus { get; set; } = AnswerEvaluationStatus.Pending;
+
+    /// <summary>
+    /// JSON <c>QuestionSnapshot</c>: the prompt, options, answer key and maximum marks this
+    /// answer was marked against, so the result is reproducible after the question changes.
+    /// </summary>
+    public string? QuestionSnapshotJson { get; set; }
+
+    public ICollection<MarkAdjustment> MarkAdjustments { get; set; } = new List<MarkAdjustment>();
+}
+
+/// <summary>
+/// Every manual mark (first marking of a subjective answer, or an override of an existing
+/// mark) with its author, previous and new value and the stated reason.
+/// </summary>
+public class MarkAdjustment : BaseEntity
+{
+    public Guid SubmissionAnswerId { get; set; }
+    public SubmissionAnswer? SubmissionAnswer { get; set; }
+    /// <summary>The marker; null only if that account was later deleted.</summary>
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public int PreviousMarks { get; set; }
+    public int NewMarks { get; set; }
+    public AnswerEvaluationStatus PreviousStatus { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 

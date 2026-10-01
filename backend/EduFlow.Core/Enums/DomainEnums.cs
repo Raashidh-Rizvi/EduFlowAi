@@ -169,7 +169,8 @@ public enum QuestionType
     ScenarioBased,
     TimedChallenge,
     CodeSnippet,
-    OpenEnded
+    OpenEnded,
+    Numerical
 }
 
 public enum EnrollmentStatus

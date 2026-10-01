@@ -70,3 +70,38 @@ Databases that already recorded the migration don't run it again.
 - Rolled back and re-applied.
 - Delete restriction and the marks check constraint verified with direct SQL.
 - Development seeding and a live start → submit run against the migrated database.
+
+## PR 3 — Marking and evaluation
+
+Migration: `AnswerSnapshotsAndMarkAdjustments`. Additive only: a nullable
+`SubmissionAnswers.QuestionSnapshotJson` column and a new `MarkAdjustments` table.
+
+### Marking behaviour changes
+
+All marking goes through `EvaluationService` (one evaluator per question type, rules
+documented on each evaluator class). Compared with the old controller logic:
+
+| Type | Before | Now |
+|---|---|---|
+| Matching | Any non-empty wrong answer scored 50% | 0 unless the question's metadata sets `"partialCredit": true`, which awards a share proportional to correct pairs |
+| Fill in the blank | A substring of the student's answer counted as correct | Exact match after removing case, whitespace and punctuation. Alternatives come from `CorrectAnswer` (`a\|b`) and metadata `acceptedAnswers` |
+| Short answer, open-ended, scenario, code | Keyword overlap with a 4-mark floor, which crashed when a question was worth fewer than 4 marks | `NeedsReview`. The attempt stays `Evaluating` until an instructor marks it (AI-assisted marking arrives in PR 8). A blank answer scores 0 immediately |
+| Multiple select | Split on `,` (options containing commas couldn't be marked) | JSON array of option texts, or a `,`/`;` list. All-or-nothing unless `partialCredit` is set |
+| Answer key | `CorrectAnswer` text | `QuestionOption.IsCorrect` rows when present, otherwise `CorrectAnswer` |
+| Numerical | — | New question type with optional metadata `tolerance` |
+
+### Other changes
+
+- **XP timing:** XP is awarded only when an attempt becomes fully evaluated, either at
+  submission or when the last pending answer is marked.
+- **Manual marking:** `POST /api/quizzes/attempts/{attemptId}/answers/{questionId}/mark`.
+  Changing an existing mark requires a reason. Every mark is stored in `MarkAdjustments`
+  (previous and new marks, reason, actor) and audited as `Submission.Marked`.
+- **Attempt results:** `GET /api/quizzes/attempts/{attemptId}/result` returns the stored
+  result. The question and answer key come from the per-answer snapshot, so editing a
+  question later doesn't change past results. Answers recorded before this PR have no
+  snapshot and fall back to the current question.
+- **Audit events:** `Assessment.Published`, `Assessment.Archived`, `Assessment.Deleted`.
+- **Publish validation** checks answer keys through the same snapshot the marker uses. For
+  example, a multiple-choice question must have exactly one correct answer, and it must be
+  one of the options.

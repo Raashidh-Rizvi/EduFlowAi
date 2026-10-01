@@ -61,7 +61,7 @@ public class AdminAuditLogTests
         using var options = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(AuditEventRegistry.Events.Keys.OrderBy(x => x), options.RootElement.GetProperty("actions")
             .EnumerateArray().Select(x => x.GetString()));
-        Assert.Equal(new[] { "Course", "Enrollment", "SupportTicket", "User" }, options.RootElement.GetProperty("resourceTypes")
+        Assert.Equal(new[] { "Assessment", "Course", "Enrollment", "Submission", "SupportTicket", "User" }, options.RootElement.GetProperty("resourceTypes")
             .EnumerateArray().Select(x => x.GetString()));
         var page = await client.GetFromJsonAsync<PagedResult<AuditLogSummaryDto>>(
             "/api/admin/audit-logs?action=Course.Created&entityType=Course");

@@ -736,47 +736,40 @@ export default function Assessments({ currentUser }) {
     try {
       const data = await quizService.getQuizSubmissions(quiz.id);
       setSubmissionsData(data);
-    } catch {
-      // Fallback demonstration data if offline
-      setSubmissionsData({
-        quizId: quiz.id,
-        quizTitle: quiz.title,
-        totalSubmissions: 2,
-        averagePercentage: 85.0,
-        passCount: 2,
-        submissions: [
-          {
-            submissionId: 'sub-101',
-            studentName: 'Alex Mercer (Enrolled Student)',
-            studentEmail: 'alex.mercer@eduflow.edu',
-            scoreObtained: 90,
-            maxScore: 100,
-            percentageScore: 90,
-            passed: true,
-            submittedAt: '2026-09-13T12:30:00Z',
-            instructorFeedback: 'Excellent grasp of outbox event processing pattern.',
-            answers: [
-              { prompt: 'What is the primary benefit of Transactional Outbox pattern?', selectedAnswer: 'Guarantees atomic event dispatch', correctAnswer: 'Guarantees atomic event dispatch', isCorrect: true, pointsAwarded: 10, explanation: 'Transactional Outbox pattern guarantees event dispatch consistency.' }
-            ]
-          },
-          {
-            submissionId: 'sub-102',
-            studentName: 'Samantha Reed (Enrolled Student)',
-            studentEmail: 'samantha.reed@eduflow.edu',
-            scoreObtained: 80,
-            maxScore: 100,
-            percentageScore: 80,
-            passed: true,
-            submittedAt: '2026-09-13T11:15:00Z',
-            instructorFeedback: '',
-            answers: [
-              { prompt: 'Select all features supported by CQRS.', selectedAnswer: 'Read/Write separation', correctAnswer: 'Read/Write separation, Independent scaling', isCorrect: false, pointsAwarded: 5, explanation: 'CQRS decouples read projections from write commands.' }
-            ]
-          }
-        ]
-      });
+    } catch (err) {
+      setSubmissionsData(null);
+      alert(err.friendlyMessage || 'Submissions could not be loaded.');
     } finally {
       setIsLoadingSubmissions(false);
+    }
+  };
+
+  const [markInput, setMarkInput] = useState({});
+  const [markingKey, setMarkingKey] = useState(null);
+
+  // Marks one answer; an answer that already has a mark can only be changed with a reason.
+  const handleMarkAnswer = async (sub, ans) => {
+    const key = `${sub.submissionId}:${ans.questionId}`;
+    const raw = markInput[key];
+    const awardedMarks = Number(raw);
+    if (raw === undefined || raw === '' || !Number.isInteger(awardedMarks) || awardedMarks < 0 || awardedMarks > ans.maxMarks) {
+      alert(`Enter whole marks between 0 and ${ans.maxMarks}.`);
+      return;
+    }
+    let reason;
+    if (ans.evaluationStatus === 'Evaluated') {
+      reason = window.prompt('This answer already has a mark. Why are you changing it?');
+      if (!reason || !reason.trim()) return;
+    }
+    setMarkingKey(key);
+    try {
+      await quizService.markAnswer(sub.submissionId, ans.questionId, { awardedMarks, reason });
+      setSubmissionsData(await quizService.getQuizSubmissions(viewingSubmissionsQuiz.id));
+      setMarkInput(prev => ({ ...prev, [key]: undefined }));
+    } catch (err) {
+      alert(err.friendlyMessage || 'The mark could not be saved.');
+    } finally {
+      setMarkingKey(null);
     }
   };
 
@@ -2625,9 +2618,15 @@ export default function Assessments({ currentUser }) {
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className={`badge-pill ${sub.passed ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
-                              Score: {sub.percentageScore}% ({sub.scoreObtained}/{sub.maxScore})
-                            </span>
+                            {sub.status === 'Evaluating' ? (
+                              <span className="badge-pill badge-warning" style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
+                                Awaiting marking ({sub.pendingReviewCount}) • {sub.scoreObtained}/{sub.maxScore} so far
+                              </span>
+                            ) : (
+                              <span className={`badge-pill ${sub.passed ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
+                                Score: {sub.percentageScore}% ({sub.scoreObtained}/{sub.maxScore})
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -2644,8 +2643,33 @@ export default function Assessments({ currentUser }) {
                               }}>
                                 <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>Q{aIdx + 1}: {ans.prompt}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', color: 'var(--text-muted)' }}>
-                                  <span>Selected: <strong style={{ color: ans.isCorrect ? 'var(--success)' : 'var(--accent)' }}>{ans.selectedAnswer || '(No answer)'}</strong></span>
-                                  <span>Correct: <strong>{ans.correctAnswer}</strong></span>
+                                  <span>Answer: <strong style={{ color: ans.isCorrect ? 'var(--success)' : 'var(--accent)' }}>{ans.selectedAnswer || '(No answer)'}</strong></span>
+                                  <span>Key: <strong>{ans.correctAnswer}</strong></span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                                  <span style={{ color: ans.evaluationStatus === 'Evaluated' ? 'var(--text-muted)' : 'var(--warning)', fontWeight: '600' }}>
+                                    {ans.evaluationStatus === 'Evaluated'
+                                      ? `${ans.pointsAwarded}/${ans.maxMarks} marks (${ans.evaluationMethod})`
+                                      : `Awaiting marking (max ${ans.maxMarks})`}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={ans.maxMarks}
+                                    placeholder="Marks"
+                                    value={markInput[`${sub.submissionId}:${ans.questionId}`] ?? ''}
+                                    onChange={(e) => setMarkInput(prev => ({ ...prev, [`${sub.submissionId}:${ans.questionId}`]: e.target.value }))}
+                                    className="form-input"
+                                    style={{ width: '80px', fontSize: '12px', padding: '4px 6px' }}
+                                  />
+                                  <button
+                                    onClick={() => handleMarkAnswer(sub, ans)}
+                                    disabled={markingKey === `${sub.submissionId}:${ans.questionId}`}
+                                    className="btn-secondary"
+                                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                                  >
+                                    {ans.evaluationStatus === 'Evaluated' ? 'Change mark' : 'Save mark'}
+                                  </button>
                                 </div>
                               </div>
                             ))}

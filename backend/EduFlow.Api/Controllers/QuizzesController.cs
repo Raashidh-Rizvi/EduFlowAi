@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Evaluation;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
@@ -28,6 +29,9 @@ public class QuizzesController : BaseApiController
     private readonly IAiGatewayClient _aiGatewayClient;
     private readonly IAssessmentAccessService _accessService;
     private readonly IAttemptService _attemptService;
+    private readonly IAttemptGradingService _gradingService;
+    private readonly IEvaluationService _evaluationService;
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IWebHostEnvironment? _environment;
 
     public QuizzesController(
@@ -36,6 +40,9 @@ public class QuizzesController : BaseApiController
         IAiGatewayClient aiGatewayClient,
         IAssessmentAccessService accessService,
         IAttemptService attemptService,
+        IAttemptGradingService gradingService,
+        IEvaluationService evaluationService,
+        IAuditLogWriter auditLogWriter,
         IWebHostEnvironment? environment = null)
         : base(dbContext)
     {
@@ -43,6 +50,9 @@ public class QuizzesController : BaseApiController
         _aiGatewayClient = aiGatewayClient;
         _accessService = accessService;
         _attemptService = attemptService;
+        _gradingService = gradingService;
+        _evaluationService = evaluationService;
+        _auditLogWriter = auditLogWriter;
         _environment = environment;
     }
 
@@ -664,6 +674,7 @@ public class QuizzesController : BaseApiController
         }
 
         DbContext.Assessments.Remove(quiz);
+        AuditAssessment("Assessment.Deleted", quiz.Id);
         await DbContext.SaveChangesAsync();
         return Ok(new { message = "Quiz deleted successfully." });
     }
@@ -685,6 +696,7 @@ public class QuizzesController : BaseApiController
 
         quiz.Status = QuizStatus.Archived;
         quiz.UpdatedAt = DateTime.UtcNow;
+        AuditAssessment("Assessment.Archived", quiz.Id);
         await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Quiz archived.", quizId = quiz.Id, status = quiz.Status.ToString() });
@@ -767,6 +779,7 @@ public class QuizzesController : BaseApiController
 
         quiz.Status = QuizStatus.Published;
         quiz.UpdatedAt = DateTime.UtcNow;
+        AuditAssessment("Assessment.Published", quiz.Id);
         await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Quiz published successfully!", quizId = quiz.Id, status = quiz.Status.ToString() });
@@ -1440,6 +1453,7 @@ public class QuizzesController : BaseApiController
 
         var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
+                .ThenInclude(q => q.Options)
             .FirstOrDefaultAsync(a => a.Id == request.QuizId);
 
         if (quiz == null)
@@ -1466,210 +1480,132 @@ public class QuizzesController : BaseApiController
             return BadRequest(new { message = "Each question may be answered at most once per attempt.", code = "DUPLICATE_ANSWER" });
         }
 
-        int totalPoints = 0;
-        int scoreObtained = 0;
-        var breakdown = new List<QuestionResultItem>();
-        var questionOutcomes = new List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)>();
+        // All marking happens in the evaluation service; the controller only shapes the response.
+        var graded = await _gradingService.SubmitAsync(
+            quiz,
+            submission,
+            isNewAttempt,
+            answers.ToDictionary(a => a.QuestionId, a => a.SelectedAnswer ?? string.Empty));
 
-        var now = DateTime.UtcNow;
-        var evaluatedAnswers = new List<SubmissionAnswer>();
-
-        foreach (var q in quiz.Questions)
-        {
-            totalPoints += q.Points;
-            var studentAns = answers.FirstOrDefault(a => a.QuestionId == q.Id)?.SelectedAnswer?.Trim() ?? string.Empty;
-
-            bool isCorrect = false;
-            int awarded = 0;
-            string feedback = q.Explanation;
-
-            string rubricExplanation = q.Explanation;
-            string slideCitation = "Lecture slide material";
-            string qTypeLabel = q.Type.ToString();
-            try
-            {
-                if (!string.IsNullOrEmpty(q.MetadataJson) && q.MetadataJson.Trim().StartsWith("{"))
-                {
-                    var meta = JsonSerializer.Deserialize<JsonElement>(q.MetadataJson);
-                    if (meta.TryGetProperty("markingScheme", out var msProp)) rubricExplanation = msProp.GetString() ?? rubricExplanation;
-                    if (meta.TryGetProperty("slideCitation", out var scProp)) slideCitation = scProp.GetString() ?? slideCitation;
-                    if (meta.TryGetProperty("questionType", out var qtProp)) qTypeLabel = qtProp.GetString() ?? qTypeLabel;
-                }
-            }
-            catch (JsonException)
-            {
-                // Malformed display metadata only affects labels, never marks.
-            }
-
-            if (q.Type == QuestionType.MultipleSelect)
-            {
-                var studentSet = studentAns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var correctSet = q.CorrectAnswer.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                isCorrect = studentSet.SetEquals(correctSet);
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "All selected options are correct." : $"Selected options differed from solution: {q.CorrectAnswer}";
-            }
-            else if (q.Type == QuestionType.FillInBlank)
-            {
-                var cleanStudent = System.Text.RegularExpressions.Regex.Replace(studentAns.ToLowerInvariant(), @"[^\w\s]", "").Trim();
-                var cleanCorrect = System.Text.RegularExpressions.Regex.Replace(q.CorrectAnswer.ToLowerInvariant(), @"[^\w\s]", "").Trim();
-                isCorrect = cleanStudent == cleanCorrect || (cleanCorrect.Length > 3 && cleanStudent.Contains(cleanCorrect));
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "Correct key term provided." : $"Expected term: '{q.CorrectAnswer}'";
-            }
-            else if (q.Type == QuestionType.Matching)
-            {
-                var sClean = studentAns.Replace(" ", "").ToLowerInvariant();
-                var cClean = q.CorrectAnswer.Replace(" ", "").ToLowerInvariant();
-                isCorrect = sClean == cClean;
-                awarded = isCorrect ? q.Points : (sClean.Length > 0 ? (int)(q.Points * 0.5) : 0);
-                feedback = isCorrect ? "All concept pairs matched correctly." : $"Matching solution: {q.CorrectAnswer}";
-            }
-            else if (q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.OpenEnded)
-            {
-                if (!string.IsNullOrWhiteSpace(studentAns))
-                {
-                    var modelWords = q.CorrectAnswer.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                        .Where(w => w.Length > 3)
-                        .Select(w => w.ToLowerInvariant())
-                        .ToHashSet();
-
-                    int matchedKeywords = modelWords.Count(kw => studentAns.ToLowerInvariant().Contains(kw));
-                    double matchRatio = modelWords.Count > 0 ? (double)matchedKeywords / modelWords.Count : 0.5;
-
-                    // The minimum-credit floor can never exceed the question's own maximum.
-                    int floor = studentAns.Length > 15 ? Math.Min(4, q.Points) : 0;
-                    awarded = Math.Clamp((int)Math.Round(matchRatio * q.Points), floor, q.Points);
-                    isCorrect = awarded >= (int)(q.Points * 0.7);
-                    feedback = isCorrect
-                        ? $"Strong keyword match with model answer (+{awarded}/{q.Points} marks)."
-                        : $"Partial keyword match. Expected core concept: {q.CorrectAnswer}";
-                }
-                else
-                {
-                    awarded = 0;
-                    isCorrect = false;
-                    feedback = "No answer typed for this question.";
-                }
-            }
-            else
-            {
-                isCorrect = string.Equals(studentAns, q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase);
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "Correct answer selected." : $"Incorrect. Correct option: {q.CorrectAnswer}";
-            }
-
-            scoreObtained += awarded;
-
-            evaluatedAnswers.Add(new SubmissionAnswer
-            {
-                SubmissionId = submission.Id,
-                QuestionId = q.Id,
-                SelectedAnswer = studentAns,
-                IsCorrect = isCorrect,
-                PointsAwarded = awarded,
-                MaxMarks = q.Points,
-                Feedback = feedback,
-                EvaluationMethod = EvaluationMethod.Deterministic,
-                EvaluationStatus = AnswerEvaluationStatus.Evaluated
-            });
-
-            breakdown.Add(new QuestionResultItem(
-                QuestionId: q.Id,
-                Prompt: q.Prompt,
-                SelectedAnswer: studentAns,
-                CorrectAnswer: quiz.ShowCorrectAnswers ? q.CorrectAnswer : "Hidden",
-                IsCorrect: isCorrect,
-                PointsAwarded: awarded,
-                Explanation: quiz.ShowCorrectAnswers ? feedback : "Feedback available on review.",
-                SlideCitation: quiz.ShowCorrectAnswers ? slideCitation : null,
-                QuestionType: qTypeLabel,
-                MarkingScheme: quiz.ShowCorrectAnswers ? rubricExplanation : null
-            ));
-
-            Guid? topicScopeId = quiz.ScopeType == QuizScopeType.Topic ? quiz.ScopeId : null;
-            string topicName = !string.IsNullOrWhiteSpace(q.LearningObjective) ? q.LearningObjective : quiz.Title;
-            questionOutcomes.Add((topicScopeId, topicName, q.LearningObjective ?? topicName, isCorrect));
-        }
-
-        double percent = totalPoints > 0 ? ((double)scoreObtained / totalPoints) * 100 : 0;
-        int scorePercent = (int)Math.Round(percent);
-        bool passed = percent >= quiz.PassingScorePercent;
-
-        submission.ScoreObtained = scoreObtained;
-        submission.MaxScore = totalPoints;
-        submission.PercentageScore = percent;
-        submission.Passed = passed;
-        submission.Status = AttemptStatus.Evaluated;
-        submission.SubmittedAt = now;
-        submission.EvaluatedAt = now;
-        submission.UpdatedAt = now;
-        int timeSpentSeconds = submission.StartedAt.HasValue
-            ? Math.Max(0, (int)(now - submission.StartedAt.Value).TotalSeconds)
-            : 0;
-
-        // The submission and its XP ledger entries commit together or not at all.
-        var rewardResult = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
-        {
-            DbContext.ChangeTracker.Clear();
-            await using var transaction = DbContext.Database.IsRelational()
-                ? await DbContext.Database.BeginTransactionAsync()
-                : null;
-
-            // Optimistic guard: only an attempt that is still open can be completed.
-            if (isNewAttempt)
-            {
-                DbContext.Submissions.Add(submission);
-            }
-            else
-            {
-                DbContext.Submissions.Attach(submission);
-                DbContext.Entry(submission).State = EntityState.Modified;
-            }
-            DbContext.SubmissionAnswers.AddRange(evaluatedAnswers);
-            await DbContext.SaveChangesAsync();
-
-            var reward = await _gamificationService.CalculateAndAwardQuizRewardAsync(
-                studentId: studentId,
-                assessmentId: quiz.Id,
-                scorePercent: scorePercent,
-                passed: passed,
-                timeSpentSeconds: timeSpentSeconds,
-                difficulty: quiz.Difficulty,
-                scopeType: quiz.ScopeType,
-                questionOutcomes: questionOutcomes
-            );
-
-            if (transaction != null) await transaction.CommitAsync();
-            return reward;
-        });
-
-        string? badgeUnlocked = rewardResult.UnlockedBadges.FirstOrDefault();
+        var attempt = graded.Attempt;
+        var reward = graded.Reward;
+        bool isEvaluated = graded.Marks.IsFullyEvaluated;
+        var breakdown = BuildBreakdown(quiz, graded.Outcomes.Select(o => new AnswerView(
+            o.Question, o.StudentAnswer, o.Result.AwardedMarks, o.Result.IsCorrect, o.Result.Feedback,
+            o.Result.Status, o.Result.Method)), revealKeys: quiz.ShowCorrectAnswers);
 
         return Ok(new
         {
-            submissionId = submission.Id,
-            attemptId = submission.Id,
-            attemptNumber = submission.AttemptNumber,
+            submissionId = attempt.Id,
+            attemptId = attempt.Id,
+            attemptNumber = attempt.AttemptNumber,
             quizId = quiz.Id,
-            scoreObtained = scoreObtained,
-            maxScore = totalPoints,
-            percentageScore = percent,
-            passed = passed,
-            xpEarned = rewardResult.XpBreakdown.TotalXpEarned,
-            coinsEarned = rewardResult.XpBreakdown.CoinsEarned,
-            feedback = passed
-                ? $"Mastery confirmed! You earned +{rewardResult.XpBreakdown.TotalXpEarned} XP (+{rewardResult.XpBreakdown.CoinsEarned} Coins) across base, difficulty, and consistency bonuses."
-                : "Targeted practice recommended. Your skill telemetry has been updated for AI remediation.",
+            status = attempt.Status.ToString(),
+            pendingReviewCount = graded.Marks.PendingReviewCount,
+            scoreObtained = attempt.ScoreObtained,
+            maxScore = attempt.MaxScore,
+            percentageScore = attempt.PercentageScore,
+            passed = attempt.Passed,
+            xpEarned = reward?.XpBreakdown.TotalXpEarned ?? 0,
+            coinsEarned = reward?.XpBreakdown.CoinsEarned ?? 0,
+            feedback = !isEvaluated
+                ? $"{graded.Marks.PendingReviewCount} answer(s) are awaiting marking. Your final result and rewards will be available once marking is complete."
+                : attempt.Passed
+                    ? $"Passed. You earned +{reward?.XpBreakdown.TotalXpEarned ?? 0} XP (+{reward?.XpBreakdown.CoinsEarned ?? 0} Coins)."
+                    : "Not passed yet. Review the feedback below and try again.",
             questionBreakdown = breakdown,
             scopeType = quiz.ScopeType.ToString(),
-            badgeUnlocked = badgeUnlocked,
-            xpBreakdown = rewardResult.XpBreakdown,
-            levelUpOccurred = rewardResult.LevelUpOccurred,
-            newLevel = rewardResult.NewLevel,
-            newTotalXp = rewardResult.NewTotalXp,
-            masteryUpdates = rewardResult.MasteryUpdates
+            badgeUnlocked = reward?.UnlockedBadges.FirstOrDefault(),
+            xpBreakdown = reward?.XpBreakdown,
+            levelUpOccurred = reward?.LevelUpOccurred ?? false,
+            newLevel = reward?.NewLevel,
+            newTotalXp = reward?.NewTotalXp,
+            masteryUpdates = reward?.MasteryUpdates
         });
+    }
+
+    /// <summary>
+    /// The persisted result of one attempt, rebuilt from the stored answers and question
+    /// snapshots (so it is reproducible even if the quiz changed later). Students may read their
+    /// own attempts; the course instructor and admins may read any attempt of their courses.
+    /// </summary>
+    [HttpGet("attempts/{attemptId:guid}/result")]
+    public async Task<IActionResult> GetAttemptResult(Guid attemptId)
+    {
+        var attempt = await DbContext.Submissions
+            .AsNoTracking()
+            .Include(s => s.Answers).ThenInclude(a => a.Question)
+            .Include(s => s.Assessment!).ThenInclude(a => a.Questions)
+            .FirstOrDefaultAsync(s => s.Id == attemptId);
+        if (attempt?.Assessment == null)
+        {
+            return NotFound(new { message = "Attempt not found." });
+        }
+
+        var (userId, role) = GetCurrentUser();
+        bool canManage = await _accessService.CanManageCourseAsync(attempt.Assessment.CourseId, userId, role);
+        if (!canManage && attempt.StudentId != userId)
+        {
+            return NotFound(new { message = "Attempt not found." });
+        }
+
+        bool isEvaluated = attempt.Status == AttemptStatus.Evaluated;
+        var answerViews = attempt.Answers.Select(a => new AnswerView(
+            DeserializeSnapshot(a), a.SelectedAnswer, a.PointsAwarded, a.IsCorrect, a.Feedback ?? string.Empty,
+            a.EvaluationStatus, a.EvaluationMethod));
+
+        return Ok(new
+        {
+            attemptId = attempt.Id,
+            quizId = attempt.AssessmentId,
+            quizTitle = attempt.Assessment.Title,
+            studentId = attempt.StudentId,
+            attemptNumber = attempt.AttemptNumber,
+            status = attempt.Status.ToString(),
+            startedAt = attempt.StartedAt,
+            submittedAt = attempt.SubmittedAt,
+            evaluatedAt = attempt.EvaluatedAt,
+            scoreObtained = attempt.ScoreObtained,
+            maxScore = attempt.MaxScore,
+            percentageScore = attempt.PercentageScore,
+            passed = attempt.Passed,
+            pendingReviewCount = attempt.Answers.Count(a => a.EvaluationStatus != AnswerEvaluationStatus.Evaluated),
+            instructorFeedback = attempt.InstructorFeedback,
+            questionBreakdown = BuildBreakdown(attempt.Assessment, answerViews,
+                revealKeys: canManage || (attempt.Assessment.ShowCorrectAnswers && isEvaluated))
+        });
+    }
+
+    /// <summary>
+    /// Records an instructor's mark for one answer (first marking of a response awaiting
+    /// review, or an override with a mandatory reason). Every change is kept and audited.
+    /// </summary>
+    [HttpPost("attempts/{attemptId:guid}/answers/{questionId:guid}/mark")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> MarkAnswer(Guid attemptId, Guid questionId, [FromBody] ManualMarkRequest request)
+    {
+        var (userId, role) = GetCurrentUser();
+        var result = await _gradingService.MarkAnswerAsync(
+            attemptId, questionId, request.AwardedMarks, request.Feedback, request.Reason, userId, role);
+
+        return result.Error switch
+        {
+            ManualMarkError.None => Ok(new
+            {
+                attemptId,
+                questionId,
+                status = result.Attempt!.Status.ToString(),
+                pendingReviewCount = result.Marks!.PendingReviewCount,
+                scoreObtained = result.Attempt.ScoreObtained,
+                maxScore = result.Attempt.MaxScore,
+                percentageScore = result.Attempt.PercentageScore,
+                passed = result.Attempt.Passed
+            }),
+            ManualMarkError.AttemptNotFound or ManualMarkError.AnswerNotFound => NotFound(new { message = result.Message }),
+            ManualMarkError.NotAllowed => Forbid(),
+            ManualMarkError.AttemptNotSubmitted => Conflict(new { message = result.Message }),
+            _ => BadRequest(new { message = result.Message, code = result.Error.ToString() })
+        };
     }
 
     // -------------------------------------------------------------------------
@@ -1700,6 +1636,9 @@ public class QuizzesController : BaseApiController
             .Select(s => new
             {
                 submissionId = s.Id,
+                attemptNumber = s.AttemptNumber,
+                status = s.Status.ToString(),
+                pendingReviewCount = s.Answers.Count(a => a.EvaluationStatus != AnswerEvaluationStatus.Evaluated),
                 quizId = s.AssessmentId,
                 studentId = s.StudentId,
                 studentName = s.Student != null ? s.Student.FullName : null,
@@ -1718,6 +1657,9 @@ public class QuizzesController : BaseApiController
                     correctAnswer = a.Question != null ? a.Question.CorrectAnswer : "",
                     isCorrect = a.IsCorrect,
                     pointsAwarded = a.PointsAwarded,
+                    maxMarks = a.MaxMarks,
+                    evaluationStatus = a.EvaluationStatus.ToString(),
+                    evaluationMethod = a.EvaluationMethod.ToString(),
                     explanation = a.Question != null ? a.Question.Explanation : ""
                 }).ToList()
             })
@@ -1788,6 +1730,86 @@ public class QuizzesController : BaseApiController
             LearningObjective: null,
             MetadataJson: "{}",
             OptionDetails: null);
+    }
+
+    private sealed record AnswerView(
+        QuestionSnapshot Question,
+        string StudentAnswer,
+        int AwardedMarks,
+        bool IsCorrect,
+        string Feedback,
+        AnswerEvaluationStatus Status,
+        EvaluationMethod Method);
+
+    /// <summary>
+    /// Shapes per-question results. Answer keys, explanations and marking notes are only
+    /// included when <paramref name="revealKeys"/> is true.
+    /// </summary>
+    private static List<QuestionResultItem> BuildBreakdown(Assessment quiz, IEnumerable<AnswerView> answers, bool revealKeys)
+    {
+        var metadataById = quiz.Questions.ToDictionary(q => q.Id, q => q.MetadataJson);
+        return answers.Select(a =>
+        {
+            string? slideCitation = null;
+            string? markingScheme = null;
+            if (revealKeys && metadataById.TryGetValue(a.Question.QuestionId, out var metadataJson))
+            {
+                (slideCitation, markingScheme) = ReadDisplayMetadata(metadataJson);
+            }
+
+            return new QuestionResultItem(
+                QuestionId: a.Question.QuestionId,
+                Prompt: a.Question.Prompt,
+                SelectedAnswer: a.StudentAnswer,
+                CorrectAnswer: revealKeys ? string.Join(", ", a.Question.CorrectAnswers) : "Hidden",
+                IsCorrect: a.IsCorrect,
+                PointsAwarded: a.AwardedMarks,
+                Explanation: revealKeys
+                    ? string.Join(" ", new[] { a.Feedback, a.Question.Explanation }.Where(t => !string.IsNullOrWhiteSpace(t)))
+                    : (a.Status == AnswerEvaluationStatus.Evaluated ? "Feedback available on review." : a.Feedback),
+                SlideCitation: slideCitation,
+                QuestionType: a.Question.Type.ToString(),
+                MarkingScheme: markingScheme,
+                MaxMarks: a.Question.MaxMarks,
+                EvaluationStatus: a.Status.ToString(),
+                EvaluationMethod: a.Method.ToString());
+        }).ToList();
+    }
+
+    private static (string? SlideCitation, string? MarkingScheme) ReadDisplayMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return (null, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
+            string? Read(string name) => doc.RootElement.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+            return (Read("slideCitation"), Read("markingScheme"));
+        }
+        catch (JsonException)
+        {
+            // Malformed display metadata only affects labels, never marks.
+            return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// The stored snapshot, or (for answers recorded before snapshots existed) a best-effort
+    /// view of the current question.
+    /// </summary>
+    private static QuestionSnapshot DeserializeSnapshot(SubmissionAnswer answer)
+        => !string.IsNullOrWhiteSpace(answer.QuestionSnapshotJson)
+            ? JsonSerializer.Deserialize<QuestionSnapshot>(answer.QuestionSnapshotJson)!
+            : new QuestionSnapshot(answer.QuestionId, answer.Question?.Type ?? QuestionType.MultipleChoice,
+                answer.Question?.Prompt ?? string.Empty, Array.Empty<string>(),
+                answer.Question != null ? new[] { answer.Question.CorrectAnswer } : Array.Empty<string>(),
+                answer.MaxMarks, answer.Question?.Explanation ?? string.Empty, QuestionMarkingRules.Default);
+
+    /// <summary>Stages an audit entry committed with the caller's SaveChanges.</summary>
+    private void AuditAssessment(string action, Guid assessmentId)
+    {
+        var (userId, role) = GetCurrentUser();
+        _auditLogWriter.AddEntry(userId, role, action, "Assessment", assessmentId.ToString());
     }
 
     /// <summary>Write-endpoint response: identifies the saved quiz without serializing the entity graph.</summary>
@@ -1903,8 +1925,11 @@ public class QuizzesController : BaseApiController
         return System.IO.File.Exists(candidate) ? candidate : null;
     }
 
-    /// <summary>The single publication gate used by create, update, validate and publish.</summary>
-    private static List<string> CollectPublishErrors(Assessment quiz)
+    /// <summary>
+    /// The single publication gate used by create, update, validate and publish. Answer keys
+    /// are checked through the same snapshot the evaluation service marks against.
+    /// </summary>
+    private List<string> CollectPublishErrors(Assessment quiz)
     {
         var errors = new List<string>();
 
@@ -1915,44 +1940,59 @@ public class QuizzesController : BaseApiController
 
         foreach (var q in quiz.Questions)
         {
+            string label = $"Question #{q.OrderIndex} ({q.Type})";
             if (string.IsNullOrWhiteSpace(q.Prompt))
-                errors.Add($"Question #{q.OrderIndex} has an empty prompt.");
+                errors.Add($"{label} has an empty prompt.");
 
             if (q.Points <= 0)
-                errors.Add($"Question #{q.OrderIndex} must have points greater than 0.");
+                errors.Add($"{label} must have points greater than 0.");
 
-            var options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+            var key = _evaluationService.Snapshot(q);
+            bool KeyIsOption(string answer) => key.Options.Any(o => string.Equals(o.Trim(), answer.Trim(), StringComparison.OrdinalIgnoreCase));
 
             switch (q.Type)
             {
                 case QuestionType.MultipleChoice:
-                    if (options.Count < 2)
-                        errors.Add($"MCQ #{q.OrderIndex} requires at least 2 options, found {options.Count}.");
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"MCQ #{q.OrderIndex} must specify a correct answer.");
-                    else if (!options.Any(o => string.Equals(o.Trim(), q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase)))
-                        errors.Add($"MCQ #{q.OrderIndex} correct answer '{q.CorrectAnswer}' does not match any option.");
+                case QuestionType.TimedChallenge:
+                    if (key.Options.Count < 2)
+                        errors.Add($"{label} requires at least 2 options, found {key.Options.Count}.");
+                    if (key.CorrectAnswers.Count != 1)
+                        errors.Add($"{label} must have exactly one correct answer.");
+                    else if (!KeyIsOption(key.CorrectAnswers[0]))
+                        errors.Add($"{label} correct answer '{key.CorrectAnswers[0]}' does not match any option.");
                     break;
 
                 case QuestionType.MultipleSelect:
-                    if (options.Count < 2)
-                        errors.Add($"Multi-select #{q.OrderIndex} requires at least 2 options.");
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"Multi-select #{q.OrderIndex} must specify correct answers.");
+                    if (key.Options.Count < 2)
+                        errors.Add($"{label} requires at least 2 options.");
+                    if (key.CorrectAnswers.Count == 0)
+                        errors.Add($"{label} must specify one or more correct answers.");
+                    else if (!key.CorrectAnswers.All(KeyIsOption))
+                        errors.Add($"{label} has correct answers that do not match any option.");
                     break;
 
                 case QuestionType.TrueFalse:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer) ||
-                        (!q.CorrectAnswer.Equals("True", StringComparison.OrdinalIgnoreCase) &&
-                         !q.CorrectAnswer.Equals("False", StringComparison.OrdinalIgnoreCase)))
-                        errors.Add($"T/F #{q.OrderIndex} must have 'True' or 'False' as correct answer.");
+                    if (key.CorrectAnswers.Count != 1 ||
+                        !(key.CorrectAnswers[0].Equals("True", StringComparison.OrdinalIgnoreCase) ||
+                          key.CorrectAnswers[0].Equals("False", StringComparison.OrdinalIgnoreCase)))
+                        errors.Add($"{label} must have 'True' or 'False' as its correct answer.");
+                    break;
+
+                case QuestionType.Numerical:
+                    if (key.CorrectAnswers.Count == 0 || !key.CorrectAnswers.All(c =>
+                            decimal.TryParse(c, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
+                        errors.Add($"{label} must have a numeric correct answer (use '.' as the decimal separator).");
                     break;
 
                 case QuestionType.FillInBlank:
-                case QuestionType.ShortAnswer:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"Fill-in-blank/Short #{q.OrderIndex} must have a correct answer.");
+                case QuestionType.Matching:
+                case QuestionType.Ordering:
+                    if (key.CorrectAnswers.Count == 0)
+                        errors.Add($"{label} must have a correct answer.");
                     break;
+
+                // ShortAnswer, OpenEnded, ScenarioBased, CodeSnippet are marked by an instructor
+                // (or AI-assisted marking); a model answer is guidance, not a key.
             }
         }
 

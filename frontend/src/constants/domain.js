@@ -25,6 +25,7 @@ export const QUESTION_TYPE = Object.freeze({
   TimedChallenge: 8,
   CodeSnippet: 9,
   OpenEnded: 10,
+  Numerical: 11,
 });
 
 export const QUIZ_STATUS = Object.freeze({

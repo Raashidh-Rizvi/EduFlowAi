@@ -1048,6 +1048,8 @@ function InstructorCourses({ currentUser }) {
         coinsEarned: res.coinsEarned,
         streakBonus: res.xpBreakdown?.streakBonus || 0,
         badgeUnlocked: res.badgeUnlocked || null,
+        status: res.status,
+        pendingReviewCount: res.pendingReviewCount || 0,
         questionBreakdown: (res.questionBreakdown || []).map((item) => ({
           questionId: item.questionId,
           prompt: item.prompt,
@@ -1056,7 +1058,8 @@ function InstructorCourses({ currentUser }) {
           correctAnswer: item.correctAnswer,
           isCorrect: item.isCorrect,
           pointsAwarded: item.pointsAwarded,
-          maxPoints: pointsById.get(item.questionId),
+          maxPoints: item.maxMarks || pointsById.get(item.questionId),
+          evaluationStatus: item.evaluationStatus,
           explanation: item.explanation,
           markingScheme: item.markingScheme,
           slideCitation: item.slideCitation,

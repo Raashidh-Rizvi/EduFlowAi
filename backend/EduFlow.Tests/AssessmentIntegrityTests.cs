@@ -15,6 +15,7 @@ using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -70,6 +71,9 @@ public class AssessmentIntegrityTests
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
         builder.Services.AddScoped<IAttemptService, AttemptService>();
+        builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
+        builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
+        builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<ITeamService, TeamService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.Configure<EduFlow.Core.Options.ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));
@@ -457,6 +461,8 @@ public class AssessmentIntegrityTests
         Assert.Equal(1, submissions);
         Assert.Equal(2, questions);
         Assert.Equal(QuizStatus.Archived, status);
+        Assert.Equal(1, await WithDb(app, db => db.AuditLogs.CountAsync(a =>
+            a.Action == "Assessment.Archived" && a.EntityId == f.Quiz.Id.ToString() && a.ActorId == f.Instructor.Id)));
     }
 
     [Fact]
@@ -739,6 +745,163 @@ public class AssessmentIntegrityTests
 
         Assert.Equal(0, QuizCount(await Json(await student.GetAsync($"/api/courses/{f.Course.Id}"))));
         Assert.Equal(1, QuizCount(await Json(await instructor.GetAsync($"/api/courses/{f.Course.Id}"))));
+    }
+
+    // =========================================================================
+    // Marking, manual review and results (PR 3)
+    // =========================================================================
+
+    private static object MarkBody(int marks, string? reason = null, string? feedback = null)
+        => new { awardedMarks = marks, reason, feedback };
+
+    [Fact]
+    public async Task SubjectiveAnswer_WaitsForMarking_ThenXpIsAwardedOnce()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+
+        var submit = await Json(await student.PostAsJsonAsync("/api/quizzes/submit",
+            SubmitBody(f, shortAnswer: "WAL writes log records before data pages.")));
+        Assert.Equal("Evaluating", submit.GetProperty("status").GetString());
+        Assert.Equal(1, submit.GetProperty("pendingReviewCount").GetInt32());
+        Assert.False(submit.GetProperty("passed").GetBoolean());
+        Assert.Equal(0, submit.GetProperty("xpEarned").GetInt32());
+        Assert.Equal(0, await WithDb(app, db => db.XpTransactions.CountAsync()));
+        var attemptId = submit.GetProperty("attemptId").GetGuid();
+
+        using var instructor = await LoginAs(app, f.Instructor);
+        var mark = await instructor.PostAsJsonAsync(
+            $"/api/quizzes/attempts/{attemptId}/answers/{f.Short.Id}/mark", MarkBody(8, feedback: "Good explanation."));
+        Assert.Equal(HttpStatusCode.OK, mark.StatusCode);
+        var marked = await Json(mark);
+        Assert.Equal("Evaluated", marked.GetProperty("status").GetString());
+        Assert.Equal(18, marked.GetProperty("scoreObtained").GetInt32());
+        Assert.True(marked.GetProperty("passed").GetBoolean());
+
+        var (completionXp, adjustments, audits) = await WithDb(app, async db => (
+            await db.XpTransactions.CountAsync(x => x.SourceType == XpSourceType.QuizCompleted),
+            await db.MarkAdjustments.ToListAsync(),
+            await db.AuditLogs.CountAsync(a => a.Action == "Submission.Marked")));
+        Assert.Equal(1, completionXp);
+        var adjustment = Assert.Single(adjustments);
+        Assert.Equal(0, adjustment.PreviousMarks);
+        Assert.Equal(8, adjustment.NewMarks);
+        Assert.Equal(AnswerEvaluationStatus.NeedsReview, adjustment.PreviousStatus);
+        Assert.Equal(f.Instructor.Id, adjustment.ActorId);
+        Assert.Equal(1, audits);
+    }
+
+    [Fact]
+    public async Task OverridingAnExistingMark_RequiresAReason_AndRecalculatesTheAttempt()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"))))
+            .GetProperty("attemptId").GetGuid();
+
+        using var instructor = await LoginAs(app, f.Instructor);
+        var url = $"/api/quizzes/attempts/{attemptId}/answers/{f.Mcq.Id}/mark";
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await instructor.PostAsJsonAsync(url, MarkBody(10))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await instructor.PostAsJsonAsync(url, MarkBody(11, "Over max"))).StatusCode);
+
+        var ok = await instructor.PostAsJsonAsync(url, MarkBody(10, "Option text was ambiguous; accepted."));
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        Assert.Equal(10, (await Json(ok)).GetProperty("scoreObtained").GetInt32());
+
+        var adjustment = await WithDb(app, db => db.MarkAdjustments.SingleAsync());
+        Assert.Equal(0, adjustment.PreviousMarks);
+        Assert.Equal("Option text was ambiguous; accepted.", adjustment.Reason);
+    }
+
+    [Fact]
+    public async Task OnlyTheCourseInstructorCanMark()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit",
+            SubmitBody(f, shortAnswer: "An answer.")))).GetProperty("attemptId").GetGuid();
+
+        var otherInstructor = await SeedUser(app, "Instructor Two", UserRole.Instructor);
+        using var other = await LoginAs(app, otherInstructor);
+        var url = $"/api/quizzes/attempts/{attemptId}/answers/{f.Short.Id}/mark";
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.PostAsJsonAsync(url, MarkBody(5))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await student.PostAsJsonAsync(url, MarkBody(10))).StatusCode);
+        Assert.Equal(0, await WithDb(app, db => db.MarkAdjustments.CountAsync()));
+    }
+
+    [Fact]
+    public async Task AttemptResult_IsVisibleToItsStudentAndInstructorOnly()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))))
+            .GetProperty("attemptId").GetGuid();
+        var url = $"/api/quizzes/attempts/{attemptId}/result";
+
+        var own = await student.GetAsync(url);
+        Assert.Equal(HttpStatusCode.OK, own.StatusCode);
+        Assert.Equal(2, (await Json(own)).GetProperty("questionBreakdown").GetArrayLength());
+
+        using var instructor = await LoginAs(app, f.Instructor);
+        Assert.Equal(HttpStatusCode.OK, (await instructor.GetAsync(url)).StatusCode);
+
+        using var outsider = await LoginAs(app, f.Outsider);
+        Assert.Equal(HttpStatusCode.NotFound, (await outsider.GetAsync(url)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AttemptResult_IsReproducibleAfterTheQuestionChanges()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))))
+            .GetProperty("attemptId").GetGuid();
+
+        // Change the live question and its answer key after the attempt was marked.
+        await WithDb(app, async db =>
+        {
+            var q = await db.Questions.Include(x => x.Options).SingleAsync(x => x.Id == f.Mcq.Id);
+            q.Prompt = "Rewritten prompt";
+            q.CorrectAnswer = "Hash";
+            q.Points = 1;
+            foreach (var o in q.Options) o.IsCorrect = o.OptionText == "Hash";
+            return await db.SaveChangesAsync();
+        });
+
+        var result = await Json(await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result"));
+        var mcq = result.GetProperty("questionBreakdown").EnumerateArray()
+            .Single(q => q.GetProperty("questionId").GetGuid() == f.Mcq.Id);
+        Assert.Equal("Which index type supports range scans?", mcq.GetProperty("prompt").GetString());
+        Assert.Equal("B-tree", mcq.GetProperty("correctAnswer").GetString());
+        Assert.Equal(10, mcq.GetProperty("pointsAwarded").GetInt32());
+        Assert.Equal(10, mcq.GetProperty("maxMarks").GetInt32());
+        Assert.Equal(10, result.GetProperty("scoreObtained").GetInt32());
+    }
+
+    [Fact]
+    public async Task AttemptResult_HidesAnswerKeysFromStudentsWhenConfigured()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        await WithDb(app, async db =>
+        {
+            (await db.Assessments.SingleAsync(a => a.Id == f.Quiz.Id)).ShowCorrectAnswers = false;
+            return await db.SaveChangesAsync();
+        });
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"))))
+            .GetProperty("attemptId").GetGuid();
+
+        var raw = await (await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result")).Content.ReadAsStringAsync();
+        Assert.DoesNotContain("B-tree", raw.Replace("Which index type", ""));
+        Assert.DoesNotContain("B-trees keep keys ordered", raw);
     }
 
     // =========================================================================

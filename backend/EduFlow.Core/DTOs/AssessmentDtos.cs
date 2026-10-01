@@ -150,7 +150,12 @@ public record QuestionResultItem(
     string Explanation,
     string? SlideCitation = null,
     string? QuestionType = null,
-    string? MarkingScheme = null
+    string? MarkingScheme = null,
+    int MaxMarks = 0,
+    // Evaluated | NeedsReview | Pending
+    string? EvaluationStatus = null,
+    // Deterministic | Ai | Manual
+    string? EvaluationMethod = null
 );
 
 public record CreateQuizRequest(
@@ -230,6 +235,9 @@ public record UploadQuizRequest(
     Guid? ScopeId = null,
     Guid? ModuleId = null
 );
+
+/// <param name="Reason">Required when changing an answer that already has a mark.</param>
+public record ManualMarkRequest(int AwardedMarks, string? Feedback = null, string? Reason = null);
 
 public record ValidateQuizResponse(
     bool IsValid,

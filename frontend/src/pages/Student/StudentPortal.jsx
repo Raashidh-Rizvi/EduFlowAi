@@ -1480,7 +1480,11 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
             marginBottom: "6px",
           }}
         >
-          {passed ? "🎉 Assessment Passed" : "Assessment Finished"}
+          {rewardResult.status === "Evaluating"
+            ? "Submitted — Awaiting Marking"
+            : passed
+              ? "🎉 Assessment Passed"
+              : "Assessment Finished"}
         </div>
         <div
           style={{

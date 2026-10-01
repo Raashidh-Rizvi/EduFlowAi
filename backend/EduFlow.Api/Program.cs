@@ -3,6 +3,7 @@ using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -34,6 +35,8 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
 builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
 builder.Services.AddScoped<IAttemptService, AttemptService>();
+builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
+builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.
