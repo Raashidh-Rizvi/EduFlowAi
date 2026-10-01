@@ -62,6 +62,7 @@ public class InstructorDashboardScopingTests
         builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
         builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
         builder.Services.AddScoped<IGradeService, GradeService>();
+        builder.Services.AddScoped<IProgressService, ProgressService>();
         builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();

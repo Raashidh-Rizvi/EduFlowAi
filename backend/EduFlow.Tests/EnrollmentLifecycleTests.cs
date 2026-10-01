@@ -71,6 +71,7 @@ public class EnrollmentLifecycleTests
         builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
         builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
         builder.Services.AddScoped<IGradeService, GradeService>();
+        builder.Services.AddScoped<IProgressService, ProgressService>();
         builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (paymentGate != null)
@@ -184,14 +185,14 @@ public class EnrollmentLifecycleTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = $"{title} Lesson",
             Content = "PROTECTED LESSON BODY — must not leak before approval.",
-            OrderIndex = 1
+            DisplayOrder = 1
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
         return lesson.Id;
     }

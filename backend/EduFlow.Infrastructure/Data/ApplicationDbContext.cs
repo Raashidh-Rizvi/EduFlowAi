@@ -31,7 +31,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
-    public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<LessonCompletion> LessonCompletions => Set<LessonCompletion>();
 
@@ -242,10 +241,12 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // LEGACY table, kept read-only until legacy removal (see Lesson remarks).
         modelBuilder.Entity<Lesson>(entity =>
         {
+            entity.ToTable("Lessons");
             entity.HasOne(l => l.Module)
-                  .WithMany(m => m.Lessons)
+                  .WithMany()
                   .HasForeignKey(l => l.ModuleId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
@@ -287,6 +288,11 @@ public class ApplicationDbContext : DbContext
                   .WithMany(u => u.LessonCompletions)
                   .HasForeignKey(lc => lc.StudentId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            // A content item is completed at most once per student.
+            entity.HasIndex(lc => new { lc.StudentId, lc.ContentItemId })
+                  .IsUnique()
+                  .HasFilter("\"ContentItemId\" IS NOT NULL");
         });
 
         // --- Assessments & Quizzes ---

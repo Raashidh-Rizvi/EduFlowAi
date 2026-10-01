@@ -780,7 +780,7 @@ public class GamificationService : IGamificationService
     public async Task<List<LeaderboardEntryDto>> GetCourseLeaderboardAsync(Guid courseId, int top = 20, CancellationToken ct = default)
     {
         var enrolledStudentIds = await _dbContext.Enrollments
-            .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
+            .Where(e => e.CourseId == courseId && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
             .Select(e => e.StudentId)
             .ToListAsync(ct);
 

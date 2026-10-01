@@ -165,7 +165,6 @@ public class Module : BaseEntity
     public string Status { get; set; } = "Published";
 
     public ICollection<Topic> Topics { get; set; } = new List<Topic>();
-    public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
     public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
 }
@@ -204,11 +203,23 @@ public class ContentItem : BaseEntity
     public string? AttachmentFileName { get; set; }
     public string Status { get; set; } = "Published";
 
+    /// <summary>
+    /// When true, the body may be read WITHOUT enrollment (anonymous preview), provided the
+    /// parent course is published. Instructors mark this to advertise their course.
+    /// </summary>
+    public bool IsFreePreview { get; set; } = false;
+
     public ICollection<ContentItem> ChildContentItems { get; set; } = new List<ContentItem>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
     public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
 }
 
+/// <summary>
+/// LEGACY — read-only. Lessons now live in <see cref="ContentItem"/> (same Id), the canonical
+/// Course → Module → Topic → ContentItem tree. The table is kept only so existing foreign keys
+/// (<see cref="LessonCompletion.LessonId"/>, <see cref="StudyPlanItem.ReferencedLessonId"/>)
+/// stay valid until the legacy-removal migration. No code may read or write it.
+/// </summary>
 public class Lesson : BaseEntity
 {
     public Guid ModuleId { get; set; }
@@ -238,8 +249,13 @@ public class Enrollment : BaseEntity
     public User? Student { get; set; }
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
+
+    /// <summary>Cached course progress; written only by the progress service.</summary>
     public double ProgressPercentage { get; set; } = 0.0;
     public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
+
+    /// <summary>When every learning unit of the course was first completed.</summary>
+    public DateTime? CompletedAt { get; set; }
 
     /// <summary>When the (re-)submission that produced the current status was made.</summary>
     public DateTime? RequestedAt { get; set; }
@@ -255,10 +271,13 @@ public class Enrollment : BaseEntity
     public string? ReviewNotes { get; set; }
 }
 
+/// <summary>A student's completion of one content item (the canonical learning unit).</summary>
 public class LessonCompletion : BaseEntity
 {
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
+
+    /// <summary>LEGACY — completions recorded before lessons moved into ContentItems.</summary>
     public Guid? LessonId { get; set; }
     public Lesson? Lesson { get; set; }
     public Guid? ContentItemId { get; set; }

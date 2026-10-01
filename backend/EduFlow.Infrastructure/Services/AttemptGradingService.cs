@@ -23,6 +23,7 @@ public class AttemptGradingService : IAttemptGradingService
     private readonly IAssessmentAccessService _accessService;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IGradeService _gradeService;
+    private readonly IProgressService _progressService;
 
     public AttemptGradingService(
         ApplicationDbContext dbContext,
@@ -30,7 +31,8 @@ public class AttemptGradingService : IAttemptGradingService
         IGamificationService gamificationService,
         IAssessmentAccessService accessService,
         IAuditLogWriter auditLogWriter,
-        IGradeService gradeService)
+        IGradeService gradeService,
+        IProgressService progressService)
     {
         _dbContext = dbContext;
         _evaluationService = evaluationService;
@@ -38,6 +40,7 @@ public class AttemptGradingService : IAttemptGradingService
         _accessService = accessService;
         _auditLogWriter = auditLogWriter;
         _gradeService = gradeService;
+        _progressService = progressService;
     }
 
     public async Task<GradedAttempt> SubmitAsync(
@@ -93,10 +96,11 @@ public class AttemptGradingService : IAttemptGradingService
                 ? await AwardRewardAsync(assessment, attempt, outcomes.Select(o => (o.Question, o.Result.IsCorrect)), ct)
                 : null;
 
-            // The course result follows the evaluated attempt in the same transaction.
+            // Course result and progress follow the evaluated attempt in the same transaction.
             if (marks.IsFullyEvaluated)
             {
                 await _gradeService.RecalculateAsync(assessment.CourseId, attempt.StudentId, ct);
+                await _progressService.RefreshEnrollmentAsync(assessment.CourseId, attempt.StudentId, ct);
                 await _dbContext.SaveChangesAsync(ct);
             }
 
@@ -208,6 +212,7 @@ public class AttemptGradingService : IAttemptGradingService
         {
             await _dbContext.SaveChangesAsync(ct);
             await _gradeService.RecalculateAsync(attempt.Assessment.CourseId, attempt.StudentId, ct);
+            await _progressService.RefreshEnrollmentAsync(attempt.Assessment.CourseId, attempt.StudentId, ct);
         }
 
         await _dbContext.SaveChangesAsync(ct);

@@ -289,7 +289,7 @@ public class MarketplaceController : BaseApiController
         var courses = await query
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
-                .ThenInclude(m => m.Lessons)
+                .ThenInclude(m => m.ContentItems)
             .AsNoTracking()
             .ToListAsync();
 
@@ -324,7 +324,7 @@ public class MarketplaceController : BaseApiController
         var course = await DbContext.Courses.AsNoTracking()
             .Include(c => c.Instructor)
             .Include(c => c.Modules.OrderBy(m => m.OrderIndex))
-                .ThenInclude(m => m.Lessons.OrderBy(l => l.OrderIndex))
+                .ThenInclude(m => m.ContentItems.OrderBy(l => l.DisplayOrder))
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == id);
 
@@ -348,10 +348,10 @@ public class MarketplaceController : BaseApiController
             m.Description ?? string.Empty,
             m.OrderIndex,
             courseAssessments.Count(a => a.ModuleId == m.Id),
-            m.Lessons.Select(l => new MarketplaceLessonDto(
+            m.ContentItems.Select(l => new MarketplaceLessonDto(
                 l.Id,
                 l.Title,
-                l.OrderIndex,
+                l.DisplayOrder,
                 l.EstimatedMinutes,
                 l.XpReward,
                 l.IsFreePreview
@@ -435,7 +435,7 @@ public class MarketplaceController : BaseApiController
         var courses = await query
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
-                .ThenInclude(m => m.Lessons)
+                .ThenInclude(m => m.ContentItems)
             .AsNoTracking()
             .Take(limit * 6)
             .ToListAsync();
@@ -472,7 +472,7 @@ public class MarketplaceController : BaseApiController
         {
             var rating = ratings.TryGetValue(c.Id, out var summary) ? summary : CourseRatingSummary.Empty;
             var moduleCount = c.Modules?.Count ?? 0;
-            var lessonCount = c.Modules?.Sum(m => m.Lessons?.Count ?? 0) ?? 0;
+            var lessonCount = c.Modules?.Sum(m => m.ContentItems?.Count ?? 0) ?? 0;
 
             return new MarketplaceCourseDto(
                 c.Id,

@@ -74,6 +74,7 @@ public class AssessmentIntegrityTests
         builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
         builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
         builder.Services.AddScoped<IGradeService, GradeService>();
+        builder.Services.AddScoped<IProgressService, ProgressService>();
         builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
         builder.Services.AddScoped<ITeamService, TeamService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
@@ -965,6 +966,54 @@ public class AssessmentIntegrityTests
         await instructor.PostAsync($"/api/courses/{f.Course.Id}/grading/activate", null);
 
         Assert.Equal(HttpStatusCode.Conflict, (await instructor.DeleteAsync($"/api/quizzes/{f.Quiz.Id}")).StatusCode);
+    }
+
+    // =========================================================================
+    // Content tree and progress (PR 5)
+    // =========================================================================
+
+    [Fact]
+    public async Task LessonCompletion_AndPassingAQuiz_DriveCourseProgress()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        var lesson = await WithDb(app, async db =>
+        {
+            var item = new ContentItem { ModuleId = f.Quiz.ModuleId, Title = "Lesson 1", ContentType = "Lesson", XpReward = 10 };
+            db.ContentItems.Add(item);
+            await db.SaveChangesAsync();
+            return item;
+        });
+        using var student = await LoginAs(app, f.Student);
+
+        var start = await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/progress"));
+        Assert.Equal(2, start.GetProperty("totalUnits").GetInt32());
+        Assert.Equal(0m, start.GetProperty("percentage").GetDecimal());
+
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsync($"/api/courses/lessons/{lesson.Id}/complete", null)).StatusCode);
+        var afterLesson = await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/progress"));
+        Assert.Equal(50m, afterLesson.GetProperty("percentage").GetDecimal());
+
+        // Passing the quiz (MCQ correct, short answer left blank: 10/20 meets the 50% pass mark) completes the course.
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))).StatusCode);
+        var done = await Json(await student.GetAsync($"/api/courses/{f.Course.Id}/progress"));
+        Assert.Equal(100m, done.GetProperty("percentage").GetDecimal());
+        Assert.True(done.GetProperty("isComplete").GetBoolean());
+
+        var enrollment = await WithDb(app, db => db.Enrollments.SingleAsync(e => e.StudentId == f.Student.Id));
+        Assert.Equal(100.0, enrollment.ProgressPercentage);
+        Assert.Equal(EnrollmentStatus.Completed, enrollment.Status);
+    }
+
+    [Fact]
+    public async Task Progress_OfAnotherStudent_IsNotVisible()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var outsider = await LoginAs(app, f.Outsider);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await outsider.GetAsync($"/api/courses/{f.Course.Id}/progress?studentId={f.Student.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync($"/api/courses/{f.Course.Id}/progress")).StatusCode);
     }
 
     // =========================================================================

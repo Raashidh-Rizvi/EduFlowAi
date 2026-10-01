@@ -177,20 +177,20 @@ public class Phase4_DatabaseIntegrationTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = "Lesson to be cascade-deleted",
             Content = "Content",
-            OrderIndex = 1
+            DisplayOrder = 1
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
 
         db.Modules.Remove(module);
         await db.SaveChangesAsync();
 
-        var orphan = await db.Lessons.FindAsync(lesson.Id);
+        var orphan = await db.ContentItems.FindAsync(lesson.Id);
         Assert.Null(orphan);
     }
 

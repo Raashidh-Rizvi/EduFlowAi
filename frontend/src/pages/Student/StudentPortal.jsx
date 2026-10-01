@@ -932,6 +932,14 @@ function CurriculumTab({
                 >
                   {course.title}
                 </span>
+                {course.courseProgress && (
+                  <span
+                    className="badge-pill badge-primary"
+                    title={`${course.courseProgress.completedUnits} of ${course.courseProgress.totalUnits} lessons and assessments completed`}
+                  >
+                    Progress {Math.round(course.courseProgress.percentage)}%
+                  </span>
+                )}
                 {course.courseGrade?.gradingStatus === "Active" && (
                   <span
                     className="badge-pill badge-success"
@@ -3799,10 +3807,15 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           }));
           if (mapped.length > 0) {
             // Course grades come from the server's grade service; missing grading shows nothing.
-            const grades = await Promise.all(
-              mapped.map((c) => gradingService.getGrade(c.id).catch(() => null)),
-            );
-            const withGrades = mapped.map((c, i) => ({ ...c, courseGrade: grades[i] }));
+            const [grades, progress] = await Promise.all([
+              Promise.all(mapped.map((c) => gradingService.getGrade(c.id).catch(() => null))),
+              Promise.all(mapped.map((c) => courseService.getProgress(c.id).catch(() => null))),
+            ]);
+            const withGrades = mapped.map((c, i) => ({
+              ...c,
+              courseGrade: grades[i],
+              courseProgress: progress[i],
+            }));
             setCourses(withGrades);
             loadedCourses = withGrades;
           }
@@ -3924,12 +3937,14 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       return;
     }
 
+    const courseProgress = await courseService.getProgress(courseId).catch(() => null);
     setCourses((prevCourses) =>
       prevCourses.map((c) =>
         c.id !== courseId
           ? c
           : {
               ...c,
+              courseProgress: courseProgress ?? c.courseProgress,
               modules: c.modules.map((m) =>
                 m.id !== modId
                   ? m

@@ -86,18 +86,18 @@ public class Phase1SecurityTests
         return topic;
     }
 
-    private static Lesson SeedLesson(ApplicationDbContext db, Guid moduleId)
+    private static ContentItem SeedLesson(ApplicationDbContext db, Guid moduleId)
     {
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = moduleId,
             Title = "Lesson 1",
             Content = "Lesson content",
-            OrderIndex = 1,
+            DisplayOrder = 1,
             XpReward = 10,
             EstimatedMinutes = 5
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         db.SaveChanges();
         return lesson;
     }
@@ -237,7 +237,7 @@ public class Phase1SecurityTests
         var moduleB = SeedModule(db, courseB.Id);
         var lessonB = SeedLesson(db, moduleB.Id);
 
-        var isOwner = await db.Lessons
+        var isOwner = await db.ContentItems
             .Include(l => l.Module)
                 .ThenInclude(m => m.Course)
             .AnyAsync(l => l.Id == lessonB.Id
@@ -257,7 +257,7 @@ public class Phase1SecurityTests
         var module = SeedModule(db, course.Id);
         var lesson = SeedLesson(db, module.Id);
 
-        var isOwner = await db.Lessons
+        var isOwner = await db.ContentItems
             .Include(l => l.Module)
                 .ThenInclude(m => m.Course)
             .AnyAsync(l => l.Id == lesson.Id

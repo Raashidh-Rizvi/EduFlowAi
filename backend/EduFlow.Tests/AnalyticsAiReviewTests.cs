@@ -121,13 +121,13 @@ public class AnalyticsAiReviewTests
         await db.Courses.AddAsync(course);
         var module = new Module { CourseId = course.Id, Title = "M1" };
         await db.Modules.AddAsync(module);
-        var lesson1 = new Lesson { ModuleId = module.Id, Title = "L1" };
-        var lesson2 = new Lesson { ModuleId = module.Id, Title = "L2" };
-        await db.Lessons.AddRangeAsync(lesson1, lesson2);
+        var lesson1 = new ContentItem { ModuleId = module.Id, Title = "L1" };
+        var lesson2 = new ContentItem { ModuleId = module.Id, Title = "L2" };
+        await db.ContentItems.AddRangeAsync(lesson1, lesson2);
 
         await db.LessonCompletions.AddRangeAsync(
-            new LessonCompletion { StudentId = student.Id, LessonId = lesson1.Id },
-            new LessonCompletion { StudentId = student.Id, LessonId = lesson2.Id }
+            new LessonCompletion { StudentId = student.Id, ContentItemId = lesson1.Id },
+            new LessonCompletion { StudentId = student.Id, ContentItemId = lesson2.Id }
         );
 
         await db.SaveChangesAsync();

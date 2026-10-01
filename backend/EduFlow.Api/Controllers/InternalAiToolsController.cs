@@ -223,7 +223,7 @@ public class InternalAiToolsController : ControllerBase
                     break;
                 }
 
-                var lesson = await _dbContext.Lessons.FirstOrDefaultAsync(l => l.Id == scopeId, ct);
+                var lesson = await _dbContext.ContentItems.FirstOrDefaultAsync(l => l.Id == scopeId, ct);
                 if (lesson != null)
                 {
                     title = lesson.Title;
@@ -309,24 +309,24 @@ public class InternalAiToolsController : ControllerBase
             .Where(e => e.StudentId == studentId)
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Modules)
-                    .ThenInclude(m => m.Lessons)
+                    .ThenInclude(m => m.ContentItems)
             .ToListAsync(ct);
 
         var allLessons = enrollments
-            .SelectMany(e => e.Course?.Modules.SelectMany(m => m.Lessons) ?? Enumerable.Empty<Lesson>())
+            .SelectMany(e => e.Course?.Modules.SelectMany(m => m.ContentItems) ?? Enumerable.Empty<ContentItem>())
             .ToList();
         var allLessonIds = allLessons.Select(l => l.Id).ToHashSet();
 
         var completedLessonIds = allLessonIds.Count > 0
             ? (await _dbContext.LessonCompletions
-                .Where(lc => lc.StudentId == studentId && lc.LessonId != null && allLessonIds.Contains(lc.LessonId.Value))
-                .Select(lc => lc.LessonId!.Value)
+                .Where(lc => lc.StudentId == studentId && lc.ContentItemId != null && allLessonIds.Contains(lc.ContentItemId.Value))
+                .Select(lc => lc.ContentItemId!.Value)
                 .ToListAsync(ct)).ToHashSet()
             : new HashSet<Guid>();
 
         var courses = enrollments.Select(e =>
         {
-            var lessonIds = e.Course?.Modules.SelectMany(m => m.Lessons.Select(l => l.Id)).ToList() ?? new List<Guid>();
+            var lessonIds = e.Course?.Modules.SelectMany(m => m.ContentItems.Select(l => l.Id)).ToList() ?? new List<Guid>();
             var totalLessons = lessonIds.Count;
             var completedLessons = lessonIds.Count(id => completedLessonIds.Contains(id));
             var completionPercentage = totalLessons > 0

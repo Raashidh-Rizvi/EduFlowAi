@@ -441,13 +441,13 @@ public class Phase2FullStackIntegrationTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson { ModuleId = module.Id, Title = "Lesson", Content = "Content", OrderIndex = 1 };
-        db.Lessons.Add(lesson);
+        var lesson = new ContentItem { ModuleId = module.Id, Title = "Lesson", Content = "Content", DisplayOrder = 1 };
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
 
         var completion = new LessonCompletion
         {
-            LessonId = lesson.Id,
+            ContentItemId = lesson.Id,
             StudentId = student.Id,
             CompletedAt = DateTime.UtcNow
         };
@@ -455,7 +455,7 @@ public class Phase2FullStackIntegrationTests
         await db.SaveChangesAsync();
 
         var completed = await db.LessonCompletions
-            .Where(lc => lc.StudentId == student.Id && lc.LessonId == lesson.Id)
+            .Where(lc => lc.StudentId == student.Id && lc.ContentItemId == lesson.Id)
             .ToListAsync();
 
         Assert.Single(completed);

@@ -28,6 +28,7 @@ public class CoursesController : BaseApiController
     private readonly IWebHostEnvironment? _environment;
     private readonly IAiGatewayClient? _aiGatewayClient;
     private readonly IPaymentVerificationService? _paymentVerificationService;
+    private readonly IProgressService _progressService;
 
     public CoursesController(
         ApplicationDbContext dbContext,
@@ -36,9 +37,11 @@ public class CoursesController : BaseApiController
         IWebHostEnvironment? environment = null,
         IAiGatewayClient? aiGatewayClient = null,
         IPaymentVerificationService? paymentVerificationService = null,
-        IAuditLogWriter? auditLogWriter = null)
+        IAuditLogWriter? auditLogWriter = null,
+        IProgressService? progressService = null)
         : base(dbContext)
     {
+        _progressService = progressService ?? new ProgressService(dbContext);
         _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
         _gamificationService = gamificationService;
         _ratingService = ratingService;
@@ -79,7 +82,7 @@ public class CoursesController : BaseApiController
         var dbCourses = await courseQuery
             .Include(c => c.Instructor)
             .Include(c => c.Modules)
-                .ThenInclude(m => m.Lessons)
+                .ThenInclude(m => m.ContentItems)
             .Include(c => c.Modules)
                 .ThenInclude(m => m.Topics)
             .AsNoTracking()
@@ -87,7 +90,7 @@ public class CoursesController : BaseApiController
 
         var enrollments = await DbContext.Enrollments
             .AsNoTracking()
-            .Where(e => e.Status == EnrollmentStatus.Active)
+            .Where(e => (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
             .ToListAsync();
 
         var assessments = await DbContext.Assessments
@@ -115,34 +118,25 @@ public class CoursesController : BaseApiController
 
             var modulesCount = c.Modules.Count;
             var topicsCount = c.Modules.SelectMany(m => m.Topics).Count();
-            var lessons = c.Modules.SelectMany(m => m.Lessons).ToList();
+            var lessons = c.Modules.SelectMany(m => m.ContentItems).ToList();
             var lessonsCount = lessons.Count;
 
             var courseAssessments = assessments.Where(a => a.CourseId == c.Id).ToList();
             var quizzesCount = courseAssessments.Count;
 
+            // Real figures only: no data means 0, never a placeholder.
             var lessonIds = lessons.Select(l => l.Id).ToHashSet();
-            double completionRate = 0.0;
-            if (studentsCount > 0 && lessonsCount > 0)
-            {
-                var totalPossible = studentsCount * lessonsCount;
-                var actualCompletions = completions.Count(lc => lc.LessonId.HasValue && lessonIds.Contains(lc.LessonId.Value));
-                completionRate = Math.Min(100.0, Math.Round((double)actualCompletions / totalPossible * 100, 1));
-            }
-            else if (lessonsCount > 0 && completions.Any(lc => lc.LessonId.HasValue && lessonIds.Contains(lc.LessonId.Value)))
-            {
-                completionRate = 82.5;
-            }
-            else if (lessonsCount > 0)
-            {
-                completionRate = 74.0;
-            }
+            double completionRate = studentsCount > 0
+                ? Math.Round(enrolledStudents.Average(e => e.ProgressPercentage), 1)
+                : 0.0;
 
             var assessmentIds = courseAssessments.Select(a => a.Id).ToHashSet();
-            var courseSubmissions = submissions.Where(s => assessmentIds.Contains(s.AssessmentId)).ToList();
+            var courseSubmissions = submissions
+                .Where(s => assessmentIds.Contains(s.AssessmentId) && s.Status == AttemptStatus.Evaluated)
+                .ToList();
             double avgScore = courseSubmissions.Any()
                 ? Math.Round(courseSubmissions.Average(s => s.PercentageScore), 1)
-                : (submissions.Any() ? Math.Round(submissions.Average(s => s.PercentageScore), 1) : 86.5);
+                : 0.0;
 
             var courseRating = ratingSummaries.TryGetValue(c.Id, out var summary)
                 ? summary
@@ -151,12 +145,8 @@ public class CoursesController : BaseApiController
             double engagement = 0.0;
             if (studentsCount > 0)
             {
-                var activeStudentsCount = completions.Where(lc => lc.LessonId.HasValue && lessonIds.Contains(lc.LessonId.Value)).Select(lc => lc.StudentId).Distinct().Count();
-                engagement = Math.Max(70.0, Math.Min(100.0, Math.Round((double)activeStudentsCount / studentsCount * 100, 1)));
-            }
-            else
-            {
-                engagement = 91.2;
+                var activeStudentsCount = completions.Where(lc => lc.ContentItemId.HasValue && lessonIds.Contains(lc.ContentItemId.Value)).Select(lc => lc.StudentId).Distinct().Count();
+                engagement = Math.Round((double)activeStudentsCount / studentsCount * 100, 1);
             }
 
             coursesList.Add(new CourseDto(
@@ -204,7 +194,7 @@ public class CoursesController : BaseApiController
         var course = await DbContext.Courses
             .Include(c => c.Instructor)
             .Include(c => c.Modules.OrderBy(m => m.OrderIndex))
-                .ThenInclude(m => m.Lessons.OrderBy(l => l.OrderIndex))
+                .ThenInclude(m => m.ContentItems.OrderBy(l => l.DisplayOrder))
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (course == null)
@@ -237,13 +227,13 @@ public class CoursesController : BaseApiController
                 ? parsedStudentId
                 : null;
 
-        var courseLessonIds = course.Modules.SelectMany(m => m.Lessons).Select(l => l.Id).ToList();
+        var courseLessonIds = course.Modules.SelectMany(m => m.ContentItems).Select(l => l.Id).ToList();
         var completedLessonIds = currentStudentId.HasValue && courseLessonIds.Count > 0
             ? (await DbContext.LessonCompletions
                 .Where(lc => lc.StudentId == currentStudentId.Value
-                    && lc.LessonId != null
-                    && courseLessonIds.Contains(lc.LessonId.Value))
-                .Select(lc => lc.LessonId!.Value)
+                    && lc.ContentItemId != null
+                    && courseLessonIds.Contains(lc.ContentItemId.Value))
+                .Select(lc => lc.ContentItemId!.Value)
                 .ToListAsync()).ToHashSet()
             : new HashSet<Guid>();
 
@@ -325,12 +315,12 @@ public class CoursesController : BaseApiController
                 m.OrderIndex,
                 canAccessMaterials ? m.PdfUrl : null,
                 canAccessMaterials ? m.AttachmentFileName : null,
-                m.Lessons.Select(l => new LessonSummaryDto(
+                m.ContentItems.Select(l => new LessonSummaryDto(
                     l.Id,
                     l.Title,
                     l.XpReward,
                     l.EstimatedMinutes,
-                    l.OrderIndex,
+                    l.DisplayOrder,
                     completedLessonIds.Contains(l.Id),
                     canAccessMaterials ? l.PdfUrl : null,
                     canAccessMaterials ? l.AttachmentFileName : null
@@ -847,7 +837,7 @@ public class CoursesController : BaseApiController
         var modules = await DbContext.Modules
             .Where(m => m.CourseId == courseId)
             .OrderBy(m => m.OrderIndex)
-            .Include(m => m.Lessons)
+            .Include(m => m.ContentItems)
             .ToListAsync();
 
         var moduleDtos = modules.Select(m => new ModuleDto(
@@ -857,8 +847,8 @@ public class CoursesController : BaseApiController
                 m.OrderIndex,
                 m.PdfUrl,
                 m.AttachmentFileName,
-                m.Lessons.OrderBy(l => l.OrderIndex).Select(l => new LessonSummaryDto(
-                    l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.OrderIndex, false, l.PdfUrl, l.AttachmentFileName
+                m.ContentItems.OrderBy(l => l.DisplayOrder).Select(l => new LessonSummaryDto(
+                    l.Id, l.Title, l.XpReward, l.EstimatedMinutes, l.DisplayOrder, false, l.PdfUrl, l.AttachmentFileName
                 )).ToList(),
                 null
             )).ToList();
@@ -928,7 +918,7 @@ public class CoursesController : BaseApiController
     public async Task<IActionResult> DeleteModule(Guid moduleId)
     {
         var module = await DbContext.Modules
-            .Include(m => m.Lessons)
+            .Include(m => m.ContentItems)
             .FirstOrDefaultAsync(m => m.Id == moduleId);
 
         if (module == null)
@@ -957,7 +947,7 @@ public class CoursesController : BaseApiController
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
         var studentId = Guid.TryParse(uidClaim, out var parsedId) ? parsedId : Guid.Empty;
 
-        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.ContentItems.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
@@ -970,7 +960,7 @@ public class CoursesController : BaseApiController
         if (await EnforceCourseContentAccess(lessonCourseId) is { } denied) return denied;
 
         var isCompleted = studentId != Guid.Empty && await DbContext.LessonCompletions
-            .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
+            .AnyAsync(lc => lc.ContentItemId == lessonId && lc.StudentId == studentId);
 
         var dto = new LessonDetailDto(
             lesson.Id,
@@ -982,7 +972,7 @@ public class CoursesController : BaseApiController
             lesson.AttachmentFileName,
             lesson.XpReward,
             lesson.EstimatedMinutes,
-            lesson.OrderIndex,
+            lesson.DisplayOrder,
             isCompleted
         );
 
@@ -999,7 +989,7 @@ public class CoursesController : BaseApiController
     [AllowAnonymous]
     public async Task<IActionResult> GetFreePreviewLesson(Guid lessonId)
     {
-        var lesson = await DbContext.Lessons.AsNoTracking()
+        var lesson = await DbContext.ContentItems.AsNoTracking()
             .FirstOrDefaultAsync(l => l.Id == lessonId && l.IsFreePreview);
         if (lesson == null)
         {
@@ -1024,7 +1014,7 @@ public class CoursesController : BaseApiController
             lesson.Content,
             lesson.VideoUrl,
             lesson.EstimatedMinutes,
-            lesson.OrderIndex,
+            lesson.DisplayOrder,
             courseId = course.Id,
             courseTitle = course.Title,
             // Attachments deliberately omitted: preview must never leak the full material.
@@ -1049,7 +1039,7 @@ public class CoursesController : BaseApiController
             return NotFound(new { message = "Course not found." });
         }
 
-        var lessonXp = await DbContext.Lessons.AsNoTracking()
+        var lessonXp = await DbContext.ContentItems.AsNoTracking()
             .Where(l => l.Module != null && l.Module.CourseId == id)
             .SumAsync(l => (int?)l.XpReward) ?? 0;
 
@@ -1085,9 +1075,11 @@ public class CoursesController : BaseApiController
             return Forbid();
         }
 
-        var lesson = new Lesson
+        // Lessons are stored as content items in the canonical Course → Module → Topic → ContentItem tree.
+        var lesson = new ContentItem
         {
             ModuleId = moduleId,
+            ContentType = "Lesson",
             Title = request.Title,
             Content = request.Content,
             VideoUrl = request.VideoUrl,
@@ -1095,11 +1087,11 @@ public class CoursesController : BaseApiController
             AttachmentFileName = request.AttachmentFileName,
             XpReward = request.XpReward,
             EstimatedMinutes = request.EstimatedMinutes,
-            OrderIndex = request.OrderIndex,
+            DisplayOrder = request.OrderIndex,
             IsFreePreview = request.IsFreePreview
         };
 
-        await DbContext.Lessons.AddAsync(lesson);
+        await DbContext.ContentItems.AddAsync(lesson);
         await DbContext.SaveChangesAsync();
         return Ok(lesson);
     }
@@ -1108,7 +1100,7 @@ public class CoursesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateLesson(Guid lessonId, [FromBody] UpdateLessonRequest request)
     {
-        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.ContentItems.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
@@ -1127,7 +1119,7 @@ public class CoursesController : BaseApiController
         if (request.AttachmentFileName != null) lesson.AttachmentFileName = request.AttachmentFileName;
         lesson.XpReward = request.XpReward;
         lesson.EstimatedMinutes = request.EstimatedMinutes;
-        lesson.OrderIndex = request.OrderIndex;
+        lesson.DisplayOrder = request.OrderIndex;
         if (request.IsFreePreview.HasValue) lesson.IsFreePreview = request.IsFreePreview.Value;
         lesson.UpdatedAt = DateTime.UtcNow;
 
@@ -1649,26 +1641,35 @@ public class CoursesController : BaseApiController
 
         var enrollments = await DbContext.Enrollments
             .Where(e => e.StudentId == studentId
-                && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Pending))
+                && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed || e.Status == EnrollmentStatus.Pending))
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Instructor)
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Modules)
-                    .ThenInclude(m => m.Lessons)
+                    .ThenInclude(m => m.ContentItems)
             .ToListAsync();
 
         var myCourseIds = enrollments.Select(e => e.CourseId).Distinct().ToList();
         var ratingSummaries = await _ratingService.GetCourseSummariesAsync(myCourseIds);
         var completedLessonIds = await DbContext.LessonCompletions
             .Where(lc => lc.StudentId == studentId)
-            .Select(lc => lc.LessonId)
+            .Select(lc => lc.ContentItemId)
             .Distinct()
             .ToListAsync();
 
+        // Progress for approved enrollments comes from the single progress formula.
+        var progressByCourse = new Dictionary<Guid, CourseProgress>();
+        foreach (var e in enrollments.Where(e => e.Status.GrantsAccess()))
+        {
+            var refreshed = await _progressService.RefreshEnrollmentAsync(e.CourseId, studentId);
+            if (refreshed != null) progressByCourse[e.CourseId] = refreshed;
+        }
+        await DbContext.SaveChangesAsync();
+
         var myCourses = enrollments.Select(e =>
         {
-            var courseLessons = e.Course?.Modules.SelectMany(m => m.Lessons).ToList()
-                ?? new List<Lesson>();
+            var courseLessons = e.Course?.Modules.SelectMany(m => m.ContentItems).ToList()
+                ?? new List<ContentItem>();
             var totalLessons = courseLessons.Count;
             var completedLessons = courseLessons.Count(l => completedLessonIds.Contains(l.Id));
 
@@ -1808,7 +1809,7 @@ public class CoursesController : BaseApiController
         }
 
         var enrolledStudents = await DbContext.Enrollments
-            .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
+            .Where(e => e.CourseId == courseId && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
             .Include(e => e.Student)
             .Select(e => new EnrolledStudentDto(
                 e.StudentId,
@@ -1888,7 +1889,7 @@ public class CoursesController : BaseApiController
             return Unauthorized();
         }
 
-        var lesson = await DbContext.Lessons.FirstOrDefaultAsync(l => l.Id == lessonId);
+        var lesson = await DbContext.ContentItems.FirstOrDefaultAsync(l => l.Id == lessonId);
         if (lesson == null)
         {
             return NotFound(new { message = "Lesson not found." });
@@ -1901,29 +1902,44 @@ public class CoursesController : BaseApiController
         if (await EnforceCourseContentAccess(lessonCourseId) is { } completeDenied) return completeDenied;
 
         var alreadyCompleted = await DbContext.LessonCompletions
-            .AnyAsync(lc => lc.LessonId == lessonId && lc.StudentId == studentId);
+            .AnyAsync(lc => lc.ContentItemId == lessonId && lc.StudentId == studentId);
 
         if (!alreadyCompleted)
         {
-            var completion = new LessonCompletion
+            // Completion, its XP and the refreshed course progress are committed together.
+            var completed = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
             {
-                LessonId = lessonId,
-                StudentId = studentId,
-                CompletedAt = DateTime.UtcNow
-            };
-            await DbContext.LessonCompletions.AddAsync(completion);
-            await DbContext.SaveChangesAsync();
+                DbContext.ChangeTracker.Clear();
+                await using var transaction = DbContext.Database.IsRelational()
+                    ? await DbContext.Database.BeginTransactionAsync()
+                    : null;
 
-            // Award XP for lesson completion
-            var gamificationResult = await _gamificationService.AwardXpAsync(
-                studentId,
-                XpSourceType.LessonCompleted,
-                lessonId,
-                lesson.XpReward,
-                $"Completed lesson: {lesson.Title}"
-            );
+                DbContext.LessonCompletions.Add(new LessonCompletion
+                {
+                    ContentItemId = lessonId,
+                    StudentId = studentId,
+                    CompletedAt = DateTime.UtcNow
+                });
+                await DbContext.SaveChangesAsync();
 
-            return Ok(new { message = "Lesson completed!", gamification = gamificationResult });
+                var reward = lesson.XpReward > 0
+                    ? await _gamificationService.AwardXpAsync(studentId, XpSourceType.LessonCompleted, lessonId,
+                        lesson.XpReward, $"Completed lesson: {lesson.Title}")
+                    : null;
+
+                var progress = await _progressService.RefreshEnrollmentAsync(lessonCourseId, studentId);
+                await DbContext.SaveChangesAsync();
+
+                if (transaction != null) await transaction.CommitAsync();
+                return (reward, progress);
+            });
+
+            return Ok(new
+            {
+                message = "Lesson completed!",
+                gamification = completed.reward,
+                progressPercentage = completed.progress?.Percentage
+            });
         }
 
         return Ok(new { message = "Lesson was already completed." });

@@ -380,7 +380,7 @@ public class InstructorsController : BaseApiController
         var courses = await DbContext.Courses.AsNoTracking()
             .Where(c => c.InstructorId == user.Id && c.IsPublished)
             .Include(c => c.Modules)
-                .ThenInclude(m => m.Lessons)
+                .ThenInclude(m => m.ContentItems)
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
 
@@ -419,7 +419,7 @@ public class InstructorsController : BaseApiController
                 ratingSummary.AverageRating,
                 ratingSummary.ReviewCount,
                 c.Modules.Count,
-                c.Modules.Sum(m => m.Lessons.Count)
+                c.Modules.Sum(m => m.ContentItems.Count)
             );
         }).ToList();
 

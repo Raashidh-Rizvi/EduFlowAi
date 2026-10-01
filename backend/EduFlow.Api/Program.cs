@@ -38,6 +38,7 @@ builder.Services.AddScoped<IAttemptService, AttemptService>();
 builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
 builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
 builder.Services.AddScoped<IGradeService, GradeService>();
+builder.Services.AddScoped<IProgressService, ProgressService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.

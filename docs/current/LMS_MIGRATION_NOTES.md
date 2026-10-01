@@ -150,3 +150,48 @@ Migration: `GradingPoliciesAndCourseResults`. Additive only:
 
 **Deployment:** nothing needs configuring before deploying. Courses stay ungraded until an
 instructor assigns weights and activates grading.
+
+## PR 5 — Canonical content tree and progress
+
+Migration: `CanonicalContentTreeAndProgress`. **Non-destructive.**
+
+### Content tree: Course → Module → Topic → ContentItem
+
+- **Lesson data:** every row of `Lessons` is copied into `ContentItems` with the **same Id**
+  (`ContentType = 'Lesson'`, `DisplayOrder` = the old `OrderIndex`, `Status = 'Published'`).
+  Lesson URLs, client state, XP ledger references and completions therefore still point at
+  the same learning unit. `ContentItems` gains `IsFreePreview`.
+- **Completions:** `LessonCompletions.ContentItemId` is filled from `LessonId`. Duplicate
+  completions of the same item by the same student are reduced to the earliest one. A new
+  unique index covers `(StudentId, ContentItemId)`.
+- **API compatibility:** the `/lessons` endpoints keep their routes and payloads but read and
+  write content items. Course detail and marketplace module lessons come from the module's
+  content items.
+- **Legacy left in place:** the `Lessons` table, `LessonCompletions.LessonId` and
+  `StudyPlanItems.ReferencedLessonId` stay read-only until the legacy-removal PR. No code
+  reads or writes them.
+
+### Progress (`ProgressService`, the only formula)
+
+- **Formula:** course progress = (completed **published** content items + **passed**
+  published assessments) ÷ (all published content items + published assessments). A passed
+  assessment means an evaluated, passing attempt. Module progress uses the same rule per
+  module.
+- **Cached value:** `Enrollments.ProgressPercentage` is a cache written only by
+  `ProgressService`. The migration recomputes it for every enrollment with the same formula
+  in SQL, replacing seeded or stale values.
+- **When it refreshes:**
+  - in the same transaction as a lesson completion (with its XP) and as an attempt becoming
+    evaluated;
+  - on `GET /api/courses/{id}/progress`;
+  - on "my courses".
+- **Completion milestone:** completing every unit sets the enrollment to `Completed` with a
+  new `CompletedAt`. This isn't reverted if content is added later; the percentage still
+  reflects the new content. Queries that list enrolled students or "my courses" now include
+  `Completed` enrollments. The legacy admin `totalEnrollments` stays Active-only.
+- **Removed fabricated course statistics:**
+  - completion rate defaults of 82.5% and 74%;
+  - an average score of 86.5% when there were no submissions;
+  - engagement floored at 70%, and 91.2% when there were no students.
+
+  Course statistics now use real data, or 0 when there is none.

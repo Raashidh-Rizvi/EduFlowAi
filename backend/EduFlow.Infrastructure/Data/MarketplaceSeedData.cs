@@ -123,12 +123,13 @@ public static class MarketplaceSeedData
 
                 for (var l = 0; l < moduleSpec.Lessons.Length; l++)
                 {
-                    context.Lessons.Add(new Lesson
+                    context.ContentItems.Add(new ContentItem
                     {
                         ModuleId = module.Id,
                         Title = moduleSpec.Lessons[l],
                         Content = $"Lesson {l + 1} of {moduleSpec.Title}.",
-                        OrderIndex = l + 1,
+                        ContentType = "Lesson",
+                        DisplayOrder = l + 1,
                         EstimatedMinutes = 15 + (l * 5),
                         XpReward = 25
                     });

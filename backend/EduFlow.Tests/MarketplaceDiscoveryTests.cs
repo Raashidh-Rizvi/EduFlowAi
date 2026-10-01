@@ -151,16 +151,16 @@ public class MarketplaceDiscoveryTests : IDisposable
         var module = new Module { CourseId = courseId, Title = "Module", OrderIndex = 1 };
         db.Modules.Add(module);
         await db.SaveChangesAsync();
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = title,
             Content = isFreePreview ? "FREE PREVIEW BODY" : "PROTECTED BODY",
-            OrderIndex = 1,
+            DisplayOrder = 1,
             XpReward = 40,
             IsFreePreview = isFreePreview
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
         return lesson.Id;
     }
