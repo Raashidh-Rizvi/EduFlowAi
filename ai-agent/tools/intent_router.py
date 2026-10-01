@@ -44,6 +44,15 @@ class IntentRouter:
             topic = data.get("topic")
             if topic and not isinstance(topic, str):
                 topic = None
+            if topic and isinstance(topic, str):
+                cleaned_topic = topic.lower().strip()
+                generic_terms = {
+                    "example", "real world example", "realworld example", "real-world example",
+                    "one more example", "more examples", "another example", "give", "give more",
+                    "more", "it", "this", "that"
+                }
+                if cleaned_topic in generic_terms:
+                    topic = None
             return intent, topic
 
         try:
