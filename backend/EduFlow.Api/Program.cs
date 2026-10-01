@@ -32,6 +32,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
+builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.
@@ -164,6 +165,19 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogCritical(ex, "Database initialization/migration failed. Application cannot start safely.");
         throw;
+    }
+
+    // Demo accounts and content exist only in Development; other environments get schema only.
+    if (app.Environment.IsDevelopment())
+    {
+        try
+        {
+            DbInitializer.SeedDevelopmentData(services.GetRequiredService<ApplicationDbContext>());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Development demo data seeding failed; continuing without complete demo data.");
+        }
     }
 }
 

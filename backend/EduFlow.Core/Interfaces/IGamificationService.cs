@@ -14,6 +14,7 @@ public interface IGamificationService
         Guid studentId, 
         Guid assessmentId, 
         int scorePercent, 
+        bool passed,
         int timeSpentSeconds, 
         DifficultyLevel difficulty, 
         QuizScopeType scopeType, 

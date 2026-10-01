@@ -56,6 +56,7 @@ public class InstructorDashboardScopingTests
 
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();

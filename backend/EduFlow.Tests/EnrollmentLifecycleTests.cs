@@ -65,6 +65,7 @@ public class EnrollmentLifecycleTests
 
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (paymentGate != null)
             builder.Services.AddScoped<IPaymentVerificationService>(_ => paymentGate);

@@ -108,12 +108,12 @@ public record NextBestActionDto(
     string ActionType, // TAKE_REMEDIATION_QUIZ, TAKE_BOSS_CHALLENGE, WATCH_LESSON, REVIEW_TOPIC, DO_CHALLENGE, REST
     string Title,
     string Description,
-    string TargetTopic,
+    string? TargetTopic,
     string Reason,
     int EstimatedTimeMinutes,
     int RewardXp,
     Guid? LinkedScopeId,
-    string LinkedScopeType // "Topic" | "Module" | "Course"
+    string? LinkedScopeType // "Topic" | "Module" | "Course", null when no scope applies
 );
 
 public record QuizXpBreakdownDto(

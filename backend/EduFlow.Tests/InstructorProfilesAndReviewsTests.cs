@@ -65,6 +65,8 @@ public class InstructorProfilesAndReviewsTests
             options.UseInMemoryDatabase(databaseName));
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
+        builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (requireApproval)
         {

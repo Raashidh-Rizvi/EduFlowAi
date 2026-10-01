@@ -109,9 +109,19 @@ public class GamificationController : ControllerBase
     }
 
     // Public: badges list is not private (any authenticated user can view)
+    // Badge catalogue is public; a student's unlock state is only visible to that student
+    // (or to staff).
     [HttpGet("badges")]
     public async Task<ActionResult<List<BadgeDto>>> GetAllBadges([FromQuery] Guid? studentId, CancellationToken ct)
     {
+        if (studentId.HasValue)
+        {
+            var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+            bool isStaff = User.IsInRole("Admin") || User.IsInRole("Instructor");
+            if (!Guid.TryParse(callerIdStr, out var callerId) || (callerId != studentId.Value && !isStaff))
+                return Forbid();
+        }
+
         var badges = await _gamificationService.GetAllBadgesAsync(studentId, ct);
         return Ok(badges);
     }
@@ -141,7 +151,12 @@ public class GamificationController : ControllerBase
     [Authorize]
     public async Task<ActionResult<FocusSessionResponseDto>> RecordFocusSession([FromBody] FocusSessionRequestDto request, CancellationToken ct)
     {
-        var result = await _gamificationService.AwardFocusSessionXpAsync(request, ct);
+        // XP always goes to the authenticated caller; any studentId in the body is ignored.
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(callerIdStr, out var callerId))
+            return Unauthorized();
+
+        var result = await _gamificationService.AwardFocusSessionXpAsync(request with { StudentId = callerId }, ct);
         if (!result.Success)
         {
             return BadRequest(result);
@@ -155,8 +170,9 @@ public class GamificationController : ControllerBase
         return Ok(_gamificationService.GetXpMultiplier());
     }
 
+    // Platform-wide setting: Admin only.
     [HttpPost("multiplier")]
-    [Authorize(Roles = "Instructor,Admin")]
+    [Authorize(Roles = "Admin")]
     public ActionResult<double> SetMultiplier([FromBody] SetMultiplierRequest request)
     {
         _gamificationService.SetXpMultiplier(request.Multiplier);

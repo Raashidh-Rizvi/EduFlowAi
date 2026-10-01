@@ -8,15 +8,20 @@ public static class DbInitializer
 {
     /// <summary>
     /// Applies any pending EF Core migrations, creating the database if it doesn't exist yet.
-    /// Ensures demo users (admin, instructor, student) are seeded with valid credentials.
+    /// Failure is NOT swallowed: the caller (Program.cs) rethrows so the application refuses
+    /// to start with an out-of-sync schema.
     /// </summary>
     public static void Initialize(ApplicationDbContext context)
     {
-        // Apply pending migrations. Failure is NOT swallowed: the caller (Program.cs)
-        // rethrows so the application refuses to start with an out-of-sync schema.
         context.Database.Migrate();
+    }
 
-        try
+    /// <summary>
+    /// Seeds demo accounts and demo course content. Development only: the caller must check
+    /// the hosting environment, and exceptions propagate so the caller can log them.
+    /// </summary>
+    public static void SeedDevelopmentData(ApplicationDbContext context)
+    {
         {
             var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
             var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
@@ -975,10 +980,6 @@ public static class DbInitializer
 
             // Public storefront catalogue (published courses, curriculum, reviews).
             MarketplaceSeedData.Seed(context);
-        }
-        catch
-        {
-            // Ignore if already configured
         }
     }
 }

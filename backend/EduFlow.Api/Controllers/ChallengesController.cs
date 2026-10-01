@@ -149,18 +149,18 @@ public class ChallengesController : BaseApiController
             return NotFound(new { message = "Challenge not found." });
         }
 
-        // Award XP and coins through the Gamification Engine
-        var result = await _gamificationService.AwardXpAsync(
-            studentId,
-            XpSourceType.DailyChallenge,
-            challenge.Id,
-            challenge.XpReward,
-            $"Completed challenge: {challenge.Title}"
-        );
+        if (!challenge.IsActive)
+        {
+            return BadRequest(new { message = "This challenge is no longer active." });
+        }
 
-        // Update StudentChallenge attempt status
+        // A challenge pays out once per student; repeat submissions earn nothing.
         var studentChallenge = await DbContext.StudentChallenges
             .FirstOrDefaultAsync(sc => sc.ChallengeId == id && sc.StudentId == studentId);
+        if (studentChallenge?.Status == ChallengeStatus.Completed)
+        {
+            return Conflict(new { message = "You have already completed this challenge.", code = "CHALLENGE_ALREADY_COMPLETED" });
+        }
 
         if (studentChallenge == null)
         {
@@ -181,7 +181,14 @@ public class ChallengesController : BaseApiController
             studentChallenge.CompletedAt = DateTime.UtcNow;
         }
 
-        await DbContext.SaveChangesAsync();
+        // AwardXpAsync saves the tracked completion row and the XP ledger entry together.
+        var result = await _gamificationService.AwardXpAsync(
+            studentId,
+            XpSourceType.DailyChallenge,
+            challenge.Id,
+            challenge.XpReward,
+            $"Completed challenge: {challenge.Title}"
+        );
 
         return Ok(result);
     }

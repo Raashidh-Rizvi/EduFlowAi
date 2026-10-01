@@ -138,7 +138,10 @@ api.interceptors.response.use(
           }
         }
       } else if (error.response.status === 403) {
-        friendlyMessage = "You do not have permission to perform this action.";
+        // Server-side eligibility denials (not enrolled, not published, closed) carry their reason.
+        friendlyMessage = error.response.data?.message || "You do not have permission to perform this action.";
+      } else if (error.response.status === 409 || error.response.status === 502) {
+        friendlyMessage = error.response.data?.message || "The request could not be completed in the current state.";
       } else if (error.response.status === 400 || error.response.status === 404) {
         friendlyMessage = error.response.data?.detail || error.response.data?.message || "We couldn't process that request. Please verify your information.";
       } else if (error.response.status === 429) {

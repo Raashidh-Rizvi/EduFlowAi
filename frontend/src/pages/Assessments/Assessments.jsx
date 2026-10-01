@@ -678,22 +678,18 @@ export default function Assessments({ currentUser }) {
   };
 
   const handleStartQuiz = async (quiz) => {
-    let fullQuiz = quiz;
-    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
-      const localMatches = getGeneratedQuizzes(quiz.courseId || quizCourseId);
-      const foundLocal = localMatches.find(q => q.id === quiz.id || q.title === quiz.title);
-      if (foundLocal && foundLocal.questions && foundLocal.questions.length > 0) {
-        fullQuiz = { ...fullQuiz, ...foundLocal };
-      } else {
-        try {
-          const detail = await quizService.getQuizById(quiz.id);
-          if (detail && detail.questions && detail.questions.length > 0) {
-            fullQuiz = detail;
-          }
-        } catch (err) {
-          console.warn('Could not load quiz details:', err);
-        }
-      }
+    let fullQuiz;
+    try {
+      const attempt = await quizService.startQuiz(quiz.id);
+      fullQuiz = {
+        ...quiz,
+        id: attempt.quizId,
+        title: attempt.quizTitle,
+        questions: attempt.questions || []
+      };
+    } catch (err) {
+      alert(err.friendlyMessage || 'This quiz cannot be started right now.');
+      return;
     }
     setRunningQuiz(fullQuiz);
     setRunnerStep(0);
@@ -719,46 +715,6 @@ export default function Assessments({ currentUser }) {
           console.warn('Could not load quiz inspection details:', err);
         }
       }
-    }
-    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
-      fullQuiz = {
-        ...fullQuiz,
-        questions: [
-          {
-            prompt: `What is the primary architectural invariant covered in ${fullQuiz.title || 'this assessment'}?`,
-            options: [
-              'Enforce strict domain encapsulation via bounded contexts',
-              'Expose internal relational tables over public unauthenticated endpoints',
-              'Bypass validation guards during runtime execution',
-              'Maintain unsynchronized global mutable dictionaries across threads'
-            ],
-            correctAnswer: 'Enforce strict domain encapsulation via bounded contexts',
-            explanation: 'Clean Architecture mandates bounded contexts and explicit contract interfaces for domain boundary integrity.'
-          },
-          {
-            prompt: 'Which strategy guarantees linearizable state machine replication under network partitions?',
-            options: [
-              'Raft / Paxos Leader Quorum Consensus',
-              'Asynchronous Fire-and-Forget Message Queuing',
-              'Eventual Gossip Protocol Synchronization',
-              'Unsynchronized Local Cache Mutation'
-            ],
-            correctAnswer: 'Raft / Paxos Leader Quorum Consensus',
-            explanation: 'Quorum consensus algorithms guarantee strict linearizability across non-faulty state machine replicas.'
-          },
-          {
-            prompt: 'What mechanism prevents deadlock condition during multi-resource transactional updates?',
-            options: [
-              'Strict Lock Acquisition Ordering or Two-Phase Locking (2PL)',
-              'Ignoring Lock Contention Timeouts',
-              'Randomizing Resource Allocation without Invariants',
-              'Executing all operations in non-isolated parallel threads'
-            ],
-            correctAnswer: 'Strict Lock Acquisition Ordering or Two-Phase Locking (2PL)',
-            explanation: 'Two-Phase Locking combined with deterministic lock acquisition hierarchy prevents wait-for graph deadlocks.'
-          }
-        ]
-      };
     }
     setInspectingQuiz(fullQuiz);
   };
@@ -856,60 +812,29 @@ export default function Assessments({ currentUser }) {
         selectedAnswer: runnerAnswers[idx] || ''
       }));
 
-      let res;
-      try {
-        res = await quizService.submitQuiz(runningQuiz.id, answersPayload);
-      } catch {
-        // High fidelity deterministic fallback evaluation
-        let correctCount = 0;
-        qList.forEach((q, idx) => {
-          if (runnerAnswers[idx] === q.correctAnswer || (!runnerAnswers[idx] && idx === 0)) {
-            correctCount += 1;
-          }
-        });
-        const pct = Math.round((correctCount / Math.max(1, qList.length)) * 100);
-        res = {
-          passed: pct >= (runningQuiz.passThreshold || 70),
-          percentageScore: pct,
-          xpEarned: pct >= 70 ? 95 : 30,
-          coinsEarned: 25,
-          xpBreakdown: {
-            baseXp: 50,
-            difficultyBonus: 10,
-            passBonus: pct >= 70 ? 20 : 0,
-            highScoreBonus: pct >= 90 ? 20 : (pct >= 80 ? 10 : 0),
-            streakBonus: 5,
-            improvementBonus: 20,
-            totalXpEarned: pct >= 70 ? 105 : 35,
-            coinsEarned: 25,
-            isPersonalBest: true,
-            previousBestScorePercent: 72,
-            currentScorePercent: pct
-          },
-          masteryUpdates: [
-            { topicName: runningQuiz.title || 'Functions & Scope', masteryPercentage: Math.min(100, pct + 12), statusColor: pct >= 80 ? 'green' : 'yellow' }
-          ],
-          levelUpOccurred: false,
-          newLevel: 12,
-          newTotalXp: 6525,
-          badgeUnlocked: pct >= 100 ? 'PERFECT_SCORE' : (pct >= 90 ? 'QUIZ_MASTER' : null)
-        };
-      }
+      const res = await quizService.submitQuiz(runningQuiz.id, answersPayload);
 
       setRunningQuiz(null);
       setRewardBreakdownModal(res);
     } catch (err) {
-      alert(err.friendlyMessage || 'An unexpected error occurred while submitting your quiz attempt.');
+      // The attempt stays open so the student can retry; nothing was recorded.
+      alert(err.friendlyMessage || 'Your answers could not be submitted. No result was recorded.');
     } finally {
       setSubmittingAttempt(false);
     }
   };
 
-  const handleDeleteQuiz = (id) => {
+  const handleDeleteQuiz = async (id) => {
     if (window.confirm('Are you sure you want to delete this quiz?')) {
+      try {
+        await quizService.deleteQuiz(id);
+      } catch (err) {
+        // A quiz with student attempts must be archived instead (409).
+        alert(err.friendlyMessage || 'The quiz could not be deleted.');
+        return;
+      }
       deleteGeneratedQuiz(id);
       setQuizzesList(prev => prev.filter(q => q.id !== id));
-      quizService.deleteQuiz(id).catch(e => console.warn('Backend delete quiz fallback:', e));
     }
   };
 

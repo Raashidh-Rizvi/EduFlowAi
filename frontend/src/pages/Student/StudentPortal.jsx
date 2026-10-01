@@ -53,7 +53,6 @@ import { courseService } from "../../services/courseService";
 import { enrollmentService } from "../../services/enrollmentService";
 import { quizService } from "../../services/quizService";
 import { gamificationService } from "../../services/gamificationService";
-import { getGeneratedQuizzes } from "../../utils/quizStorageHelper";
 
 // ─── Sub-Components ────────────────────────────────────────────────────────────
 
@@ -1348,14 +1347,14 @@ function CurriculumTab({
 }
 
 function QuizRunner({ quiz, onComplete, onCancel }) {
+  // The runner never sees answer keys: it collects answers, submits them once, and
+  // renders only the authoritative result returned by the server.
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [done, setDone] = useState(false);
   const [answersPayload, setAnswersPayload] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [rewardResult, setRewardResult] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
 
   if (!quiz || !quiz.questions || quiz.questions.length === 0) {
     return (
@@ -1384,82 +1383,89 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
   }
 
   const q = quiz.questions[qIdx];
-  const isSelectedCorrect =
-    selected !== null &&
-    ((q.correctAnswer &&
-      q.options &&
-      q.options[selected] === q.correctAnswer) ||
-      selected === q.correct);
+  const isLast = qIdx === quiz.questions.length - 1;
 
-  const handleSubmit = () => {
-    if (isSelectedCorrect) setCorrectCount((c) => c + 1);
-    setSubmitted(true);
-  };
-
-  const handleNext = async () => {
-    const currentAnswerObj = {
-      questionId: q.id,
-      selectedAnswer: q.options[selected] || "",
-    };
-    const updatedAnswers = [...answersPayload, currentAnswerObj];
-    setAnswersPayload(updatedAnswers);
-
-    if (qIdx < quiz.questions.length - 1) {
-      setQIdx((i) => i + 1);
-      setSelected(null);
-      setSubmitted(false);
-    } else {
-      setSubmitting(true);
-      const totalCorrect = correctCount + (isSelectedCorrect ? 1 : 0);
-      const score = Math.round((totalCorrect / quiz.questions.length) * 100);
-      const passed =
-        score >= (quiz.passingScore || quiz.passingScorePercent || 70);
-
-      try {
-        const res = await onComplete(quiz, updatedAnswers, {
-          totalCorrect,
-          score,
-          passed,
-        });
-        if (res) {
-          setRewardResult(res);
-        }
-      } catch (err) {
-        console.warn("Backend quiz submission fallback:", err);
-      } finally {
-        setSubmitting(false);
-        setDone(true);
-      }
+  const submitAnswers = async (answers) => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      setRewardResult(await onComplete(quiz, answers));
+    } catch (err) {
+      setSubmitError(
+        err?.friendlyMessage ||
+          "Your answers could not be submitted. No result was recorded.",
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  if (done) {
-    const totalCorrect = correctCount;
-    const score = Math.round((totalCorrect / quiz.questions.length) * 100);
-    const passed = rewardResult
-      ? rewardResult.passed
-      : score >= (quiz.passingScore || quiz.passingScorePercent || 70);
-    const finalScore = rewardResult
-      ? Math.round(rewardResult.percentageScore)
-      : score;
-    const xpWon = rewardResult
-      ? rewardResult.xpEarned
-      : passed
-        ? finalScore === 100
-          ? (quiz.xpReward || 80) + 30
-          : quiz.xpReward || 80
-        : 20;
-    const coinsWon = rewardResult
-      ? rewardResult.coinsEarned
-      : passed
-        ? quiz.coinReward || 25
-        : 5;
-    const feedbackMsg =
-      rewardResult?.feedback ||
-      (passed
-        ? "Mastery confirmed! You demonstrated solid technical understanding."
-        : "Targeted practice recommended.");
-    const badge = rewardResult?.badgeUnlocked;
+  const handleNext = async () => {
+    const updatedAnswers = [
+      ...answersPayload,
+      { questionId: q.id, selectedAnswer: q.options[selected] || "" },
+    ];
+    setAnswersPayload(updatedAnswers);
+
+    if (!isLast) {
+      setQIdx((i) => i + 1);
+      setSelected(null);
+    } else {
+      await submitAnswers(updatedAnswers);
+    }
+  };
+
+  if (submitError) {
+    return (
+      <div
+        className="card-premium"
+        style={{ textAlign: "center", padding: "36px 20px" }}
+      >
+        <div
+          style={{
+            fontSize: "18px",
+            fontWeight: "800",
+            color: "var(--text-main)",
+            marginBottom: "8px",
+          }}
+        >
+          Submission Failed
+        </div>
+        <div
+          style={{
+            color: "var(--text-muted)",
+            fontSize: "13px",
+            marginBottom: "20px",
+          }}
+        >
+          {submitError}
+        </div>
+        <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+          <button
+            onClick={() => submitAnswers(answersPayload)}
+            disabled={submitting}
+            className="btn-primary"
+            style={{ padding: "10px 24px" }}
+          >
+            {submitting ? "Retrying..." : "Retry Submission"}
+          </button>
+          <button
+            onClick={onCancel}
+            className="btn-ghost"
+            style={{ padding: "10px 24px" }}
+          >
+            Return to Curriculum
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (rewardResult) {
+    const passed = rewardResult.passed;
+    const finalScore = Math.round(rewardResult.percentageScore);
+    const badge = rewardResult.badgeUnlocked;
+    const breakdown = rewardResult.questionBreakdown || [];
 
     return (
       <div
@@ -1474,9 +1480,7 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
             marginBottom: "6px",
           }}
         >
-          {passed
-            ? "🎉 Assessment Completed & Points Awarded!"
-            : "Assessment Finished"}
+          {passed ? "🎉 Assessment Passed" : "Assessment Finished"}
         </div>
         <div
           style={{
@@ -1485,8 +1489,10 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
             marginBottom: "16px",
           }}
         >
-          Score: {finalScore}% • Required:{" "}
-          {quiz.passingScore || quiz.passingScorePercent || 70}%
+          Score: {rewardResult.scoreObtained}/{rewardResult.maxScore} (
+          {finalScore}%)
+          {quiz.passingScorePercent != null &&
+            ` • Required: ${quiz.passingScorePercent}%`}
         </div>
         <div
           style={{
@@ -1501,7 +1507,8 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
             marginBottom: "16px",
           }}
         >
-          +{xpWon} XP • +{coinsWon} EduCoins Earned
+          +{rewardResult.xpEarned ?? 0} XP • +{rewardResult.coinsEarned ?? 0}{" "}
+          EduCoins Earned
         </div>
         {badge && (
           <div
@@ -1520,17 +1527,61 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
             🏆 New Badge Unlocked: {badge.replace(/_/g, " ")}!
           </div>
         )}
-        <div
-          style={{
-            fontSize: "12.5px",
-            color: "var(--text-muted)",
-            maxWidth: "440px",
-            margin: "0 auto 24px auto",
-            lineHeight: "1.5",
-          }}
-        >
-          {feedbackMsg}
-        </div>
+        {rewardResult.feedback && (
+          <div
+            style={{
+              fontSize: "12.5px",
+              color: "var(--text-muted)",
+              maxWidth: "440px",
+              margin: "0 auto 20px auto",
+              lineHeight: "1.5",
+            }}
+          >
+            {rewardResult.feedback}
+          </div>
+        )}
+        {breakdown.length > 0 && (
+          <div
+            style={{
+              textAlign: "left",
+              maxWidth: "560px",
+              margin: "0 auto 24px auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+            }}
+          >
+            {breakdown.map((item, i) => (
+              <div
+                key={item.questionId || i}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "var(--radius-sm)",
+                  border: `1px solid ${item.isCorrect ? "var(--success-border)" : "var(--accent-border)"}`,
+                  background: item.isCorrect
+                    ? "var(--success-soft)"
+                    : "var(--accent-soft)",
+                  fontSize: "12px",
+                  color: "var(--text-main)",
+                  lineHeight: "1.5",
+                }}
+              >
+                <div style={{ fontWeight: "700" }}>
+                  {i + 1}. {item.prompt} ({item.pointsAwarded} marks)
+                </div>
+                <div>Your answer: {item.selectedAnswer || "(no answer)"}</div>
+                {item.correctAnswer && item.correctAnswer !== "Hidden" && (
+                  <div>Correct answer: {item.correctAnswer}</div>
+                )}
+                {item.explanation && (
+                  <div style={{ color: "var(--text-muted)" }}>
+                    {item.explanation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         <div>
           <button
             onClick={onCancel}
@@ -1614,36 +1665,19 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {q.options.map((opt, i) => {
-          let bg = "var(--bg-card)";
-          let border = "var(--border-card)";
-          let textColor = "var(--text-main)";
-          const isOptionCorrect =
-            (q.correctAnswer && opt === q.correctAnswer) || i === q.correct;
-          if (submitted) {
-            if (isOptionCorrect) {
-              bg = "var(--success-soft)";
-              border = "var(--success-border)";
-              textColor = "var(--success)";
-            } else if (i === selected) {
-              bg = "var(--accent-soft)";
-              border = "var(--accent-border)";
-              textColor = "var(--accent)";
-            }
-          } else if (i === selected) {
-            bg = "var(--primary-soft)";
-            border = "var(--primary-border)";
-          }
-
+          const isSelected = i === selected;
           return (
             <div
               key={i}
-              onClick={() => !submitted && setSelected(i)}
+              onClick={() => !submitting && setSelected(i)}
               style={{
                 padding: "12px 14px",
                 borderRadius: "var(--radius-sm)",
-                background: bg,
-                border: `1px solid ${border}`,
-                cursor: submitted ? "default" : "pointer",
+                background: isSelected
+                  ? "var(--primary-soft)"
+                  : "var(--bg-card)",
+                border: `1px solid ${isSelected ? "var(--primary-border)" : "var(--border-card)"}`,
+                cursor: submitting ? "default" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 gap: "10px",
@@ -1655,15 +1689,16 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
                   width: "24px",
                   height: "24px",
                   borderRadius: "50%",
-                  background:
-                    i === selected ? "var(--primary)" : "var(--bg-surface)",
+                  background: isSelected
+                    ? "var(--primary)"
+                    : "var(--bg-surface)",
                   border: "1px solid var(--border-subtle)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "11.5px",
                   fontWeight: "700",
-                  color: i === selected ? "#FFFFFF" : "var(--text-main)",
+                  color: isSelected ? "#FFFFFF" : "var(--text-main)",
                   flexShrink: 0,
                 }}
               >
@@ -1673,7 +1708,7 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
                 style={{
                   fontSize: "12.5px",
                   fontWeight: "500",
-                  color: textColor,
+                  color: "var(--text-main)",
                 }}
               >
                 {opt}
@@ -1683,26 +1718,9 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
         })}
       </div>
 
-      {submitted && (
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-subtle)",
-            fontSize: "12px",
-            color: "var(--text-muted)",
-            lineHeight: "1.5",
-          }}
-        >
-          <strong style={{ color: "var(--text-main)" }}>Explanation:</strong>{" "}
-          {q.explanation || "Evaluated by EduFlow AI."}
-        </div>
-      )}
-
       <button
         disabled={selected === null || submitting}
-        onClick={submitted ? handleNext : handleSubmit}
+        onClick={handleNext}
         className="btn-primary"
         style={{
           width: "100%",
@@ -1712,12 +1730,10 @@ function QuizRunner({ quiz, onComplete, onCancel }) {
         }}
       >
         {submitting
-          ? "Submitting & Recording Rewards..."
-          : submitted
-            ? qIdx === quiz.questions.length - 1
-              ? "Finish & Record XP"
-              : "Next Question →"
-            : "Submit Answer"}
+          ? "Submitting..."
+          : isLast
+            ? "Submit Assessment"
+            : "Next Question →"}
       </button>
     </div>
   );
@@ -2530,7 +2546,6 @@ function FocusFlowTab({ profile, onSessionCompleted }) {
 
     try {
       const res = await gamificationService.recordFocusSession({
-        studentId: profile.studentId || "33333333-3333-3333-3333-333333333333",
         durationMinutes: minutes,
         topicOrTask: taskName,
         focusTechnique: `Pomodoro (${minutes}m)`,
@@ -2554,19 +2569,15 @@ function FocusFlowTab({ profile, onSessionCompleted }) {
       } catch {}
 
       setCelebrationModal({
-        xp: res.xpAwarded || minutes * 2,
-        coins: res.coinsAwarded || 15,
+        xp: res.xpAwarded ?? 0,
+        coins: res.coinsAwarded ?? 0,
         artifact,
         task: taskName,
         message: res.message,
       });
 
       if (onSessionCompleted) {
-        onSessionCompleted(
-          res.xpAwarded || minutes * 2,
-          res.coinsAwarded || 15,
-          res.newStreak || profile.streak + 1,
-        );
+        await onSessionCompleted();
       }
     } catch (err) {
       console.warn("Session recording error:", err);
@@ -3724,6 +3735,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       await refreshRequests();
 
       // 1. Load Enrolled Courses with Full Modules & Syllabus
+      let loadedCourses = [];
       try {
         let rawCourses = [];
         try {
@@ -3774,74 +3786,30 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           }));
           if (mapped.length > 0) {
             setCourses(mapped);
+            loadedCourses = mapped;
           }
         }
       } catch (err) {
         console.warn("Could not load courses, using seed:", err);
       }
 
-      // 2. Load Real Course Quizzes from PostgreSQL & Local Storage
+      // 2. The next quiz comes from the student's own courses; the API only returns
+      //    published quizzes for courses the student is enrolled in.
       try {
-        const qList = await quizService
-          .getQuizzes("44444444-4444-4444-4444-444444444444")
-          .catch(() => []);
-        const localList = getGeneratedQuizzes(
-          "44444444-4444-4444-4444-444444444444",
-        );
-        const combined = [...localList, ...(qList || [])];
-        if (combined.length > 0) {
-          const targetQuiz = combined[0];
-          if (targetQuiz.questions && targetQuiz.questions.length > 0) {
-            setServerQuiz(targetQuiz);
-          } else {
-            try {
-              const detailedQuiz = await quizService.getQuizById(targetQuiz.id);
-              if (detailedQuiz && detailedQuiz.questions) {
-                setServerQuiz(detailedQuiz);
-              } else {
-                setServerQuiz(targetQuiz);
-              }
-            } catch {
-              setServerQuiz(targetQuiz);
-            }
+        const courseIds = (Array.isArray(loadedCourses) ? loadedCourses : []).map((c) => c.id);
+        for (const courseId of courseIds) {
+          const qList = await quizService.getQuizzes(courseId).catch(() => []);
+          if (Array.isArray(qList) && qList.length > 0) {
+            setServerQuiz(qList[0]);
+            break;
           }
         }
       } catch (err) {
-        console.warn("Could not load backend quizzes, using seed:", err);
+        console.warn("Could not load course quizzes:", err);
       }
 
       // 3. Load Live Gamification Dashboard Profile
-      try {
-        const studentId = user?.id || "33333333-3333-3333-3333-333333333333";
-        const gameData = await gamificationService.getGameDashboard(studentId);
-        if (gameData && gameData.profile) {
-          const prof = gameData.profile;
-          setProfile((prev) => ({
-            ...prev,
-            fullName: prof.studentName || user?.fullName || prev.fullName,
-            totalXp: prof.totalXp,
-            level: prof.currentLevel,
-            levelName: prof.levelName || prev.levelName,
-            xpInLevel: prof.xpProgressInCurrentLevel,
-            xpToNext: prof.xpRequiredForNextLevel,
-            coins: prof.coins,
-            streak: prof.currentStreak,
-            freezeTokens: prof.freezeTokensAvailable,
-            badges:
-              prof.recentBadges && prof.recentBadges.length > 0
-                ? prof.recentBadges.map((b) => ({
-                    id: b.id,
-                    name: b.title,
-                    icon: b.iconUrl || "🏅",
-                    unlocked: b.isUnlocked,
-                    desc: b.description,
-                  }))
-                : prev.badges,
-          }));
-        }
-      } catch (err) {
-        console.warn("Could not load gamification dashboard:", err);
-      }
+      await refreshProfile();
     }
     loadStudentData();
   }, [user]);
@@ -3859,199 +3827,110 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
     badges: [],
   });
 
-  const handleMissionClaim = async (xp, coins) => {
+  async function refreshProfile() {
+    if (!user?.id) return;
     try {
-      const studentId = user?.id || "33333333-3333-3333-3333-333333333333";
-      await gamificationService.claimGrandReward(studentId);
-    } catch {}
-    setProfile((p) => {
-      const newTotal = p.totalXp + xp;
-      const newLevel = Math.floor(newTotal / 1000) + 1;
-      return {
-        ...p,
-        totalXp: newTotal,
-        xpInLevel: newTotal % 1000,
-        level: newLevel,
-        coins: p.coins + coins,
-      };
-    });
+      const gameData = await gamificationService.getGameDashboard(user.id);
+      if (gameData && gameData.profile) {
+        const prof = gameData.profile;
+        setProfile((prev) => ({
+          ...prev,
+          fullName: prof.studentName || user?.fullName || prev.fullName,
+          totalXp: prof.totalXp,
+          level: prof.currentLevel,
+          levelName: prof.levelName || prev.levelName,
+          xpInLevel: prof.xpProgressInCurrentLevel,
+          xpToNext: prof.xpRequiredForNextLevel,
+          coins: prof.coins,
+          streak: prof.currentStreak,
+          freezeTokens: prof.freezeTokensAvailable,
+          badges: (prof.recentBadges || []).map((b) => ({
+            id: b.id,
+            name: b.title,
+            icon: b.iconUrl || "🏅",
+            unlocked: b.isUnlocked,
+            desc: b.description,
+          })),
+        }));
+      }
+    } catch (err) {
+      console.warn("Could not load gamification dashboard:", err);
+    }
+  }
+
+  const handleMissionClaim = async () => {
+    try {
+      await gamificationService.claimDailyGrandMission(user.id);
+    } catch (err) {
+      alert(err?.friendlyMessage || "The daily reward could not be claimed.");
+    }
+    await refreshProfile();
   };
 
   const handleFreezeUse = async () => {
     if (profile.freezeTokens <= 0) return;
     try {
-      const studentId = user?.id || "33333333-3333-3333-3333-333333333333";
-      await gamificationService.useStreakFreeze(studentId);
-    } catch {}
-    setProfile((p) => ({ ...p, freezeTokens: p.freezeTokens - 1 }));
-    alert(
-      `Streak freeze activated for today. ${profile.freezeTokens - 1} remaining.`,
-    );
+      await gamificationService.useStreakFreeze(user.id);
+      alert("Streak freeze activated for today.");
+    } catch (err) {
+      alert(err?.friendlyMessage || "The streak freeze could not be used.");
+    }
+    await refreshProfile();
   };
 
   const handleStartQuiz = async (quizToRun) => {
-    let target = quizToRun || serverQuiz;
+    const target = quizToRun || serverQuiz;
     if (!target) {
-      const localList = getGeneratedQuizzes(
-        "44444444-4444-4444-4444-444444444444",
-      );
-      if (localList.length > 0) {
-        target = localList[0];
-      }
+      alert("There are no published quizzes in your enrolled courses yet.");
+      return;
     }
-    if (!target) {
-      // Mount effect may still be loading - resolve the quiz on demand.
-      try {
-        const qList = await quizService.getQuizzes('44444444-4444-4444-4444-444444444444').catch(() => []);
-        const combined = [...getGeneratedQuizzes('44444444-4444-4444-4444-444444444444'), ...(qList || [])];
-        if (combined.length > 0) {
-          target = combined[0];
-        }
-      } catch {
-        target = null;
-      }
+    try {
+      const attempt = await quizService.startQuiz(target.id);
+      setActiveQuiz({
+        id: attempt.quizId,
+        title: attempt.quizTitle,
+        passingScorePercent: target.passingScorePercent,
+        questions: attempt.questions || [],
+      });
+    } catch (err) {
+      alert(err?.friendlyMessage || "This quiz cannot be started right now.");
     }
-    if (target && (!target.questions || target.questions.length === 0)) {
-      const localMatches = getGeneratedQuizzes();
-      const foundLocal = localMatches.find(
-        (q) => q.id === target.id || q.title === target.title,
-      );
-      if (
-        foundLocal &&
-        foundLocal.questions &&
-        foundLocal.questions.length > 0
-      ) {
-        target = { ...target, ...foundLocal };
-      } else {
-        try {
-          const detailed = await quizService.getQuizById(target.id);
-          if (detailed && detailed.questions && detailed.questions.length > 0) {
-            target = detailed;
-          }
-        } catch (err) {
-          console.warn("Failed to load quiz detail:", err);
-        }
-      }
-    }
-    setActiveQuiz(target);
   };
 
-  const handleCompleteLesson = (lessonId, xpReward, courseId, modId) => {
-    setCourses((prevCourses) => {
-      return prevCourses.map((c) => {
-        if (c.id === courseId) {
-          return {
-            ...c,
-            modules: c.modules.map((m) => {
-              if (m.id === modId) {
-                return {
-                  ...m,
-                  lessons: m.lessons.map((l) => {
-                    if (l.id === lessonId) {
-                      return { ...l, completed: true };
-                    }
-                    return l;
-                  }),
-                };
-              }
-              return m;
-            }),
-          };
-        }
-        return c;
-      });
-    });
-
-    setProfile((p) => {
-      const newTotal = p.totalXp + xpReward;
-      const newLevel = Math.floor(newTotal / 1000) + 1;
-      return {
-        ...p,
-        totalXp: newTotal,
-        xpInLevel: newTotal % 1000,
-        level: newLevel,
-        coins: p.coins + 15,
-      };
-    });
-  };
-
-  const handleQuizComplete = async (quiz, answers, localStats) => {
-    // Attempt authoritative backend submission if quiz ID is a valid Guid
-    const isGuid =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        quiz?.id,
-      );
-    if (isGuid && answers && answers.length > 0) {
-      try {
-        const res = await quizService.submitQuiz(quiz.id, answers);
-        if (res) {
-          setProfile((p) => {
-            const newTotal = res.newTotalXp ?? p.totalXp + (res.xpEarned || 0);
-            const newLevel = res.newLevel ?? p.level;
-            const updatedBadges = p.badges.map((b) => {
-              if (res.badgeUnlocked && b.id === res.badgeUnlocked)
-                return { ...b, unlocked: true };
-              if (b.id === "QUIZ_ACE" && res.percentageScore >= 100)
-                return { ...b, unlocked: true };
-              if (b.id === "FIRST_STEP") return { ...b, unlocked: true };
-              return b;
-            });
-            return {
-              ...p,
-              totalXp: newTotal,
-              xpInLevel: newTotal % 1000,
-              level: newLevel,
-              coins: p.coins + (res.coinsEarned || 0),
-              streak: res.passed ? p.streak + 1 : p.streak,
-              badges: updatedBadges,
-            };
-          });
-          return res;
-        }
-      } catch (err) {
-        console.warn(
-          "Backend quiz submission fallback to client evaluation:",
-          err,
-        );
-      }
+  const handleCompleteLesson = async (lessonId, xpReward, courseId, modId) => {
+    try {
+      await courseService.completeLesson(lessonId);
+    } catch (err) {
+      alert(err?.friendlyMessage || "The lesson could not be marked complete.");
+      return;
     }
 
-    // Client fallback evaluation
-    const xpEarned = localStats.passed
-      ? localStats.score === 100
-        ? (quiz.xpReward || 80) + 30
-        : quiz.xpReward || 80
-      : 20;
-    const coinsEarned = localStats.passed ? quiz.coinReward || 25 : 5;
-    setProfile((p) => {
-      const newTotal = p.totalXp + xpEarned;
-      const newLevel = Math.floor(newTotal / 1000) + 1;
-      const updatedBadges = p.badges.map((b) => {
-        if (b.id === "QUIZ_ACE" && localStats.score === 100)
-          return { ...b, unlocked: true };
-        if (b.id === "FIRST_STEP") return { ...b, unlocked: true };
-        return b;
-      });
-      return {
-        ...p,
-        totalXp: newTotal,
-        xpInLevel: newTotal % 1000,
-        level: newLevel,
-        coins: p.coins + coinsEarned,
-        streak: localStats.passed ? p.streak + 1 : p.streak,
-        badges: updatedBadges,
-      };
-    });
+    setCourses((prevCourses) =>
+      prevCourses.map((c) =>
+        c.id !== courseId
+          ? c
+          : {
+              ...c,
+              modules: c.modules.map((m) =>
+                m.id !== modId
+                  ? m
+                  : {
+                      ...m,
+                      lessons: m.lessons.map((l) =>
+                        l.id === lessonId ? { ...l, completed: true } : l,
+                      ),
+                    },
+              ),
+            },
+      ),
+    );
+    await refreshProfile();
+  };
 
-    return {
-      passed: localStats.passed,
-      percentageScore: localStats.score,
-      xpEarned,
-      coinsEarned,
-      feedback: localStats.passed
-        ? "Well done! You passed the assessment."
-        : "Keep practicing to master these topics.",
-    };
+  const handleQuizComplete = async (quiz, answers) => {
+    const res = await quizService.submitQuiz(quiz.id, answers);
+    await refreshProfile();
+    return res;
   };
 
   const TABS = [
@@ -4196,20 +4075,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             {activeTab === "focus" && (
               <FocusFlowTab
                 profile={profile}
-                onSessionCompleted={(xp, coins, streak) => {
-                  setProfile((p) => {
-                    const newTotal = p.totalXp + xp;
-                    const newLevel = Math.floor(newTotal / 1000) + 1;
-                    return {
-                      ...p,
-                      totalXp: newTotal,
-                      xpInLevel: newTotal % 1000,
-                      level: newLevel,
-                      coins: p.coins + coins,
-                      streak: Math.max(p.streak, streak),
-                    };
-                  });
-                }}
+                onSessionCompleted={refreshProfile}
               />
             )}
             {activeTab === "coach" && (
