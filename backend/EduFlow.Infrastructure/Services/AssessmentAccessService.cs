@@ -34,10 +34,12 @@ public class AssessmentAccessService : IAssessmentAccessService
         return await IsActivelyEnrolledAsync(courseId, userId, ct);
     }
 
-    public async Task<AttemptEligibility> CheckAttemptEligibilityAsync(Assessment assessment, Guid studentId, CancellationToken ct = default)
+    public async Task<AttemptEligibility> CheckAttemptEligibilityAsync(
+        Assessment assessment, Guid studentId, bool startsNewAttempt = true, CancellationToken ct = default)
     {
         int attemptsUsed = await _dbContext.Submissions
-            .CountAsync(s => s.AssessmentId == assessment.Id && s.StudentId == studentId, ct);
+            .CountAsync(s => s.AssessmentId == assessment.Id && s.StudentId == studentId
+                && s.Status != AttemptStatus.Cancelled, ct);
         int attemptsAllowed = assessment.AttemptsAllowed;
 
         AttemptEligibility Deny(AttemptDenialReason reason, string message)
@@ -58,7 +60,7 @@ public class AssessmentAccessService : IAssessmentAccessService
             return Deny(AttemptDenialReason.Closed, "The availability window for this assessment has closed.");
         }
 
-        if (attemptsAllowed > 0 && attemptsUsed >= attemptsAllowed)
+        if (startsNewAttempt && attemptsAllowed > 0 && attemptsUsed >= attemptsAllowed)
         {
             return Deny(AttemptDenialReason.AttemptLimitReached,
                 $"You have used all {attemptsAllowed} permitted attempt(s) for this assessment.");

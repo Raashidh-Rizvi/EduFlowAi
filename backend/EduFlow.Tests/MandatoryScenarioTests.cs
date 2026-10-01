@@ -55,6 +55,7 @@ public class MandatoryScenarioTests
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IGamificationService, GamificationService>();
         builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
+        builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();

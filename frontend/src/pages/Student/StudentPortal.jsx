@@ -3888,6 +3888,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       const attempt = await quizService.startQuiz(target.id);
       setActiveQuiz({
         id: attempt.quizId,
+        attemptId: attempt.attemptId,
         title: attempt.quizTitle,
         passingScorePercent: target.passingScorePercent,
         questions: attempt.questions || [],
@@ -3928,7 +3929,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   };
 
   const handleQuizComplete = async (quiz, answers) => {
-    const res = await quizService.submitQuiz(quiz.id, answers);
+    const res = await quizService.submitQuiz(quiz.id, answers, quiz.attemptId);
     await refreshProfile();
     return res;
   };

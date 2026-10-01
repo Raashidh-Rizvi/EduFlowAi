@@ -76,8 +76,9 @@ export const quizService = {
     return response.data;
   },
 
-  async submitQuiz(quizId, answers) {
-    const response = await api.post('/quizzes/submit', { quizId, answers });
+  // attemptId comes from startQuiz; the server completes exactly that attempt.
+  async submitQuiz(quizId, answers, attemptId) {
+    const response = await api.post('/quizzes/submit', { quizId, answers, attemptId });
     return response.data;
   },
 

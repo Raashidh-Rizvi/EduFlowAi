@@ -67,6 +67,7 @@ public class InstructorProfilesAndReviewsTests
         builder.Services.AddScoped<IGamificationService, GamificationService>();
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
+        builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (requireApproval)
         {

@@ -200,12 +200,12 @@ public class Phase2FullStackIntegrationTests
         db.Enrollments.Add(new Enrollment { StudentId = student.Id, CourseId = course.Id, Status = EnrollmentStatus.Active });
         await db.SaveChangesAsync();
 
-        // Seed data includes 1 student + 1 instructor + 1 admin; we added 1 more student + 1 more instructor
+        // The model seeds no accounts, so the only student is the one added above.
         var totalStudents = await db.Users.CountAsync(u => u.Role == UserRole.Student);
         var totalCourses = await db.Courses.CountAsync(c => c.IsPublished);
         var totalEnrollments = await db.Enrollments.CountAsync(e => e.Status == EnrollmentStatus.Active);
 
-        Assert.True(totalStudents >= 2, $"Expected at least 2 students, got {totalStudents}");
+        Assert.Equal(1, totalStudents);
         Assert.True(totalCourses >= 1, $"Expected at least 1 course, got {totalCourses}");
         Assert.Equal(1, totalEnrollments);
     }

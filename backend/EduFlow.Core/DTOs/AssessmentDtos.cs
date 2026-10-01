@@ -28,7 +28,9 @@ public record QuizDto(
     bool ShowCorrectAnswers = true,
     bool GeneratedByAI = false,
     string? GenerationWorkflowId = null,
-    DateTime? CreatedAt = null
+    DateTime? CreatedAt = null,
+    Guid? ModuleId = null,
+    Guid? TopicId = null
 );
 
 public record QuizDetailDto(
@@ -54,7 +56,9 @@ public record QuizDetailDto(
     bool ShowCorrectAnswers = true,
     bool GeneratedByAI = false,
     string? GenerationWorkflowId = null,
-    QuizConfigurationDto? Configuration = null
+    QuizConfigurationDto? Configuration = null,
+    Guid? ModuleId = null,
+    Guid? TopicId = null
 );
 
 public record QuizConfigurationDto(
@@ -101,12 +105,19 @@ public record StartQuizAttemptResponse(
     string QuizTitle,
     int TimeLimitMinutes,
     int TimeLimitSeconds,
-    List<QuizQuestionDto> Questions
+    List<QuizQuestionDto> Questions,
+    int AttemptNumber = 0,
+    DateTime? StartedAt = null,
+    // False for an instructor/admin preview, which is not recorded as an attempt.
+    bool IsRecorded = true
 );
 
+/// <param name="AttemptId">The attempt returned by /start. Older clients may omit it; the
+/// student's open attempt (or a new one, subject to the attempt limit) is used instead.</param>
 public record SubmitQuizRequest(
     Guid QuizId,
-    List<QuestionAnswerSubmission> Answers
+    List<QuestionAnswerSubmission> Answers,
+    Guid? AttemptId = null
 );
 
 public record QuestionAnswerSubmission(
@@ -163,7 +174,9 @@ public record CreateQuizRequest(
     QuizStatus Status = QuizStatus.Published,
     bool GeneratedByAI = false,
     string? GenerationWorkflowId = null,
-    QuizConfigurationDto? Configuration = null
+    QuizConfigurationDto? Configuration = null,
+    // Required when ScopeType is Course: every assessment belongs to a module.
+    Guid? ModuleId = null
 );
 
 public record CreateQuestionRequest(
@@ -199,7 +212,8 @@ public record GenerateAiQuizRequest(
     Dictionary<string, int>? QuestionTypeDistribution = null,
     Dictionary<string, int>? DifficultyDistribution = null,
     List<string>? LearningObjectives = null,
-    string? ModuleTitle = null
+    string? ModuleTitle = null,
+    Guid? ModuleId = null
 );
 
 public record UploadQuizRequest(
@@ -213,7 +227,8 @@ public record UploadQuizRequest(
     string? SourceFileName,
     List<CreateQuestionRequest> Questions,
     QuizScopeType ScopeType = QuizScopeType.Course,
-    Guid? ScopeId = null
+    Guid? ScopeId = null,
+    Guid? ModuleId = null
 );
 
 public record ValidateQuizResponse(

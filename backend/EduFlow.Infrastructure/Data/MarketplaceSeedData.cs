@@ -147,7 +147,6 @@ public static class MarketplaceSeedData
                 {
                     StudentId = enrolled[e].Id,
                     CourseId = course.Id,
-                    ProgressPercentage = 10.0 + ((e * 17) % 80),
                     Status = EnrollmentStatus.Active,
                     RequestedAt = DateTime.UtcNow.AddDays(-12),
                     CreatedAt = DateTime.UtcNow.AddDays(-12)

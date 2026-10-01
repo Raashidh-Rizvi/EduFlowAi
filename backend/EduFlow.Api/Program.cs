@@ -33,6 +33,7 @@ builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IGamificationService, GamificationService>();
 builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
+builder.Services.AddScoped<IAttemptService, AttemptService>();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.

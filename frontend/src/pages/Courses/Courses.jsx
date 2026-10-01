@@ -50,6 +50,7 @@ import CourseReviews from '../../components/reviews/CourseReviews';
 import { courseService } from '../../services/courseService';
 import AdminCourseManagement from './AdminCourseManagement';
 import { quizService } from '../../services/quizService';
+import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
@@ -624,7 +625,10 @@ function InstructorCourses({ currentUser }) {
         : detectedSlideTopics.filter(t => selectedTopicIds.includes(t.id)).map(t => t.title);
 
       const payload = {
-        courseId: aiQuizScope.courseId || '44444444-4444-4444-4444-444444444444',
+        courseId: aiQuizScope.courseId || currentCourse?.id,
+        moduleId: module?.id,
+        scopeType: toScopeTypeValue('Module'),
+        scopeId: module?.id,
         topic: topicsToInclude.join(', '),
         moduleTitle: aiQuizScope.moduleTitle,
         difficulty: aiQuizDifficulty,
@@ -645,7 +649,7 @@ function InstructorCourses({ currentUser }) {
         questions = res.questions.map((q, idx) => ({
           id: q.id || `q-item-${idx + 1}`,
           prompt: q.prompt,
-          type: q.type === 4 ? 'ShortAnswer' : q.type === 3 ? 'Matching' : q.type === 2 ? 'FillInBlank' : q.type === 1 ? 'Dropdown' : 'MultipleChoice',
+          type: questionTypeName(q.type),
           options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
           correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
           explanation: q.explanation || 'Verified with Bloom taxonomy analysis and SlideQuest Strict RAG Grounding.',
@@ -710,8 +714,12 @@ function InstructorCourses({ currentUser }) {
       return;
     }
 
-    const targetCourseId = (currentCourse?.id && currentCourse.id.length === 36) ? currentCourse.id : '44444444-4444-4444-4444-444444444444';
-    const courseCode = currentCourse?.courseCode || currentCourse?.code || 'SE3090';
+    if (!currentCourse?.id) {
+      alert('Open a course before publishing a quiz.');
+      return;
+    }
+    const targetCourseId = currentCourse.id;
+    const courseCode = currentCourse.courseCode || currentCourse.code || '';
 
     const newQuizObj = {
       id: `q-${Date.now()}`,
@@ -782,10 +790,10 @@ function InstructorCourses({ currentUser }) {
 
     // Sync with backend API in background
     try {
-      const scopeTypeEnum = aiQuizScope.scopeLevel === 'Course' ? 0 : aiQuizScope.scopeLevel === 'Topic' ? 1 : 2;
-      const scopeIdVal = (aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36)
-        ? aiQuizScope.moduleId
-        : targetCourseId;
+      // Every assessment is stored in a module; a course-level quiz names its module too.
+      const moduleIdVal = aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36 ? aiQuizScope.moduleId : null;
+      const scopeTypeEnum = toScopeTypeValue(aiQuizScope.scopeLevel === 'Course' ? 'Course' : 'Module');
+      const scopeIdVal = aiQuizScope.scopeLevel === 'Course' ? targetCourseId : moduleIdVal;
 
       await quizService.createQuiz({
         courseId: targetCourseId,
@@ -797,9 +805,10 @@ function InstructorCourses({ currentUser }) {
         coinReward: Number(aiCoinReward),
         scopeType: scopeTypeEnum,
         scopeId: scopeIdVal,
+        moduleId: moduleIdVal,
         questions: generatedDraft.questions.map((q, idx) => ({
           prompt: q.prompt,
-          type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : 0,
+          type: toQuestionTypeValue(q.type),
           options: q.options || [],
           correctAnswer: q.correctAnswer || '',
           explanation: q.explanation || '',
@@ -935,7 +944,7 @@ function InstructorCourses({ currentUser }) {
     // 3. Persist to backend when this quiz actually lives there (GUID id)
     if (quizItem.id && quizItem.id.length === 36) {
       try {
-        const scopeTypeEnum = updatedQuiz.scopeType === 'Course' ? 0 : updatedQuiz.scopeType === 'Topic' ? 1 : 2;
+        const scopeTypeEnum = toScopeTypeValue(updatedQuiz.scopeType || 'Module');
         const scopeIdVal = (updatedQuiz.scopeId && String(updatedQuiz.scopeId).length === 36) ? updatedQuiz.scopeId : (quizModule?.id && quizModule.id.length === 36 ? quizModule.id : currentCourse.id);
         await quizService.updateQuiz(quizItem.id, {
           courseId: currentCourse.id,
@@ -947,9 +956,10 @@ function InstructorCourses({ currentUser }) {
           coinReward: Number(updatedQuiz.coinReward || 20),
           scopeType: scopeTypeEnum,
           scopeId: scopeIdVal,
+          moduleId: quizModule?.id && quizModule.id.length === 36 ? quizModule.id : undefined,
           questions: updatedQuiz.questions.map((q, idx) => ({
             prompt: q.prompt,
-            type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : q.type === 'TrueFalse' ? 2 : 0,
+            type: toQuestionTypeValue(q.type),
             options: q.options || [],
             correctAnswer: q.correctAnswer || '',
             explanation: q.explanation || '',
@@ -975,9 +985,11 @@ function InstructorCourses({ currentUser }) {
   // ── INTERACTIVE QUIZ QUEST RUNNER HANDLERS ────────────────────────────────
   const handleStartSlideQuestRunner = async (assessmentObj, mod) => {
     let questions;
+    let attemptId;
     try {
       const attempt = await quizService.startQuiz(assessmentObj.id);
       questions = attempt.questions || [];
+      attemptId = attempt.attemptId;
     } catch (err) {
       alert(err.friendlyMessage || 'This assessment cannot be started right now.');
       return;
@@ -989,6 +1001,7 @@ function InstructorCourses({ currentUser }) {
 
     setActiveRunnerQuiz({
       ...assessmentObj,
+      attemptId,
       moduleTitle: mod?.title || currentCourse?.title || 'Curriculum',
       questions
     });
@@ -1021,7 +1034,7 @@ function InstructorCourses({ currentUser }) {
         questionId: q.id,
         selectedAnswer: (runnerAnswers[q.id] || '').trim()
       }));
-      const res = await quizService.submitQuiz(activeRunnerQuiz.id, answers);
+      const res = await quizService.submitQuiz(activeRunnerQuiz.id, answers, activeRunnerQuiz.attemptId);
       const pointsById = new Map(activeRunnerQuiz.questions.map((q) => [q.id, q.points]));
 
       setMarkingSchemeResult({

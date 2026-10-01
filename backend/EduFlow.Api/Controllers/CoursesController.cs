@@ -247,12 +247,16 @@ public class CoursesController : BaseApiController
                 .ToListAsync()).ToHashSet()
             : new HashSet<Guid>();
 
-        // Load all assessments / quizzes associated with this course
+        // Load the course's assessments. Only the owner or an Admin sees drafts and other
+        // unpublished lifecycle states; everyone else sees published assessments only.
+        var (assessmentViewerId, assessmentViewerRole) = GetCurrentUser();
+        bool canSeeUnpublished = assessmentViewerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+            || (assessmentViewerId != Guid.Empty && course.InstructorId == assessmentViewerId);
         var courseAssessments = await DbContext.Assessments
-            .Where(a => a.CourseId == id)
+            .Where(a => a.CourseId == id && (canSeeUnpublished || a.Status == QuizStatus.Published))
             .Include(a => a.Questions)
-            .Include(a => a.TopicScope)
-            .Include(a => a.ModuleScope)
+            .Include(a => a.Topic)
+            .Include(a => a.Module)
             .Include(a => a.ContentItemScope)
             .Include(a => a.Course)
             .OrderByDescending(a => a.CreatedAt)
@@ -271,8 +275,8 @@ public class CoursesController : BaseApiController
             a.Questions.Count,
             a.ScopeType,
             a.ScopeId,
-            a.ScopeType == QuizScopeType.Topic ? (a.TopicScope != null ? a.TopicScope.Title : null)
-                : a.ScopeType == QuizScopeType.Module ? (a.ModuleScope != null ? a.ModuleScope.Title : null)
+            a.ScopeType == QuizScopeType.Topic ? (a.Topic != null ? a.Topic.Title : null)
+                : a.ScopeType == QuizScopeType.Module ? (a.Module != null ? a.Module.Title : null)
                 : a.ScopeType == QuizScopeType.ContentItem ? (a.ContentItemScope != null ? a.ContentItemScope.Title : null)
                 : (a.Course != null ? a.Course.Title : null),
             a.Status,
@@ -285,11 +289,15 @@ public class CoursesController : BaseApiController
             a.ShowCorrectAnswers,
             a.GeneratedByAI,
             a.GenerationWorkflowId,
-            a.CreatedAt
+            a.CreatedAt,
+            a.ModuleId,
+            a.TopicId
         );
 
+        // Every assessment now belongs to a module, so this list is empty for migrated data;
+        // it is kept for API compatibility until the legacy course-level field is removed.
         var courseLevelQuizzes = courseAssessments
-            .Where(a => a.ScopeType == QuizScopeType.Course || a.ScopeId == course.Id || a.ScopeId == null)
+            .Where(a => a.ScopeType == QuizScopeType.Course)
             .Select(mapQuizToDto)
             .ToList();
 
@@ -328,7 +336,7 @@ public class CoursesController : BaseApiController
                     canAccessMaterials ? l.AttachmentFileName : null
                 )).ToList(),
                 courseAssessments
-                    .Where(a => (a.ScopeType == QuizScopeType.Module && (a.ScopeId == m.Id || a.ModuleScopeId == m.Id)) || a.ScopeId == m.Id)
+                    .Where(a => a.ModuleId == m.Id)
                     .Select(mapQuizToDto)
                     .ToList()
             )).ToList(),

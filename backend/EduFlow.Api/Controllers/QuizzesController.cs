@@ -27,6 +27,7 @@ public class QuizzesController : BaseApiController
     private readonly IGamificationService _gamificationService;
     private readonly IAiGatewayClient _aiGatewayClient;
     private readonly IAssessmentAccessService _accessService;
+    private readonly IAttemptService _attemptService;
     private readonly IWebHostEnvironment? _environment;
 
     public QuizzesController(
@@ -34,12 +35,14 @@ public class QuizzesController : BaseApiController
         IGamificationService gamificationService,
         IAiGatewayClient aiGatewayClient,
         IAssessmentAccessService accessService,
+        IAttemptService attemptService,
         IWebHostEnvironment? environment = null)
         : base(dbContext)
     {
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
         _accessService = accessService;
+        _attemptService = attemptService;
         _environment = environment;
     }
 
@@ -75,8 +78,8 @@ public class QuizzesController : BaseApiController
                 a.Questions.Count,
                 a.ScopeType,
                 a.ScopeId,
-                a.ScopeType == QuizScopeType.Topic ? (a.TopicScope != null ? a.TopicScope.Title : null)
-                    : a.ScopeType == QuizScopeType.Module ? (a.ModuleScope != null ? a.ModuleScope.Title : null)
+                a.ScopeType == QuizScopeType.Topic ? (a.Topic != null ? a.Topic.Title : null)
+                    : a.ScopeType == QuizScopeType.Module ? (a.Module != null ? a.Module.Title : null)
                     : a.ScopeType == QuizScopeType.ContentItem ? (a.ContentItemScope != null ? a.ContentItemScope.Title : null)
                     : (a.Course != null ? a.Course.Title : null),
                 a.Status,
@@ -89,7 +92,9 @@ public class QuizzesController : BaseApiController
                 a.ShowCorrectAnswers,
                 a.GeneratedByAI,
                 a.GenerationWorkflowId,
-                a.CreatedAt
+                a.CreatedAt,
+                a.ModuleId,
+                a.TopicId
             ))
             .ToListAsync();
 
@@ -156,7 +161,9 @@ public class QuizzesController : BaseApiController
                 a.ShowCorrectAnswers,
                 a.GeneratedByAI,
                 a.GenerationWorkflowId,
-                a.CreatedAt
+                a.CreatedAt,
+                a.ModuleId,
+                a.TopicId
             ))
             .ToListAsync();
 
@@ -171,8 +178,8 @@ public class QuizzesController : BaseApiController
             .Include(a => a.Questions.OrderBy(q => q.OrderIndex))
                 .ThenInclude(q => q.Options.OrderBy(o => o.DisplayOrder))
             .Include(a => a.Course)
-            .Include(a => a.TopicScope)
-            .Include(a => a.ModuleScope)
+            .Include(a => a.Topic)
+            .Include(a => a.Module)
             .Include(a => a.ContentItemScope)
             .FirstOrDefaultAsync(a => a.Id == id);
 
@@ -232,8 +239,8 @@ public class QuizzesController : BaseApiController
 
         string? scopeName = quiz.ScopeType switch
         {
-            QuizScopeType.Topic => quiz.TopicScope?.Title,
-            QuizScopeType.Module => quiz.ModuleScope?.Title,
+            QuizScopeType.Topic => quiz.Topic?.Title,
+            QuizScopeType.Module => quiz.Module?.Title,
             QuizScopeType.ContentItem => quiz.ContentItemScope?.Title,
             _ => quiz.Course?.Title
         };
@@ -261,7 +268,9 @@ public class QuizzesController : BaseApiController
             quiz.ShowCorrectAnswers,
             quiz.GeneratedByAI,
             quiz.GenerationWorkflowId,
-            configDto
+            configDto,
+            quiz.ModuleId,
+            quiz.TopicId
         );
 
         return Ok(result);
@@ -295,9 +304,10 @@ public class QuizzesController : BaseApiController
         }
         var courseId = course.Id;
 
-        if (await ValidateScopeAsync(courseId, request.ScopeType, request.ScopeId) is { } scopeError)
+        var (placement, placementError) = await ResolvePlacementAsync(courseId, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
         {
-            return BadRequest(new { message = scopeError });
+            return BadRequest(new { message = placementError });
         }
 
         // Calibrate scope-aware default XP
@@ -335,7 +345,7 @@ public class QuizzesController : BaseApiController
             GenerationWorkflowId = request.GenerationWorkflowId,
             CreatedAt = DateTime.UtcNow
         };
-        ApplyScope(quiz, request.ScopeType, request.ScopeId);
+        ApplyPlacement(quiz, placement);
 
         if (request.Configuration != null)
         {
@@ -400,7 +410,7 @@ public class QuizzesController : BaseApiController
         await DbContext.Assessments.AddAsync(quiz);
         await DbContext.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, quiz);
+        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, ToSummary(quiz));
     }
 
     [HttpPost("upload-quiz")]
@@ -423,9 +433,10 @@ public class QuizzesController : BaseApiController
             return BadRequest(new { message = "Selected Course does not exist." });
         }
 
-        if (await ValidateScopeAsync(course.Id, request.ScopeType, request.ScopeId) is { } scopeError)
+        var (placement, placementError) = await ResolvePlacementAsync(course.Id, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
         {
-            return BadRequest(new { message = scopeError });
+            return BadRequest(new { message = placementError });
         }
 
         if (request.Questions == null || request.Questions.Count == 0)
@@ -469,7 +480,7 @@ public class QuizzesController : BaseApiController
             GeneratedByAI = false,
             CreatedAt = DateTime.UtcNow
         };
-        ApplyScope(quiz, request.ScopeType, request.ScopeId);
+        ApplyPlacement(quiz, placement);
 
         int index = 1;
         foreach (var q in request.Questions)
@@ -551,15 +562,16 @@ public class QuizzesController : BaseApiController
             });
         }
 
-        var scopeId = request.ScopeId ?? quiz.ScopeId;
-        if (await ValidateScopeAsync(quiz.CourseId, request.ScopeType, scopeId) is { } scopeError)
+        var (placement, placementError) = await ResolvePlacementAsync(
+            quiz.CourseId, request.ScopeType, request.ScopeId ?? quiz.ScopeId, request.ModuleId ?? quiz.ModuleId);
+        if (placement == null)
         {
-            return BadRequest(new { message = scopeError });
+            return BadRequest(new { message = placementError });
         }
 
         quiz.Title = request.Title;
         quiz.Description = request.Description;
-        ApplyScope(quiz, request.ScopeType, scopeId);
+        ApplyPlacement(quiz, placement);
         quiz.Difficulty = request.Difficulty;
         quiz.TimeLimitSeconds = request.TimeLimitSeconds > 0 ? request.TimeLimitSeconds : (request.TimeLimitMinutes * 60);
         quiz.TimeLimitMinutes = Math.Max(1, quiz.TimeLimitSeconds / 60);
@@ -622,7 +634,7 @@ public class QuizzesController : BaseApiController
         }
 
         await DbContext.SaveChangesAsync();
-        return Ok(quiz);
+        return Ok(ToSummary(quiz));
     }
 
     [HttpDelete("{id:guid}")]
@@ -825,7 +837,11 @@ public class QuizzesController : BaseApiController
             GeneratedByAI = original.GeneratedByAI,
             CreatedAt = DateTime.UtcNow
         };
-        ApplyScope(clone, original.ScopeType, original.ScopeId);
+        clone.ModuleId = original.ModuleId;
+        clone.TopicId = original.TopicId;
+        clone.ContentItemScopeId = original.ContentItemScopeId;
+        clone.ScopeType = original.ScopeType;
+        clone.ScopeId = original.ScopeId;
 
         foreach (var q in original.Questions)
         {
@@ -898,9 +914,10 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
-        if (await ValidateScopeAsync(course.Id, request.ScopeType, request.ScopeId) is { } scopeError)
+        var (placement, placementError) = await ResolvePlacementAsync(course.Id, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
         {
-            return BadRequest(new { message = scopeError });
+            return BadRequest(new { message = placementError });
         }
 
         var workflowId = $"wf-qz-{Guid.NewGuid().ToString("N")[..8]}";
@@ -937,7 +954,7 @@ public class QuizzesController : BaseApiController
             GenerationWorkflowId = workflowId,
             CreatedAt = DateTime.UtcNow
         };
-        ApplyScope(quiz, request.ScopeType, request.ScopeId);
+        ApplyPlacement(quiz, placement);
 
         // -------------------------------------------------------------------------
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
@@ -950,10 +967,7 @@ public class QuizzesController : BaseApiController
         // Fallback: if slide not found in request, check module in database
         if (string.IsNullOrEmpty(physicalSlidePath))
         {
-            var dbModule = await DbContext.Modules.FirstOrDefaultAsync(m =>
-                m.CourseId == request.CourseId &&
-                ((request.ScopeId != null && m.Id == request.ScopeId) ||
-                 (!string.IsNullOrWhiteSpace(request.ModuleTitle) && m.Title == request.ModuleTitle)));
+            var dbModule = await DbContext.Modules.FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
             physicalSlidePath = ResolveWebRootFile(dbModule?.PdfUrl);
         }
 
@@ -1375,15 +1389,18 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Quiz not found." });
         }
 
-        // Course owners/admins may preview any state; everyone else must be eligible.
+        // Course owners/admins may preview any state without recording an attempt;
+        // everyone else starts (or resumes) a persisted attempt.
         var (userId, role) = GetCurrentUser();
+        Submission? attempt = null;
         if (!await _accessService.CanManageCourseAsync(quiz.CourseId, userId, role))
         {
-            var eligibility = await _accessService.CheckAttemptEligibilityAsync(quiz, userId);
-            if (!eligibility.IsAllowed)
+            var resolution = await _attemptService.StartOrResumeAsync(quiz, userId);
+            if (!resolution.IsAllowed)
             {
-                return AttemptDenied(eligibility);
+                return AttemptDenied(resolution.Eligibility);
             }
+            attempt = resolution.Attempt;
         }
 
         // Questions are delivered without answer keys, explanations or marking metadata.
@@ -1397,12 +1414,15 @@ public class QuizzesController : BaseApiController
         }
 
         var response = new StartQuizAttemptResponse(
-            AttemptId: Guid.NewGuid(),
+            AttemptId: attempt?.Id ?? Guid.Empty,
             QuizId: quiz.Id,
             QuizTitle: quiz.Title,
             TimeLimitMinutes: quiz.TimeLimitMinutes,
             TimeLimitSeconds: quiz.TimeLimitSeconds > 0 ? quiz.TimeLimitSeconds : (quiz.TimeLimitMinutes * 60),
-            Questions: questionsDto
+            Questions: questionsDto,
+            AttemptNumber: attempt?.AttemptNumber ?? 0,
+            StartedAt: attempt?.StartedAt,
+            IsRecorded: attempt != null
         );
 
         return Ok(response);
@@ -1427,11 +1447,13 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Quiz not found." });
         }
 
-        var eligibility = await _accessService.CheckAttemptEligibilityAsync(quiz, studentId);
-        if (!eligibility.IsAllowed)
+        var resolution = await _attemptService.ResolveForSubmissionAsync(quiz, studentId, request.AttemptId);
+        if (!resolution.IsAllowed)
         {
-            return AttemptDenied(eligibility);
+            return AttemptDenied(resolution.Eligibility);
         }
+        var submission = resolution.Attempt!;
+        bool isNewAttempt = resolution.IsNew;
 
         var answers = request.Answers ?? new List<QuestionAnswerSubmission>();
         var questionIds = quiz.Questions.Select(q => q.Id).ToHashSet();
@@ -1449,12 +1471,8 @@ public class QuizzesController : BaseApiController
         var breakdown = new List<QuestionResultItem>();
         var questionOutcomes = new List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)>();
 
-        var submission = new Submission
-        {
-            AssessmentId = quiz.Id,
-            StudentId = studentId,
-            SubmittedAt = DateTime.UtcNow
-        };
+        var now = DateTime.UtcNow;
+        var evaluatedAnswers = new List<SubmissionAnswer>();
 
         foreach (var q in quiz.Questions)
         {
@@ -1543,12 +1561,17 @@ public class QuizzesController : BaseApiController
 
             scoreObtained += awarded;
 
-            submission.Answers.Add(new SubmissionAnswer
+            evaluatedAnswers.Add(new SubmissionAnswer
             {
+                SubmissionId = submission.Id,
                 QuestionId = q.Id,
                 SelectedAnswer = studentAns,
                 IsCorrect = isCorrect,
-                PointsAwarded = awarded
+                PointsAwarded = awarded,
+                MaxMarks = q.Points,
+                Feedback = feedback,
+                EvaluationMethod = EvaluationMethod.Deterministic,
+                EvaluationStatus = AnswerEvaluationStatus.Evaluated
             });
 
             breakdown.Add(new QuestionResultItem(
@@ -1577,6 +1600,13 @@ public class QuizzesController : BaseApiController
         submission.MaxScore = totalPoints;
         submission.PercentageScore = percent;
         submission.Passed = passed;
+        submission.Status = AttemptStatus.Evaluated;
+        submission.SubmittedAt = now;
+        submission.EvaluatedAt = now;
+        submission.UpdatedAt = now;
+        int timeSpentSeconds = submission.StartedAt.HasValue
+            ? Math.Max(0, (int)(now - submission.StartedAt.Value).TotalSeconds)
+            : 0;
 
         // The submission and its XP ledger entries commit together or not at all.
         var rewardResult = await DbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
@@ -1586,7 +1616,17 @@ public class QuizzesController : BaseApiController
                 ? await DbContext.Database.BeginTransactionAsync()
                 : null;
 
-            DbContext.Submissions.Add(submission);
+            // Optimistic guard: only an attempt that is still open can be completed.
+            if (isNewAttempt)
+            {
+                DbContext.Submissions.Add(submission);
+            }
+            else
+            {
+                DbContext.Submissions.Attach(submission);
+                DbContext.Entry(submission).State = EntityState.Modified;
+            }
+            DbContext.SubmissionAnswers.AddRange(evaluatedAnswers);
             await DbContext.SaveChangesAsync();
 
             var reward = await _gamificationService.CalculateAndAwardQuizRewardAsync(
@@ -1594,8 +1634,7 @@ public class QuizzesController : BaseApiController
                 assessmentId: quiz.Id,
                 scorePercent: scorePercent,
                 passed: passed,
-                // Attempt start times are not persisted yet, so duration is unknown (0).
-                timeSpentSeconds: 0,
+                timeSpentSeconds: timeSpentSeconds,
                 difficulty: quiz.Difficulty,
                 scopeType: quiz.ScopeType,
                 questionOutcomes: questionOutcomes
@@ -1610,6 +1649,8 @@ public class QuizzesController : BaseApiController
         return Ok(new
         {
             submissionId = submission.Id,
+            attemptId = submission.Id,
+            attemptNumber = submission.AttemptNumber,
             quizId = quiz.Id,
             scoreObtained = scoreObtained,
             maxScore = totalPoints,
@@ -1749,6 +1790,19 @@ public class QuizzesController : BaseApiController
             OptionDetails: null);
     }
 
+    /// <summary>Write-endpoint response: identifies the saved quiz without serializing the entity graph.</summary>
+    private static object ToSummary(Assessment quiz) => new
+    {
+        id = quiz.Id,
+        courseId = quiz.CourseId,
+        moduleId = quiz.ModuleId,
+        topicId = quiz.TopicId,
+        title = quiz.Title,
+        status = quiz.Status.ToString(),
+        questionCount = quiz.Questions.Count,
+        totalMarks = quiz.Questions.Sum(q => q.Points)
+    };
+
     private IActionResult AttemptDenied(AttemptEligibility eligibility)
     {
         var body = new
@@ -1759,45 +1813,74 @@ public class QuizzesController : BaseApiController
             attemptsAllowed = eligibility.AttemptsAllowed
         };
 
-        return eligibility.Reason == AttemptDenialReason.AttemptLimitReached
-            ? Conflict(body)
-            : StatusCode(StatusCodes.Status403Forbidden, body);
-    }
-
-    /// <summary>Returns an error message when the scope target is missing or belongs to another course.</summary>
-    private async Task<string?> ValidateScopeAsync(Guid courseId, QuizScopeType scopeType, Guid? scopeId)
-    {
-        if (scopeType == QuizScopeType.Course)
+        return eligibility.Reason switch
         {
-            return null;
-        }
-
-        if (!scopeId.HasValue || scopeId.Value == Guid.Empty)
-        {
-            return $"A {scopeType} must be selected for a {scopeType}-scoped quiz.";
-        }
-
-        bool scopeValid = scopeType switch
-        {
-            QuizScopeType.Module => await DbContext.Modules.AnyAsync(m => m.Id == scopeId.Value && m.CourseId == courseId),
-            QuizScopeType.Topic => await DbContext.Topics.AnyAsync(t => t.Id == scopeId.Value && t.Module!.CourseId == courseId),
-            QuizScopeType.ContentItem => await DbContext.ContentItems.AnyAsync(ci => ci.Id == scopeId.Value && ci.Module!.CourseId == courseId),
-            _ => false
+            AttemptDenialReason.AttemptLimitReached or AttemptDenialReason.AttemptNotOpen => Conflict(body),
+            AttemptDenialReason.AttemptNotFound => NotFound(body),
+            _ => StatusCode(StatusCodes.Status403Forbidden, body)
         };
-
-        return scopeValid
-            ? null
-            : $"The selected {scopeType} (ID: {scopeId}) does not belong to the selected Course.";
     }
 
-    /// <summary>Keeps the polymorphic ScopeId and the typed scope foreign keys in agreement.</summary>
-    private static void ApplyScope(Assessment quiz, QuizScopeType scopeType, Guid? scopeId)
+    /// <summary>Where an assessment lives: always a module, optionally a topic or content item in it.</summary>
+    private sealed record AssessmentPlacement(
+        Guid ModuleId, Guid? TopicId, Guid? ContentItemId, QuizScopeType ScopeType, Guid ScopeId);
+
+    /// <summary>
+    /// Maps the legacy (scopeType, scopeId) request shape onto the canonical placement. A
+    /// course-level request must name its module. Every target must belong to the course.
+    /// </summary>
+    private async Task<(AssessmentPlacement? Placement, string? Error)> ResolvePlacementAsync(
+        Guid courseId, QuizScopeType scopeType, Guid? scopeId, Guid? moduleId)
     {
-        quiz.ScopeType = scopeType;
-        quiz.ScopeId = scopeType == QuizScopeType.Course ? quiz.CourseId : scopeId;
-        quiz.ModuleScopeId = scopeType == QuizScopeType.Module ? scopeId : null;
-        quiz.TopicScopeId = scopeType == QuizScopeType.Topic ? scopeId : null;
-        quiz.ContentItemScopeId = scopeType == QuizScopeType.ContentItem ? scopeId : null;
+        switch (scopeType)
+        {
+            case QuizScopeType.Module:
+            case QuizScopeType.Course:
+            {
+                var targetModuleId = scopeType == QuizScopeType.Module ? scopeId ?? moduleId : moduleId;
+                if (!targetModuleId.HasValue || targetModuleId.Value == Guid.Empty)
+                {
+                    return (null, "Select the module this assessment belongs to.");
+                }
+                bool inCourse = await DbContext.Modules.AnyAsync(m => m.Id == targetModuleId.Value && m.CourseId == courseId);
+                return inCourse
+                    ? (new AssessmentPlacement(targetModuleId.Value, null, null, QuizScopeType.Module, targetModuleId.Value), null)
+                    : (null, $"The selected module (ID: {targetModuleId}) does not belong to the selected Course.");
+            }
+
+            case QuizScopeType.Topic:
+            {
+                var topic = scopeId.HasValue
+                    ? await DbContext.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == scopeId.Value && t.Module!.CourseId == courseId)
+                    : null;
+                return topic != null
+                    ? (new AssessmentPlacement(topic.ModuleId, topic.Id, null, QuizScopeType.Topic, topic.Id), null)
+                    : (null, $"The selected Topic (ID: {scopeId}) does not belong to the selected Course.");
+            }
+
+            case QuizScopeType.ContentItem:
+            {
+                var item = scopeId.HasValue
+                    ? await DbContext.ContentItems.AsNoTracking().FirstOrDefaultAsync(ci => ci.Id == scopeId.Value && ci.Module!.CourseId == courseId)
+                    : null;
+                return item != null
+                    ? (new AssessmentPlacement(item.ModuleId, item.TopicId, item.Id, QuizScopeType.ContentItem, item.Id), null)
+                    : (null, $"The selected ContentItem (ID: {scopeId}) does not belong to the selected Course.");
+            }
+
+            default:
+                return (null, $"Unsupported scope type '{scopeType}'.");
+        }
+    }
+
+    /// <summary>The only writer of an assessment's placement columns.</summary>
+    private static void ApplyPlacement(Assessment quiz, AssessmentPlacement placement)
+    {
+        quiz.ModuleId = placement.ModuleId;
+        quiz.TopicId = placement.TopicId;
+        quiz.ContentItemScopeId = placement.ContentItemId;
+        quiz.ScopeType = placement.ScopeType;
+        quiz.ScopeId = placement.ScopeId;
     }
 
     /// <summary>Resolves a site-relative URL to a file inside wwwroot, or null if it escapes it or is missing.</summary>

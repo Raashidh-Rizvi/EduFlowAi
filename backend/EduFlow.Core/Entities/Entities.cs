@@ -269,11 +269,22 @@ public class LessonCompletion : BaseEntity
 // -----------------------------------------------------------------------------
 // 3. Assessment & Unified Quiz Scope Engine Entities
 // -----------------------------------------------------------------------------
+/// <summary>
+/// An assessment always belongs to exactly one <see cref="Module"/> and may optionally
+/// target one <see cref="Topic"/> (or content item) inside that module.
+/// <see cref="CourseId"/> is a denormalized copy of Module.CourseId kept for querying.
+/// <see cref="ScopeType"/>/<see cref="ScopeId"/> are the legacy API-facing view of the same
+/// placement, written only through the scope helper; they will be removed with the legacy API.
+/// </summary>
 public class Assessment : BaseEntity
 {
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
-    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Course;
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Module;
     public Guid? ScopeId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
@@ -296,13 +307,9 @@ public class Assessment : BaseEntity
     public string? GenerationWorkflowId { get; set; }
     public DateTime? DueDate { get; set; }
 
-    // Navigation properties for hierarchy scopes
-    public Guid? TopicScopeId { get; set; }
-    public Topic? TopicScope { get; set; }
+    // Optional finer-grained target inside the module
     public Guid? ContentItemScopeId { get; set; }
     public ContentItem? ContentItemScope { get; set; }
-    public Guid? ModuleScopeId { get; set; }
-    public Module? ModuleScope { get; set; }
     public QuizConfiguration? Configuration { get; set; }
     public ICollection<Question> Questions { get; set; } = new List<Question>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
@@ -355,19 +362,31 @@ public class QuestionOption : BaseEntity
     public int DisplayOrder { get; set; }
 }
 
+/// <summary>
+/// One student attempt at an assessment (the canonical attempt record). Created when the
+/// attempt starts, completed on submission, and finalized by evaluation. Marks are only
+/// ever written by the server-side evaluation path.
+/// </summary>
 public class Submission : BaseEntity
 {
     public Guid AssessmentId { get; set; }
     public Assessment? Assessment { get; set; }
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
+
+    /// <summary>1-based, unique per (assessment, student).</summary>
+    public int AttemptNumber { get; set; } = 1;
+    public AttemptStatus Status { get; set; } = AttemptStatus.InProgress;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? EvaluatedAt { get; set; }
+
     public int ScoreObtained { get; set; }
     public int MaxScore { get; set; }
     public double PercentageScore { get; set; }
     public bool Passed { get; set; }
     public bool IsAutoGraded { get; set; } = true;
     public string? InstructorFeedback { get; set; }
-    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<SubmissionAnswer> Answers { get; set; } = new List<SubmissionAnswer>();
 }
@@ -380,7 +399,15 @@ public class SubmissionAnswer : BaseEntity
     public Question? Question { get; set; }
     public string SelectedAnswer { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
+
+    /// <summary>Awarded marks; constrained to 0..<see cref="MaxMarks"/>.</summary>
     public int PointsAwarded { get; set; }
+
+    /// <summary>The question's maximum marks at the time of evaluation.</summary>
+    public int MaxMarks { get; set; }
+    public string? Feedback { get; set; }
+    public EvaluationMethod EvaluationMethod { get; set; } = EvaluationMethod.Deterministic;
+    public AnswerEvaluationStatus EvaluationStatus { get; set; } = AnswerEvaluationStatus.Pending;
 }
 
 

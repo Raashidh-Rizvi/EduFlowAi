@@ -69,7 +69,10 @@ public class AssessmentIntegrityTests
         builder.Services.AddScoped<IGamificationService, GamificationService>();
         builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
+        builder.Services.AddScoped<IAttemptService, AttemptService>();
         builder.Services.AddScoped<ITeamService, TeamService>();
+        builder.Services.AddScoped<IRatingService, RatingService>();
+        builder.Services.Configure<EduFlow.Core.Options.ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));
         builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 
         builder.Services
@@ -171,7 +174,7 @@ public class AssessmentIntegrityTests
                 RandomizeQuestions = false
             };
             quiz.ScopeType = QuizScopeType.Module;
-            quiz.ModuleScope = module;
+            quiz.Module = module;
 
             var mcq = new Question
             {
@@ -527,6 +530,215 @@ public class AssessmentIntegrityTests
         var question = await WithDb(app, db => db.Questions.SingleAsync(q => q.Id == f.Mcq.Id));
         Assert.Equal("Which index type supports range scans?", question.Prompt);
         Assert.Equal("B-tree", question.CorrectAnswer);
+    }
+
+    // =========================================================================
+    // Persisted attempts (PR 2)
+    // =========================================================================
+
+    [Fact]
+    public async Task Start_PersistsAnAttempt_AndResumesTheSameOpenAttempt()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+
+        var first = await Json(await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null));
+        var second = await Json(await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null));
+
+        Assert.True(first.GetProperty("isRecorded").GetBoolean());
+        Assert.Equal(1, first.GetProperty("attemptNumber").GetInt32());
+        Assert.Equal(first.GetProperty("attemptId").GetGuid(), second.GetProperty("attemptId").GetGuid());
+
+        var attempt = await WithDb(app, db => db.Submissions.SingleAsync());
+        Assert.Equal(AttemptStatus.InProgress, attempt.Status);
+        Assert.NotNull(attempt.StartedAt);
+        Assert.Null(attempt.SubmittedAt);
+    }
+
+    [Fact]
+    public async Task Submit_CompletesTheStartedAttempt_WithPerAnswerEvaluation()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+
+        var start = await Json(await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null));
+        var attemptId = start.GetProperty("attemptId").GetGuid();
+
+        var body = new
+        {
+            quizId = f.Quiz.Id,
+            attemptId,
+            answers = new[]
+            {
+                new { questionId = f.Mcq.Id, selectedAnswer = "B-tree" },
+                new { questionId = f.Short.Id, selectedAnswer = "" }
+            }
+        };
+        var submit = await student.PostAsJsonAsync("/api/quizzes/submit", body);
+        Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
+        Assert.Equal(attemptId, (await Json(submit)).GetProperty("attemptId").GetGuid());
+
+        var (attempt, answers) = await WithDb(app, async db => (
+            await db.Submissions.SingleAsync(),
+            await db.SubmissionAnswers.ToListAsync()));
+        Assert.Equal(attemptId, attempt.Id);
+        Assert.Equal(AttemptStatus.Evaluated, attempt.Status);
+        Assert.NotNull(attempt.SubmittedAt);
+        Assert.NotNull(attempt.EvaluatedAt);
+        Assert.Equal(2, answers.Count);
+        Assert.All(answers, a =>
+        {
+            Assert.Equal(AnswerEvaluationStatus.Evaluated, a.EvaluationStatus);
+            Assert.InRange(a.PointsAwarded, 0, a.MaxMarks);
+        });
+        Assert.Equal(10, answers.Single(a => a.QuestionId == f.Mcq.Id).MaxMarks);
+
+        // The same attempt cannot be submitted twice.
+        Assert.Equal(HttpStatusCode.Conflict, (await student.PostAsJsonAsync("/api/quizzes/submit", body)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Submit_WithAnotherStudentsAttemptId_IsRejected()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null)))
+            .GetProperty("attemptId").GetGuid();
+
+        await WithDb(app, async db =>
+        {
+            db.Enrollments.Add(new Enrollment { CourseId = f.Course.Id, StudentId = f.Outsider.Id, Status = EnrollmentStatus.Active });
+            return await db.SaveChangesAsync();
+        });
+        using var other = await LoginAs(app, f.Outsider);
+
+        var response = await other.PostAsJsonAsync("/api/quizzes/submit", new
+        {
+            quizId = f.Quiz.Id,
+            attemptId,
+            answers = new[] { new { questionId = f.Mcq.Id, selectedAnswer = "B-tree" } }
+        });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(AttemptStatus.InProgress, (await WithDb(app, db => db.Submissions.SingleAsync())).Status);
+    }
+
+    [Fact]
+    public async Task StartedAttempts_CountTowardTheAttemptLimit()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, attemptsAllowed: 1);
+        using var student = await LoginAs(app, f.Student);
+
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))).StatusCode);
+
+        // The only allowed attempt is used up; starting again is refused.
+        Assert.Equal(HttpStatusCode.Conflict, (await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task InstructorPreview_IsNotRecordedAsAnAttempt()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, status: QuizStatus.Draft);
+        using var instructor = await LoginAs(app, f.Instructor);
+
+        var preview = await Json(await instructor.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null));
+        Assert.False(preview.GetProperty("isRecorded").GetBoolean());
+        Assert.Equal(0, await WithDb(app, db => db.Submissions.CountAsync()));
+    }
+
+    // =========================================================================
+    // Canonical placement: every assessment belongs to a module (PR 2)
+    // =========================================================================
+
+    [Fact]
+    public async Task CourseLevelQuiz_RequiresAModule_AndIsPlacedInIt()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        var moduleId = f.Quiz.ModuleId;
+        using var instructor = await LoginAs(app, f.Instructor);
+
+        object Body(Guid? module) => new
+        {
+            courseId = f.Course.Id,
+            title = "Course quiz",
+            description = "",
+            timeLimitMinutes = 10,
+            passingScorePercent = 50,
+            xpReward = 10,
+            coinReward = 0,
+            scopeType = (int)QuizScopeType.Course,
+            status = (int)QuizStatus.Draft,
+            moduleId = module,
+            questions = Array.Empty<object>()
+        };
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await instructor.PostAsJsonAsync("/api/quizzes", Body(null))).StatusCode);
+
+        var created = await instructor.PostAsJsonAsync("/api/quizzes", Body(moduleId));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await Json(created)).GetProperty("id").GetGuid();
+
+        var stored = await WithDb(app, db => db.Assessments.SingleAsync(a => a.Id == id));
+        Assert.Equal(moduleId, stored.ModuleId);
+        Assert.Equal(QuizScopeType.Module, stored.ScopeType);
+        Assert.Equal(moduleId, stored.ScopeId);
+    }
+
+    [Fact]
+    public async Task TopicQuiz_IsPlacedInTheTopicsModule()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        var topic = await WithDb(app, async db =>
+        {
+            var t = new Topic { ModuleId = f.Quiz.ModuleId, Title = "Indexes" };
+            db.Topics.Add(t);
+            await db.SaveChangesAsync();
+            return t;
+        });
+        using var instructor = await LoginAs(app, f.Instructor);
+
+        var created = await instructor.PostAsJsonAsync("/api/quizzes", new
+        {
+            courseId = f.Course.Id,
+            title = "Topic quiz",
+            description = "",
+            timeLimitMinutes = 10,
+            passingScorePercent = 50,
+            xpReward = 10,
+            coinReward = 0,
+            scopeType = (int)QuizScopeType.Topic,
+            scopeId = topic.Id,
+            status = (int)QuizStatus.Draft,
+            questions = Array.Empty<object>()
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var id = (await Json(created)).GetProperty("id").GetGuid();
+
+        var stored = await WithDb(app, db => db.Assessments.SingleAsync(a => a.Id == id));
+        Assert.Equal(f.Quiz.ModuleId, stored.ModuleId);
+        Assert.Equal(topic.Id, stored.TopicId);
+    }
+
+    [Fact]
+    public async Task CourseDetail_HidesDraftAssessmentsFromStudents()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, status: QuizStatus.Draft);
+        using var student = await LoginAs(app, f.Student);
+        using var instructor = await LoginAs(app, f.Instructor);
+
+        static int QuizCount(JsonElement course) => course.GetProperty("modules").EnumerateArray()
+            .Sum(m => m.TryGetProperty("quizzes", out var q) && q.ValueKind == JsonValueKind.Array ? q.GetArrayLength() : 0);
+
+        Assert.Equal(0, QuizCount(await Json(await student.GetAsync($"/api/courses/{f.Course.Id}"))));
+        Assert.Equal(1, QuizCount(await Json(await instructor.GetAsync($"/api/courses/{f.Course.Id}"))));
     }
 
     // =========================================================================

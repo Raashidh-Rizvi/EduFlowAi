@@ -12,10 +12,12 @@ public enum AttemptDenialReason
     NotEnrolled,
     NotPublished,
     Closed,
-    AttemptLimitReached
+    AttemptLimitReached,
+    AttemptNotFound,
+    AttemptNotOpen
 }
 
-/// <param name="AttemptsUsed">Persisted attempts the student already has for this assessment.</param>
+/// <param name="AttemptsUsed">Non-cancelled attempts the student already has for this assessment.</param>
 /// <param name="AttemptsAllowed">Configured limit; 0 or less means unlimited.</param>
 public record AttemptEligibility(
     AttemptDenialReason Reason,
@@ -42,7 +44,9 @@ public interface IAssessmentAccessService
     Task<bool> HasLearnerAccessAsync(Guid courseId, Guid userId, string role, CancellationToken ct = default);
 
     /// <summary>
-    /// Evaluates, in order: enrollment, published status, availability window, attempt limit.
+    /// Evaluates, in order: enrollment, published status, availability window and, when
+    /// <paramref name="startsNewAttempt"/> is true, the attempt limit.
     /// </summary>
-    Task<AttemptEligibility> CheckAttemptEligibilityAsync(Assessment assessment, Guid studentId, CancellationToken ct = default);
+    Task<AttemptEligibility> CheckAttemptEligibilityAsync(
+        Assessment assessment, Guid studentId, bool startsNewAttempt = true, CancellationToken ct = default);
 }

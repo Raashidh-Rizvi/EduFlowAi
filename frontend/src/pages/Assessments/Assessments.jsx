@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
+import { toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
 
 export default function Assessments({ currentUser }) {
@@ -49,8 +50,8 @@ export default function Assessments({ currentUser }) {
 
   // Form State
   const [quizTitle, setQuizTitle] = useState('');
-  const [quizCourseId, setQuizCourseId] = useState('44444444-4444-4444-4444-444444444444');
-  const [quizCourseCode, setQuizCourseCode] = useState('SE3090');
+  const [quizCourseId, setQuizCourseId] = useState('');
+  const [quizCourseCode, setQuizCourseCode] = useState('');
   const [quizTime, setQuizTime] = useState(20);
   const [quizXp, setQuizXp] = useState(60);
   const [quizCoins, setQuizCoins] = useState(25);
@@ -95,7 +96,7 @@ export default function Assessments({ currentUser }) {
   // Scope & PDF Grounding State
   const [coursesList, setCoursesList] = useState([]);
   const [modulesList, setModulesList] = useState([]);
-  const [aiScopeType, setAiScopeType] = useState('Module'); // 'Course' | 'Module' | 'Topic'
+  const [aiScopeType, setAiScopeType] = useState('Module'); // 'Course' | 'Module'
   const [aiSelectedModuleId, setAiSelectedModuleId] = useState('');
   const [aiSelectedPdfUrl, setAiSelectedPdfUrl] = useState('');
   const [aiQuestionTypePref, setAiQuestionTypePref] = useState('MIXED'); // 'MIXED' | 'MULTIPLE_CHOICE' | 'MULTIPLE_SELECT' | 'FILL_IN_THE_BLANK' | 'MATCHING'
@@ -167,11 +168,12 @@ export default function Assessments({ currentUser }) {
     const cId = targetCourseId || quizCourseId || 'ALL';
     setIsLoading(true);
     try {
-      const fetchId = cId === 'ALL' ? '44444444-4444-4444-4444-444444444444' : cId;
-      const [apiQuizzes, courses] = await Promise.all([
-        quizService.getQuizzes(fetchId).catch(() => []),
-        courseService.getCourses().catch(() => [])
-      ]);
+      // 'ALL' means every course the caller can see; the API scopes each list to the caller.
+      const courses = await courseService.getCourses().catch(() => []);
+      const courseIds = cId === 'ALL' ? (courses || []).map(c => c.id) : [cId];
+      const apiQuizzes = (await Promise.all(
+        courseIds.filter(Boolean).map(id => quizService.getQuizzes(id).catch(() => []))
+      )).flat();
 
       const localQuizzes = getGeneratedQuizzes(cId);
 
@@ -200,7 +202,7 @@ export default function Assessments({ currentUser }) {
           const activeCourse = courses.find(c => c.id === cId) || courses[0];
           if (activeCourse && activeCourse.id !== quizCourseId) {
             setQuizCourseId(activeCourse.id);
-            setQuizCourseCode(activeCourse.courseCode || activeCourse.code || 'SE3090');
+            setQuizCourseCode(activeCourse.courseCode || activeCourse.code || '');
           }
         }
       }
@@ -380,8 +382,10 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: quizPass,
         xpReward: targetXp,
         coinReward: targetCoins,
-        scopeType: aiScopeType,
-        scopeId: aiSelectedModuleId || quizCourseId,
+        // Every assessment belongs to a module; a course-scope quiz is still placed in one.
+        scopeType: toScopeTypeValue(aiScopeType),
+        scopeId: aiScopeType === 'Course' ? quizCourseId : aiSelectedModuleId,
+        moduleId: aiSelectedModuleId,
         pdfUrl: pdfUrl,
         slideUrl: pdfUrl,
         moduleTitle: moduleTitle,
@@ -511,8 +515,13 @@ export default function Assessments({ currentUser }) {
       return;
     }
 
-    const selectedModId = manualScopeType === 'Module' ? (manualModuleId || modulesList[0]?.id || quizCourseId) : quizCourseId;
+    const moduleId = manualModuleId || modulesList[0]?.id;
+    if (!moduleId) {
+      alert('Select the module this assessment belongs to.');
+      return;
+    }
     const scopeTypeName = manualScopeType || 'Module';
+    const selectedModId = scopeTypeName === 'Module' ? moduleId : quizCourseId;
 
     const createdQuiz = {
       id: `q-${Date.now()}`,
@@ -547,11 +556,12 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: quizPass,
         xpReward: quizXp,
         coinReward: quizCoins,
-        scopeType: scopeTypeName,
+        scopeType: toScopeTypeValue(scopeTypeName),
         scopeId: selectedModId,
+        moduleId,
         questions: questions.map((q, idx) => ({
           prompt: q.prompt,
-          type: 0,
+          type: toQuestionTypeValue(q.type || 'MultipleChoice'),
           options: q.options,
           correctAnswer: q.correctAnswer,
           explanation: q.explanation,
@@ -630,11 +640,11 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: Number(editPass),
         xpReward: Number(editXp),
         coinReward: Number(editCoins),
-        scopeType: editScopeType,
+        scopeType: toScopeTypeValue(editScopeType),
         scopeId: targetScopeId,
         questions: editQuestions.map((q, idx) => ({
           prompt: q.prompt,
-          type: 0,
+          type: toQuestionTypeValue(q.type || 'MultipleChoice'),
           options: q.options,
           correctAnswer: q.correctAnswer,
           explanation: q.explanation,
@@ -684,6 +694,7 @@ export default function Assessments({ currentUser }) {
       fullQuiz = {
         ...quiz,
         id: attempt.quizId,
+        attemptId: attempt.attemptId,
         title: attempt.quizTitle,
         questions: attempt.questions || []
       };
@@ -812,7 +823,7 @@ export default function Assessments({ currentUser }) {
         selectedAnswer: runnerAnswers[idx] || ''
       }));
 
-      const res = await quizService.submitQuiz(runningQuiz.id, answersPayload);
+      const res = await quizService.submitQuiz(runningQuiz.id, answersPayload, runningQuiz.attemptId);
 
       setRunningQuiz(null);
       setRewardBreakdownModal(res);
@@ -1030,7 +1041,7 @@ export default function Assessments({ currentUser }) {
                 } else {
                   const matched = coursesList.find(c => c.id === selectedId);
                   if (matched) {
-                    setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                    setQuizCourseCode(matched.courseCode || matched.code || '');
                   }
                 }
               }}
@@ -1040,7 +1051,7 @@ export default function Assessments({ currentUser }) {
               <option value="ALL">All Courses & Dynamic Quizzes</option>
               {coursesList.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                  {c.courseCode || c.code || ''}: {c.title || c.name}
                 </option>
               ))}
             </select>
@@ -1438,7 +1449,7 @@ export default function Assessments({ currentUser }) {
                       setQuizCourseId(selectedId);
                       const matched = coursesList.find(c => c.id === selectedId);
                       if (matched) {
-                        setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                        setQuizCourseCode(matched.courseCode || matched.code || '');
                       }
                     }}
                     className="form-select"
@@ -1446,7 +1457,7 @@ export default function Assessments({ currentUser }) {
                     {coursesList.length > 0 ? (
                       coursesList.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                          {c.courseCode || c.code || ''}: {c.title || c.name}
                         </option>
                       ))
                     ) : (
@@ -1467,34 +1478,24 @@ export default function Assessments({ currentUser }) {
                   </select>
                 </div>
 
-                {manualScopeType === 'Module' ? (
-                  <div>
-                    <label className="form-label">Target Module</label>
-                    <select
-                      value={manualModuleId}
-                      onChange={(e) => setManualModuleId(e.target.value)}
-                      className="form-select"
-                    >
-                      {modulesList.length > 0 ? (
-                        modulesList.map(m => (
-                          <option key={m.id} value={m.id}>{m.title}</option>
-                        ))
-                      ) : (
-                        <option value="">Select Course First</option>
-                      )}
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="form-label">Course Code</label>
-                    <input
-                      type="text"
-                      value={quizCourseCode}
-                      onChange={(e) => setQuizCourseCode(e.target.value)}
-                      className="form-input"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="form-label">
+                    {manualScopeType === 'Module' ? 'Target Module' : 'Module (where this course-level quiz is stored)'}
+                  </label>
+                  <select
+                    value={manualModuleId}
+                    onChange={(e) => setManualModuleId(e.target.value)}
+                    className="form-select"
+                  >
+                    {modulesList.length > 0 ? (
+                      modulesList.map(m => (
+                        <option key={m.id} value={m.id}>{m.title}</option>
+                      ))
+                    ) : (
+                      <option value="">Select Course First</option>
+                    )}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -1714,8 +1715,7 @@ export default function Assessments({ currentUser }) {
                         className="form-select"
                       >
                         <option value="Module">Container Module Scope</option>
-                        <option value="Course">Full Course Scope</option>
-                        <option value="Topic">Specific Topic Scope</option>
+                        <option value="Course">Full Course Scope (stored in the selected module)</option>
                       </select>
                     </div>
 

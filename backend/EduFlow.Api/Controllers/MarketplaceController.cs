@@ -337,8 +337,8 @@ public class MarketplaceController : BaseApiController
         var item = (await ProjectAsync(new List<Course> { course })).First();
 
         var courseAssessments = await DbContext.Assessments.AsNoTracking()
-            .Where(a => a.CourseId == course.Id)
-            .Select(a => new { a.ModuleScopeId, a.XpReward })
+            .Where(a => a.CourseId == course.Id && a.Status == QuizStatus.Published)
+            .Select(a => new { a.ModuleId, a.XpReward })
             .ToListAsync();
         var quizCount = courseAssessments.Count;
 
@@ -347,7 +347,7 @@ public class MarketplaceController : BaseApiController
             m.Title,
             m.Description ?? string.Empty,
             m.OrderIndex,
-            courseAssessments.Count(a => a.ModuleScopeId == m.Id),
+            courseAssessments.Count(a => a.ModuleId == m.Id),
             m.Lessons.Select(l => new MarketplaceLessonDto(
                 l.Id,
                 l.Title,
@@ -356,7 +356,7 @@ public class MarketplaceController : BaseApiController
                 l.XpReward,
                 l.IsFreePreview
             )).ToList(),
-            courseAssessments.Count(a => a.ModuleScopeId == m.Id)
+            courseAssessments.Count(a => a.ModuleId == m.Id)
         )).ToList();
 
         var reviews = await DbContext.CourseReviews.AsNoTracking()

@@ -125,6 +125,31 @@ public enum QuizStatus
     Failed
 }
 
+/// <summary>Lifecycle of one assessment attempt (persisted as <c>Submission</c>).</summary>
+public enum AttemptStatus
+{
+    InProgress,
+    Submitted,
+    Evaluating,
+    Evaluated,
+    Cancelled
+}
+
+/// <summary>How an answer's marks were produced.</summary>
+public enum EvaluationMethod
+{
+    Deterministic,
+    Ai,
+    Manual
+}
+
+public enum AnswerEvaluationStatus
+{
+    Pending,
+    Evaluated,
+    NeedsReview
+}
+
 public enum FeedbackMode
 {
     Immediate,

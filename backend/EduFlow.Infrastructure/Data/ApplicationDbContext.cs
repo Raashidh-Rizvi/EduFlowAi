@@ -301,6 +301,22 @@ public class ApplicationDbContext : DbContext
                   .WithOne(qc => qc.Quiz)
                   .HasForeignKey<QuizConfiguration>(qc => qc.QuizId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            // Canonical placement: every assessment belongs to one module; a topic or
+            // content item inside that module is an optional finer target.
+            entity.HasOne(a => a.Module)
+                  .WithMany(m => m.Assessments)
+                  .HasForeignKey(a => a.ModuleId)
+                  .IsRequired()
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(a => a.Topic)
+                  .WithMany(t => t.Assessments)
+                  .HasForeignKey(a => a.TopicId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(a => a.ContentItemScope)
+                  .WithMany(ci => ci.Assessments)
+                  .HasForeignKey(a => a.ContentItemScopeId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<QuizConfiguration>(entity =>
@@ -320,6 +336,7 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(q => q.SourceContentId)
                   .OnDelete(DeleteBehavior.SetNull);
+            entity.ToTable(t => t.HasCheckConstraint("CK_Questions_Points_Positive", "\"Points\" > 0"));
         });
 
         modelBuilder.Entity<QuestionOption>(entity =>
@@ -332,10 +349,21 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Submission>(entity =>
         {
+            entity.Property(s => s.Status).HasConversion<string>();
+            entity.HasIndex(s => new { s.AssessmentId, s.StudentId, s.AttemptNumber }).IsUnique();
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Submissions_Score_Range", "\"ScoreObtained\" >= 0 AND \"ScoreObtained\" <= \"MaxScore\"");
+                t.HasCheckConstraint("CK_Submissions_Percentage_Range", "\"PercentageScore\" >= 0 AND \"PercentageScore\" <= 100");
+                t.HasCheckConstraint("CK_Submissions_AttemptNumber_Positive", "\"AttemptNumber\" > 0");
+            });
+
+            // Academic history is never deleted implicitly: an assessment (and therefore its
+            // module/course) cannot be deleted while attempts reference it.
             entity.HasOne(s => s.Assessment)
                   .WithMany(a => a.Submissions)
                   .HasForeignKey(s => s.AssessmentId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(s => s.Student)
                   .WithMany(u => u.Submissions)
                   .HasForeignKey(s => s.StudentId)
@@ -352,6 +380,11 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(sa => sa.QuestionId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(sa => sa.EvaluationMethod).HasConversion<string>();
+            entity.Property(sa => sa.EvaluationStatus).HasConversion<string>();
+            entity.HasIndex(sa => new { sa.SubmissionId, sa.QuestionId }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_SubmissionAnswers_Marks_Range",
+                "\"PointsAwarded\" >= 0 AND \"PointsAwarded\" <= \"MaxMarks\""));
         });
 
 
@@ -501,64 +534,17 @@ public class ApplicationDbContext : DbContext
             }).ToArray()
         );
 
-        // 2. Badges Seed
-        // 2. Badges Seed
+        // 2. Badge catalogue (reference data; fixed timestamps keep the model deterministic)
+        var catalogueDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         modelBuilder.Entity<Badge>().HasData(
-            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50 },
-            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100 },
-            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200 },
-            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250 },
-            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75 }
+            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50, CreatedAt = catalogueDate },
+            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, CreatedAt = catalogueDate },
+            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200, CreatedAt = catalogueDate },
+            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250, CreatedAt = catalogueDate },
+            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75, CreatedAt = catalogueDate }
         );
 
-        // 3. User Accounts (Admin, Instructor, Student)
-        var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var student1Id = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Alex Rivera
-
-        // Real bcrypt hash of "Password123!" (verified against BCrypt.Net)
-        var defaultPasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK";
-
-        modelBuilder.Entity<User>().HasData(
-            new User
-            {
-                Id = adminId,
-                FullName = "System Administrator",
-                Email = "admin@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Admin,
-                IsActive = true
-            },
-            new User
-            {
-                Id = instructorId,
-                FullName = "Dr. Sarah Jenkins",
-                Email = "instructor@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Instructor,
-                IsActive = true
-            },
-            new User
-            {
-                Id = student1Id,
-                FullName = "Alex Rivera",
-                Email = "student@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Student,
-                IsActive = true
-            }
-        );
-
-        // Student Gamification Baseline Profile
-        var staticSeedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var staticSeedDateOnly = new DateOnly(2026, 1, 1);
-
-        modelBuilder.Entity<StudentXp>().HasData(
-            new StudentXp { StudentId = student1Id, TotalXp = 0, CurrentLevel = 1, Coins = 0, UpdatedAt = staticSeedDate }
-        );
-
-        modelBuilder.Entity<StudentStreak>().HasData(
-            new StudentStreak { StudentId = student1Id, CurrentStreak = 0, LongestStreak = 0, FreezeTokensAvailable = 1, LastActivityDate = staticSeedDateOnly, UpdatedAt = staticSeedDate }
-        );
+        // Demo accounts are NOT part of the model: they are created only by the Development
+        // seeder (DbInitializer.SeedDevelopmentData), never by migrations.
     }
 }
