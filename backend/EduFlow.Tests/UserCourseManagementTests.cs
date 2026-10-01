@@ -112,7 +112,7 @@ public class UserCourseManagementTests
             var streak = await db.StudentStreaks.SingleAsync(x => x.StudentId == user.Id);
             Assert.Equal(0, xp.TotalXp);
             Assert.Equal(1, xp.CurrentLevel);
-            Assert.Equal(50, xp.Coins);
+            Assert.Equal(0, xp.Coins); // every coin comes from a ledgered award
             Assert.Equal(0, streak.CurrentStreak);
             Assert.Equal(2, streak.FreezeTokensAvailable);
         }

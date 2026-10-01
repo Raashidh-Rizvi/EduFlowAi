@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -17,12 +20,12 @@ namespace EduFlow.Api.Controllers;
 [Route("api/[controller]")]
 public class ChallengesController : BaseApiController
 {
-    private readonly IGamificationService _gamificationService;
+    private readonly IDomainEventDispatcher _events;
 
-    public ChallengesController(ApplicationDbContext dbContext, IGamificationService gamificationService)
+    public ChallengesController(ApplicationDbContext dbContext, IDomainEventDispatcher events)
         : base(dbContext)
     {
-        _gamificationService = gamificationService;
+        _events = events;
     }
 
     [HttpGet("daily")]
@@ -181,16 +184,14 @@ public class ChallengesController : BaseApiController
             studentChallenge.CompletedAt = DateTime.UtcNow;
         }
 
-        // AwardXpAsync saves the tracked completion row and the XP ledger entry together.
-        var result = await _gamificationService.AwardXpAsync(
-            studentId,
-            XpSourceType.DailyChallenge,
-            challenge.Id,
-            challenge.XpReward,
-            $"Completed challenge: {challenge.Title}"
-        );
+        // The completion row is saved first; gamification reacts to the event (its XP is
+        // idempotent per challenge) and its result is returned to the caller.
+        await DbContext.SaveChangesAsync();
+        var result = (await _events.PublishAsync(new ChallengeCompleted(studentId, challenge.Id, challenge.Title, challenge.XpReward)))
+            .OfType<ChallengeResultDto>()
+            .FirstOrDefault();
 
-        return Ok(result);
+        return Ok(result ?? new ChallengeResultDto(true, 100, 0, 0, 0, 0, false, new List<string>()));
     }
 }
 

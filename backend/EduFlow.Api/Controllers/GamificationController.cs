@@ -3,8 +3,13 @@ using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Globalization;
+using System.Linq;
+using EduFlow.Core.Constants;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Interfaces;
+using EduFlow.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,10 +21,14 @@ namespace EduFlow.Api.Controllers;
 public class GamificationController : ControllerBase
 {
     private readonly IGamificationService _gamificationService;
+    private readonly ApplicationDbContext _dbContext;
+    private readonly IAuditLogWriter _auditLogWriter;
 
-    public GamificationController(IGamificationService gamificationService)
+    public GamificationController(IGamificationService gamificationService, ApplicationDbContext dbContext, IAuditLogWriter auditLogWriter)
     {
         _gamificationService = gamificationService;
+        _dbContext = dbContext;
+        _auditLogWriter = auditLogWriter;
     }
 
     // Phase 1A: Self-only guard — student can only see their own dashboard
@@ -165,17 +174,61 @@ public class GamificationController : ControllerBase
     }
 
     [HttpGet("multiplier")]
-    public ActionResult<double> GetMultiplier()
+    public async Task<ActionResult<double>> GetMultiplier(CancellationToken ct)
     {
-        return Ok(_gamificationService.GetXpMultiplier());
+        return Ok(await _gamificationService.GetXpMultiplierAsync(ct));
     }
 
-    // Platform-wide setting: Admin only.
+    // Platform-wide setting: Admin only. Stored as the "xp.multiplier" rule.
     [HttpPost("multiplier")]
     [Authorize(Roles = "Admin")]
-    public ActionResult<double> SetMultiplier([FromBody] SetMultiplierRequest request)
+    public async Task<IActionResult> SetMultiplier([FromBody] SetMultiplierRequest request, CancellationToken ct)
     {
-        _gamificationService.SetXpMultiplier(request.Multiplier);
-        return Ok(_gamificationService.GetXpMultiplier());
+        var result = await UpdateRuleAsync(GamificationRuleKeys.XpMultiplier, (decimal)request.Multiplier, ct);
+        return result ?? Ok(await _gamificationService.GetXpMultiplierAsync(ct));
+    }
+
+    /// <summary>Every configurable reward value (Admin).</summary>
+    [HttpGet("rules")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> GetRules(CancellationToken ct)
+    {
+        var rules = await _dbContext.GamificationRules.AsNoTracking()
+            .OrderBy(r => r.Key)
+            .Select(r => new { r.Key, r.Value, r.Description, r.UpdatedAt })
+            .ToListAsync(ct);
+        return Ok(rules);
+    }
+
+    [HttpPut("rules/{key}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> UpdateRule(string key, [FromBody] UpdateGamificationRuleRequest request, CancellationToken ct)
+        => await UpdateRuleAsync(key, request.Value, ct) ?? Ok(new { key, value = request.Value });
+
+    /// <returns>An error result, or null on success.</returns>
+    private async Task<IActionResult?> UpdateRuleAsync(string key, decimal value, CancellationToken ct)
+    {
+        var rule = await _dbContext.GamificationRules.FirstOrDefaultAsync(r => r.Key == key, ct);
+        if (rule == null) return NotFound(new { message = $"Unknown gamification rule '{key}'." });
+
+        if (value < 0) return BadRequest(new { message = "Rule values cannot be negative." });
+        if (key == GamificationRuleKeys.XpMultiplier && (value < 1 || value > 5))
+            return BadRequest(new { message = "The XP multiplier must be between 1 and 5." });
+
+        var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        var role = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        _auditLogWriter.AddEntry(Guid.Parse(callerIdStr!), role, "GamificationRule.Updated", "GamificationRule", rule.Id.ToString(),
+            new Dictionary<string, object?>
+            {
+                ["previousValue"] = rule.Value.ToString(CultureInfo.InvariantCulture),
+                ["newValue"] = value.ToString(CultureInfo.InvariantCulture)
+            });
+
+        rule.Value = value;
+        rule.UpdatedAt = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+        return null;
     }
 }
+
+public record UpdateGamificationRuleRequest(decimal Value);

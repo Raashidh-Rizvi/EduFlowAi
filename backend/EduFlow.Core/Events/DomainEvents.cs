@@ -1,52 +1,44 @@
 using System;
+using System.Collections.Generic;
 using EduFlow.Core.Enums;
 
 namespace EduFlow.Core.Events;
 
-public record XpEarnedEvent(
-    Guid StudentId, 
-    XpSourceType SourceType, 
-    Guid SourceId, 
-    int XpAmount, 
-    int NewTotalXp, 
-    int CurrentLevel
-);
+/// <summary>A fact about the LMS that other parts of the system (e.g. gamification) react to.</summary>
+public interface IDomainEvent
+{
+    Guid StudentId { get; }
+}
 
-public record LevelUpEvent(
-    Guid StudentId, 
-    int OldLevel, 
-    int NewLevel, 
-    string LevelName, 
-    int BonusCoins
-);
+/// <summary>An attempt became fully evaluated (all answers marked).</summary>
+public sealed record AssessmentEvaluated(
+    Guid StudentId,
+    Guid CourseId,
+    Guid AssessmentId,
+    Guid AttemptId,
+    string AssessmentTitle,
+    double Percentage,
+    bool Passed,
+    int TimeSpentSeconds,
+    DifficultyLevel Difficulty,
+    QuizScopeType ScopeType,
+    Guid? TopicId,
+    IReadOnlyList<bool> AnswerCorrectness) : IDomainEvent;
 
-public record BadgeUnlockedEvent(
-    Guid StudentId, 
-    string BadgeId, 
-    string BadgeTitle, 
-    int XpBonus
-);
+/// <summary>A student completed a content item (lesson) for the first time.</summary>
+public sealed record LessonCompleted(
+    Guid StudentId,
+    Guid CourseId,
+    Guid ContentItemId,
+    string Title,
+    int XpReward) : IDomainEvent;
 
-public record StreakUpdatedEvent(
-    Guid StudentId, 
-    int CurrentStreak, 
-    int LongestStreak, 
-    bool IsMilestone
-);
+/// <summary>A student completed every learning unit of a course.</summary>
+public sealed record CourseCompleted(Guid StudentId, Guid CourseId) : IDomainEvent;
 
-public record QuizCompletedEvent(
-    Guid StudentId, 
-    Guid QuizId, 
-    int Score, 
-    int MaxScore, 
-    bool Passed, 
-    int XpEarned
-);
-
-public record ChallengeCompletedEvent(
-    Guid StudentId, 
-    Guid ChallengeId, 
-    int XpEarned, 
-    int CoinsEarned, 
-    DifficultyLevel Difficulty
-);
+/// <summary>A student completed a challenge for the first time.</summary>
+public sealed record ChallengeCompleted(
+    Guid StudentId,
+    Guid ChallengeId,
+    string Title,
+    int XpReward) : IDomainEvent;

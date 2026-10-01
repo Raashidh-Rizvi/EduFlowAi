@@ -13,6 +13,7 @@ using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
 using EduFlow.Infrastructure.Services.Evaluation;
@@ -67,15 +68,7 @@ public class AssessmentIntegrityTests
         var databaseName = Guid.NewGuid().ToString();
         builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IGamificationService, GamificationService>();
-        builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
-        builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
-        builder.Services.AddScoped<IAttemptService, AttemptService>();
-        builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
-        builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
-        builder.Services.AddScoped<IGradeService, GradeService>();
-        builder.Services.AddScoped<IProgressService, ProgressService>();
-        builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+        builder.Services.AddLmsDomainServices();
         builder.Services.AddScoped<ITeamService, TeamService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.Configure<EduFlow.Core.Options.ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));
@@ -1014,6 +1007,83 @@ public class AssessmentIntegrityTests
         Assert.Equal(HttpStatusCode.Forbidden,
             (await outsider.GetAsync($"/api/courses/{f.Course.Id}/progress?studentId={f.Student.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await outsider.GetAsync($"/api/courses/{f.Course.Id}/progress")).StatusCode);
+    }
+
+    // =========================================================================
+    // Event-driven gamification (PR 6)
+    // =========================================================================
+
+    [Fact]
+    public async Task CourseCompletion_IsPublishedOnce_AndPaysItsConfiguredReward()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        int courseXp = await WithDb(app, async db =>
+            (int)(await db.GamificationRules.SingleAsync(r => r.Key == EduFlow.Core.Constants.GamificationRuleKeys.CourseCompletedXp)).Value);
+        using var student = await LoginAs(app, f.Student);
+
+        // The quiz is the course's only unit: passing it completes the course.
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))).StatusCode);
+        // Reading progress again must not publish the event a second time.
+        Assert.Equal(HttpStatusCode.OK, (await student.GetAsync($"/api/courses/{f.Course.Id}/progress")).StatusCode);
+
+        var (courseRows, graduate) = await WithDb(app, async db => (
+            await db.XpTransactions.Where(x => x.StudentId == f.Student.Id && x.SourceType == XpSourceType.CourseCompleted).ToListAsync(),
+            await db.StudentBadges.AnyAsync(b => b.StudentId == f.Student.Id && b.BadgeId == "COURSE_GRADUATE")));
+        Assert.Equal(courseXp, Assert.Single(courseRows).XpAmount);
+        Assert.True(graduate);
+    }
+
+    [Fact]
+    public async Task GamificationRules_AreAdminOnly_AndChangesAreAudited()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        var admin = await SeedUser(app, "Platform Admin", UserRole.Admin);
+        using var instructor = await LoginAs(app, f.Instructor);
+        using var adminClient = await LoginAs(app, admin);
+        var key = EduFlow.Core.Constants.GamificationRuleKeys.QuizPassBonus;
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await instructor.GetAsync("/api/gamification/rules")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await instructor.PutAsJsonAsync($"/api/gamification/rules/{key}", new { value = 999 })).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await adminClient.PutAsJsonAsync($"/api/gamification/rules/{key}", new { value = 35 })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await adminClient.PostAsJsonAsync("/api/gamification/multiplier", new { multiplier = 9 })).StatusCode);
+
+        var (value, audits) = await WithDb(app, async db => (
+            (await db.GamificationRules.SingleAsync(r => r.Key == key)).Value,
+            await db.AuditLogs.CountAsync(a => a.Action == "GamificationRule.Updated")));
+        Assert.Equal(35m, value);
+        Assert.Equal(1, audits);
+
+        // The new value is what students are paid.
+        using var student = await LoginAs(app, f.Student);
+        var result = await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f)));
+        Assert.Equal(35, result.GetProperty("xpBreakdown").GetProperty("passBonus").GetInt32());
+    }
+
+    [Fact]
+    public async Task FocusSessions_AreCappedPerDayAndInDuration()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        int limit = await WithDb(app, async db =>
+            (int)(await db.GamificationRules.SingleAsync(r => r.Key == EduFlow.Core.Constants.GamificationRuleKeys.FocusDailySessionLimit)).Value);
+        using var student = await LoginAs(app, f.Student);
+        object Body() => new { studentId = Guid.Empty, durationMinutes = 100000, topicOrTask = "Study", focusTechnique = "Pomodoro" };
+
+        for (int i = 0; i < limit; i++)
+        {
+            Assert.True((await Json(await student.PostAsJsonAsync("/api/gamification/focus-session", Body())))
+                .GetProperty("xpAwarded").GetInt32() > 0);
+        }
+        Assert.Equal(0, (await Json(await student.PostAsJsonAsync("/api/gamification/focus-session", Body())))
+            .GetProperty("xpAwarded").GetInt32());
+
+        // 100000 claimed minutes are credited as the configured maximum.
+        var maxXp = await WithDb(app, async db => await db.XpTransactions
+            .Where(x => x.StudentId == f.Student.Id && x.SourceType == XpSourceType.FocusSession).MaxAsync(x => x.XpAmount));
+        Assert.True(maxXp < 1000, $"Focus XP {maxXp} should reflect the capped duration.");
     }
 
     // =========================================================================

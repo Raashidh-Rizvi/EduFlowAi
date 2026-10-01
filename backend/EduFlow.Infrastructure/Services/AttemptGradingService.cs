@@ -9,6 +9,7 @@ using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Evaluation;
+using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +20,7 @@ public class AttemptGradingService : IAttemptGradingService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly IEvaluationService _evaluationService;
-    private readonly IGamificationService _gamificationService;
+    private readonly IDomainEventDispatcher _events;
     private readonly IAssessmentAccessService _accessService;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IGradeService _gradeService;
@@ -28,7 +29,7 @@ public class AttemptGradingService : IAttemptGradingService
     public AttemptGradingService(
         ApplicationDbContext dbContext,
         IEvaluationService evaluationService,
-        IGamificationService gamificationService,
+        IDomainEventDispatcher events,
         IAssessmentAccessService accessService,
         IAuditLogWriter auditLogWriter,
         IGradeService gradeService,
@@ -36,7 +37,7 @@ public class AttemptGradingService : IAttemptGradingService
     {
         _dbContext = dbContext;
         _evaluationService = evaluationService;
-        _gamificationService = gamificationService;
+        _events = events;
         _accessService = accessService;
         _auditLogWriter = auditLogWriter;
         _gradeService = gradeService;
@@ -231,7 +232,11 @@ public class AttemptGradingService : IAttemptGradingService
         attempt.UpdatedAt = now;
     }
 
-    private Task<QuizRewardResultDto> AwardRewardAsync(
+    /// <summary>
+    /// Publishes the evaluated attempt. Gamification (and any other subscriber) reacts in this
+    /// transaction; the XP awarded, if any, is returned for the response.
+    /// </summary>
+    private async Task<QuizRewardResultDto?> AwardRewardAsync(
         Assessment assessment,
         Submission attempt,
         IEnumerable<(QuestionSnapshot Question, bool IsCorrect)> outcomes,
@@ -241,20 +246,20 @@ public class AttemptGradingService : IAttemptGradingService
             ? Math.Max(0, (int)(attempt.SubmittedAt.Value - attempt.StartedAt.Value).TotalSeconds)
             : 0;
 
-        var questionOutcomes = outcomes
-            .Select(o => (assessment.TopicId, assessment.Title, assessment.Title, o.IsCorrect))
-            .ToList();
-
-        return _gamificationService.CalculateAndAwardQuizRewardAsync(
-            studentId: attempt.StudentId,
-            assessmentId: assessment.Id,
-            scorePercent: (int)Math.Round(attempt.PercentageScore),
-            passed: attempt.Passed,
-            timeSpentSeconds: timeSpentSeconds,
-            difficulty: assessment.Difficulty,
-            scopeType: assessment.ScopeType,
-            questionOutcomes: questionOutcomes,
-            ct: ct);
+        var results = await _events.PublishAsync(new AssessmentEvaluated(
+            StudentId: attempt.StudentId,
+            CourseId: assessment.CourseId,
+            AssessmentId: assessment.Id,
+            AttemptId: attempt.Id,
+            AssessmentTitle: assessment.Title,
+            Percentage: attempt.PercentageScore,
+            Passed: attempt.Passed,
+            TimeSpentSeconds: timeSpentSeconds,
+            Difficulty: assessment.Difficulty,
+            ScopeType: assessment.ScopeType,
+            TopicId: assessment.TopicId,
+            AnswerCorrectness: outcomes.Select(o => o.IsCorrect).ToList()), ct);
+        return results.OfType<QuizRewardResultDto>().FirstOrDefault();
     }
 
     private static QuestionSnapshot Snapshot(SubmissionAnswer answer)

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -29,6 +30,7 @@ public class CoursesController : BaseApiController
     private readonly IAiGatewayClient? _aiGatewayClient;
     private readonly IPaymentVerificationService? _paymentVerificationService;
     private readonly IProgressService _progressService;
+    private readonly IDomainEventDispatcher? _events;
 
     public CoursesController(
         ApplicationDbContext dbContext,
@@ -38,10 +40,12 @@ public class CoursesController : BaseApiController
         IAiGatewayClient? aiGatewayClient = null,
         IPaymentVerificationService? paymentVerificationService = null,
         IAuditLogWriter? auditLogWriter = null,
-        IProgressService? progressService = null)
+        IProgressService? progressService = null,
+        IDomainEventDispatcher? events = null)
         : base(dbContext)
     {
-        _progressService = progressService ?? new ProgressService(dbContext);
+        _events = events;
+        _progressService = progressService ?? new ProgressService(dbContext, events);
         _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
         _gamificationService = gamificationService;
         _ratingService = ratingService;
@@ -1922,10 +1926,12 @@ public class CoursesController : BaseApiController
                 });
                 await DbContext.SaveChangesAsync();
 
-                var reward = lesson.XpReward > 0
-                    ? await _gamificationService.AwardXpAsync(studentId, XpSourceType.LessonCompleted, lessonId,
-                        lesson.XpReward, $"Completed lesson: {lesson.Title}")
-                    : null;
+                // Gamification reacts to the event; the controller never awards XP itself.
+                var events = _events ?? throw new InvalidOperationException("Domain events are not configured.");
+                var reward = (await events.PublishAsync(new LessonCompleted(
+                        studentId, lessonCourseId, lessonId, lesson.Title, lesson.XpReward)))
+                    .OfType<ChallengeResultDto>()
+                    .FirstOrDefault();
 
                 var progress = await _progressService.RefreshEnrollmentAsync(lessonCourseId, studentId);
                 await DbContext.SaveChangesAsync();

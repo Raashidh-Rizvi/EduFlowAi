@@ -8,6 +8,7 @@ using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services.Gamification;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduFlow.Infrastructure.Services;
@@ -16,9 +17,17 @@ public class TeamService : ITeamService
 {
     private readonly ApplicationDbContext _dbContext;
 
+    private readonly AchievementService _achievements;
+
     public TeamService(ApplicationDbContext dbContext)
+        : this(dbContext, new AchievementService(dbContext, new PointsLedger(dbContext, new GamificationRuleSet(dbContext))))
+    {
+    }
+
+    public TeamService(ApplicationDbContext dbContext, AchievementService achievements)
     {
         _dbContext = dbContext;
+        _achievements = achievements;
     }
 
     public async Task<SquadDto?> GetStudentSquadAsync(Guid studentId, CancellationToken ct = default)
@@ -103,6 +112,8 @@ public class TeamService : ITeamService
         await _dbContext.TeamMembers.AddAsync(member, ct);
 
         await _dbContext.SaveChangesAsync(ct);
+        await _achievements.EvaluateAsync(member.StudentId, ct);
+        await _dbContext.SaveChangesAsync(ct);
 
         var squadDto = await BuildSquadDtoAsync(team, ct);
         return new SquadActionResultDto(true, $"Squad '{team.Name}' created successfully.", squadDto);
@@ -177,27 +188,14 @@ public class TeamService : ITeamService
                 Role = role,
                 JoinedAt = DateTime.UtcNow
             }, ct);
-
-            // Unlock SQUAD_GOALS badge if not already unlocked
-            var hasBadge = await _dbContext.StudentBadges.AnyAsync(sb => sb.StudentId == sId && sb.BadgeId == "SQUAD_GOALS", ct);
-            if (!hasBadge && await _dbContext.Badges.AnyAsync(b => b.Id == "SQUAD_GOALS", ct))
-            {
-                await _dbContext.StudentBadges.AddAsync(new StudentBadge
-                {
-                    StudentId = sId,
-                    BadgeId = "SQUAD_GOALS",
-                    UnlockedAt = DateTime.UtcNow
-                }, ct);
-
-                var xpRecord = await _dbContext.StudentXp.FirstOrDefaultAsync(x => x.StudentId == sId, ct);
-                if (xpRecord != null)
-                {
-                    xpRecord.TotalXp += 75;
-                    xpRecord.Coins += 20;
-                }
-            }
         }
 
+        // Membership is saved first; team achievements (and their ledgered XP) follow from it.
+        await _dbContext.SaveChangesAsync(ct);
+        foreach (var sId in studentIds)
+        {
+            await _achievements.EvaluateAsync(sId, ct);
+        }
         await _dbContext.SaveChangesAsync(ct);
 
         var squadDto = await BuildSquadDtoAsync(team, ct);
@@ -253,6 +251,8 @@ public class TeamService : ITeamService
             JoinedAt = DateTime.UtcNow
         }, ct);
 
+        await _dbContext.SaveChangesAsync(ct);
+        await _achievements.EvaluateAsync(studentId, ct);
         await _dbContext.SaveChangesAsync(ct);
         return new SquadActionResultDto(true, "Student added to squad.", await BuildSquadDtoAsync(team, ct));
     }
@@ -362,6 +362,8 @@ public class TeamService : ITeamService
         };
         await _dbContext.TeamMembers.AddAsync(member, ct);
 
+        await _dbContext.SaveChangesAsync(ct);
+        await _achievements.EvaluateAsync(member.StudentId, ct);
         await _dbContext.SaveChangesAsync(ct);
 
         var squadDto = await BuildSquadDtoAsync(team, ct);

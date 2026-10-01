@@ -1,6 +1,7 @@
 using System.Text;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
 using EduFlow.Infrastructure.Services.Evaluation;
@@ -32,20 +33,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // 2. Register Domain & Infrastructure Services
 builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IGamificationService, GamificationService>();
-builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
-builder.Services.AddScoped<IAttemptService, AttemptService>();
-builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
-builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
-builder.Services.AddScoped<IGradeService, GradeService>();
-builder.Services.AddScoped<IProgressService, ProgressService>();
+builder.Services.AddLmsDomainServices();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.
-builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
-builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
 
 // 2b. Review moderation behaviour (see docs/current/RATINGS_AND_REVIEWS.md)

@@ -30,7 +30,8 @@ public static class AuditEventRegistry
             ["Assessment.Deleted"] = Array.Empty<string>(),
             ["CourseGrading.Updated"] = Array.Empty<string>(),
             ["CourseGrading.Activated"] = Array.Empty<string>(),
-            ["CourseResult.Overridden"] = new[] { "previousGrade", "newGrade" }
+            ["CourseResult.Overridden"] = new[] { "previousGrade", "newGrade" },
+            ["GamificationRule.Updated"] = new[] { "previousValue", "newValue" }
         });
 
     public static bool IsSafeValue(string key, JsonElement value)
@@ -40,6 +41,7 @@ public static class AuditEventRegistry
         return key switch
         {
             "courseId" or "studentId" or "responseId" or "questionId" => Guid.TryParseExact(text, "D", out var id) && id != Guid.Empty,
+            "previousValue" or "newValue" => text.Length <= 20 && decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var number) && number >= 0,
             "previousGrade" or "newGrade" => text.Length is > 0 and <= 10 && text.All(c => char.IsLetterOrDigit(c) || c is '+' or '-'),
             "previousMarks" or "newMarks" => int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var marks) && marks >= 0,
             "type" => text is "Bug" or "Dispute" or "Feedback",

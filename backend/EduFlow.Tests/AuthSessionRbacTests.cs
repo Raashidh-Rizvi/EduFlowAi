@@ -16,6 +16,7 @@ using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
 using EduFlow.Infrastructure.Services.Evaluation;
@@ -79,16 +80,8 @@ public class AuthSessionRbacTests
             options.UseInMemoryDatabase(databaseName));
 
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IGamificationService, GamificationService>();
-        builder.Services.AddScoped<IAssessmentAccessService, AssessmentAccessService>();
-        builder.Services.AddScoped<IAttemptService, AttemptService>();
-        builder.Services.AddSingleton<IEvaluationService>(_ => new EvaluationService(EvaluationService.DefaultEvaluators()));
-        builder.Services.AddScoped<IAttemptGradingService, AttemptGradingService>();
-        builder.Services.AddScoped<IGradeService, GradeService>();
-        builder.Services.AddScoped<IProgressService, ProgressService>();
-        builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
+        builder.Services.AddLmsDomainServices();
         builder.Services.AddScoped<ITeamService, TeamService>();
-        builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddScoped<IRatingService, RatingService>();
         builder.Services.Configure<ReviewModerationOptions>(builder.Configuration.GetSection("ReviewModeration"));
         builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();

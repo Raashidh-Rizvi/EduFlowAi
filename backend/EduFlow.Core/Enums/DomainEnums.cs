@@ -30,7 +30,25 @@ public enum XpSourceType
     TeamChallenge,
     AiAdaptiveChallenge,
     RemediationCompleted,
-    FocusSession
+    FocusSession,
+    LevelUp,
+    BadgeUnlocked,
+    DailyMissionCompleted
+}
+
+/// <summary>The measure an achievement (badge) is unlocked by.</summary>
+public enum AchievementCriteria
+{
+    None,
+    LessonsCompleted,
+    StreakDays,
+    PerfectScores,
+    AssessmentsPassed,
+    BossAssessmentsPassed,
+    ImprovementBonusesEarned,
+    ChallengesCompleted,
+    CoursesCompleted,
+    TeamMemberships
 }
 
 public enum DifficultyLevel

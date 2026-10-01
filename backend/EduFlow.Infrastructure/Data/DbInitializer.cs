@@ -126,24 +126,7 @@ public static class DbInitializer
             }
             context.SaveChanges();
 
-            // Ensure the badge catalogue exists (unlocks come only from real activity)
-            var badgesToEnsure = new[]
-            {
-                new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50 },
-                new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100 },
-                new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200 },
-                new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250 },
-                new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75 }
-            };
-
-            foreach (var b in badgesToEnsure)
-            {
-                if (!context.Badges.Any(x => x.Id == b.Id))
-                {
-                    context.Badges.Add(b);
-                }
-            }
-            context.SaveChanges();
+            // The badge catalogue (with unlock criteria) is reference data seeded by the model.
 
             // Seed Team & Alex Rivera Team Membership
             var starterTeamId = Guid.Parse("99999999-9999-9999-9999-999999999991");

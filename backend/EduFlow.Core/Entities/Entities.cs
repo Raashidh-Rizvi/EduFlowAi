@@ -554,6 +554,11 @@ public class GradeOverride : BaseEntity
 // -----------------------------------------------------------------------------
 // 4. Gamification: XP, Levels, Badges, Streaks & Challenges
 // -----------------------------------------------------------------------------
+/// <summary>
+/// The points ledger. Every XP or coin change is one row; <see cref="StudentXp"/> is only an
+/// aggregate of these rows. <see cref="IdempotencyKey"/> (unique per student) guarantees that
+/// the same LMS event can never pay twice.
+/// </summary>
 public class XpTransaction : BaseEntity
 {
     public Guid StudentId { get; set; }
@@ -561,6 +566,21 @@ public class XpTransaction : BaseEntity
     public XpSourceType SourceType { get; set; }
     public Guid SourceId { get; set; }
     public int XpAmount { get; set; }
+    public int CoinAmount { get; set; }
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>Stable key of the event that caused this award, e.g. "quiz-completed:{assessmentId}".</summary>
+    public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>
+/// One configurable gamification value (XP amount, tier threshold, coin ratio, cap...).
+/// Rules are data: changing a reward never requires a code change.
+/// </summary>
+public class GamificationRule : BaseEntity
+{
+    public string Key { get; set; } = string.Empty;
+    public decimal Value { get; set; }
     public string Description { get; set; } = string.Empty;
 }
 
@@ -593,6 +613,10 @@ public class Badge
     public BadgeCategory Category { get; set; } = BadgeCategory.Learning;
     public int XpBonus { get; set; } = 100;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>What the achievement measures; unlocked when the measure reaches <see cref="Threshold"/>.</summary>
+    public AchievementCriteria Criteria { get; set; } = AchievementCriteria.None;
+    public int Threshold { get; set; } = 1;
 
     public ICollection<StudentBadge> StudentBadges { get; set; } = new List<StudentBadge>();
 }

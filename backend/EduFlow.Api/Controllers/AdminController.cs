@@ -173,7 +173,7 @@ public class AdminController : ControllerBase
                         a.EntityId.ToLower().Replace("-", "").Replace("{", "").Replace("}", "")
                             .Replace("(", "").Replace(")", "") == compactUserId, ct) ||
                     (user.StudentXp != null && (user.StudentXp.TotalXp != 0 ||
-                        user.StudentXp.CurrentLevel != 1 || user.StudentXp.Coins != 50)) ||
+                        user.StudentXp.CurrentLevel != 1 || user.StudentXp.Coins != 0)) ||
                     (user.StudentStreak != null && (user.StudentStreak.CurrentStreak != 0 ||
                         user.StudentStreak.LongestStreak != 0 || user.StudentStreak.FreezeTokensAvailable != 2 ||
                         user.StudentStreak.LastActivityDate != null)))

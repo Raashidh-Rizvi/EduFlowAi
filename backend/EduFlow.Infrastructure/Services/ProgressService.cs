@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -15,10 +16,13 @@ public class ProgressService : IProgressService
     private const string PublishedContentStatus = "Published";
 
     private readonly ApplicationDbContext _dbContext;
+    private readonly IDomainEventDispatcher? _events;
 
-    public ProgressService(ApplicationDbContext dbContext)
+    /// <param name="events">Publishes CourseCompleted; optional only for hosts without event handlers.</param>
+    public ProgressService(ApplicationDbContext dbContext, IDomainEventDispatcher? events = null)
     {
         _dbContext = dbContext;
+        _events = events;
     }
 
     public async Task<CourseProgress> CalculateAsync(Guid courseId, Guid studentId, CancellationToken ct = default)
@@ -83,12 +87,18 @@ public class ProgressService : IProgressService
 
         // Completing every unit is a milestone: it is recorded once and not undone if the
         // instructor later adds content (the percentage still reflects the new content).
-        if (progress.IsComplete && enrollment.Status == EnrollmentStatus.Active)
+        bool becameComplete = progress.IsComplete && enrollment.Status == EnrollmentStatus.Active;
+        if (becameComplete)
         {
             enrollment.Status = EnrollmentStatus.Completed;
             enrollment.CompletedAt = DateTime.UtcNow;
         }
         enrollment.UpdatedAt = DateTime.UtcNow;
+
+        if (becameComplete && _events != null)
+        {
+            await _events.PublishAsync(new CourseCompleted(studentId, courseId), ct);
+        }
         return progress;
     }
 

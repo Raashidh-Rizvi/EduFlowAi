@@ -42,6 +42,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
     public DbSet<MarkAdjustment> MarkAdjustments => Set<MarkAdjustment>();
+    public DbSet<GamificationRule> GamificationRules => Set<GamificationRule>();
     public DbSet<GradingPolicy> GradingPolicies => Set<GradingPolicy>();
     public DbSet<GradeBand> GradeBands => Set<GradeBand>();
     public DbSet<CourseGradingConfiguration> CourseGradingConfigurations => Set<CourseGradingConfiguration>();
@@ -518,10 +519,25 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<GamificationRule>(entity =>
+        {
+            entity.Property(r => r.Key).HasMaxLength(100);
+            entity.Property(r => r.Description).HasMaxLength(300);
+            entity.Property(r => r.Value).HasPrecision(12, 4);
+            entity.HasIndex(r => r.Key).IsUnique();
+        });
+
         modelBuilder.Entity<XpTransaction>(entity =>
         {
             entity.Property(x => x.SourceType).HasConversion<string>();
             entity.HasIndex(x => x.StudentId);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(200);
+            // The same event can never pay the same student twice.
+            entity.HasIndex(x => new { x.StudentId, x.IdempotencyKey })
+                  .IsUnique()
+                  .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_XpTransactions_NonNegative",
+                "\"XpAmount\" >= 0 AND \"CoinAmount\" >= 0"));
             entity.HasOne(x => x.Student)
                   .WithMany(u => u.XpTransactions)
                   .HasForeignKey(x => x.StudentId)
@@ -532,6 +548,7 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(b => b.Id);
             entity.Property(b => b.Category).HasConversion<string>();
+            entity.Property(b => b.Criteria).HasConversion<string>();
         });
 
         modelBuilder.Entity<StudentBadge>(entity =>
@@ -647,13 +664,29 @@ public class ApplicationDbContext : DbContext
 
         // 2. Badge catalogue (reference data; fixed timestamps keep the model deterministic)
         var catalogueDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        modelBuilder.Entity<Badge>().HasData(
-            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50, CreatedAt = catalogueDate },
-            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, CreatedAt = catalogueDate },
-            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200, CreatedAt = catalogueDate },
-            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250, CreatedAt = catalogueDate },
-            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75, CreatedAt = catalogueDate }
+modelBuilder.Entity<Badge>().HasData(
+            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50, Criteria = AchievementCriteria.LessonsCompleted, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Passed 5 different assessments", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, Criteria = AchievementCriteria.AssessmentsPassed, Threshold = 5, CreatedAt = catalogueDate },
+            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200, Criteria = AchievementCriteria.StreakDays, Threshold = 7, CreatedAt = catalogueDate },
+            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 challenges", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250, Criteria = AchievementCriteria.ChallengesCompleted, Threshold = 5, CreatedAt = catalogueDate },
+            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75, Criteria = AchievementCriteria.TeamMemberships, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "PERFECT_SCORE", Title = "Perfect Score", Description = "Scored 100% on an assessment", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, Criteria = AchievementCriteria.PerfectScores, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "BOSS_SLAYER", Title = "Boss Slayer", Description = "Passed a Boss-difficulty assessment", IconUrl = "⚔️", Category = BadgeCategory.Challenge, XpBonus = 200, Criteria = AchievementCriteria.BossAssessmentsPassed, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "COMEBACK_KID", Title = "Comeback Kid", Description = "Beat your own best score on an assessment", IconUrl = "📈", Category = BadgeCategory.Improvement, XpBonus = 80, Criteria = AchievementCriteria.ImprovementBonusesEarned, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "FOURTEEN_DAY_STREAK", Title = "14-Day Streak", Description = "Maintained a continuous 14-day study streak", IconUrl = "⚡", Category = BadgeCategory.Streak, XpBonus = 150, Criteria = AchievementCriteria.StreakDays, Threshold = 14, CreatedAt = catalogueDate },
+            new Badge { Id = "COURSE_GRADUATE", Title = "Course Graduate", Description = "Completed every unit of a course", IconUrl = "🎓", Category = BadgeCategory.Milestone, XpBonus = 250, Criteria = AchievementCriteria.CoursesCompleted, Threshold = 1, CreatedAt = catalogueDate }
         );
+
+        // Gamification rules: every reward value is data (see GamificationRuleKeys).
+        modelBuilder.Entity<GamificationRule>().HasData(GamificationRuleKeys.Defaults.Select((rule, i) => new GamificationRule
+        {
+            Id = GamificationRuleKeys.SeedId(i),
+            Key = rule.Key,
+            Value = rule.Value,
+            Description = rule.Description,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        }).ToArray());
 
         // 3. Institution default grading scale (configuration data; courses may define their own)
         var defaultPolicyId = GradingDefaults.InstitutionPolicyId;

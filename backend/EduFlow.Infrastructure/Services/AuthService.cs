@@ -100,7 +100,8 @@ public class AuthService : IAuthService
                 StudentId = user.Id,
                 TotalXp = 0,
                 CurrentLevel = 1,
-                Coins = 50
+                // Every coin comes from a ledgered award; a new profile starts empty.
+                Coins = 0
             };
             var studentStreak = new StudentStreak
             {
