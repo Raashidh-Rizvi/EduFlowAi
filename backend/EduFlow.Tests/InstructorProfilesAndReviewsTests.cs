@@ -13,8 +13,10 @@ using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -64,7 +66,7 @@ public class InstructorProfilesAndReviewsTests
         builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase(databaseName));
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddLmsDomainServices();
         builder.Services.AddScoped<IRatingService, RatingService>();
         if (requireApproval)
         {

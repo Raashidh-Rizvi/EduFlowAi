@@ -185,22 +185,37 @@ public class AiGatewayClient : IAiGatewayClient
 
     public async Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default)
     {
+        // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/questions/{question_id}/regenerate")
+        var url = $"{_baseUrl}/api/v1/ai/questions/{questionId}/regenerate";
         try
         {
-            // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/questions/{question_id}/regenerate")
-            var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/v1/ai/questions/{questionId}/regenerate", requestPayload, ct);
+            var response = await _httpClient.PostAsJsonAsync(url, requestPayload, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode)
             {
-                return await response.Content.ReadAsStringAsync(ct);
+                return body;
+            }
+            else
+            {
+                _logger?.LogWarning("[AiGatewayClient] RegenerateQuestionAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, body);
+                return JsonSerializer.Serialize(new
+                {
+                    status = "error",
+                    status_code = (int)response.StatusCode,
+                    message = !string.IsNullOrWhiteSpace(body) ? body : $"AI Microservice returned error status {(int)response.StatusCode}"
+                });
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback when the python microservice is unreachable at the network level
-            // (Groq-level failures are already handled/retried on the Python side).
+            _logger?.LogError(ex, "[AiGatewayClient] RegenerateQuestionAsync error connecting to {Url}", url);
+            return JsonSerializer.Serialize(new
+            {
+                status = "error",
+                status_code = 503,
+                message = $"Unable to connect to AI Microservice at {_baseUrl}. Please verify Python service is running."
+            });
         }
-
-        return FallbackSingleQuestionJson(questionId);
     }
 
     public async Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default)
@@ -504,41 +519,6 @@ public class AiGatewayClient : IAiGatewayClient
                     points = 10
                 }
             }
-        });
-    }
-
-    private static string FallbackSingleQuestionJson(string questionId)
-    {
-        // Shaped to match ai-agent's SingleQuestionRegenerateResponse (models/schemas.py)
-        // so QuizzesController.RegenerateSingleQuestion can parse this the same way
-        // whether it came from the real Python microservice or this network-failure fallback.
-        return JsonSerializer.Serialize(new
-        {
-            question = new
-            {
-                question_id = 1,
-                question_text = $"Regenerated Scenario (question {questionId}): how should the system handle high-frequency cache invalidations under strict transactional boundaries?",
-                question_type = "MULTIPLE_CHOICE",
-                blooms_taxonomy_level = "Synthesis",
-                options = new[]
-                {
-                    "Use transactional outbox event streams to notify subscribers asynchronously",
-                    "Perform synchronous lock-all table flushes on every write",
-                    "Bypass cache validation completely for all active sessions",
-                    "Store all cache keys directly in unencrypted local cookies"
-                },
-                correct_answer = "Use transactional outbox event streams to notify subscribers asynchronously",
-                explanation = "Transactional outbox ensures atomic state updates and consistent downstream cache eviction.",
-                distractor_rationales = new[]
-                {
-                    "Correct: Outbox pattern guarantees event dispatch consistency without distributed transactions.",
-                    "Incorrect: Causes severe concurrency lockups and system degradation.",
-                    "Incorrect: Leads to stale reads and data corruption.",
-                    "Incorrect: Serious security and architectural violation."
-                }
-            },
-            validation_passed = true,
-            source = "fallback"
         });
     }
 

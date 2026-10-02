@@ -11,8 +11,10 @@ using EduFlow.Api.Controllers;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -55,9 +57,8 @@ public class InstructorDashboardScopingTests
             options.UseInMemoryDatabase(databaseName));
 
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddLmsDomainServices();
         builder.Services.AddScoped<IRatingService, RatingService>();
-        builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
         builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 
         builder.Services.AddAuthentication("ScopingTest")

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Evaluation;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
@@ -21,21 +22,37 @@ namespace EduFlow.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Route("api/v1/[controller]")]
+[Authorize]
 public class QuizzesController : BaseApiController
 {
     private readonly IGamificationService _gamificationService;
     private readonly IAiGatewayClient _aiGatewayClient;
+    private readonly IAssessmentAccessService _accessService;
+    private readonly IAttemptService _attemptService;
+    private readonly IAttemptGradingService _gradingService;
+    private readonly IEvaluationService _evaluationService;
+    private readonly IAuditLogWriter _auditLogWriter;
     private readonly IWebHostEnvironment? _environment;
 
     public QuizzesController(
         ApplicationDbContext dbContext,
         IGamificationService gamificationService,
         IAiGatewayClient aiGatewayClient,
+        IAssessmentAccessService accessService,
+        IAttemptService attemptService,
+        IAttemptGradingService gradingService,
+        IEvaluationService evaluationService,
+        IAuditLogWriter auditLogWriter,
         IWebHostEnvironment? environment = null)
         : base(dbContext)
     {
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
+        _accessService = accessService;
+        _attemptService = attemptService;
+        _gradingService = gradingService;
+        _evaluationService = evaluationService;
+        _auditLogWriter = auditLogWriter;
         _environment = environment;
     }
 
@@ -46,8 +63,16 @@ public class QuizzesController : BaseApiController
     [HttpGet("course/{courseId:guid}")]
     public async Task<IActionResult> GetCourseQuizzes(Guid courseId)
     {
+        // Managers see every lifecycle state; enrolled learners only see published quizzes.
+        var (userId, role) = GetCurrentUser();
+        bool canManage = await _accessService.CanManageCourseAsync(courseId, userId, role);
+        if (!canManage && !await _accessService.HasLearnerAccessAsync(courseId, userId, role))
+        {
+            return Forbid();
+        }
+
         var quizzes = await DbContext.Assessments
-            .Where(a => a.CourseId == courseId)
+            .Where(a => a.CourseId == courseId && (canManage || a.Status == QuizStatus.Published))
             .Include(a => a.Questions)
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new QuizDto(
@@ -63,8 +88,8 @@ public class QuizzesController : BaseApiController
                 a.Questions.Count,
                 a.ScopeType,
                 a.ScopeId,
-                a.ScopeType == QuizScopeType.Topic ? (a.TopicScope != null ? a.TopicScope.Title : null)
-                    : a.ScopeType == QuizScopeType.Module ? (a.ModuleScope != null ? a.ModuleScope.Title : null)
+                a.ScopeType == QuizScopeType.Topic ? (a.Topic != null ? a.Topic.Title : null)
+                    : a.ScopeType == QuizScopeType.Module ? (a.Module != null ? a.Module.Title : null)
                     : a.ScopeType == QuizScopeType.ContentItem ? (a.ContentItemScope != null ? a.ContentItemScope.Title : null)
                     : (a.Course != null ? a.Course.Title : null),
                 a.Status,
@@ -77,7 +102,9 @@ public class QuizzesController : BaseApiController
                 a.ShowCorrectAnswers,
                 a.GeneratedByAI,
                 a.GenerationWorkflowId,
-                a.CreatedAt
+                a.CreatedAt,
+                a.ModuleId,
+                a.TopicId
             ))
             .ToListAsync();
 
@@ -93,8 +120,31 @@ public class QuizzesController : BaseApiController
             return BadRequest(new { message = $"Invalid scope type: '{scopeType}'. Valid: Topic, ContentItem, Module, Course" });
         }
 
+        // A scope belongs to exactly one course; resolve the caller's rights per course.
+        var (userId, role) = GetCurrentUser();
+        var courseIds = await DbContext.Assessments
+            .Where(a => a.ScopeType == parsedScope && a.ScopeId == scopeId)
+            .Select(a => a.CourseId)
+            .Distinct()
+            .ToListAsync();
+
+        var managedCourseIds = new List<Guid>();
+        var learnerCourseIds = new List<Guid>();
+        foreach (var courseId in courseIds)
+        {
+            if (await _accessService.CanManageCourseAsync(courseId, userId, role)) managedCourseIds.Add(courseId);
+            else if (await _accessService.HasLearnerAccessAsync(courseId, userId, role)) learnerCourseIds.Add(courseId);
+        }
+
+        if (courseIds.Count > 0 && managedCourseIds.Count == 0 && learnerCourseIds.Count == 0)
+        {
+            return Forbid();
+        }
+
         var quizzes = await DbContext.Assessments
             .Where(a => a.ScopeType == parsedScope && a.ScopeId == scopeId)
+            .Where(a => managedCourseIds.Contains(a.CourseId)
+                || (learnerCourseIds.Contains(a.CourseId) && a.Status == QuizStatus.Published))
             .Include(a => a.Questions)
             .OrderByDescending(a => a.CreatedAt)
             .Select(a => new QuizDto(
@@ -121,7 +171,9 @@ public class QuizzesController : BaseApiController
                 a.ShowCorrectAnswers,
                 a.GeneratedByAI,
                 a.GenerationWorkflowId,
-                a.CreatedAt
+                a.CreatedAt,
+                a.ModuleId,
+                a.TopicId
             ))
             .ToListAsync();
 
@@ -136,8 +188,8 @@ public class QuizzesController : BaseApiController
             .Include(a => a.Questions.OrderBy(q => q.OrderIndex))
                 .ThenInclude(q => q.Options.OrderBy(o => o.DisplayOrder))
             .Include(a => a.Course)
-            .Include(a => a.TopicScope)
-            .Include(a => a.ModuleScope)
+            .Include(a => a.Topic)
+            .Include(a => a.Module)
             .Include(a => a.ContentItemScope)
             .FirstOrDefaultAsync(a => a.Id == id);
 
@@ -146,7 +198,21 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Quiz not found." });
         }
 
-        var questionsDto = quiz.Questions.Select(q => new QuizQuestionDto(
+        // Answer keys are only ever returned to the course owner or an Admin.
+        var (userId, role) = GetCurrentUser();
+        bool canManage = await _accessService.CanManageCourseAsync(quiz.CourseId, userId, role);
+        if (!canManage)
+        {
+            if (quiz.Status != QuizStatus.Published
+                || !await _accessService.HasLearnerAccessAsync(quiz.CourseId, userId, role))
+            {
+                return Forbid();
+            }
+        }
+
+        var questionsDto = !canManage
+            ? quiz.Questions.Select(q => ToLearnerQuestionDto(q, shuffleOptions: false)).ToList()
+            : quiz.Questions.Select(q => new QuizQuestionDto(
             q.Id,
             q.Prompt,
             q.Type,
@@ -183,8 +249,8 @@ public class QuizzesController : BaseApiController
 
         string? scopeName = quiz.ScopeType switch
         {
-            QuizScopeType.Topic => quiz.TopicScope?.Title,
-            QuizScopeType.Module => quiz.ModuleScope?.Title,
+            QuizScopeType.Topic => quiz.Topic?.Title,
+            QuizScopeType.Module => quiz.Module?.Title,
             QuizScopeType.ContentItem => quiz.ContentItemScope?.Title,
             _ => quiz.Course?.Title
         };
@@ -212,7 +278,9 @@ public class QuizzesController : BaseApiController
             quiz.ShowCorrectAnswers,
             quiz.GeneratedByAI,
             quiz.GenerationWorkflowId,
-            configDto
+            configDto,
+            quiz.ModuleId,
+            quiz.TopicId
         );
 
         return Ok(result);
@@ -246,27 +314,10 @@ public class QuizzesController : BaseApiController
         }
         var courseId = course.Id;
 
-        // 2. Application layer verification: ScopeId must belong to selected Course
-        if (request.ScopeId.HasValue && request.ScopeType != QuizScopeType.Course)
+        var (placement, placementError) = await ResolvePlacementAsync(courseId, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
         {
-            bool scopeValid = false;
-            switch (request.ScopeType)
-            {
-                case QuizScopeType.Module:
-                    scopeValid = await DbContext.Modules.AnyAsync(m => m.Id == request.ScopeId.Value && m.CourseId == request.CourseId);
-                    break;
-                case QuizScopeType.Topic:
-                    scopeValid = await DbContext.Topics.Include(t => t.Module).AnyAsync(t => t.Id == request.ScopeId.Value && t.Module!.CourseId == request.CourseId);
-                    break;
-                case QuizScopeType.ContentItem:
-                    scopeValid = await DbContext.ContentItems.Include(ci => ci.Module).AnyAsync(ci => ci.Id == request.ScopeId.Value && ci.Module!.CourseId == request.CourseId);
-                    break;
-            }
-
-            if (!scopeValid)
-            {
-                return BadRequest(new { message = $"The selected {request.ScopeType} (ID: {request.ScopeId}) does not belong to the selected Course." });
-            }
+            return BadRequest(new { message = placementError });
         }
 
         // Calibrate scope-aware default XP
@@ -284,11 +335,6 @@ public class QuizzesController : BaseApiController
         var quiz = new Assessment
         {
             CourseId = courseId,
-            ScopeType = request.ScopeType,
-            ScopeId = request.ScopeId ?? courseId,
-            ModuleScopeId = request.ScopeType == QuizScopeType.Module ? (request.ScopeId ?? courseId) : null,
-            TopicScopeId = request.ScopeType == QuizScopeType.Topic ? request.ScopeId : null,
-            ContentItemScopeId = request.ScopeType == QuizScopeType.ContentItem ? request.ScopeId : null,
             Title = request.Title,
             Description = request.Description,
             Type = AssessmentType.Quiz,
@@ -309,6 +355,7 @@ public class QuizzesController : BaseApiController
             GenerationWorkflowId = request.GenerationWorkflowId,
             CreatedAt = DateTime.UtcNow
         };
+        ApplyPlacement(quiz, placement);
 
         if (request.Configuration != null)
         {
@@ -364,26 +411,42 @@ public class QuizzesController : BaseApiController
             quiz.Questions.Add(question);
         }
 
+        // Publishing is gated by the same validation as POST /{id}/publish.
+        if (quiz.Status == QuizStatus.Published && CollectPublishErrors(quiz) is { Count: > 0 } publishErrors)
+        {
+            return BadRequest(new { message = "Quiz validation failed. Fix errors before publishing.", errors = publishErrors });
+        }
+
         await DbContext.Assessments.AddAsync(quiz);
         await DbContext.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, quiz);
+        return CreatedAtAction(nameof(GetQuizById), new { id = quiz.Id }, ToSummary(quiz));
     }
 
     [HttpPost("upload-quiz")]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UploadQuiz([FromBody] UploadQuizRequest request)
     {
+        if (request.CourseId == Guid.Empty)
+        {
+            return BadRequest(new { message = "A course must be selected for this quiz." });
+        }
+
         if (!await IsCourseOwnerOrAdmin(request.CourseId))
         {
-            if (request.CourseId != Guid.Empty)
-                return Forbid();
+            return Forbid();
         }
 
         var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
         if (course == null)
         {
             return BadRequest(new { message = "Selected Course does not exist." });
+        }
+
+        var (placement, placementError) = await ResolvePlacementAsync(course.Id, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
+        {
+            return BadRequest(new { message = placementError });
         }
 
         if (request.Questions == null || request.Questions.Count == 0)
@@ -408,8 +471,6 @@ public class QuizzesController : BaseApiController
         var quiz = new Assessment
         {
             CourseId = request.CourseId,
-            ScopeType = request.ScopeType,
-            ScopeId = request.ScopeId ?? request.CourseId,
             Title = request.Title,
             Description = request.Description,
             Type = AssessmentType.Quiz,
@@ -429,6 +490,7 @@ public class QuizzesController : BaseApiController
             GeneratedByAI = false,
             CreatedAt = DateTime.UtcNow
         };
+        ApplyPlacement(quiz, placement);
 
         int index = 1;
         foreach (var q in request.Questions)
@@ -500,22 +562,26 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
+        // Student attempts reference these questions; replacing them would rewrite history.
+        if (await DbContext.Submissions.AnyAsync(s => s.AssessmentId == id))
+        {
+            return Conflict(new
+            {
+                message = "This quiz already has student attempts and cannot be edited. Duplicate it to create a new version.",
+                code = "ASSESSMENT_HAS_ATTEMPTS"
+            });
+        }
+
+        var (placement, placementError) = await ResolvePlacementAsync(
+            quiz.CourseId, request.ScopeType, request.ScopeId ?? quiz.ScopeId, request.ModuleId ?? quiz.ModuleId);
+        if (placement == null)
+        {
+            return BadRequest(new { message = placementError });
+        }
+
         quiz.Title = request.Title;
         quiz.Description = request.Description;
-        quiz.ScopeType = request.ScopeType;
-        quiz.ScopeId = request.ScopeId ?? quiz.ScopeId;
-        if (quiz.ScopeType == QuizScopeType.Module && quiz.ScopeId.HasValue)
-        {
-            quiz.ModuleScopeId = quiz.ScopeId.Value;
-        }
-        else if (quiz.ScopeType == QuizScopeType.Topic && quiz.ScopeId.HasValue)
-        {
-            quiz.TopicScopeId = quiz.ScopeId.Value;
-        }
-        else if (quiz.ScopeType == QuizScopeType.ContentItem && quiz.ScopeId.HasValue)
-        {
-            quiz.ContentItemScopeId = quiz.ScopeId.Value;
-        }
+        ApplyPlacement(quiz, placement);
         quiz.Difficulty = request.Difficulty;
         quiz.TimeLimitSeconds = request.TimeLimitSeconds > 0 ? request.TimeLimitSeconds : (request.TimeLimitMinutes * 60);
         quiz.TimeLimitMinutes = Math.Max(1, quiz.TimeLimitSeconds / 60);
@@ -572,8 +638,13 @@ public class QuizzesController : BaseApiController
 
         quiz.QuestionCount = quiz.Questions.Count;
 
+        if (quiz.Status == QuizStatus.Published && CollectPublishErrors(quiz) is { Count: > 0 } publishErrors)
+        {
+            return BadRequest(new { message = "Quiz validation failed. Fix errors before publishing.", errors = publishErrors });
+        }
+
         await DbContext.SaveChangesAsync();
-        return Ok(quiz);
+        return Ok(ToSummary(quiz));
     }
 
     [HttpDelete("{id:guid}")]
@@ -592,9 +663,54 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
+        // Deleting would cascade to student submissions; archive instead.
+        if (await DbContext.Submissions.AnyAsync(s => s.AssessmentId == id))
+        {
+            return Conflict(new
+            {
+                message = "This quiz has student attempts and cannot be deleted. Archive it instead.",
+                code = "ASSESSMENT_HAS_ATTEMPTS"
+            });
+        }
+
+        // Removing a weighted assessment would leave active grading weights below 100%.
+        if (quiz.GradeWeightPercent != null && await DbContext.CourseGradingConfigurations.AnyAsync(c =>
+                c.CourseId == quiz.CourseId && c.Status == GradingConfigurationStatus.Active))
+        {
+            return Conflict(new
+            {
+                message = "This quiz carries grade weight in an active grading configuration. Reassign its weight before deleting it.",
+                code = "ASSESSMENT_WEIGHTED"
+            });
+        }
+
         DbContext.Assessments.Remove(quiz);
+        AuditAssessment("Assessment.Deleted", quiz.Id);
         await DbContext.SaveChangesAsync();
         return Ok(new { message = "Quiz deleted successfully." });
+    }
+
+    [HttpPost("{id:guid}/archive")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> ArchiveQuiz(Guid id)
+    {
+        var quiz = await DbContext.Assessments.FirstOrDefaultAsync(a => a.Id == id);
+        if (quiz == null)
+        {
+            return NotFound(new { message = "Quiz not found." });
+        }
+
+        if (!await IsQuizOwnerOrAdmin(id))
+        {
+            return Forbid();
+        }
+
+        quiz.Status = QuizStatus.Archived;
+        quiz.UpdatedAt = DateTime.UtcNow;
+        AuditAssessment("Assessment.Archived", quiz.Id);
+        await DbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Quiz archived.", quizId = quiz.Id, status = quiz.Status.ToString() });
     }
 
     // -------------------------------------------------------------------------
@@ -621,89 +737,17 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
-        var errors = new List<string>();
+        var errors = CollectPublishErrors(quiz);
         var warnings = new List<string>();
-
-        // 1. Question count check
-        if (quiz.Questions.Count == 0)
-        {
-            errors.Add("Quiz must contain at least one question.");
-        }
-
-        // 2. Verify each question rules
-        int totalMarks = 0;
         var seenPrompts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         foreach (var q in quiz.Questions)
         {
-            totalMarks += q.Points;
-
-            if (string.IsNullOrWhiteSpace(q.Prompt))
-            {
-                errors.Add($"Question #{q.OrderIndex} prompt cannot be empty.");
-            }
-
-            if (seenPrompts.Contains(q.Prompt.Trim()))
+            if (!seenPrompts.Add(q.Prompt.Trim()))
             {
                 warnings.Add($"Potential duplicate question text found: '{q.Prompt.Substring(0, Math.Min(40, q.Prompt.Length))}...'");
             }
-            seenPrompts.Add(q.Prompt.Trim());
-
-            if (q.Points <= 0)
-            {
-                errors.Add($"Question #{q.OrderIndex} marks must be greater than 0.");
-            }
-
-            var options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
-
-            switch (q.Type)
-            {
-                case QuestionType.MultipleChoice:
-                    if (options.Count < 2)
-                    {
-                        errors.Add($"Multiple Choice Question #{q.OrderIndex} requires at least 2 options.");
-                    }
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                    {
-                        errors.Add($"Multiple Choice Question #{q.OrderIndex} must specify a correct answer.");
-                    }
-                    break;
-
-                case QuestionType.MultipleSelect:
-                    if (options.Count < 2)
-                    {
-                        errors.Add($"Multiple Select Question #{q.OrderIndex} requires at least 2 options.");
-                    }
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                    {
-                        errors.Add($"Multiple Select Question #{q.OrderIndex} must specify one or more correct answers.");
-                    }
-                    break;
-
-                case QuestionType.TrueFalse:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer) ||
-                        (!q.CorrectAnswer.Equals("True", StringComparison.OrdinalIgnoreCase) &&
-                         !q.CorrectAnswer.Equals("False", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        errors.Add($"True/False Question #{q.OrderIndex} must specify 'True' or 'False' as the correct answer.");
-                    }
-                    break;
-
-                case QuestionType.FillInBlank:
-                case QuestionType.ShortAnswer:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                    {
-                        errors.Add($"Fill-in-the-Blank / Short Answer Question #{q.OrderIndex} must have a valid non-empty answer.");
-                    }
-                    break;
-            }
         }
-
-        // 3. Economy rule validation
-        if (quiz.XpReward > 250)
-        {
-            errors.Add($"XP Reward ({quiz.XpReward}) exceeds platform maximum cap of 250 XP.");
-        }
+        int totalMarks = quiz.Questions.Sum(q => q.Points);
 
         bool isValid = errors.Count == 0;
 
@@ -737,77 +781,7 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
-        // --- Publication validation gate ---
-
-        var errors = new List<string>();
-
-        // 1. Question count check
-        if (quiz.Questions.Count == 0)
-        {
-            errors.Add("Cannot publish an empty quiz with 0 questions.");
-        }
-
-        // 2. Per-question structure validation
-        foreach (var q in quiz.Questions)
-        {
-            if (string.IsNullOrWhiteSpace(q.Prompt))
-                errors.Add($"Question #{q.OrderIndex} has an empty prompt.");
-
-            if (q.Points <= 0)
-                errors.Add($"Question #{q.OrderIndex} must have points greater than 0.");
-
-            var options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
-
-            switch (q.Type)
-            {
-                case QuestionType.MultipleChoice:
-                    if (options.Count < 2)
-                        errors.Add($"MCQ #{q.OrderIndex} requires at least 2 options, found {options.Count}.");
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"MCQ #{q.OrderIndex} must specify a correct answer.");
-                    else if (!options.Any(o => string.Equals(o.Trim(), q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase)))
-                        errors.Add($"MCQ #{q.OrderIndex} correct answer '{q.CorrectAnswer}' does not match any option.");
-                    break;
-
-                case QuestionType.MultipleSelect:
-                    if (options.Count < 2)
-                        errors.Add($"Multi-select #{q.OrderIndex} requires at least 2 options.");
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"Multi-select #{q.OrderIndex} must specify correct answers.");
-                    break;
-
-                case QuestionType.TrueFalse:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer) ||
-                        (!q.CorrectAnswer.Equals("True", StringComparison.OrdinalIgnoreCase) &&
-                         !q.CorrectAnswer.Equals("False", StringComparison.OrdinalIgnoreCase)))
-                        errors.Add($"T/F #{q.OrderIndex} must have 'True' or 'False' as correct answer.");
-                    break;
-
-                case QuestionType.FillInBlank:
-                case QuestionType.ShortAnswer:
-                    if (string.IsNullOrWhiteSpace(q.CorrectAnswer))
-                        errors.Add($"Fill-in-blank/Short #{q.OrderIndex} must have a correct answer.");
-                    break;
-            }
-        }
-
-        // 3. Passing score validation
-        if (quiz.PassingScorePercent <= 0 || quiz.PassingScorePercent > 100)
-        {
-            errors.Add($"Passing score percent must be between 1 and 100. Current: {quiz.PassingScorePercent}.");
-        }
-
-        // 4. XP economy cap
-        if (quiz.XpReward > 250)
-        {
-            errors.Add($"XP reward ({quiz.XpReward}) exceeds platform maximum of 250 XP.");
-        }
-
-        // 5. If AI-generated, require at least one non-fallback question
-        if (quiz.GeneratedByAI && quiz.Questions.All(q => q.Prompt.Contains("Regenerated Scenario")))
-        {
-            errors.Add("AI-generated quiz contains only fallback questions. Re-run AI generation.");
-        }
+        var errors = CollectPublishErrors(quiz);
 
         if (errors.Count > 0)
         {
@@ -816,6 +790,7 @@ public class QuizzesController : BaseApiController
 
         quiz.Status = QuizStatus.Published;
         quiz.UpdatedAt = DateTime.UtcNow;
+        AuditAssessment("Assessment.Published", quiz.Id);
         await DbContext.SaveChangesAsync();
 
         return Ok(new { message = "Quiz published successfully!", quizId = quiz.Id, status = quiz.Status.ToString() });
@@ -867,8 +842,6 @@ public class QuizzesController : BaseApiController
         var clone = new Assessment
         {
             CourseId = original.CourseId,
-            ScopeType = original.ScopeType,
-            ScopeId = original.ScopeId,
             Title = $"{original.Title} (Copy)",
             Description = original.Description,
             Type = original.Type,
@@ -888,6 +861,11 @@ public class QuizzesController : BaseApiController
             GeneratedByAI = original.GeneratedByAI,
             CreatedAt = DateTime.UtcNow
         };
+        clone.ModuleId = original.ModuleId;
+        clone.TopicId = original.TopicId;
+        clone.ContentItemScopeId = original.ContentItemScopeId;
+        clone.ScopeType = original.ScopeType;
+        clone.ScopeId = original.ScopeId;
 
         foreach (var q in original.Questions)
         {
@@ -960,6 +938,12 @@ public class QuizzesController : BaseApiController
             return Forbid();
         }
 
+        var (placement, placementError) = await ResolvePlacementAsync(course.Id, request.ScopeType, request.ScopeId, request.ModuleId);
+        if (placement == null)
+        {
+            return BadRequest(new { message = placementError });
+        }
+
         var workflowId = $"wf-qz-{Guid.NewGuid().ToString("N")[..8]}";
         var count = Math.Clamp(request.QuestionCount, 1, 20);
 
@@ -980,8 +964,6 @@ public class QuizzesController : BaseApiController
         var quiz = new Assessment
         {
             CourseId = request.CourseId,
-            ScopeType = request.ScopeType,
-            ScopeId = request.ScopeId ?? request.CourseId,
             Title = title,
             Description = $"Dynamically synthesized by EduFlow AI Multi-Agent LangGraph Pipeline grounded in {request.ScopeType} curriculum.",
             Type = AssessmentType.Quiz,
@@ -996,43 +978,37 @@ public class QuizzesController : BaseApiController
             GenerationWorkflowId = workflowId,
             CreatedAt = DateTime.UtcNow
         };
+        ApplyPlacement(quiz, placement);
 
         // -------------------------------------------------------------------------
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
         // -------------------------------------------------------------------------
 
         // Map relative PdfUrl or SlideUrl to physical path for the python service
-        string? slideRelativeUrl = request.SlideUrl ?? request.PdfUrl;
-        string? physicalSlidePath = null;
-        if (!string.IsNullOrEmpty(slideRelativeUrl))
-        {
-            var webRootPath = _environment?.WebRootPath
-                ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
-            physicalSlidePath = Path.Combine(webRootPath, slideRelativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            if (!System.IO.File.Exists(physicalSlidePath))
-            {
-                physicalSlidePath = null;
-            }
-        }
+        // Client-supplied slide URLs are only honoured inside wwwroot (no path traversal).
+        string? physicalSlidePath = ResolveWebRootFile(request.SlideUrl ?? request.PdfUrl);
 
         // Fallback: if slide not found in request, check module in database
+        Module? dbModule;
         if (string.IsNullOrEmpty(physicalSlidePath))
         {
-            var dbModule = await DbContext.Modules.FirstOrDefaultAsync(m =>
-                m.CourseId == request.CourseId &&
-                ((request.ScopeId != null && m.Id == request.ScopeId) ||
-                 (!string.IsNullOrWhiteSpace(request.ModuleTitle) && m.Title == request.ModuleTitle)));
-            if (dbModule != null && !string.IsNullOrEmpty(dbModule.PdfUrl))
-            {
-                var fallbackWebRoot = _environment?.WebRootPath
-                    ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
-                var candidatePath = Path.Combine(fallbackWebRoot, dbModule.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-                if (System.IO.File.Exists(candidatePath))
-                {
-                    physicalSlidePath = candidatePath;
-                }
-            }
+            dbModule = await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
+            physicalSlidePath = ResolveWebRootFile(dbModule?.PdfUrl);
         }
+        else
+        {
+            dbModule = await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
+        }
+
+        // The generator must ground questions in the module's REAL content:
+        // description, topic titles and content item text resolved from the database.
+        var moduleContext = BuildModuleContext(dbModule);
 
         string resolvedTopic = (!string.IsNullOrWhiteSpace(request.Topic) && request.Topic != "All Topics")
             ? request.Topic
@@ -1053,6 +1029,8 @@ public class QuizzesController : BaseApiController
             pass_percentage = request.PassingScorePercent > 0 ? request.PassingScorePercent : 70,
             pdf_path = physicalSlidePath,
             slide_path = physicalSlidePath,
+            module_context = moduleContext,
+            learning_objectives = request.LearningObjectives ?? new List<string>(),
             selected_topics = request.SelectedTopics,
             question_types = request.QuestionTypes ?? new List<string> { "MULTIPLE_CHOICE", "TRUE_FALSE", "MULTIPLE_SELECT" }
         };
@@ -1068,7 +1046,7 @@ public class QuizzesController : BaseApiController
             {
                 if (aiResult.TryGetProperty("message", out var msgProp))
                 {
-                    aiErrorDetail = msgProp.GetString();
+                    aiErrorDetail = ExtractPythonErrorDetail(msgProp.GetString());
                 }
             }
             else if (aiResult.TryGetProperty("detail", out var detailProp))
@@ -1090,6 +1068,15 @@ public class QuizzesController : BaseApiController
                     var explanation = qToken.TryGetProperty("explanation", out var exp) ? exp.GetString() ?? "AI Explanation" : "AI Explanation";
                     var markingScheme = qToken.TryGetProperty("marking_scheme", out var ms) ? ms.GetString() ?? explanation : explanation;
                     var slideCitation = qToken.TryGetProperty("slide_citation", out var sc) ? sc.GetString() ?? $"Curriculum for {resolvedTopic}" : $"Curriculum for {resolvedTopic}";
+                    var bloomsLevel = qToken.TryGetProperty("blooms_taxonomy_level", out var bloomsProp) ? bloomsProp.GetString() : null;
+                    var aiLearningObjective = qToken.TryGetProperty("learning_objective", out var loProp) ? loProp.GetString() : null;
+
+                    // Keep the AI's proposed mark value instead of a hardcoded 10.
+                    int questionPoints = 10;
+                    if (qToken.TryGetProperty("points", out var pointsProp) && pointsProp.TryGetInt32(out var parsedPoints))
+                    {
+                        questionPoints = Math.Clamp(parsedPoints, 1, 100);
+                    }
 
                     var qType = QuestionType.MultipleChoice;
                     var upperType = qTypeStr.ToUpperInvariant();
@@ -1125,6 +1112,11 @@ public class QuizzesController : BaseApiController
                         ["questionType"] = qTypeStr
                     };
 
+                    if (!string.IsNullOrWhiteSpace(bloomsLevel))
+                    {
+                        metadataDict["bloomsTaxonomy"] = bloomsLevel;
+                    }
+
                     if (qToken.TryGetProperty("matching_pairs", out var pairsArray))
                     {
                         metadataDict["matchingPairs"] = pairsArray.ToString();
@@ -1138,9 +1130,11 @@ public class QuizzesController : BaseApiController
                         CorrectAnswer = correct,
                         Explanation = explanation,
                         Difficulty = quiz.Difficulty,
-                        Points = 10,
+                        Points = questionPoints,
                         OrderIndex = i + 1,
-                        LearningObjective = $"LO-0{(i % 3) + 1}",
+                        // Persist the AI-provided objective; fabricating LO-0x codes would
+                        // collapse skill mastery across every AI quiz in every course.
+                        LearningObjective = string.IsNullOrWhiteSpace(aiLearningObjective) ? null : aiLearningObjective!.Trim(),
                         MetadataJson = JsonSerializer.Serialize(metadataDict)
                     };
 
@@ -1251,12 +1245,37 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Question not found." });
         }
 
+        if (!await IsQuizOwnerOrAdmin(question.AssessmentId))
+        {
+            return Forbid();
+        }
+
+        if (await DbContext.SubmissionAnswers.AnyAsync(a => a.QuestionId == questionId))
+        {
+            return Conflict(new
+            {
+                message = "Students have already answered this question; it cannot be regenerated.",
+                code = "ASSESSMENT_HAS_ATTEMPTS"
+            });
+        }
+
         var focus = !string.IsNullOrWhiteSpace(request.FocusTopic)
             ? request.FocusTopic
             : question.Assessment?.Title ?? "Software Engineering";
 
         var targetType = request.TargetType ?? question.Type;
         var targetDiff = request.TargetDifficulty ?? question.Difficulty;
+
+        // Ground regeneration in the same real course content the quiz belongs to.
+        var regenModule = question.Assessment == null
+            ? null
+            : await DbContext.Modules
+                .Include(m => m.Topics)
+                .Include(m => m.ContentItems)
+                .FirstOrDefaultAsync(m => m.Id == question.Assessment.ModuleId);
+        var regenSlidePath = ResolveWebRootFile(regenModule?.PdfUrl);
+        var regenCourse = await DbContext.Courses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == question.Assessment!.CourseId);
 
         // -------------------------------------------------------------------------
         // CALL PYTHON AI AGENT MICROSERVICE (via the shared, configured gateway client)
@@ -1270,7 +1289,14 @@ public class QuizzesController : BaseApiController
             target_type = MapQuestionTypeToPython(targetType),
             target_difficulty = targetDiff.ToString().ToUpperInvariant(),
             learning_objective = question.LearningObjective,
-            source_content_id = question.SourceContentId?.ToString()
+            source_content_id = question.SourceContentId?.ToString(),
+            course_id = question.Assessment?.CourseId.ToString(),
+            course_title = regenCourse?.Title,
+            module_title = regenModule?.Title ?? focus,
+            module_context = BuildModuleContext(regenModule),
+            slide_path = regenSlidePath,
+            pdf_path = regenSlidePath,
+            source_question_text = question.Prompt
         };
 
         string newPrompt = string.Empty;
@@ -1287,15 +1313,25 @@ public class QuizzesController : BaseApiController
             var responseString = await _aiGatewayClient.RegenerateQuestionAsync(questionId.ToString(), pythonPayload);
             var aiResult = JsonSerializer.Deserialize<JsonElement>(responseString);
 
-            // The gateway client transparently returns its own degraded/offline fallback
-            // JSON (tagged "source": "fallback") when the real AI microservice is unreachable
-            // at the network level. Treat that the same as a failed call so the local
-            // hardcoded fallback below runs (Groq-level failures are already retried and
-            // handled with a real-question fallback on the Python side).
-            bool isGatewayFallback = aiResult.TryGetProperty("source", out var sourceProp)
-                && string.Equals(sourceProp.GetString(), "fallback", StringComparison.OrdinalIgnoreCase);
+            // Python/gateway errors are surfaced verbatim; the original question is
+            // left untouched so an AI outage can never silently rewrite a question.
+            if (aiResult.TryGetProperty("status", out var statusProp)
+                && string.Equals(statusProp.GetString(), "error", StringComparison.OrdinalIgnoreCase))
+            {
+                var errorDetail = aiResult.TryGetProperty("message", out var messageProp)
+                    ? ExtractPythonErrorDetail(messageProp.GetString())
+                    : null;
+                return StatusCode(StatusCodes.Status502BadGateway, new
+                {
+                    message = string.IsNullOrWhiteSpace(errorDetail)
+                        ? "AI question regeneration is unavailable. The original question was left unchanged."
+                        : errorDetail,
+                    status = "error",
+                    code = "AI_REGENERATION_FAILED"
+                });
+            }
 
-            if (!isGatewayFallback && aiResult.TryGetProperty("question", out var qToken))
+            if (aiResult.TryGetProperty("question", out var qToken))
             {
                 newPrompt = qToken.TryGetProperty("question_text", out var textProp) ? (textProp.GetString() ?? "") : "";
                 var qTypeStr = qToken.TryGetProperty("question_type", out var qTypeProp) ? qTypeProp.GetString() : null;
@@ -1320,8 +1356,7 @@ public class QuizzesController : BaseApiController
                     }
                 }
 
-                // Only trust the AI response if it produced usable options and a
-                // correct answer -- otherwise fall through to the local fallback.
+                // Only trust the AI response if it produced usable options and a correct answer.
                 usedPython = options.Count >= 2 && !string.IsNullOrWhiteSpace(newPrompt) && !string.IsNullOrWhiteSpace(correctAnswer);
             }
         }
@@ -1330,31 +1365,15 @@ public class QuizzesController : BaseApiController
             Console.WriteLine($"[AI Agent] Python single-question regenerate error: {ex.Message}");
         }
 
-        // -------------------------------------------------------------------------
-        // FALLBACK: If the AI gateway call fails entirely (network-level) or returns
-        // an unusable payload, reuse the existing deterministic hardcoded question.
-        // -------------------------------------------------------------------------
+        // Never substitute a canned question: an AI failure leaves the instructor's question untouched.
         if (!usedPython)
         {
-            newPrompt = $"Regenerated Scenario: In {focus}, how should the system handle high-frequency cache invalidations under strict transactional boundaries?";
-            options = new List<string>
+            return StatusCode(StatusCodes.Status502BadGateway, new
             {
-                "Use transactional outbox event streams to notify subscribers asynchronously",
-                "Perform synchronous lock-all table flushes on every write",
-                "Bypass cache validation completely for all active sessions",
-                "Store all cache keys directly in unencrypted local cookies"
-            };
-            correctAnswer = "Use transactional outbox event streams to notify subscribers asynchronously";
-            explanation = "Transactional outbox ensures atomic state updates and consistent downstream cache eviction.";
-            bloomsLevel = "Synthesis";
-            resolvedType = targetType;
-            distractorRationales = new List<string>
-            {
-                "Correct: Outbox pattern guarantees event dispatch consistency without distributed transactions.",
-                "Incorrect: Causes severe concurrency lockups and system degradation.",
-                "Incorrect: Leads to stale reads and data corruption.",
-                "Incorrect: Serious security and architectural violation."
-            };
+                message = "AI question regeneration is unavailable. The original question was left unchanged.",
+                status = "error",
+                code = "AI_REGENERATION_FAILED"
+            });
         }
 
         question.Prompt = newPrompt;
@@ -1405,6 +1424,71 @@ public class QuizzesController : BaseApiController
         ));
     }
 
+    /// <summary>
+    /// Unwraps the FastAPI error detail the gateway forwards inside "message"
+    /// (e.g. {{"detail":"GEMINI_API_KEY is not configured..."}}) so instructors
+    /// see the real reason instead of raw JSON.
+    /// </summary>
+    private static string? ExtractPythonErrorDetail(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+        if (raw.TrimStart().StartsWith("{"))
+        {
+            try
+            {
+                using var nested = JsonDocument.Parse(raw);
+                if (nested.RootElement.TryGetProperty("detail", out var detailEl))
+                {
+                    return detailEl.GetString() ?? raw;
+                }
+            }
+            catch
+            {
+                // Not JSON after all; show the raw text.
+            }
+        }
+        return raw;
+    }
+
+    /// <summary>
+    /// Real course content for AI grounding, resolved from the database:
+    /// module description, topic titles and content item text. Never placeholder
+    /// titles-only context — the generator must see what students actually study.
+    /// </summary>
+    private static string BuildModuleContext(Module? module)
+    {
+        if (module == null)
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(module.Description))
+        {
+            parts.Add($"Module description: {module.Description.Trim()}");
+        }
+        foreach (var topic in module.Topics.OrderBy(t => t.DisplayOrder))
+        {
+            var line = string.IsNullOrWhiteSpace(topic.Description)
+                ? $"Topic: {topic.Title}"
+                : $"Topic: {topic.Title} - {topic.Description.Trim()}";
+            parts.Add(line);
+        }
+        foreach (var item in module.ContentItems.OrderBy(c => c.DisplayOrder))
+        {
+            var body = (item.Content ?? string.Empty).Replace("\r", " ").Replace("\n", " ").Trim();
+            parts.Add(string.IsNullOrWhiteSpace(body)
+                ? $"Content item: {item.Title}"
+                : $"Content item: {item.Title} - {body}");
+        }
+
+        var context = string.Join("\n", parts);
+        return context.Length > 4000 ? context[..4000] : context;
+    }
+
     // -------------------------------------------------------------------------
     // Question type <-> Python question_type string mapping helpers, used only
     // by RegenerateSingleQuestion above to talk to ai-agent's 10-format schema
@@ -1447,7 +1531,6 @@ public class QuizzesController : BaseApiController
     // -------------------------------------------------------------------------
 
     [HttpPost("{id:guid}/start")]
-    [Authorize]
     public async Task<IActionResult> StartQuizAttempt(Guid id)
     {
         var quiz = await DbContext.Assessments
@@ -1459,27 +1542,24 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Quiz not found." });
         }
 
-        // Security: Strip CorrectAnswer and distractor rationales before delivering to student
-        var questionsDto = quiz.Questions.Select(q =>
+        // Course owners/admins may preview any state without recording an attempt;
+        // everyone else starts (or resumes) a persisted attempt.
+        var (userId, role) = GetCurrentUser();
+        Submission? attempt = null;
+        if (!await _accessService.CanManageCourseAsync(quiz.CourseId, userId, role))
         {
-            var opts = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
-            if (quiz.RandomizeOptions)
+            var resolution = await _attemptService.StartOrResumeAsync(quiz, userId);
+            if (!resolution.IsAllowed)
             {
-                opts = opts.OrderBy(_ => Guid.NewGuid()).ToList();
+                return AttemptDenied(resolution.Eligibility);
             }
+            attempt = resolution.Attempt;
+        }
 
-            return new QuizQuestionDto(
-                q.Id,
-                q.Prompt,
-                q.Type,
-                opts,
-                q.Points,
-                q.OrderIndex,
-                null, // Do NOT expose correct answer before grading!
-                null,
-                q.Difficulty
-            );
-        }).ToList();
+        // Questions are delivered without answer keys, explanations or marking metadata.
+        var questionsDto = quiz.Questions
+            .Select(q => ToLearnerQuestionDto(q, shuffleOptions: quiz.RandomizeOptions))
+            .ToList();
 
         if (quiz.RandomizeQuestions)
         {
@@ -1487,23 +1567,25 @@ public class QuizzesController : BaseApiController
         }
 
         var response = new StartQuizAttemptResponse(
-            AttemptId: Guid.NewGuid(),
+            AttemptId: attempt?.Id ?? Guid.Empty,
             QuizId: quiz.Id,
             QuizTitle: quiz.Title,
             TimeLimitMinutes: quiz.TimeLimitMinutes,
             TimeLimitSeconds: quiz.TimeLimitSeconds > 0 ? quiz.TimeLimitSeconds : (quiz.TimeLimitMinutes * 60),
-            Questions: questionsDto
+            Questions: questionsDto,
+            AttemptNumber: attempt?.AttemptNumber ?? 0,
+            StartedAt: attempt?.StartedAt,
+            IsRecorded: attempt != null
         );
 
         return Ok(response);
     }
 
     [HttpPost("submit")]
-    [Authorize]
     public async Task<IActionResult> SubmitQuiz([FromBody] SubmitQuizRequest request)
     {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (string.IsNullOrEmpty(uidClaim) || !Guid.TryParse(uidClaim, out var studentId))
+        var (studentId, _) = GetCurrentUser();
+        if (studentId == Guid.Empty)
         {
             // Fail closed: never attribute a submission to a seeded/fabricated account.
             return Unauthorized(new { message = "A verified user identity is required to submit a quiz." });
@@ -1511,6 +1593,7 @@ public class QuizzesController : BaseApiController
 
         var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
+                .ThenInclude(q => q.Options)
             .FirstOrDefaultAsync(a => a.Id == request.QuizId);
 
         if (quiz == null)
@@ -1518,173 +1601,151 @@ public class QuizzesController : BaseApiController
             return NotFound(new { message = "Quiz not found." });
         }
 
-        int totalPoints = 0;
-        int scoreObtained = 0;
-        var breakdown = new List<QuestionResultItem>();
-        var questionOutcomes = new List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)>();
-
-        var submission = new Submission
+        var resolution = await _attemptService.ResolveForSubmissionAsync(quiz, studentId, request.AttemptId);
+        if (!resolution.IsAllowed)
         {
-            AssessmentId = quiz.Id,
-            StudentId = studentId,
-            SubmittedAt = DateTime.UtcNow
-        };
+            return AttemptDenied(resolution.Eligibility);
+        }
+        var submission = resolution.Attempt!;
+        bool isNewAttempt = resolution.IsNew;
 
-        foreach (var q in quiz.Questions)
+        var answers = request.Answers ?? new List<QuestionAnswerSubmission>();
+        var questionIds = quiz.Questions.Select(q => q.Id).ToHashSet();
+        if (answers.Any(a => !questionIds.Contains(a.QuestionId)))
         {
-            totalPoints += q.Points;
-            var studentAns = request.Answers.FirstOrDefault(a => a.QuestionId == q.Id)?.SelectedAnswer?.Trim() ?? string.Empty;
-
-            bool isCorrect = false;
-            int awarded = 0;
-            string feedback = q.Explanation;
-
-            string rubricExplanation = q.Explanation;
-            string slideCitation = "Lecture slide material";
-            string qTypeLabel = q.Type.ToString();
-            try
-            {
-                if (!string.IsNullOrEmpty(q.MetadataJson) && q.MetadataJson.Trim().StartsWith("{"))
-                {
-                    var meta = JsonSerializer.Deserialize<JsonElement>(q.MetadataJson);
-                    if (meta.TryGetProperty("markingScheme", out var msProp)) rubricExplanation = msProp.GetString() ?? rubricExplanation;
-                    if (meta.TryGetProperty("slideCitation", out var scProp)) slideCitation = scProp.GetString() ?? slideCitation;
-                    if (meta.TryGetProperty("questionType", out var qtProp)) qTypeLabel = qtProp.GetString() ?? qTypeLabel;
-                }
-            }
-            catch {}
-
-            if (q.Type == QuestionType.MultipleSelect)
-            {
-                var studentSet = studentAns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var correctSet = q.CorrectAnswer.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                isCorrect = studentSet.SetEquals(correctSet);
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "All selected options are correct." : $"Selected options differed from solution: {q.CorrectAnswer}";
-            }
-            else if (q.Type == QuestionType.FillInBlank)
-            {
-                var cleanStudent = System.Text.RegularExpressions.Regex.Replace(studentAns.ToLowerInvariant(), @"[^\w\s]", "").Trim();
-                var cleanCorrect = System.Text.RegularExpressions.Regex.Replace(q.CorrectAnswer.ToLowerInvariant(), @"[^\w\s]", "").Trim();
-                isCorrect = cleanStudent == cleanCorrect || (cleanCorrect.Length > 3 && cleanStudent.Contains(cleanCorrect));
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "Correct key term provided." : $"Expected term: '{q.CorrectAnswer}'";
-            }
-            else if (q.Type == QuestionType.Matching)
-            {
-                var sClean = studentAns.Replace(" ", "").ToLowerInvariant();
-                var cClean = q.CorrectAnswer.Replace(" ", "").ToLowerInvariant();
-                isCorrect = sClean == cClean;
-                awarded = isCorrect ? q.Points : (sClean.Length > 0 ? (int)(q.Points * 0.5) : 0);
-                feedback = isCorrect ? "All concept pairs matched correctly." : $"Matching solution: {q.CorrectAnswer}";
-            }
-            else if (q.Type == QuestionType.ShortAnswer || q.Type == QuestionType.OpenEnded)
-            {
-                if (!string.IsNullOrWhiteSpace(studentAns))
-                {
-                    var modelWords = q.CorrectAnswer.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                        .Where(w => w.Length > 3)
-                        .Select(w => w.ToLowerInvariant())
-                        .ToHashSet();
-
-                    int matchedKeywords = modelWords.Count(kw => studentAns.ToLowerInvariant().Contains(kw));
-                    double matchRatio = modelWords.Count > 0 ? (double)matchedKeywords / modelWords.Count : 0.5;
-
-                    awarded = Math.Clamp((int)Math.Round(matchRatio * q.Points), studentAns.Length > 15 ? 4 : 0, q.Points);
-                    isCorrect = awarded >= (int)(q.Points * 0.7);
-                    feedback = isCorrect
-                        ? $"Strong keyword match with model answer (+{awarded}/{q.Points} marks)."
-                        : $"Partial keyword match. Expected core concept: {q.CorrectAnswer}";
-                }
-                else
-                {
-                    awarded = 0;
-                    isCorrect = false;
-                    feedback = "No answer typed for this question.";
-                }
-            }
-            else
-            {
-                isCorrect = string.Equals(studentAns, q.CorrectAnswer.Trim(), StringComparison.OrdinalIgnoreCase);
-                awarded = isCorrect ? q.Points : 0;
-                feedback = isCorrect ? "Correct answer selected." : $"Incorrect. Correct option: {q.CorrectAnswer}";
-            }
-
-            scoreObtained += awarded;
-
-            submission.Answers.Add(new SubmissionAnswer
-            {
-                QuestionId = q.Id,
-                SelectedAnswer = studentAns,
-                IsCorrect = isCorrect,
-                PointsAwarded = awarded
-            });
-
-            breakdown.Add(new QuestionResultItem(
-                QuestionId: q.Id,
-                Prompt: q.Prompt,
-                SelectedAnswer: studentAns,
-                CorrectAnswer: quiz.ShowCorrectAnswers ? q.CorrectAnswer : "Hidden",
-                IsCorrect: isCorrect,
-                PointsAwarded: awarded,
-                Explanation: quiz.ShowCorrectAnswers ? feedback : "Feedback available on review.",
-                SlideCitation: quiz.ShowCorrectAnswers ? slideCitation : null,
-                QuestionType: qTypeLabel,
-                MarkingScheme: quiz.ShowCorrectAnswers ? rubricExplanation : null
-            ));
-
-            Guid? topicScopeId = quiz.ScopeType == QuizScopeType.Topic ? quiz.ScopeId : null;
-            string topicName = !string.IsNullOrWhiteSpace(q.LearningObjective) ? q.LearningObjective : quiz.Title;
-            questionOutcomes.Add((topicScopeId, topicName, q.LearningObjective ?? topicName, isCorrect));
+            return BadRequest(new { message = "One or more answers reference a question that is not part of this quiz.", code = "INVALID_ANSWER_QUESTION" });
+        }
+        if (answers.GroupBy(a => a.QuestionId).Any(g => g.Count() > 1))
+        {
+            return BadRequest(new { message = "Each question may be answered at most once per attempt.", code = "DUPLICATE_ANSWER" });
         }
 
-        double percent = totalPoints > 0 ? ((double)scoreObtained / totalPoints) * 100 : 0;
-        int scorePercent = (int)Math.Round(percent);
-        bool passed = percent >= quiz.PassingScorePercent;
+        // All marking happens in the evaluation service; the controller only shapes the response.
+        var graded = await _gradingService.SubmitAsync(
+            quiz,
+            submission,
+            isNewAttempt,
+            answers.ToDictionary(a => a.QuestionId, a => a.SelectedAnswer ?? string.Empty));
 
-        submission.ScoreObtained = scoreObtained;
-        submission.MaxScore = totalPoints;
-        submission.PercentageScore = percent;
-        submission.Passed = passed;
-
-        await DbContext.Submissions.AddAsync(submission);
-        await DbContext.SaveChangesAsync();
-
-        // Multi-Factor Learning Game Reward Engine
-        var rewardResult = await _gamificationService.CalculateAndAwardQuizRewardAsync(
-            studentId: studentId,
-            assessmentId: quiz.Id,
-            scorePercent: scorePercent,
-            timeSpentSeconds: 480,
-            difficulty: quiz.Difficulty,
-            scopeType: quiz.ScopeType,
-            questionOutcomes: questionOutcomes
-        );
-
-        string badgeUnlocked = rewardResult.UnlockedBadges.FirstOrDefault() ?? (percent >= 100 ? "PERFECT_SCORE" : null);
+        var attempt = graded.Attempt;
+        var reward = graded.Reward;
+        bool isEvaluated = graded.Marks.IsFullyEvaluated;
+        var breakdown = BuildBreakdown(quiz, graded.Outcomes.Select(o => new AnswerView(
+            o.Question, o.StudentAnswer, o.Result.AwardedMarks, o.Result.IsCorrect, o.Result.Feedback,
+            o.Result.Status, o.Result.Method)), revealKeys: quiz.ShowCorrectAnswers);
 
         return Ok(new
         {
-            submissionId = submission.Id,
+            submissionId = attempt.Id,
+            attemptId = attempt.Id,
+            attemptNumber = attempt.AttemptNumber,
             quizId = quiz.Id,
-            scoreObtained = scoreObtained,
-            maxScore = totalPoints,
-            percentageScore = percent,
-            passed = passed,
-            xpEarned = rewardResult.XpBreakdown.TotalXpEarned,
-            coinsEarned = rewardResult.XpBreakdown.CoinsEarned,
-            feedback = passed
-                ? $"Mastery confirmed! You earned +{rewardResult.XpBreakdown.TotalXpEarned} XP (+{rewardResult.XpBreakdown.CoinsEarned} Coins) across base, difficulty, and consistency bonuses."
-                : "Targeted practice recommended. Your skill telemetry has been updated for AI remediation.",
+            status = attempt.Status.ToString(),
+            pendingReviewCount = graded.Marks.PendingReviewCount,
+            scoreObtained = attempt.ScoreObtained,
+            maxScore = attempt.MaxScore,
+            percentageScore = attempt.PercentageScore,
+            passed = attempt.Passed,
+            xpEarned = reward?.XpBreakdown.TotalXpEarned ?? 0,
+            coinsEarned = reward?.XpBreakdown.CoinsEarned ?? 0,
+            feedback = !isEvaluated
+                ? $"{graded.Marks.PendingReviewCount} answer(s) are awaiting marking. Your final result and rewards will be available once marking is complete."
+                : attempt.Passed
+                    ? $"Passed. You earned +{reward?.XpBreakdown.TotalXpEarned ?? 0} XP (+{reward?.XpBreakdown.CoinsEarned ?? 0} Coins)."
+                    : "Not passed yet. Review the feedback below and try again.",
             questionBreakdown = breakdown,
             scopeType = quiz.ScopeType.ToString(),
-            badgeUnlocked = badgeUnlocked,
-            xpBreakdown = rewardResult.XpBreakdown,
-            levelUpOccurred = rewardResult.LevelUpOccurred,
-            newLevel = rewardResult.NewLevel,
-            newTotalXp = rewardResult.NewTotalXp,
-            masteryUpdates = rewardResult.MasteryUpdates
+            badgeUnlocked = reward?.UnlockedBadges.FirstOrDefault(),
+            xpBreakdown = reward?.XpBreakdown,
+            levelUpOccurred = reward?.LevelUpOccurred ?? false,
+            newLevel = reward?.NewLevel,
+            newTotalXp = reward?.NewTotalXp,
+            masteryUpdates = reward?.MasteryUpdates
         });
+    }
+
+    /// <summary>
+    /// The persisted result of one attempt, rebuilt from the stored answers and question
+    /// snapshots (so it is reproducible even if the quiz changed later). Students may read their
+    /// own attempts; the course instructor and admins may read any attempt of their courses.
+    /// </summary>
+    [HttpGet("attempts/{attemptId:guid}/result")]
+    public async Task<IActionResult> GetAttemptResult(Guid attemptId)
+    {
+        var attempt = await DbContext.Submissions
+            .AsNoTracking()
+            .Include(s => s.Answers).ThenInclude(a => a.Question)
+            .Include(s => s.Assessment!).ThenInclude(a => a.Questions)
+            .FirstOrDefaultAsync(s => s.Id == attemptId);
+        if (attempt?.Assessment == null)
+        {
+            return NotFound(new { message = "Attempt not found." });
+        }
+
+        var (userId, role) = GetCurrentUser();
+        bool canManage = await _accessService.CanManageCourseAsync(attempt.Assessment.CourseId, userId, role);
+        if (!canManage && attempt.StudentId != userId)
+        {
+            return NotFound(new { message = "Attempt not found." });
+        }
+
+        bool isEvaluated = attempt.Status == AttemptStatus.Evaluated;
+        var answerViews = attempt.Answers.Select(a => new AnswerView(
+            DeserializeSnapshot(a), a.SelectedAnswer, a.PointsAwarded, a.IsCorrect, a.Feedback ?? string.Empty,
+            a.EvaluationStatus, a.EvaluationMethod));
+
+        return Ok(new
+        {
+            attemptId = attempt.Id,
+            quizId = attempt.AssessmentId,
+            quizTitle = attempt.Assessment.Title,
+            studentId = attempt.StudentId,
+            attemptNumber = attempt.AttemptNumber,
+            status = attempt.Status.ToString(),
+            startedAt = attempt.StartedAt,
+            submittedAt = attempt.SubmittedAt,
+            evaluatedAt = attempt.EvaluatedAt,
+            scoreObtained = attempt.ScoreObtained,
+            maxScore = attempt.MaxScore,
+            percentageScore = attempt.PercentageScore,
+            passed = attempt.Passed,
+            pendingReviewCount = attempt.Answers.Count(a => a.EvaluationStatus != AnswerEvaluationStatus.Evaluated),
+            instructorFeedback = attempt.InstructorFeedback,
+            questionBreakdown = BuildBreakdown(attempt.Assessment, answerViews,
+                revealKeys: canManage || (attempt.Assessment.ShowCorrectAnswers && isEvaluated))
+        });
+    }
+
+    /// <summary>
+    /// Records an instructor's mark for one answer (first marking of a response awaiting
+    /// review, or an override with a mandatory reason). Every change is kept and audited.
+    /// </summary>
+    [HttpPost("attempts/{attemptId:guid}/answers/{questionId:guid}/mark")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> MarkAnswer(Guid attemptId, Guid questionId, [FromBody] ManualMarkRequest request)
+    {
+        var (userId, role) = GetCurrentUser();
+        var result = await _gradingService.MarkAnswerAsync(
+            attemptId, questionId, request.AwardedMarks, request.Feedback, request.Reason, userId, role);
+
+        return result.Error switch
+        {
+            ManualMarkError.None => Ok(new
+            {
+                attemptId,
+                questionId,
+                status = result.Attempt!.Status.ToString(),
+                pendingReviewCount = result.Marks!.PendingReviewCount,
+                scoreObtained = result.Attempt.ScoreObtained,
+                maxScore = result.Attempt.MaxScore,
+                percentageScore = result.Attempt.PercentageScore,
+                passed = result.Attempt.Passed
+            }),
+            ManualMarkError.AttemptNotFound or ManualMarkError.AnswerNotFound => NotFound(new { message = result.Message }),
+            ManualMarkError.NotAllowed => Forbid(),
+            ManualMarkError.AttemptNotSubmitted => Conflict(new { message = result.Message }),
+            _ => BadRequest(new { message = result.Message, code = result.Error.ToString() })
+        };
     }
 
     // -------------------------------------------------------------------------
@@ -1715,10 +1776,13 @@ public class QuizzesController : BaseApiController
             .Select(s => new
             {
                 submissionId = s.Id,
+                attemptNumber = s.AttemptNumber,
+                status = s.Status.ToString(),
+                pendingReviewCount = s.Answers.Count(a => a.EvaluationStatus != AnswerEvaluationStatus.Evaluated),
                 quizId = s.AssessmentId,
                 studentId = s.StudentId,
-                studentName = s.Student != null ? s.Student.FullName : "Student",
-                studentEmail = s.Student != null ? s.Student.Email : "student@eduflow.edu",
+                studentName = s.Student != null ? s.Student.FullName : null,
+                studentEmail = s.Student != null ? s.Student.Email : null,
                 scoreObtained = s.ScoreObtained,
                 maxScore = s.MaxScore,
                 percentageScore = s.PercentageScore,
@@ -1733,6 +1797,9 @@ public class QuizzesController : BaseApiController
                     correctAnswer = a.Question != null ? a.Question.CorrectAnswer : "",
                     isCorrect = a.IsCorrect,
                     pointsAwarded = a.PointsAwarded,
+                    maxMarks = a.MaxMarks,
+                    evaluationStatus = a.EvaluationStatus.ToString(),
+                    evaluationMethod = a.EvaluationMethod.ToString(),
                     explanation = a.Question != null ? a.Question.Explanation : ""
                 }).ToList()
             })
@@ -1772,6 +1839,313 @@ public class QuizzesController : BaseApiController
 
         return Ok(new { message = "Feedback saved successfully.", submissionId = submission.Id, feedback = submission.InstructorFeedback });
     }
+
+    // -------------------------------------------------------------------------
+    // 7. SHARED HELPERS
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Learner-facing view of a question: prompt, options and marks only. Answer keys,
+    /// explanations, option correctness and marking metadata are never included.
+    /// </summary>
+    private static QuizQuestionDto ToLearnerQuestionDto(Question q, bool shuffleOptions)
+    {
+        var options = JsonSerializer.Deserialize<List<string>>(q.OptionsJson) ?? new List<string>();
+        if (shuffleOptions)
+        {
+            options = options.OrderBy(_ => Guid.NewGuid()).ToList();
+        }
+
+        return new QuizQuestionDto(
+            q.Id,
+            q.Prompt,
+            q.Type,
+            options,
+            q.Points,
+            q.OrderIndex,
+            CorrectAnswer: null,
+            Explanation: null,
+            Difficulty: q.Difficulty,
+            SourceContentId: null,
+            LearningObjective: null,
+            MetadataJson: "{}",
+            OptionDetails: null);
+    }
+
+    private sealed record AnswerView(
+        QuestionSnapshot Question,
+        string StudentAnswer,
+        int AwardedMarks,
+        bool IsCorrect,
+        string Feedback,
+        AnswerEvaluationStatus Status,
+        EvaluationMethod Method);
+
+    /// <summary>
+    /// Shapes per-question results. Answer keys, explanations and marking notes are only
+    /// included when <paramref name="revealKeys"/> is true.
+    /// </summary>
+    private static List<QuestionResultItem> BuildBreakdown(Assessment quiz, IEnumerable<AnswerView> answers, bool revealKeys)
+    {
+        var metadataById = quiz.Questions.ToDictionary(q => q.Id, q => q.MetadataJson);
+        return answers.Select(a =>
+        {
+            string? slideCitation = null;
+            string? markingScheme = null;
+            if (revealKeys && metadataById.TryGetValue(a.Question.QuestionId, out var metadataJson))
+            {
+                (slideCitation, markingScheme) = ReadDisplayMetadata(metadataJson);
+            }
+
+            return new QuestionResultItem(
+                QuestionId: a.Question.QuestionId,
+                Prompt: a.Question.Prompt,
+                SelectedAnswer: a.StudentAnswer,
+                CorrectAnswer: revealKeys ? string.Join(", ", a.Question.CorrectAnswers) : "Hidden",
+                IsCorrect: a.IsCorrect,
+                PointsAwarded: a.AwardedMarks,
+                Explanation: revealKeys
+                    ? string.Join(" ", new[] { a.Feedback, a.Question.Explanation }.Where(t => !string.IsNullOrWhiteSpace(t)))
+                    : (a.Status == AnswerEvaluationStatus.Evaluated ? "Feedback available on review." : a.Feedback),
+                SlideCitation: slideCitation,
+                QuestionType: a.Question.Type.ToString(),
+                MarkingScheme: markingScheme,
+                MaxMarks: a.Question.MaxMarks,
+                EvaluationStatus: a.Status.ToString(),
+                EvaluationMethod: a.Method.ToString());
+        }).ToList();
+    }
+
+    private static (string? SlideCitation, string? MarkingScheme) ReadDisplayMetadata(string? metadataJson)
+    {
+        if (string.IsNullOrWhiteSpace(metadataJson)) return (null, null);
+        try
+        {
+            using var doc = JsonDocument.Parse(metadataJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return (null, null);
+            string? Read(string name) => doc.RootElement.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
+            return (Read("slideCitation"), Read("markingScheme"));
+        }
+        catch (JsonException)
+        {
+            // Malformed display metadata only affects labels, never marks.
+            return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// The stored snapshot, or (for answers recorded before snapshots existed) a best-effort
+    /// view of the current question.
+    /// </summary>
+    private static QuestionSnapshot DeserializeSnapshot(SubmissionAnswer answer)
+        => !string.IsNullOrWhiteSpace(answer.QuestionSnapshotJson)
+            ? JsonSerializer.Deserialize<QuestionSnapshot>(answer.QuestionSnapshotJson)!
+            : new QuestionSnapshot(answer.QuestionId, answer.Question?.Type ?? QuestionType.MultipleChoice,
+                answer.Question?.Prompt ?? string.Empty, Array.Empty<string>(),
+                answer.Question != null ? new[] { answer.Question.CorrectAnswer } : Array.Empty<string>(),
+                answer.MaxMarks, answer.Question?.Explanation ?? string.Empty, QuestionMarkingRules.Default);
+
+    /// <summary>Stages an audit entry committed with the caller's SaveChanges.</summary>
+    private void AuditAssessment(string action, Guid assessmentId)
+    {
+        var (userId, role) = GetCurrentUser();
+        _auditLogWriter.AddEntry(userId, role, action, "Assessment", assessmentId.ToString());
+    }
+
+    /// <summary>Write-endpoint response: identifies the saved quiz without serializing the entity graph.</summary>
+    private static object ToSummary(Assessment quiz) => new
+    {
+        id = quiz.Id,
+        courseId = quiz.CourseId,
+        moduleId = quiz.ModuleId,
+        topicId = quiz.TopicId,
+        title = quiz.Title,
+        status = quiz.Status.ToString(),
+        questionCount = quiz.Questions.Count,
+        totalMarks = quiz.Questions.Sum(q => q.Points)
+    };
+
+    private IActionResult AttemptDenied(AttemptEligibility eligibility)
+    {
+        var body = new
+        {
+            message = eligibility.Message,
+            code = eligibility.Reason.ToString(),
+            attemptsUsed = eligibility.AttemptsUsed,
+            attemptsAllowed = eligibility.AttemptsAllowed
+        };
+
+        return eligibility.Reason switch
+        {
+            AttemptDenialReason.AttemptLimitReached or AttemptDenialReason.AttemptNotOpen => Conflict(body),
+            AttemptDenialReason.AttemptNotFound => NotFound(body),
+            _ => StatusCode(StatusCodes.Status403Forbidden, body)
+        };
+    }
+
+    /// <summary>Where an assessment lives: always a module, optionally a topic or content item in it.</summary>
+    private sealed record AssessmentPlacement(
+        Guid ModuleId, Guid? TopicId, Guid? ContentItemId, QuizScopeType ScopeType, Guid ScopeId);
+
+    /// <summary>
+    /// Maps the legacy (scopeType, scopeId) request shape onto the canonical placement. A
+    /// course-level request must name its module. Every target must belong to the course.
+    /// </summary>
+    private async Task<(AssessmentPlacement? Placement, string? Error)> ResolvePlacementAsync(
+        Guid courseId, QuizScopeType scopeType, Guid? scopeId, Guid? moduleId)
+    {
+        switch (scopeType)
+        {
+            case QuizScopeType.Module:
+            case QuizScopeType.Course:
+            {
+                var targetModuleId = scopeType == QuizScopeType.Module ? scopeId ?? moduleId : moduleId;
+                if (!targetModuleId.HasValue || targetModuleId.Value == Guid.Empty)
+                {
+                    return (null, "Select the module this assessment belongs to.");
+                }
+                bool inCourse = await DbContext.Modules.AnyAsync(m => m.Id == targetModuleId.Value && m.CourseId == courseId);
+                return inCourse
+                    ? (new AssessmentPlacement(targetModuleId.Value, null, null, QuizScopeType.Module, targetModuleId.Value), null)
+                    : (null, $"The selected module (ID: {targetModuleId}) does not belong to the selected Course.");
+            }
+
+            case QuizScopeType.Topic:
+            {
+                var topic = scopeId.HasValue
+                    ? await DbContext.Topics.AsNoTracking().FirstOrDefaultAsync(t => t.Id == scopeId.Value && t.Module!.CourseId == courseId)
+                    : null;
+                return topic != null
+                    ? (new AssessmentPlacement(topic.ModuleId, topic.Id, null, QuizScopeType.Topic, topic.Id), null)
+                    : (null, $"The selected Topic (ID: {scopeId}) does not belong to the selected Course.");
+            }
+
+            case QuizScopeType.ContentItem:
+            {
+                var item = scopeId.HasValue
+                    ? await DbContext.ContentItems.AsNoTracking().FirstOrDefaultAsync(ci => ci.Id == scopeId.Value && ci.Module!.CourseId == courseId)
+                    : null;
+                return item != null
+                    ? (new AssessmentPlacement(item.ModuleId, item.TopicId, item.Id, QuizScopeType.ContentItem, item.Id), null)
+                    : (null, $"The selected ContentItem (ID: {scopeId}) does not belong to the selected Course.");
+            }
+
+            default:
+                return (null, $"Unsupported scope type '{scopeType}'.");
+        }
+    }
+
+    /// <summary>The only writer of an assessment's placement columns.</summary>
+    private static void ApplyPlacement(Assessment quiz, AssessmentPlacement placement)
+    {
+        quiz.ModuleId = placement.ModuleId;
+        quiz.TopicId = placement.TopicId;
+        quiz.ContentItemScopeId = placement.ContentItemId;
+        quiz.ScopeType = placement.ScopeType;
+        quiz.ScopeId = placement.ScopeId;
+    }
+
+    /// <summary>Resolves a site-relative URL to a file inside wwwroot, or null if it escapes it or is missing.</summary>
+    private string? ResolveWebRootFile(string? relativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(relativeUrl))
+        {
+            return null;
+        }
+
+        var webRoot = Path.GetFullPath(_environment?.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
+        var candidate = Path.GetFullPath(Path.Combine(webRoot, relativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+
+        var rootWithSeparator = webRoot.EndsWith(Path.DirectorySeparatorChar) ? webRoot : webRoot + Path.DirectorySeparatorChar;
+        if (!candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return System.IO.File.Exists(candidate) ? candidate : null;
+    }
+
+    /// <summary>
+    /// The single publication gate used by create, update, validate and publish. Answer keys
+    /// are checked through the same snapshot the evaluation service marks against.
+    /// </summary>
+    private List<string> CollectPublishErrors(Assessment quiz)
+    {
+        var errors = new List<string>();
+
+        if (quiz.Questions.Count == 0)
+        {
+            errors.Add("Cannot publish an empty quiz with 0 questions.");
+        }
+
+        foreach (var q in quiz.Questions)
+        {
+            string label = $"Question #{q.OrderIndex} ({q.Type})";
+            if (string.IsNullOrWhiteSpace(q.Prompt))
+                errors.Add($"{label} has an empty prompt.");
+
+            if (q.Points <= 0)
+                errors.Add($"{label} must have points greater than 0.");
+
+            var key = _evaluationService.Snapshot(q);
+            bool KeyIsOption(string answer) => key.Options.Any(o => string.Equals(o.Trim(), answer.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            switch (q.Type)
+            {
+                case QuestionType.MultipleChoice:
+                case QuestionType.TimedChallenge:
+                    if (key.Options.Count < 2)
+                        errors.Add($"{label} requires at least 2 options, found {key.Options.Count}.");
+                    if (key.CorrectAnswers.Count != 1)
+                        errors.Add($"{label} must have exactly one correct answer.");
+                    else if (!KeyIsOption(key.CorrectAnswers[0]))
+                        errors.Add($"{label} correct answer '{key.CorrectAnswers[0]}' does not match any option.");
+                    break;
+
+                case QuestionType.MultipleSelect:
+                    if (key.Options.Count < 2)
+                        errors.Add($"{label} requires at least 2 options.");
+                    if (key.CorrectAnswers.Count == 0)
+                        errors.Add($"{label} must specify one or more correct answers.");
+                    else if (!key.CorrectAnswers.All(KeyIsOption))
+                        errors.Add($"{label} has correct answers that do not match any option.");
+                    break;
+
+                case QuestionType.TrueFalse:
+                    if (key.CorrectAnswers.Count != 1 ||
+                        !(key.CorrectAnswers[0].Equals("True", StringComparison.OrdinalIgnoreCase) ||
+                          key.CorrectAnswers[0].Equals("False", StringComparison.OrdinalIgnoreCase)))
+                        errors.Add($"{label} must have 'True' or 'False' as its correct answer.");
+                    break;
+
+                case QuestionType.Numerical:
+                    if (key.CorrectAnswers.Count == 0 || !key.CorrectAnswers.All(c =>
+                            decimal.TryParse(c, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
+                        errors.Add($"{label} must have a numeric correct answer (use '.' as the decimal separator).");
+                    break;
+
+                case QuestionType.FillInBlank:
+                case QuestionType.Matching:
+                case QuestionType.Ordering:
+                    if (key.CorrectAnswers.Count == 0)
+                        errors.Add($"{label} must have a correct answer.");
+                    break;
+
+                // ShortAnswer, OpenEnded, ScenarioBased, CodeSnippet are marked by an instructor
+                // (or AI-assisted marking); a model answer is guidance, not a key.
+            }
+        }
+
+        if (quiz.PassingScorePercent <= 0 || quiz.PassingScorePercent > 100)
+        {
+            errors.Add($"Passing score percent must be between 1 and 100. Current: {quiz.PassingScorePercent}.");
+        }
+
+        if (quiz.XpReward > 250)
+        {
+            errors.Add($"XP reward ({quiz.XpReward}) exceeds platform maximum of 250 XP.");
+        }
+
+        return errors;
+    }
 }
-
-

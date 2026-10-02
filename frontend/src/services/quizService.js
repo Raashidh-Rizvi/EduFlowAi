@@ -76,13 +76,30 @@ export const quizService = {
     return response.data;
   },
 
-  async submitQuiz(quizId, answers) {
-    const response = await api.post('/quizzes/submit', { quizId, answers });
+  // attemptId comes from startQuiz; the server completes exactly that attempt.
+  async submitQuiz(quizId, answers, attemptId) {
+    const response = await api.post('/quizzes/submit', { quizId, answers, attemptId });
     return response.data;
   },
 
   async getQuizSubmissions(quizId) {
     const response = await api.get(`/quizzes/${quizId}/submissions`);
+    return response.data;
+  },
+
+  // Authoritative, reproducible result of one attempt (student: own attempts only).
+  async getAttemptResult(attemptId) {
+    const response = await api.get(`/quizzes/attempts/${attemptId}/result`);
+    return response.data;
+  },
+
+  // Instructor marking: first mark of an answer awaiting review, or an override (reason required).
+  async markAnswer(attemptId, questionId, { awardedMarks, feedback, reason }) {
+    const response = await api.post(`/quizzes/attempts/${attemptId}/answers/${questionId}/mark`, {
+      awardedMarks,
+      feedback,
+      reason
+    });
     return response.data;
   },
 

@@ -297,10 +297,4 @@ export default function InstructorSidebarV2({
       </div>
     </aside>
   );
-} >
-          <LogOut size={14} /> Sign out
-        </button>
-      </div>
-    </aside>
-  );
 }

@@ -9,6 +9,7 @@ using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services.Gamification;
 using Microsoft.EntityFrameworkCore;
 
 namespace EduFlow.Infrastructure.Services;
@@ -16,18 +17,44 @@ namespace EduFlow.Infrastructure.Services;
 public class GamificationService : IGamificationService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly GamificationRuleSet _rules;
+    private readonly PointsLedger _ledger;
+    private readonly AchievementService _achievements;
 
+    /// <summary>Convenience constructor (tests, simple hosts): builds its collaborators on the same context.</summary>
     public GamificationService(ApplicationDbContext dbContext)
+        : this(dbContext, new GamificationRuleSet(dbContext))
     {
-        _dbContext = dbContext;
     }
 
+    private GamificationService(ApplicationDbContext dbContext, GamificationRuleSet rules)
+        : this(dbContext, rules, new PointsLedger(dbContext, rules))
+    {
+    }
+
+    private GamificationService(ApplicationDbContext dbContext, GamificationRuleSet rules, PointsLedger ledger)
+        : this(dbContext, rules, ledger, new AchievementService(dbContext, ledger))
+    {
+    }
+
+    public GamificationService(ApplicationDbContext dbContext, GamificationRuleSet rules, PointsLedger ledger, AchievementService achievements)
+    {
+        _dbContext = dbContext;
+        _rules = rules;
+        _ledger = ledger;
+        _achievements = achievements;
+    }
+
+    /// <summary>
+    /// Pays an activity reward (lesson, challenge...). Idempotent per (student, source): the
+    /// same lesson or challenge never pays twice.
+    /// </summary>
     public async Task<ChallengeResultDto> AwardXpAsync(
-        Guid studentId, 
-        XpSourceType sourceType, 
-        Guid sourceId, 
-        int xpAmount, 
-        string description, 
+        Guid studentId,
+        XpSourceType sourceType,
+        Guid sourceId,
+        int xpAmount,
+        string description,
         CancellationToken ct = default)
     {
         if (xpAmount <= 0)
@@ -35,389 +62,284 @@ public class GamificationService : IGamificationService
             throw new ArgumentException("XP amount must be strictly positive.", nameof(xpAmount));
         }
 
-        // Determine, before this transaction is recorded, whether this is genuinely the
-        // student's first-ever lesson completion (used to gate the FIRST_LESSON badge below).
-        bool isFirstLessonCompletion = false;
-        if (sourceType == XpSourceType.LessonCompleted)
+        int divisor = Math.Max(1, await _rules.GetIntAsync(GamificationRuleKeys.ActivityCoinsPerXpDivisor, ct));
+        var result = await _ledger.GrantAsync(studentId, new[]
         {
-            int priorLessonCompletions = await _dbContext.XpTransactions
-                .CountAsync(x => x.StudentId == studentId && x.SourceType == XpSourceType.LessonCompleted, ct);
-            isFirstLessonCompletion = priorLessonCompletions == 0;
-        }
+            new LedgerEntry(sourceType, sourceId, xpAmount, Math.Max(1, xpAmount / divisor), description, $"{sourceType}:{sourceId}")
+        }, ct);
 
-        // 1. Record immutable transaction
-        var transaction = new XpTransaction
-        {
-            StudentId = studentId,
-            SourceType = sourceType,
-            SourceId = sourceId,
-            XpAmount = xpAmount,
-            Description = description
-        };
-        await _dbContext.XpTransactions.AddAsync(transaction, ct);
-
-        // 2. Fetch or create StudentXp aggregate cache
-        var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
-        if (studentXp == null)
-        {
-            studentXp = new StudentXp
-            {
-                StudentId = studentId,
-                TotalXp = 0,
-                CurrentLevel = 1,
-                Coins = 0
-            };
-            await _dbContext.StudentXp.AddAsync(studentXp, ct);
-        }
-
-        var oldLevel = studentXp.CurrentLevel;
-        studentXp.TotalXp += xpAmount;
-        var newLevel = CalculateLevel(studentXp.TotalXp);
-        bool levelUp = newLevel > oldLevel;
-
-        int bonusCoins = 0;
-        if (levelUp)
-        {
-            studentXp.CurrentLevel = newLevel;
-            bonusCoins = newLevel * 50;
-            studentXp.Coins += bonusCoins;
-        }
-
-        studentXp.Coins += Math.Max(1, xpAmount / 5);
-        studentXp.UpdatedAt = DateTime.UtcNow;
-
-        // 3. Update Streak
         await UpdateStreakInternalAsync(studentId, sourceType, ct);
 
-        // 4. Evaluate Badges
-        var unlockedBadgeIds = await EvaluateBadgesInternalAsync(studentId, isFirstLessonCompletion, ct);
+        string? missionKey = sourceType switch
+        {
+            XpSourceType.LessonCompleted => MissionLesson,
+            XpSourceType.DailyChallenge or XpSourceType.AiAdaptiveChallenge => MissionChallenge,
+            _ => null
+        };
+        if (missionKey != null)
+        {
+            await AdvanceMissionAsync(studentId, missionKey, 1, ct);
+        }
 
+        // Achievements are measured from saved LMS records.
+        await _dbContext.SaveChangesAsync(ct);
+        var unlockedBadgeIds = await _achievements.EvaluateAsync(studentId, ct);
         await _dbContext.SaveChangesAsync(ct);
 
+        var profile = await _dbContext.StudentXp.AsNoTracking().FirstAsync(s => s.StudentId == studentId, ct);
         return new ChallengeResultDto(
             Passed: true,
             ScorePercent: 100,
-            XpEarned: xpAmount,
-            CoinsEarned: bonusCoins + Math.Max(1, xpAmount / 5),
-            NewTotalXp: studentXp.TotalXp,
-            NewLevel: studentXp.CurrentLevel,
-            LevelUpOccurred: levelUp,
+            XpEarned: result.Written.Where(e => e.SourceType == sourceType).Sum(e => e.Xp),
+            CoinsEarned: result.CoinsAwarded,
+            NewTotalXp: profile.TotalXp,
+            NewLevel: profile.CurrentLevel,
+            LevelUpOccurred: result.LevelUp,
             UnlockedBadges: unlockedBadgeIds
         );
     }
 
+    /// <summary>
+    /// Rewards an evaluated attempt using the persisted rules. Completion, pass, high-score tier
+    /// and streak bonuses are paid once per assessment; an improvement bonus is paid when the
+    /// attempt sets a new personal best.
+    /// </summary>
     public async Task<QuizRewardResultDto> CalculateAndAwardQuizRewardAsync(
         Guid studentId,
         Guid assessmentId,
         int scorePercent,
+        bool passed,
         int timeSpentSeconds,
         DifficultyLevel difficulty,
         QuizScopeType scopeType,
         List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)> questionOutcomes,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid? attemptId = null,
+        Guid? courseId = null)
     {
-        // 1. Calculate Base XP by Scope
-        int baseXp = scopeType switch
-        {
-            QuizScopeType.Topic => 30,
-            QuizScopeType.ContentItem => 35,
-            QuizScopeType.Module => 75,
-            QuizScopeType.Course => 150,
-            _ => 50
-        };
+        var entries = new List<LedgerEntry>();
+        var awardId = attemptId ?? Guid.NewGuid();
 
-        if (difficulty == DifficultyLevel.Boss)
+        // 1. Completion: base XP by placement (or the Boss base) plus the difficulty bonus.
+        int baseXp = difficulty == DifficultyLevel.Boss
+            ? await _rules.GetIntAsync(GamificationRuleKeys.QuizBaseBoss, ct)
+            : await _rules.GetIntAsync(scopeType switch
+            {
+                QuizScopeType.Topic => GamificationRuleKeys.QuizBaseTopic,
+                QuizScopeType.ContentItem => GamificationRuleKeys.QuizBaseContentItem,
+                QuizScopeType.Course => GamificationRuleKeys.QuizBaseCourse,
+                _ => GamificationRuleKeys.QuizBaseModule
+            }, ct);
+        int diffBonus = await _rules.GetIntAsync(difficulty switch
         {
-            baseXp = 200;
+            DifficultyLevel.Easy => GamificationRuleKeys.QuizDifficultyEasy,
+            DifficultyLevel.Hard => GamificationRuleKeys.QuizDifficultyHard,
+            DifficultyLevel.Boss => GamificationRuleKeys.QuizDifficultyBoss,
+            _ => GamificationRuleKeys.QuizDifficultyMedium
+        }, ct);
+        string completionKey = $"quiz-completed:{assessmentId}";
+        bool isFirstCompletion = !await _ledger.WasPaidAsync(studentId, completionKey, ct);
+        entries.Add(new LedgerEntry(XpSourceType.QuizCompleted, assessmentId, baseXp + diffBonus, 0,
+            $"Completed {scopeType} assessment ({difficulty})", completionKey));
+
+        // 2. Pass bonus (pass/fail is decided by the assessment's own passing score).
+        if (passed)
+        {
+            entries.Add(new LedgerEntry(XpSourceType.PassBonus, assessmentId,
+                await _rules.GetIntAsync(GamificationRuleKeys.QuizPassBonus, ct), 0,
+                "Assessment pass bonus", $"quiz-passed:{assessmentId}"));
         }
 
-        // 2. Difficulty Bonus
-        int diffBonus = difficulty switch
-        {
-            DifficultyLevel.Easy => 0,
-            DifficultyLevel.Medium => 10,
-            DifficultyLevel.Hard => 20,
-            DifficultyLevel.Boss => 30,
-            _ => 0
-        };
-
-        // 3. Pass Bonus (Passing threshold: 70%)
-        bool passed = scorePercent >= 70;
-        int passBonus = passed ? 20 : 0;
-
-        // 4. Performance / High Score Bonus
-        int highScoreBonus = 0;
-        if (scorePercent == 100) highScoreBonus = 40;
-        else if (scorePercent >= 90) highScoreBonus = 20;
-        else if (scorePercent >= 80) highScoreBonus = 10;
-
-        // 5. Streak Bonus
-        var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
-        int currentStreak = streak?.CurrentStreak ?? 0;
-        int streakBonus = currentStreak switch
-        {
-            >= 30 => 150,
-            >= 14 => 60,
-            >= 7 => 30,
-            >= 3 => 10,
-            >= 1 => 5,
-            _ => 0
-        };
-
-        // 6. Personal Best & Improvement Bonus
+        // 3. Personal best and improvement.
         var existingPb = await _dbContext.PersonalBestRecords
             .FirstOrDefaultAsync(pb => pb.StudentId == studentId && pb.AssessmentId == assessmentId, ct);
-
-        bool isPersonalBest = false;
+        bool isPersonalBest = existingPb == null || scorePercent > existingPb.BestScorePercent;
         int prevBest = existingPb?.BestScorePercent ?? 0;
-        int improvementBonus = 0;
-
         if (existingPb == null)
         {
-            isPersonalBest = true;
-            await _dbContext.PersonalBestRecords.AddAsync(new PersonalBestRecord
+            _dbContext.PersonalBestRecords.Add(new PersonalBestRecord
             {
                 StudentId = studentId,
                 AssessmentId = assessmentId,
                 BestScorePercent = scorePercent,
                 BestTimeSeconds = timeSpentSeconds,
                 AchievedAt = DateTime.UtcNow
-            }, ct);
+            });
         }
-        else if (scorePercent > existingPb.BestScorePercent)
+        else if (isPersonalBest)
         {
-            isPersonalBest = true;
-            int delta = scorePercent - existingPb.BestScorePercent;
-            improvementBonus = Math.Min(50, Math.Max(10, (delta / 10) * 10)); // Reward delta progression
+            int min = await _rules.GetIntAsync(GamificationRuleKeys.QuizImprovementMin, ct);
+            int max = await _rules.GetIntAsync(GamificationRuleKeys.QuizImprovementMax, ct);
+            int improvement = Math.Min(max, Math.Max(min, (scorePercent - prevBest) / 10 * 10));
+            entries.Add(new LedgerEntry(XpSourceType.ImprovementBonus, assessmentId, improvement, 0,
+                $"Personal best improvement (+{scorePercent - prevBest}%)", $"quiz-improvement:{awardId}"));
             existingPb.BestScorePercent = scorePercent;
             existingPb.BestTimeSeconds = timeSpentSeconds;
             existingPb.AchievedAt = DateTime.UtcNow;
         }
 
-        int totalXp = baseXp + diffBonus + passBonus + highScoreBonus + streakBonus + improvementBonus;
-        int coinsEarned = Math.Max(5, totalXp / 4);
-
-        // 7. Write Ledger Transactions
-        await _dbContext.XpTransactions.AddAsync(new XpTransaction
+        // 4. High-score tier (highest tier reached; each tier pays once per assessment).
+        if (isPersonalBest)
         {
-            StudentId = studentId,
-            SourceType = XpSourceType.QuizCompleted,
-            SourceId = assessmentId,
-            XpAmount = baseXp + diffBonus,
-            Description = $"Completed {scopeType} Quiz ({difficulty})"
-        }, ct);
-
-        if (passBonus > 0)
-        {
-            await _dbContext.XpTransactions.AddAsync(new XpTransaction
+            var tiers = new[]
             {
-                StudentId = studentId,
-                SourceType = XpSourceType.PassBonus,
-                SourceId = assessmentId,
-                XpAmount = passBonus,
-                Description = "Quiz Pass Bonus"
-            }, ct);
-        }
-
-        if (highScoreBonus > 0)
-        {
-            await _dbContext.XpTransactions.AddAsync(new XpTransaction
-            {
-                StudentId = studentId,
-                SourceType = XpSourceType.HighScoreBonus,
-                SourceId = assessmentId,
-                XpAmount = highScoreBonus,
-                Description = $"High Score ({scorePercent}%) Performance Bonus"
-            }, ct);
-        }
-
-        if (streakBonus > 0)
-        {
-            await _dbContext.XpTransactions.AddAsync(new XpTransaction
-            {
-                StudentId = studentId,
-                SourceType = XpSourceType.StreakBonus,
-                SourceId = assessmentId,
-                XpAmount = streakBonus,
-                Description = $"Active Streak ({currentStreak} Days) Bonus"
-            }, ct);
-        }
-
-        if (improvementBonus > 0)
-        {
-            await _dbContext.XpTransactions.AddAsync(new XpTransaction
-            {
-                StudentId = studentId,
-                SourceType = XpSourceType.ImprovementBonus,
-                SourceId = assessmentId,
-                XpAmount = improvementBonus,
-                Description = $"Personal Best Improvement (+{scorePercent - prevBest}%) Bonus"
-            }, ct);
-        }
-
-        // 8. Update Student aggregate XP & Level
-        var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
-        if (studentXp == null)
-        {
-            studentXp = new StudentXp
-            {
-                StudentId = studentId,
-                TotalXp = 0,
-                CurrentLevel = 1,
-                Coins = 0
+                ("perfect", GamificationRuleKeys.QuizHighScorePerfectThreshold, GamificationRuleKeys.QuizHighScorePerfectXp),
+                ("excellent", GamificationRuleKeys.QuizHighScoreExcellentThreshold, GamificationRuleKeys.QuizHighScoreExcellentXp),
+                ("great", GamificationRuleKeys.QuizHighScoreGreatThreshold, GamificationRuleKeys.QuizHighScoreGreatXp)
             };
-            await _dbContext.StudentXp.AddAsync(studentXp, ct);
+            foreach (var (name, thresholdKey, xpKey) in tiers)
+            {
+                if (scorePercent >= await _rules.GetAsync(thresholdKey, ct))
+                {
+                    entries.Add(new LedgerEntry(XpSourceType.HighScoreBonus, assessmentId, await _rules.GetIntAsync(xpKey, ct), 0,
+                        $"High score ({scorePercent}%) bonus", $"quiz-high-score:{assessmentId}:{name}"));
+                    break;
+                }
+            }
         }
 
-        int oldLevel = studentXp.CurrentLevel;
-        studentXp.TotalXp += totalXp;
-        int newLevel = CalculateLevel(studentXp.TotalXp);
-        bool levelUp = newLevel > oldLevel;
-        if (levelUp)
+        // 5. Streak bonus, paid with the first completion of the assessment.
+        var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
+        int currentStreak = streak?.CurrentStreak ?? 0;
+        if (isFirstCompletion)
         {
-            studentXp.CurrentLevel = newLevel;
-            int levelBonusCoins = newLevel * 50;
-            coinsEarned += levelBonusCoins;
+            foreach (var (daysKey, xpKey) in GamificationRuleKeys.StreakTiers)
+            {
+                if (currentStreak >= await _rules.GetAsync(daysKey, ct))
+                {
+                    entries.Add(new LedgerEntry(XpSourceType.StreakBonus, assessmentId, await _rules.GetIntAsync(xpKey, ct), 0,
+                        $"Active streak ({currentStreak} days) bonus", $"quiz-streak:{assessmentId}"));
+                    break;
+                }
+            }
         }
 
-        studentXp.Coins += coinsEarned;
-        studentXp.UpdatedAt = DateTime.UtcNow;
+        // Coins follow the XP this attempt actually earns: they ride on the first entry that has
+        // not been paid before, so there is no separate coin row to double-count.
+        var unpaid = new List<LedgerEntry>();
+        foreach (var entry in entries)
+        {
+            if (!await _ledger.WasPaidAsync(studentId, entry.IdempotencyKey, ct)) unpaid.Add(entry);
+        }
+        int newXp = unpaid.Sum(e => e.Xp);
+        if (newXp > 0)
+        {
+            int divisor = Math.Max(1, await _rules.GetIntAsync(GamificationRuleKeys.QuizCoinsPerXpDivisor, ct));
+            int minimum = await _rules.GetIntAsync(GamificationRuleKeys.QuizCoinsMinimum, ct);
+            unpaid[0] = unpaid[0] with { Coins = Math.Max(minimum, newXp / divisor) };
+        }
 
-        // 9. Update Streak
+        var granted = await _ledger.GrantAsync(studentId, unpaid, ct);
+        int xpEarned = granted.Written.Where(e => e.SourceType != XpSourceType.LevelUp).Sum(e => e.Xp);
+        int coinsEarned = granted.CoinsAwarded;
+
         await UpdateStreakInternalAsync(studentId, XpSourceType.QuizCompleted, ct);
+        var masteryUpdates = await UpdateMasteryAsync(studentId, courseId, questionOutcomes, ct);
 
-        // 10. Update Skill Mastery Per Question Topic
-        var masteryUpdates = new List<SkillMasteryDto>();
-        if (questionOutcomes != null && questionOutcomes.Any())
+        int practiceCount = questionOutcomes?.Count ?? 0;
+        await AdvanceMissionAsync(studentId, MissionPractice, practiceCount, ct);
+        if (scorePercent >= await _rules.GetAsync(GamificationRuleKeys.MissionScoreThreshold, ct))
         {
-            foreach (var item in questionOutcomes)
-            {
-                string topicName = string.IsNullOrWhiteSpace(item.TopicName) ? "Core Concepts" : item.TopicName;
-                string skillName = string.IsNullOrWhiteSpace(item.SkillName) ? topicName : item.SkillName;
-
-                // Validate that item.TopicId actually exists in Topics to prevent foreign key violations
-                Guid? verifiedTopicId = null;
-                if (item.TopicId.HasValue && item.TopicId != Guid.Empty)
-                {
-                    bool topicExists = await _dbContext.Topics.AnyAsync(t => t.Id == item.TopicId.Value, ct);
-                    if (topicExists)
-                    {
-                        verifiedTopicId = item.TopicId.Value;
-                    }
-                }
-
-                var mastery = await _dbContext.SkillMasteries
-                    .FirstOrDefaultAsync(m => m.StudentId == studentId && (m.TopicName == topicName || (verifiedTopicId != null && m.TopicId == verifiedTopicId)), ct);
-
-                if (mastery == null)
-                {
-                    mastery = new SkillMastery
-                    {
-                        StudentId = studentId,
-                        TopicId = verifiedTopicId,
-                        TopicName = topicName,
-                        SkillName = skillName,
-                        TotalAttempts = 1,
-                        CorrectAttempts = item.IsCorrect ? 1 : 0,
-                        MasteryPercentage = item.IsCorrect ? 100 : 0,
-                        LastAssessedAt = DateTime.UtcNow
-                    };
-                    await _dbContext.SkillMasteries.AddAsync(mastery, ct);
-                }
-                else
-                {
-                    if (mastery.TopicId == null && verifiedTopicId != null)
-                    {
-                        mastery.TopicId = verifiedTopicId;
-                    }
-                    mastery.TotalAttempts += 1;
-                    if (item.IsCorrect) mastery.CorrectAttempts += 1;
-                    mastery.MasteryPercentage = (int)Math.Round((double)mastery.CorrectAttempts / mastery.TotalAttempts * 100);
-                    mastery.LastAssessedAt = DateTime.UtcNow;
-                }
-
-                string color = mastery.MasteryPercentage >= 80 ? "green" : (mastery.MasteryPercentage >= 60 ? "yellow" : "red");
-                masteryUpdates.Add(new SkillMasteryDto(
-                    TopicId: mastery.TopicId,
-                    TopicName: mastery.TopicName,
-                    SkillName: mastery.SkillName,
-                    MasteryPercentage: mastery.MasteryPercentage,
-                    TotalAttempts: mastery.TotalAttempts,
-                    CorrectAttempts: mastery.CorrectAttempts,
-                    LastAssessedAt: mastery.LastAssessedAt,
-                    StatusColor: color
-                ));
-            }
-        }
-
-        // 11. Update Daily Missions Progress
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var dailyMissions = await _dbContext.StudentDailyMissions
-            .Where(m => m.StudentId == studentId && m.Date == today)
-            .ToListAsync(ct);
-
-        foreach (var mission in dailyMissions)
-        {
-            if (mission.MissionKey == "PRACTICE_5_QUESTIONS")
-            {
-                mission.CurrentCount = Math.Min(mission.TargetCount, mission.CurrentCount + (questionOutcomes?.Count ?? 1));
-                if (mission.CurrentCount >= mission.TargetCount) mission.IsCompleted = true;
-            }
-            else if (mission.MissionKey == "SCORE_70_QUIZ" && scorePercent >= 70)
-            {
-                mission.CurrentCount = mission.TargetCount;
-                mission.IsCompleted = true;
-            }
-        }
-
-        // 12. Evaluate Badges (quiz completions never count toward the first-lesson badge)
-        var unlockedBadges = await EvaluateBadgesInternalAsync(studentId, false, ct);
-        if (scorePercent == 100 && !unlockedBadges.Contains("PERFECT_SCORE"))
-        {
-            await TryUnlockBadgeAsync(studentId, "PERFECT_SCORE", ct);
-            unlockedBadges.Add("PERFECT_SCORE");
-        }
-        if (difficulty == DifficultyLevel.Boss && passed && !unlockedBadges.Contains("BOSS_SLAYER"))
-        {
-            await TryUnlockBadgeAsync(studentId, "BOSS_SLAYER", ct);
-            unlockedBadges.Add("BOSS_SLAYER");
-        }
-        if (improvementBonus >= 30 && !unlockedBadges.Contains("COMEBACK_KID"))
-        {
-            await TryUnlockBadgeAsync(studentId, "COMEBACK_KID", ct);
-            unlockedBadges.Add("COMEBACK_KID");
+            await AdvanceMissionAsync(studentId, MissionScore, int.MaxValue, ct);
         }
 
         await _dbContext.SaveChangesAsync(ct);
+        var unlockedBadges = await _achievements.EvaluateAsync(studentId, ct);
+        await _dbContext.SaveChangesAsync(ct);
 
-        var (_, _, levelName) = GetLevelBounds(studentXp.CurrentLevel);
-
-        var xpBreakdown = new QuizXpBreakdownDto(
-            BaseXp: baseXp,
-            DifficultyBonus: diffBonus,
-            PassBonus: passBonus,
-            HighScoreBonus: highScoreBonus,
-            StreakBonus: streakBonus,
-            ImprovementBonus: improvementBonus,
-            TotalXpEarned: totalXp,
-            CoinsEarned: coinsEarned,
-            IsPersonalBest: isPersonalBest,
-            PreviousBestScorePercent: prevBest,
-            CurrentScorePercent: scorePercent
-        );
+        var profile = await _dbContext.StudentXp.AsNoTracking().FirstAsync(s => s.StudentId == studentId, ct);
+        var (_, _, levelName) = GetLevelBounds(profile.CurrentLevel);
+        int Paid(XpSourceType type) => granted.Written.Where(e => e.SourceType == type).Sum(e => e.Xp);
 
         return new QuizRewardResultDto(
             Passed: passed,
             ScorePercent: scorePercent,
-            XpBreakdown: xpBreakdown,
-            NewTotalXp: studentXp.TotalXp,
-            NewLevel: studentXp.CurrentLevel,
+            XpBreakdown: new QuizXpBreakdownDto(
+                BaseXp: Paid(XpSourceType.QuizCompleted),
+                DifficultyBonus: 0,
+                PassBonus: Paid(XpSourceType.PassBonus),
+                HighScoreBonus: Paid(XpSourceType.HighScoreBonus),
+                StreakBonus: Paid(XpSourceType.StreakBonus),
+                ImprovementBonus: Paid(XpSourceType.ImprovementBonus),
+                TotalXpEarned: xpEarned,
+                CoinsEarned: coinsEarned,
+                IsPersonalBest: isPersonalBest,
+                PreviousBestScorePercent: prevBest,
+                CurrentScorePercent: scorePercent),
+            NewTotalXp: profile.TotalXp,
+            NewLevel: profile.CurrentLevel,
             LevelName: levelName,
-            NewCoins: studentXp.Coins,
-            LevelUpOccurred: levelUp,
+            NewCoins: profile.Coins,
+            LevelUpOccurred: granted.LevelUp,
             UnlockedBadges: unlockedBadges,
             MasteryUpdates: masteryUpdates
         );
+    }
+
+    /// <summary>Rewards completing every unit of a course (once per course).</summary>
+    public async Task<ChallengeResultDto> AwardCourseCompletionAsync(Guid studentId, Guid courseId, CancellationToken ct = default)
+    {
+        var result = await _ledger.GrantAsync(studentId, new[]
+        {
+            new LedgerEntry(XpSourceType.CourseCompleted, courseId,
+                await _rules.GetIntAsync(GamificationRuleKeys.CourseCompletedXp, ct),
+                await _rules.GetIntAsync(GamificationRuleKeys.CourseCompletedCoins, ct),
+                "Completed a course", $"course-completed:{courseId}")
+        }, ct);
+        await _dbContext.SaveChangesAsync(ct);
+        var unlocked = await _achievements.EvaluateAsync(studentId, ct);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var profile = await _dbContext.StudentXp.AsNoTracking().FirstAsync(s => s.StudentId == studentId, ct);
+        return new ChallengeResultDto(true, 100, result.XpAwarded, result.CoinsAwarded, profile.TotalXp,
+            profile.CurrentLevel, result.LevelUp, unlocked);
+    }
+
+    /// <summary>
+    /// Mastery per (course, topic): questions answered in the course's assessments update the
+    /// student's mastery for that topic (or, without a topic, the assessment).
+    /// </summary>
+    private async Task<List<SkillMasteryDto>> UpdateMasteryAsync(
+        Guid studentId, Guid? courseId,
+        List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)>? outcomes, CancellationToken ct)
+    {
+        var updates = new List<SkillMasteryDto>();
+        if (outcomes == null || outcomes.Count == 0) return updates;
+
+        foreach (var group in outcomes.GroupBy(o => (o.TopicId, TopicName: string.IsNullOrWhiteSpace(o.TopicName) ? "General" : o.TopicName)))
+        {
+            Guid? topicId = group.Key.TopicId.HasValue && await _dbContext.Topics.AnyAsync(t => t.Id == group.Key.TopicId.Value, ct)
+                ? group.Key.TopicId
+                : null;
+            string topicName = group.Key.TopicName;
+
+            var mastery = _dbContext.SkillMasteries.Local.FirstOrDefault(m => m.StudentId == studentId && m.CourseId == courseId
+                    && (topicId != null ? m.TopicId == topicId : m.TopicName == topicName))
+                ?? await _dbContext.SkillMasteries.FirstOrDefaultAsync(m => m.StudentId == studentId && m.CourseId == courseId
+                    && (topicId != null ? m.TopicId == topicId : m.TopicId == null && m.TopicName == topicName), ct);
+            if (mastery == null)
+            {
+                mastery = new SkillMastery
+                {
+                    StudentId = studentId,
+                    CourseId = courseId,
+                    TopicId = topicId,
+                    TopicName = topicName,
+                    SkillName = group.First().SkillName
+                };
+                _dbContext.SkillMasteries.Add(mastery);
+            }
+
+            mastery.TotalAttempts += group.Count();
+            mastery.CorrectAttempts += group.Count(o => o.IsCorrect);
+            mastery.MasteryPercentage = (int)Math.Round((double)mastery.CorrectAttempts / mastery.TotalAttempts * 100);
+            mastery.LastAssessedAt = DateTime.UtcNow;
+
+            updates.Add(new SkillMasteryDto(mastery.TopicId, mastery.TopicName, mastery.SkillName, mastery.MasteryPercentage,
+                mastery.TotalAttempts, mastery.CorrectAttempts, mastery.LastAssessedAt,
+                mastery.MasteryPercentage >= 80 ? "green" : (mastery.MasteryPercentage >= 60 ? "yellow" : "red")));
+        }
+        return updates;
     }
 
     public async Task<StudentGameDashboardDto> GetStudentDashboardAsync(Guid studentId, CancellationToken ct = default)
@@ -425,40 +347,14 @@ public class GamificationService : IGamificationService
         var profile = await GetStudentProfileAsync(studentId, ct);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Fetch or Seed Today's Missions
-        var missions = await _dbContext.StudentDailyMissions
-            .Where(m => m.StudentId == studentId && m.Date == today)
+        // Today's missions start at zero progress; only real LMS activity advances them.
+        var missions = (await EnsureTodayMissionsAsync(studentId, ct))
             .OrderBy(m => m.MissionKey)
             .Select(m => new DailyMissionDto(
-                m.Id,
-                m.MissionKey,
-                m.Title,
-                m.Description,
-                m.CurrentCount,
-                m.TargetCount,
-                m.IsCompleted,
-                m.RewardXp,
-                m.RewardCoins,
-                m.Claimed
-            ))
-            .ToListAsync(ct);
-
-        if (!missions.Any())
-        {
-            var defaultMissions = new List<StudentDailyMission>
-            {
-                new() { StudentId = studentId, Date = today, MissionKey = "LESSON_COMPLETE", Title = "Complete a Lesson", Description = "Progress through any module topic", CurrentCount = 1, TargetCount = 1, IsCompleted = true, RewardXp = 20, RewardCoins = 5 },
-                new() { StudentId = studentId, Date = today, MissionKey = "PRACTICE_5_QUESTIONS", Title = "Practice 5 Questions", Description = "Solve quiz or practice questions", CurrentCount = 5, TargetCount = 5, IsCompleted = true, RewardXp = 15, RewardCoins = 5 },
-                new() { StudentId = studentId, Date = today, MissionKey = "SCORE_70_QUIZ", Title = "Score 70%+ in a Quiz", Description = "Demonstrate solid academic mastery", CurrentCount = 1, TargetCount = 1, IsCompleted = true, RewardXp = 30, RewardCoins = 10 },
-                new() { StudentId = studentId, Date = today, MissionKey = "AI_CHALLENGE", Title = "Complete AI Challenge", Description = "Conquer an adaptive quest", CurrentCount = 1, TargetCount = 1, IsCompleted = true, RewardXp = 50, RewardCoins = 10 }
-            };
-            await _dbContext.StudentDailyMissions.AddRangeAsync(defaultMissions, ct);
-            await _dbContext.SaveChangesAsync(ct);
-
-            missions = defaultMissions.Select(m => new DailyMissionDto(
                 m.Id, m.MissionKey, m.Title, m.Description, m.CurrentCount, m.TargetCount, m.IsCompleted, m.RewardXp, m.RewardCoins, m.Claimed
-            )).ToList();
-        }
+            ))
+            .ToList();
+        await _dbContext.SaveChangesAsync(ct);
 
         bool allCompleted = missions.All(m => m.IsCompleted);
         bool grandClaimed = missions.All(m => m.Claimed);
@@ -478,23 +374,29 @@ public class GamificationService : IGamificationService
                 TargetTopic: masteryMatrix.WeakestSkill.TopicName,
                 Reason: $"Lowest topic mastery ({masteryMatrix.WeakestSkill.MasteryPercentage}%) identified in curriculum telemetry.",
                 EstimatedTimeMinutes: 10,
-                RewardXp: 75,
+                RewardXp: 0,
                 LinkedScopeId: masteryMatrix.WeakestSkill.TopicId,
                 LinkedScopeType: "Topic"
             );
         }
         else
         {
+            // No weak skill on record: point the student at their next quiz without
+            // inventing a target topic, module or reward.
             nextAction = new NextBestActionDto(
-                ActionType: "TAKE_BOSS_CHALLENGE",
-                Title: "👹 Relational Modeling Boss Challenge",
-                Description: "You have achieved >80% mastery across foundational topics! Prove your architecture skills in the Module 1 Boss Challenge to unlock Module 2.",
-                TargetTopic: "Relational Modeling & Indexing",
-                Reason: "Module topics mastered above 80% threshold.",
-                EstimatedTimeMinutes: 20,
-                RewardXp: 200,
-                LinkedScopeId: Guid.Parse("55555555-5555-5555-5555-555555555551"),
-                LinkedScopeType: "Module"
+                ActionType: "TAKE_QUIZ",
+                Title: "Keep learning",
+                Description: masteryMatrix.Skills.Any()
+                    ? "Your recorded skills are on track. Take your next course quiz to keep progressing."
+                    : "Take a quiz in one of your courses to start tracking your skill mastery.",
+                TargetTopic: null,
+                Reason: masteryMatrix.Skills.Any()
+                    ? "No recorded skill is below the remediation threshold."
+                    : "No skill mastery has been recorded yet.",
+                EstimatedTimeMinutes: 0,
+                RewardXp: 0,
+                LinkedScopeId: null,
+                LinkedScopeType: null
             );
         }
 
@@ -515,15 +417,15 @@ public class GamificationService : IGamificationService
 
         // Fetch Weekly Leaderboard
         var leaderboard = await GetWeeklyLeaderboardAsync(10, ct);
+        // 0 means "not in the top entries" rather than a fabricated position.
         int studentRank = leaderboard.FindIndex(e => e.StudentId == studentId) + 1;
-        if (studentRank == 0) studentRank = 3;
 
         return new StudentGameDashboardDto(
             Profile: profile,
             DailyMissions: missions,
             CanClaimGrandReward: canClaimGrand,
-            GrandRewardXp: 150,
-            GrandRewardCoins: 30,
+            GrandRewardXp: await _rules.GetIntAsync(GamificationRuleKeys.MissionGrandXp, ct),
+            GrandRewardCoins: await _rules.GetIntAsync(GamificationRuleKeys.MissionGrandCoins, ct),
             GrandRewardClaimed: grandClaimed,
             MasteryMatrix: masteryMatrix,
             NextBestAction: nextAction,
@@ -550,21 +452,9 @@ public class GamificationService : IGamificationService
             ))
             .ToListAsync(ct);
 
-        if (!skills.Any())
-        {
-            // Return rich seeded starter competencies
-            skills = new List<SkillMasteryDto>
-            {
-                new(null, "Functions & Scope", "Python Functions", 90, 20, 18, DateTime.UtcNow, "green"),
-                new(null, "Loops & Iterations", "Flow Control", 82, 22, 18, DateTime.UtcNow, "green"),
-                new(null, "Clean Architecture & DIP", "System Boundaries", 72, 18, 13, DateTime.UtcNow, "yellow"),
-                new(null, "Recursion & Trees", "Recursive Logic", 43, 14, 6, DateTime.UtcNow, "red")
-            };
-        }
-
         var weakest = skills.OrderBy(s => s.MasteryPercentage).FirstOrDefault();
         var strongest = skills.OrderByDescending(s => s.MasteryPercentage).FirstOrDefault();
-        double avg = skills.Any() ? skills.Average(s => s.MasteryPercentage) : 70.0;
+        double avg = skills.Any() ? skills.Average(s => s.MasteryPercentage) : 0.0;
 
         return new TopicMasteryMatrixDto(
             StudentId: studentId,
@@ -597,36 +487,22 @@ public class GamificationService : IGamificationService
             m.Claimed = true;
         }
 
-        int xpBonus = 150;
-        int coinsBonus = 30;
-
-        await _dbContext.XpTransactions.AddAsync(new XpTransaction
+        var result = await _ledger.GrantAsync(studentId, new[]
         {
-            StudentId = studentId,
-            SourceType = XpSourceType.DailyMissionGrandBonus,
-            SourceId = Guid.NewGuid(),
-            XpAmount = xpBonus,
-            Description = "Completed All Daily Learning Missions"
+            new LedgerEntry(XpSourceType.DailyMissionGrandBonus, studentId,
+                await _rules.GetIntAsync(GamificationRuleKeys.MissionGrandXp, ct),
+                await _rules.GetIntAsync(GamificationRuleKeys.MissionGrandCoins, ct),
+                "Completed all daily learning missions", $"mission-grand:{today:yyyy-MM-dd}")
         }, ct);
-
-        var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
-        if (studentXp != null)
-        {
-            studentXp.TotalXp += xpBonus;
-            studentXp.Coins += coinsBonus;
-            studentXp.CurrentLevel = CalculateLevel(studentXp.TotalXp);
-            studentXp.UpdatedAt = DateTime.UtcNow;
-        }
-
         await _dbContext.SaveChangesAsync(ct);
 
         return new ClaimDailyGrandMissionResponseDto(
             Success: true,
-            Message: "🎉 Daily Mission Grand Reward Claimed! +150 XP & +30 EduCoins.",
-            XpAwarded: xpBonus,
-            CoinsAwarded: coinsBonus,
-            NewTotalXp: studentXp?.TotalXp ?? xpBonus,
-            NewCoins: studentXp?.Coins ?? coinsBonus
+            Message: $"Daily mission reward claimed: +{result.XpAwarded} XP and +{result.CoinsAwarded} coins.",
+            XpAwarded: result.XpAwarded,
+            CoinsAwarded: result.CoinsAwarded,
+            NewTotalXp: result.NewTotalXp,
+            NewCoins: result.NewCoins
         );
     }
 
@@ -636,9 +512,9 @@ public class GamificationService : IGamificationService
         var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
         var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
 
-        int totalXp = studentXp?.TotalXp ?? 6420;
+        int totalXp = studentXp?.TotalXp ?? 0;
         int currentLevel = studentXp?.CurrentLevel ?? CalculateLevel(totalXp);
-        int coins = studentXp?.Coins ?? 320;
+        int coins = studentXp?.Coins ?? 0;
 
         var (minXp, maxXp, levelName) = GetLevelBounds(currentLevel);
 
@@ -662,18 +538,7 @@ public class GamificationService : IGamificationService
             ))
             .ToListAsync(ct);
 
-        if (!studentBadges.Any())
-        {
-            studentBadges = new List<BadgeDto>
-            {
-                new("QUIZ_MASTER", "Quiz Master", "Scored 90%+ in 5 Quizzes", "🏆", BadgeCategory.Assessment, 100, true, DateTime.UtcNow.AddDays(-2)),
-                new("FOURTEEN_DAY_STREAK", "14 Day Streak", "Learned 14 consecutive days", "🔥", BadgeCategory.Consistency, 150, true, DateTime.UtcNow.AddDays(-1)),
-                new("BOSS_SLAYER", "Boss Slayer", "Conquered Module Boss Challenge", "⚔️", BadgeCategory.Challenge, 200, true, DateTime.UtcNow.AddDays(-4)),
-                new("RECURSION_APPRENTICE", "Comeback Kid", "Improved topic mastery by +30%", "📈", BadgeCategory.Improvement, 80, true, DateTime.UtcNow.AddDays(-6))
-            };
-        }
-
-        int badgesCount = studentBadges.Count;
+        int badgesCount = await _dbContext.StudentBadges.CountAsync(sb => sb.StudentId == studentId, ct);
 
         var activeMissions = await _dbContext.Challenges
             .Where(c => c.IsActive && c.Type == ChallengeType.DailyMission)
@@ -694,7 +559,7 @@ public class GamificationService : IGamificationService
 
         return new GamificationProfileDto(
             StudentId: studentId,
-            StudentName: user?.FullName ?? "Alex Rivera",
+            StudentName: user?.FullName ?? string.Empty,
             TotalXp: totalXp,
             CurrentLevel: currentLevel,
             LevelName: levelName,
@@ -703,9 +568,9 @@ public class GamificationService : IGamificationService
             XpProgressInCurrentLevel: Math.Max(0, xpProgressInCurrentLevel),
             XpRequiredForNextLevel: Math.Max(1, xpRequiredForNextLevel),
             Coins: coins,
-            CurrentStreak: streak?.CurrentStreak ?? 14,
-            LongestStreak: streak?.LongestStreak ?? 14,
-            FreezeTokensAvailable: streak?.FreezeTokensAvailable ?? 2,
+            CurrentStreak: streak?.CurrentStreak ?? 0,
+            LongestStreak: streak?.LongestStreak ?? 0,
+            FreezeTokensAvailable: streak?.FreezeTokensAvailable ?? new StudentStreak().FreezeTokensAvailable,
             BadgesCount: badgesCount,
             RecentBadges: studentBadges,
             ActiveDailyMissions: activeMissions
@@ -726,18 +591,6 @@ public class GamificationService : IGamificationService
                 x.CreatedAt
             ))
             .ToListAsync(ct);
-
-        if (!list.Any())
-        {
-            list = new List<XpTransactionDto>
-            {
-                new(Guid.NewGuid(), XpSourceType.DailyMissionGrandBonus, 150, "Completed All Daily Learning Missions", DateTime.UtcNow.AddHours(-2)),
-                new(Guid.NewGuid(), XpSourceType.QuizCompleted, 50, "Completed Topic Quiz: PostgreSQL B-Tree Indexes", DateTime.UtcNow.AddHours(-4)),
-                new(Guid.NewGuid(), XpSourceType.ImprovementBonus, 30, "Personal Best Improvement (+25%) Bonus", DateTime.UtcNow.AddHours(-4)),
-                new(Guid.NewGuid(), XpSourceType.LessonCompleted, 20, "Completed Lesson: Composite Indexing", DateTime.UtcNow.AddHours(-5)),
-                new(Guid.NewGuid(), XpSourceType.StreakBonus, 30, "7-Day Streak Milestone Bonus", DateTime.UtcNow.AddDays(-1))
-            };
-        }
 
         return list;
     }
@@ -797,7 +650,7 @@ public class GamificationService : IGamificationService
     public async Task<List<LeaderboardEntryDto>> GetCourseLeaderboardAsync(Guid courseId, int top = 20, CancellationToken ct = default)
     {
         var enrolledStudentIds = await _dbContext.Enrollments
-            .Where(e => e.CourseId == courseId && e.Status == EnrollmentStatus.Active)
+            .Where(e => e.CourseId == courseId && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
             .Select(e => e.StudentId)
             .ToListAsync(ct);
 
@@ -923,199 +776,132 @@ public class GamificationService : IGamificationService
         }
     }
 
-    private async Task<List<string>> EvaluateBadgesInternalAsync(Guid studentId, bool isFirstLessonCompletion, CancellationToken ct)
+    private const string MissionLesson = "LESSON_COMPLETE";
+    private const string MissionPractice = "PRACTICE_5_QUESTIONS";
+    private const string MissionScore = "SCORE_70_QUIZ";
+    private const string MissionChallenge = "AI_CHALLENGE";
+
+    /// <summary>
+    /// Returns today's mission rows for the student, creating them (tracked, unsaved) with
+    /// zero progress and rule-defined rewards when they don't exist yet.
+    /// </summary>
+    private async Task<List<StudentDailyMission>> EnsureTodayMissionsAsync(Guid studentId, CancellationToken ct)
     {
-        var unlocked = new List<string>();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var missions = await _dbContext.StudentDailyMissions
+            .Where(m => m.StudentId == studentId && m.Date == today)
+            .ToListAsync(ct);
 
-        if (isFirstLessonCompletion && await TryUnlockBadgeAsync(studentId, "FIRST_LESSON", ct))
+        var pending = _dbContext.StudentDailyMissions.Local
+            .Where(m => m.StudentId == studentId && m.Date == today && !missions.Contains(m))
+            .ToList();
+        missions.AddRange(pending);
+
+        if (missions.Count > 0)
         {
-            unlocked.Add("FIRST_LESSON");
+            return missions;
         }
 
-        var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
-        if (streak != null && streak.CurrentStreak >= 7 && await TryUnlockBadgeAsync(studentId, "SEVEN_DAY_STREAK", ct))
+        int scoreThreshold = await _rules.GetIntAsync(GamificationRuleKeys.MissionScoreThreshold, ct);
+        int practiceTarget = Math.Max(1, await _rules.GetIntAsync(GamificationRuleKeys.MissionPracticeTarget, ct));
+        missions = new List<StudentDailyMission>
         {
-            unlocked.Add("SEVEN_DAY_STREAK");
-        }
-
-        if (streak != null && streak.CurrentStreak >= 14 && await TryUnlockBadgeAsync(studentId, "FOURTEEN_DAY_STREAK", ct))
-        {
-            unlocked.Add("FOURTEEN_DAY_STREAK");
-        }
-
-        return unlocked;
+            new() { StudentId = studentId, Date = today, MissionKey = MissionLesson, Title = "Complete a Lesson", Description = "Progress through any module topic", TargetCount = 1, RewardXp = await _rules.GetIntAsync(GamificationRuleKeys.MissionLessonXp, ct), RewardCoins = 0 },
+            new() { StudentId = studentId, Date = today, MissionKey = MissionPractice, Title = $"Practice {practiceTarget} Questions", Description = "Solve quiz or practice questions", TargetCount = practiceTarget, RewardXp = await _rules.GetIntAsync(GamificationRuleKeys.MissionPracticeXp, ct), RewardCoins = 0 },
+            new() { StudentId = studentId, Date = today, MissionKey = MissionScore, Title = $"Score {scoreThreshold}%+ in a Quiz", Description = "Demonstrate solid academic mastery", TargetCount = 1, RewardXp = await _rules.GetIntAsync(GamificationRuleKeys.MissionScoreXp, ct), RewardCoins = 0 },
+            new() { StudentId = studentId, Date = today, MissionKey = MissionChallenge, Title = "Complete a Challenge", Description = "Conquer a course challenge", TargetCount = 1, RewardXp = await _rules.GetIntAsync(GamificationRuleKeys.MissionChallengeXp, ct), RewardCoins = 0 }
+        };
+        await _dbContext.StudentDailyMissions.AddRangeAsync(missions, ct);
+        return missions;
     }
 
-    private async Task<bool> TryUnlockBadgeAsync(Guid studentId, string badgeId, CancellationToken ct)
+    /// <summary>Advances a mission; its reward is paid once, when it becomes complete.</summary>
+    private async Task AdvanceMissionAsync(Guid studentId, string missionKey, int increment, CancellationToken ct)
     {
-        bool alreadyUnlocked = await _dbContext.StudentBadges
-            .AnyAsync(sb => sb.StudentId == studentId && sb.BadgeId == badgeId, ct);
+        if (increment <= 0) return;
 
-        if (alreadyUnlocked) return false;
+        var mission = (await EnsureTodayMissionsAsync(studentId, ct)).FirstOrDefault(m => m.MissionKey == missionKey);
+        if (mission == null || mission.IsCompleted) return;
 
-        // Ensure badge definition exists in Badges table before referencing it
-        var badge = await _dbContext.Badges.FirstOrDefaultAsync(b => b.Id == badgeId, ct);
-        if (badge == null)
+        mission.CurrentCount = (int)Math.Min(mission.TargetCount, (long)mission.CurrentCount + increment);
+        mission.IsCompleted = mission.CurrentCount >= mission.TargetCount;
+        if (mission.IsCompleted && mission.RewardXp > 0)
         {
-            badge = new Badge
+            await _ledger.GrantAsync(studentId, new[]
             {
-                Id = badgeId,
-                Title = badgeId switch
-                {
-                    "PERFECT_SCORE" => "Perfect Score",
-                    "QUIZ_MASTER" => "Quiz Master",
-                    "BOSS_SLAYER" => "Boss Slayer",
-                    "COMEBACK_KID" => "Comeback Kid",
-                    "FIRST_LESSON" => "First Step",
-                    "SEVEN_DAY_STREAK" => "7-Day Streak",
-                    "FOURTEEN_DAY_STREAK" => "14-Day Streak",
-                    _ => badgeId.Replace("_", " ")
-                },
-                Description = badgeId switch
-                {
-                    "PERFECT_SCORE" => "Scored 100% on an authoritative assessment",
-                    "QUIZ_MASTER" => "Scored 90%+ in quizzes",
-                    "BOSS_SLAYER" => "Conquered a module challenge encounter",
-                    "COMEBACK_KID" => "Improved topic mastery significantly",
-                    "FIRST_LESSON" => "Completed your very first lesson",
-                    "SEVEN_DAY_STREAK" => "Maintained a continuous 7-day study streak",
-                    "FOURTEEN_DAY_STREAK" => "Maintained a continuous 14-day study streak",
-                    _ => $"Unlocked badge {badgeId}"
-                },
-                IconUrl = badgeId switch
-                {
-                    "PERFECT_SCORE" => "🎯",
-                    "QUIZ_MASTER" => "🏆",
-                    "BOSS_SLAYER" => "⚔️",
-                    "COMEBACK_KID" => "📈",
-                    "FIRST_LESSON" => "🌱",
-                    "SEVEN_DAY_STREAK" => "🔥",
-                    "FOURTEEN_DAY_STREAK" => "⚡",
-                    _ => "🏅"
-                },
-                Category = badgeId.Contains("STREAK") ? BadgeCategory.Streak : BadgeCategory.Assessment,
-                XpBonus = 100,
-                CreatedAt = DateTime.UtcNow
-            };
-            await _dbContext.Badges.AddAsync(badge, ct);
-            await _dbContext.SaveChangesAsync(ct);
+                new LedgerEntry(XpSourceType.DailyMissionCompleted, studentId, mission.RewardXp, mission.RewardCoins,
+                    $"Daily mission: {mission.Title}", $"mission:{mission.Date:yyyy-MM-dd}:{mission.MissionKey}")
+            }, ct);
         }
-
-        await _dbContext.StudentBadges.AddAsync(new StudentBadge
-        {
-            StudentId = studentId,
-            BadgeId = badgeId,
-            UnlockedAt = DateTime.UtcNow
-        }, ct);
-
-        return true;
     }
 
-    private static double _xpMultiplier = 1.0;
+    public async Task<double> GetXpMultiplierAsync(CancellationToken ct = default)
+        => (double)await _rules.GetAsync(GamificationRuleKeys.XpMultiplier, ct);
 
-    public double GetXpMultiplier() => _xpMultiplier;
-
-    public void SetXpMultiplier(double multiplier)
-    {
-        _xpMultiplier = Math.Clamp(multiplier, 1.0, 5.0);
-    }
-
+    /// <summary>
+    /// Credits a focus session to the caller. The duration is client-reported, so it is clamped
+    /// to the configured range and only a configured number of sessions per day earn XP.
+    /// </summary>
     public async Task<FocusSessionResponseDto> AwardFocusSessionXpAsync(FocusSessionRequestDto request, CancellationToken ct = default)
     {
-        var student = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == request.StudentId, ct);
-        if (student == null)
+        if (!await _dbContext.Users.AnyAsync(u => u.Id == request.StudentId, ct))
         {
             return new FocusSessionResponseDto(false, 0, 0, 0, 0, "Student not found", string.Empty);
         }
 
-        int baseMinutes = Math.Max(5, request.DurationMinutes);
-        int baseEarned = (int)Math.Round(baseMinutes * 1.5);
-        if (baseMinutes >= 45) baseEarned += 20;
-        else if (baseMinutes >= 25) baseEarned += 10;
+        int minMinutes = await _rules.GetIntAsync(GamificationRuleKeys.FocusMinMinutes, ct);
+        int maxMinutes = await _rules.GetIntAsync(GamificationRuleKeys.FocusMaxMinutes, ct);
+        int minutes = Math.Clamp(request.DurationMinutes, minMinutes, Math.Max(minMinutes, maxMinutes));
 
-        int finalXp = (int)Math.Round(baseEarned * _xpMultiplier);
-        int coinsEarned = Math.Max(5, baseMinutes / 3);
+        var todayStart = DateTime.UtcNow.Date;
+        int sessionsToday = await _dbContext.XpTransactions.CountAsync(x => x.StudentId == request.StudentId
+            && x.SourceType == XpSourceType.FocusSession && x.CreatedAt >= todayStart, ct);
+        int dailyLimit = await _rules.GetIntAsync(GamificationRuleKeys.FocusDailySessionLimit, ct);
 
-        var txn = new XpTransaction
+        int xpEarned = 0;
+        int coinsEarned = 0;
+        if (sessionsToday < dailyLimit)
+        {
+            decimal perMinute = await _rules.GetAsync(GamificationRuleKeys.FocusXpPerMinute, ct);
+            int baseXp = (int)Math.Round(minutes * perMinute);
+            if (minutes >= await _rules.GetIntAsync(GamificationRuleKeys.FocusLongThreshold, ct))
+                baseXp += await _rules.GetIntAsync(GamificationRuleKeys.FocusLongBonus, ct);
+            else if (minutes >= await _rules.GetIntAsync(GamificationRuleKeys.FocusMediumThreshold, ct))
+                baseXp += await _rules.GetIntAsync(GamificationRuleKeys.FocusMediumBonus, ct);
+
+            int divisor = Math.Max(1, await _rules.GetIntAsync(GamificationRuleKeys.ActivityCoinsPerXpDivisor, ct));
+            var sessionId = Guid.NewGuid();
+            var result = await _ledger.GrantAsync(request.StudentId, new[]
+            {
+                new LedgerEntry(XpSourceType.FocusSession, sessionId, baseXp, Math.Max(1, baseXp / divisor),
+                    $"Focus session ({minutes}m): {request.TopicOrTask}", $"focus:{sessionId}")
+            }, ct);
+            xpEarned = result.Written.Where(e => e.SourceType == XpSourceType.FocusSession).Sum(e => e.Xp);
+            coinsEarned = result.CoinsAwarded;
+        }
+
+        await UpdateStreakInternalAsync(request.StudentId, XpSourceType.FocusSession, ct);
+        _dbContext.StreakHistories.Add(new StreakHistory
         {
             StudentId = request.StudentId,
-            SourceType = XpSourceType.FocusSession,
-            SourceId = Guid.NewGuid(),
-            XpAmount = finalXp,
-            Description = $"Deep Focus Sprint ({baseMinutes}m): {request.TopicOrTask}"
-        };
-        await _dbContext.XpTransactions.AddAsync(txn, ct);
-
-        var studentXp = await _dbContext.StudentXp.FirstOrDefaultAsync(x => x.StudentId == request.StudentId, ct);
-        if (studentXp == null)
-        {
-            studentXp = new StudentXp
-            {
-                StudentId = request.StudentId,
-                TotalXp = finalXp,
-                CurrentLevel = CalculateLevel(finalXp),
-                Coins = coinsEarned,
-                UpdatedAt = DateTime.UtcNow
-            };
-            await _dbContext.StudentXp.AddAsync(studentXp, ct);
-        }
-        else
-        {
-            studentXp.TotalXp += finalXp;
-            studentXp.Coins += coinsEarned;
-            studentXp.CurrentLevel = CalculateLevel(studentXp.TotalXp);
-            studentXp.UpdatedAt = DateTime.UtcNow;
-        }
-
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var streak = await _dbContext.StudentStreaks.FirstOrDefaultAsync(s => s.StudentId == request.StudentId, ct);
-        if (streak == null)
-        {
-            streak = new StudentStreak
-            {
-                StudentId = request.StudentId,
-                CurrentStreak = 1,
-                LongestStreak = 1,
-                LastActivityDate = today,
-                FreezeTokensAvailable = 2,
-                UpdatedAt = DateTime.UtcNow
-            };
-            await _dbContext.StudentStreaks.AddAsync(streak, ct);
-        }
-        else if (streak.LastActivityDate != today)
-        {
-            if (streak.LastActivityDate.HasValue && streak.LastActivityDate.Value == today.AddDays(-1))
-            {
-                streak.CurrentStreak += 1;
-                if (streak.CurrentStreak > streak.LongestStreak)
-                    streak.LongestStreak = streak.CurrentStreak;
-            }
-            else
-            {
-                streak.CurrentStreak = 1;
-            }
-            streak.LastActivityDate = today;
-            streak.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _dbContext.StreakHistories.AddAsync(new StreakHistory
-        {
-            StudentId = request.StudentId,
-            ActivityDate = today,
+            ActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
             ActivityType = "DeepFocusSession"
-        }, ct);
-
+        });
         await _dbContext.SaveChangesAsync(ct);
 
-        string artifactName = baseMinutes >= 45 ? "💎 Ancient Focus Crystal" : (baseMinutes >= 25 ? "🌳 Golden Oak Sapling" : "🌱 Emerald Sprout");
+        var profile = await _dbContext.StudentXp.AsNoTracking().FirstOrDefaultAsync(s => s.StudentId == request.StudentId, ct);
+        var streak = await _dbContext.StudentStreaks.AsNoTracking().FirstOrDefaultAsync(s => s.StudentId == request.StudentId, ct);
+        string artifactName = minutes >= 45 ? "💎 Ancient Focus Crystal" : (minutes >= 25 ? "🌳 Golden Oak Sapling" : "🌱 Emerald Sprout");
 
         return new FocusSessionResponseDto(
             Success: true,
-            XpAwarded: finalXp,
+            XpAwarded: xpEarned,
             CoinsAwarded: coinsEarned,
-            NewTotalXp: studentXp.TotalXp,
-            NewStreak: streak.CurrentStreak,
-            Message: $"Focus Sprint completed! +{finalXp} XP and +{coinsEarned} Coins awarded.",
+            NewTotalXp: profile?.TotalXp ?? 0,
+            NewStreak: streak?.CurrentStreak ?? 0,
+            Message: xpEarned > 0
+                ? $"Focus session completed! +{xpEarned} XP and +{coinsEarned} Coins awarded."
+                : $"Focus session recorded. The daily limit of {dailyLimit} rewarded sessions has been reached.",
             FocusArtifactAwarded: artifactName
         );
     }

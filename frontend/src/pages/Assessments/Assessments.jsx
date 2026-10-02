@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
+import { toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
 
 export default function Assessments({ currentUser }) {
@@ -49,8 +50,8 @@ export default function Assessments({ currentUser }) {
 
   // Form State
   const [quizTitle, setQuizTitle] = useState('');
-  const [quizCourseId, setQuizCourseId] = useState('44444444-4444-4444-4444-444444444444');
-  const [quizCourseCode, setQuizCourseCode] = useState('SE3090');
+  const [quizCourseId, setQuizCourseId] = useState('');
+  const [quizCourseCode, setQuizCourseCode] = useState('');
   const [quizTime, setQuizTime] = useState(20);
   const [quizXp, setQuizXp] = useState(60);
   const [quizCoins, setQuizCoins] = useState(25);
@@ -95,7 +96,7 @@ export default function Assessments({ currentUser }) {
   // Scope & PDF Grounding State
   const [coursesList, setCoursesList] = useState([]);
   const [modulesList, setModulesList] = useState([]);
-  const [aiScopeType, setAiScopeType] = useState('Module'); // 'Course' | 'Module' | 'Topic'
+  const [aiScopeType, setAiScopeType] = useState('Module'); // 'Course' | 'Module'
   const [aiSelectedModuleId, setAiSelectedModuleId] = useState('');
   const [aiSelectedPdfUrl, setAiSelectedPdfUrl] = useState('');
   const [aiQuestionTypePref, setAiQuestionTypePref] = useState('MIXED'); // 'MIXED' | 'MULTIPLE_CHOICE' | 'MULTIPLE_SELECT' | 'FILL_IN_THE_BLANK' | 'MATCHING'
@@ -167,11 +168,12 @@ export default function Assessments({ currentUser }) {
     const cId = targetCourseId || quizCourseId || 'ALL';
     setIsLoading(true);
     try {
-      const fetchId = cId === 'ALL' ? '44444444-4444-4444-4444-444444444444' : cId;
-      const [apiQuizzes, courses] = await Promise.all([
-        quizService.getQuizzes(fetchId).catch(() => []),
-        courseService.getCourses().catch(() => [])
-      ]);
+      // 'ALL' means every course the caller can see; the API scopes each list to the caller.
+      const courses = await courseService.getCourses().catch(() => []);
+      const courseIds = cId === 'ALL' ? (courses || []).map(c => c.id) : [cId];
+      const apiQuizzes = (await Promise.all(
+        courseIds.filter(Boolean).map(id => quizService.getQuizzes(id).catch(() => []))
+      )).flat();
 
       const localQuizzes = getGeneratedQuizzes(cId);
 
@@ -200,7 +202,7 @@ export default function Assessments({ currentUser }) {
           const activeCourse = courses.find(c => c.id === cId) || courses[0];
           if (activeCourse && activeCourse.id !== quizCourseId) {
             setQuizCourseId(activeCourse.id);
-            setQuizCourseCode(activeCourse.courseCode || activeCourse.code || 'SE3090');
+            setQuizCourseCode(activeCourse.courseCode || activeCourse.code || '');
           }
         }
       }
@@ -380,8 +382,10 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: quizPass,
         xpReward: targetXp,
         coinReward: targetCoins,
-        scopeType: aiScopeType,
-        scopeId: aiSelectedModuleId || quizCourseId,
+        // Every assessment belongs to a module; a course-scope quiz is still placed in one.
+        scopeType: toScopeTypeValue(aiScopeType),
+        scopeId: aiScopeType === 'Course' ? quizCourseId : aiSelectedModuleId,
+        moduleId: aiSelectedModuleId,
         pdfUrl: pdfUrl,
         slideUrl: pdfUrl,
         moduleTitle: moduleTitle,
@@ -511,8 +515,13 @@ export default function Assessments({ currentUser }) {
       return;
     }
 
-    const selectedModId = manualScopeType === 'Module' ? (manualModuleId || modulesList[0]?.id || quizCourseId) : quizCourseId;
+    const moduleId = manualModuleId || modulesList[0]?.id;
+    if (!moduleId) {
+      alert('Select the module this assessment belongs to.');
+      return;
+    }
     const scopeTypeName = manualScopeType || 'Module';
+    const selectedModId = scopeTypeName === 'Module' ? moduleId : quizCourseId;
 
     const createdQuiz = {
       id: `q-${Date.now()}`,
@@ -547,11 +556,12 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: quizPass,
         xpReward: quizXp,
         coinReward: quizCoins,
-        scopeType: scopeTypeName,
+        scopeType: toScopeTypeValue(scopeTypeName),
         scopeId: selectedModId,
+        moduleId,
         questions: questions.map((q, idx) => ({
           prompt: q.prompt,
-          type: 0,
+          type: toQuestionTypeValue(q.type || 'MultipleChoice'),
           options: q.options,
           correctAnswer: q.correctAnswer,
           explanation: q.explanation,
@@ -630,11 +640,11 @@ export default function Assessments({ currentUser }) {
         passingScorePercent: Number(editPass),
         xpReward: Number(editXp),
         coinReward: Number(editCoins),
-        scopeType: editScopeType,
+        scopeType: toScopeTypeValue(editScopeType),
         scopeId: targetScopeId,
         questions: editQuestions.map((q, idx) => ({
           prompt: q.prompt,
-          type: 0,
+          type: toQuestionTypeValue(q.type || 'MultipleChoice'),
           options: q.options,
           correctAnswer: q.correctAnswer,
           explanation: q.explanation,
@@ -678,22 +688,19 @@ export default function Assessments({ currentUser }) {
   };
 
   const handleStartQuiz = async (quiz) => {
-    let fullQuiz = quiz;
-    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
-      const localMatches = getGeneratedQuizzes(quiz.courseId || quizCourseId);
-      const foundLocal = localMatches.find(q => q.id === quiz.id || q.title === quiz.title);
-      if (foundLocal && foundLocal.questions && foundLocal.questions.length > 0) {
-        fullQuiz = { ...fullQuiz, ...foundLocal };
-      } else {
-        try {
-          const detail = await quizService.getQuizById(quiz.id);
-          if (detail && detail.questions && detail.questions.length > 0) {
-            fullQuiz = detail;
-          }
-        } catch (err) {
-          console.warn('Could not load quiz details:', err);
-        }
-      }
+    let fullQuiz;
+    try {
+      const attempt = await quizService.startQuiz(quiz.id);
+      fullQuiz = {
+        ...quiz,
+        id: attempt.quizId,
+        attemptId: attempt.attemptId,
+        title: attempt.quizTitle,
+        questions: attempt.questions || []
+      };
+    } catch (err) {
+      alert(err.friendlyMessage || 'This quiz cannot be started right now.');
+      return;
     }
     setRunningQuiz(fullQuiz);
     setRunnerStep(0);
@@ -720,46 +727,6 @@ export default function Assessments({ currentUser }) {
         }
       }
     }
-    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
-      fullQuiz = {
-        ...fullQuiz,
-        questions: [
-          {
-            prompt: `What is the primary architectural invariant covered in ${fullQuiz.title || 'this assessment'}?`,
-            options: [
-              'Enforce strict domain encapsulation via bounded contexts',
-              'Expose internal relational tables over public unauthenticated endpoints',
-              'Bypass validation guards during runtime execution',
-              'Maintain unsynchronized global mutable dictionaries across threads'
-            ],
-            correctAnswer: 'Enforce strict domain encapsulation via bounded contexts',
-            explanation: 'Clean Architecture mandates bounded contexts and explicit contract interfaces for domain boundary integrity.'
-          },
-          {
-            prompt: 'Which strategy guarantees linearizable state machine replication under network partitions?',
-            options: [
-              'Raft / Paxos Leader Quorum Consensus',
-              'Asynchronous Fire-and-Forget Message Queuing',
-              'Eventual Gossip Protocol Synchronization',
-              'Unsynchronized Local Cache Mutation'
-            ],
-            correctAnswer: 'Raft / Paxos Leader Quorum Consensus',
-            explanation: 'Quorum consensus algorithms guarantee strict linearizability across non-faulty state machine replicas.'
-          },
-          {
-            prompt: 'What mechanism prevents deadlock condition during multi-resource transactional updates?',
-            options: [
-              'Strict Lock Acquisition Ordering or Two-Phase Locking (2PL)',
-              'Ignoring Lock Contention Timeouts',
-              'Randomizing Resource Allocation without Invariants',
-              'Executing all operations in non-isolated parallel threads'
-            ],
-            correctAnswer: 'Strict Lock Acquisition Ordering or Two-Phase Locking (2PL)',
-            explanation: 'Two-Phase Locking combined with deterministic lock acquisition hierarchy prevents wait-for graph deadlocks.'
-          }
-        ]
-      };
-    }
     setInspectingQuiz(fullQuiz);
   };
 
@@ -769,47 +736,40 @@ export default function Assessments({ currentUser }) {
     try {
       const data = await quizService.getQuizSubmissions(quiz.id);
       setSubmissionsData(data);
-    } catch {
-      // Fallback demonstration data if offline
-      setSubmissionsData({
-        quizId: quiz.id,
-        quizTitle: quiz.title,
-        totalSubmissions: 2,
-        averagePercentage: 85.0,
-        passCount: 2,
-        submissions: [
-          {
-            submissionId: 'sub-101',
-            studentName: 'Alex Mercer (Enrolled Student)',
-            studentEmail: 'alex.mercer@eduflow.edu',
-            scoreObtained: 90,
-            maxScore: 100,
-            percentageScore: 90,
-            passed: true,
-            submittedAt: '2026-09-13T12:30:00Z',
-            instructorFeedback: 'Excellent grasp of outbox event processing pattern.',
-            answers: [
-              { prompt: 'What is the primary benefit of Transactional Outbox pattern?', selectedAnswer: 'Guarantees atomic event dispatch', correctAnswer: 'Guarantees atomic event dispatch', isCorrect: true, pointsAwarded: 10, explanation: 'Transactional Outbox pattern guarantees event dispatch consistency.' }
-            ]
-          },
-          {
-            submissionId: 'sub-102',
-            studentName: 'Samantha Reed (Enrolled Student)',
-            studentEmail: 'samantha.reed@eduflow.edu',
-            scoreObtained: 80,
-            maxScore: 100,
-            percentageScore: 80,
-            passed: true,
-            submittedAt: '2026-09-13T11:15:00Z',
-            instructorFeedback: '',
-            answers: [
-              { prompt: 'Select all features supported by CQRS.', selectedAnswer: 'Read/Write separation', correctAnswer: 'Read/Write separation, Independent scaling', isCorrect: false, pointsAwarded: 5, explanation: 'CQRS decouples read projections from write commands.' }
-            ]
-          }
-        ]
-      });
+    } catch (err) {
+      setSubmissionsData(null);
+      alert(err.friendlyMessage || 'Submissions could not be loaded.');
     } finally {
       setIsLoadingSubmissions(false);
+    }
+  };
+
+  const [markInput, setMarkInput] = useState({});
+  const [markingKey, setMarkingKey] = useState(null);
+
+  // Marks one answer; an answer that already has a mark can only be changed with a reason.
+  const handleMarkAnswer = async (sub, ans) => {
+    const key = `${sub.submissionId}:${ans.questionId}`;
+    const raw = markInput[key];
+    const awardedMarks = Number(raw);
+    if (raw === undefined || raw === '' || !Number.isInteger(awardedMarks) || awardedMarks < 0 || awardedMarks > ans.maxMarks) {
+      alert(`Enter whole marks between 0 and ${ans.maxMarks}.`);
+      return;
+    }
+    let reason;
+    if (ans.evaluationStatus === 'Evaluated') {
+      reason = window.prompt('This answer already has a mark. Why are you changing it?');
+      if (!reason || !reason.trim()) return;
+    }
+    setMarkingKey(key);
+    try {
+      await quizService.markAnswer(sub.submissionId, ans.questionId, { awardedMarks, reason });
+      setSubmissionsData(await quizService.getQuizSubmissions(viewingSubmissionsQuiz.id));
+      setMarkInput(prev => ({ ...prev, [key]: undefined }));
+    } catch (err) {
+      alert(err.friendlyMessage || 'The mark could not be saved.');
+    } finally {
+      setMarkingKey(null);
     }
   };
 
@@ -856,60 +816,29 @@ export default function Assessments({ currentUser }) {
         selectedAnswer: runnerAnswers[idx] || ''
       }));
 
-      let res;
-      try {
-        res = await quizService.submitQuiz(runningQuiz.id, answersPayload);
-      } catch {
-        // High fidelity deterministic fallback evaluation
-        let correctCount = 0;
-        qList.forEach((q, idx) => {
-          if (runnerAnswers[idx] === q.correctAnswer || (!runnerAnswers[idx] && idx === 0)) {
-            correctCount += 1;
-          }
-        });
-        const pct = Math.round((correctCount / Math.max(1, qList.length)) * 100);
-        res = {
-          passed: pct >= (runningQuiz.passThreshold || 70),
-          percentageScore: pct,
-          xpEarned: pct >= 70 ? 95 : 30,
-          coinsEarned: 25,
-          xpBreakdown: {
-            baseXp: 50,
-            difficultyBonus: 10,
-            passBonus: pct >= 70 ? 20 : 0,
-            highScoreBonus: pct >= 90 ? 20 : (pct >= 80 ? 10 : 0),
-            streakBonus: 5,
-            improvementBonus: 20,
-            totalXpEarned: pct >= 70 ? 105 : 35,
-            coinsEarned: 25,
-            isPersonalBest: true,
-            previousBestScorePercent: 72,
-            currentScorePercent: pct
-          },
-          masteryUpdates: [
-            { topicName: runningQuiz.title || 'Functions & Scope', masteryPercentage: Math.min(100, pct + 12), statusColor: pct >= 80 ? 'green' : 'yellow' }
-          ],
-          levelUpOccurred: false,
-          newLevel: 12,
-          newTotalXp: 6525,
-          badgeUnlocked: pct >= 100 ? 'PERFECT_SCORE' : (pct >= 90 ? 'QUIZ_MASTER' : null)
-        };
-      }
+      const res = await quizService.submitQuiz(runningQuiz.id, answersPayload, runningQuiz.attemptId);
 
       setRunningQuiz(null);
       setRewardBreakdownModal(res);
     } catch (err) {
-      alert(err.friendlyMessage || 'An unexpected error occurred while submitting your quiz attempt.');
+      // The attempt stays open so the student can retry; nothing was recorded.
+      alert(err.friendlyMessage || 'Your answers could not be submitted. No result was recorded.');
     } finally {
       setSubmittingAttempt(false);
     }
   };
 
-  const handleDeleteQuiz = (id) => {
+  const handleDeleteQuiz = async (id) => {
     if (window.confirm('Are you sure you want to delete this quiz?')) {
+      try {
+        await quizService.deleteQuiz(id);
+      } catch (err) {
+        // A quiz with student attempts must be archived instead (409).
+        alert(err.friendlyMessage || 'The quiz could not be deleted.');
+        return;
+      }
       deleteGeneratedQuiz(id);
       setQuizzesList(prev => prev.filter(q => q.id !== id));
-      quizService.deleteQuiz(id).catch(e => console.warn('Backend delete quiz fallback:', e));
     }
   };
 
@@ -1105,7 +1034,7 @@ export default function Assessments({ currentUser }) {
                 } else {
                   const matched = coursesList.find(c => c.id === selectedId);
                   if (matched) {
-                    setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                    setQuizCourseCode(matched.courseCode || matched.code || '');
                   }
                 }
               }}
@@ -1115,7 +1044,7 @@ export default function Assessments({ currentUser }) {
               <option value="ALL">All Courses & Dynamic Quizzes</option>
               {coursesList.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                  {c.courseCode || c.code || ''}: {c.title || c.name}
                 </option>
               ))}
             </select>
@@ -1513,7 +1442,7 @@ export default function Assessments({ currentUser }) {
                       setQuizCourseId(selectedId);
                       const matched = coursesList.find(c => c.id === selectedId);
                       if (matched) {
-                        setQuizCourseCode(matched.courseCode || matched.code || 'SE3090');
+                        setQuizCourseCode(matched.courseCode || matched.code || '');
                       }
                     }}
                     className="form-select"
@@ -1521,7 +1450,7 @@ export default function Assessments({ currentUser }) {
                     {coursesList.length > 0 ? (
                       coursesList.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.courseCode || c.code || 'SE3090'}: {c.title || c.name}
+                          {c.courseCode || c.code || ''}: {c.title || c.name}
                         </option>
                       ))
                     ) : (
@@ -1542,34 +1471,24 @@ export default function Assessments({ currentUser }) {
                   </select>
                 </div>
 
-                {manualScopeType === 'Module' ? (
-                  <div>
-                    <label className="form-label">Target Module</label>
-                    <select
-                      value={manualModuleId}
-                      onChange={(e) => setManualModuleId(e.target.value)}
-                      className="form-select"
-                    >
-                      {modulesList.length > 0 ? (
-                        modulesList.map(m => (
-                          <option key={m.id} value={m.id}>{m.title}</option>
-                        ))
-                      ) : (
-                        <option value="">Select Course First</option>
-                      )}
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="form-label">Course Code</label>
-                    <input
-                      type="text"
-                      value={quizCourseCode}
-                      onChange={(e) => setQuizCourseCode(e.target.value)}
-                      className="form-input"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="form-label">
+                    {manualScopeType === 'Module' ? 'Target Module' : 'Module (where this course-level quiz is stored)'}
+                  </label>
+                  <select
+                    value={manualModuleId}
+                    onChange={(e) => setManualModuleId(e.target.value)}
+                    className="form-select"
+                  >
+                    {modulesList.length > 0 ? (
+                      modulesList.map(m => (
+                        <option key={m.id} value={m.id}>{m.title}</option>
+                      ))
+                    ) : (
+                      <option value="">Select Course First</option>
+                    )}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -1789,8 +1708,7 @@ export default function Assessments({ currentUser }) {
                         className="form-select"
                       >
                         <option value="Module">Container Module Scope</option>
-                        <option value="Course">Full Course Scope</option>
-                        <option value="Topic">Specific Topic Scope</option>
+                        <option value="Course">Full Course Scope (stored in the selected module)</option>
                       </select>
                     </div>
 
@@ -2700,9 +2618,15 @@ export default function Assessments({ currentUser }) {
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className={`badge-pill ${sub.passed ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
-                              Score: {sub.percentageScore}% ({sub.scoreObtained}/{sub.maxScore})
-                            </span>
+                            {sub.status === 'Evaluating' ? (
+                              <span className="badge-pill badge-warning" style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
+                                Awaiting marking ({sub.pendingReviewCount}) • {sub.scoreObtained}/{sub.maxScore} so far
+                              </span>
+                            ) : (
+                              <span className={`badge-pill ${sub.passed ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '12px', fontWeight: '800', padding: '4px 10px' }}>
+                                Score: {sub.percentageScore}% ({sub.scoreObtained}/{sub.maxScore})
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -2719,8 +2643,33 @@ export default function Assessments({ currentUser }) {
                               }}>
                                 <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>Q{aIdx + 1}: {ans.prompt}</div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', color: 'var(--text-muted)' }}>
-                                  <span>Selected: <strong style={{ color: ans.isCorrect ? 'var(--success)' : 'var(--accent)' }}>{ans.selectedAnswer || '(No answer)'}</strong></span>
-                                  <span>Correct: <strong>{ans.correctAnswer}</strong></span>
+                                  <span>Answer: <strong style={{ color: ans.isCorrect ? 'var(--success)' : 'var(--accent)' }}>{ans.selectedAnswer || '(No answer)'}</strong></span>
+                                  <span>Key: <strong>{ans.correctAnswer}</strong></span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                                  <span style={{ color: ans.evaluationStatus === 'Evaluated' ? 'var(--text-muted)' : 'var(--warning)', fontWeight: '600' }}>
+                                    {ans.evaluationStatus === 'Evaluated'
+                                      ? `${ans.pointsAwarded}/${ans.maxMarks} marks (${ans.evaluationMethod})`
+                                      : `Awaiting marking (max ${ans.maxMarks})`}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={ans.maxMarks}
+                                    placeholder="Marks"
+                                    value={markInput[`${sub.submissionId}:${ans.questionId}`] ?? ''}
+                                    onChange={(e) => setMarkInput(prev => ({ ...prev, [`${sub.submissionId}:${ans.questionId}`]: e.target.value }))}
+                                    className="form-input"
+                                    style={{ width: '80px', fontSize: '12px', padding: '4px 6px' }}
+                                  />
+                                  <button
+                                    onClick={() => handleMarkAnswer(sub, ans)}
+                                    disabled={markingKey === `${sub.submissionId}:${ans.questionId}`}
+                                    className="btn-secondary"
+                                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                                  >
+                                    {ans.evaluationStatus === 'Evaluated' ? 'Change mark' : 'Save mark'}
+                                  </button>
                                 </div>
                               </div>
                             ))}

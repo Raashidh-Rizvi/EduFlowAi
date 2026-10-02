@@ -31,7 +31,6 @@ public class ApplicationDbContext : DbContext
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
-    public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<Enrollment> Enrollments => Set<Enrollment>();
     public DbSet<LessonCompletion> LessonCompletions => Set<LessonCompletion>();
 
@@ -42,6 +41,13 @@ public class ApplicationDbContext : DbContext
     public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
     public DbSet<Submission> Submissions => Set<Submission>();
     public DbSet<SubmissionAnswer> SubmissionAnswers => Set<SubmissionAnswer>();
+    public DbSet<MarkAdjustment> MarkAdjustments => Set<MarkAdjustment>();
+    public DbSet<GamificationRule> GamificationRules => Set<GamificationRule>();
+    public DbSet<GradingPolicy> GradingPolicies => Set<GradingPolicy>();
+    public DbSet<GradeBand> GradeBands => Set<GradeBand>();
+    public DbSet<CourseGradingConfiguration> CourseGradingConfigurations => Set<CourseGradingConfiguration>();
+    public DbSet<CourseResult> CourseResults => Set<CourseResult>();
+    public DbSet<GradeOverride> GradeOverrides => Set<GradeOverride>();
 
     // Gamification Engine
     public DbSet<StudentXp> StudentXp => Set<StudentXp>();
@@ -236,10 +242,12 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // LEGACY table, kept read-only until legacy removal (see Lesson remarks).
         modelBuilder.Entity<Lesson>(entity =>
         {
+            entity.ToTable("Lessons");
             entity.HasOne(l => l.Module)
-                  .WithMany(m => m.Lessons)
+                  .WithMany()
                   .HasForeignKey(l => l.ModuleId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
@@ -281,6 +289,11 @@ public class ApplicationDbContext : DbContext
                   .WithMany(u => u.LessonCompletions)
                   .HasForeignKey(lc => lc.StudentId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            // A content item is completed at most once per student.
+            entity.HasIndex(lc => new { lc.StudentId, lc.ContentItemId })
+                  .IsUnique()
+                  .HasFilter("\"ContentItemId\" IS NOT NULL");
         });
 
         // --- Assessments & Quizzes ---
@@ -301,6 +314,26 @@ public class ApplicationDbContext : DbContext
                   .WithOne(qc => qc.Quiz)
                   .HasForeignKey<QuizConfiguration>(qc => qc.QuizId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            // Canonical placement: every assessment belongs to one module; a topic or
+            // content item inside that module is an optional finer target.
+            entity.HasOne(a => a.Module)
+                  .WithMany(m => m.Assessments)
+                  .HasForeignKey(a => a.ModuleId)
+                  .IsRequired()
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(a => a.Topic)
+                  .WithMany(t => t.Assessments)
+                  .HasForeignKey(a => a.TopicId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(a => a.ContentItemScope)
+                  .WithMany(ci => ci.Assessments)
+                  .HasForeignKey(a => a.ContentItemScopeId)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(a => a.GradeWeightPercent).HasPrecision(5, 2);
+            entity.ToTable(t => t.HasCheckConstraint("CK_Assessments_GradeWeight_Range",
+                "\"GradeWeightPercent\" IS NULL OR (\"GradeWeightPercent\" > 0 AND \"GradeWeightPercent\" <= 100)"));
         });
 
         modelBuilder.Entity<QuizConfiguration>(entity =>
@@ -320,6 +353,7 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(q => q.SourceContentId)
                   .OnDelete(DeleteBehavior.SetNull);
+            entity.ToTable(t => t.HasCheckConstraint("CK_Questions_Points_Positive", "\"Points\" > 0"));
         });
 
         modelBuilder.Entity<QuestionOption>(entity =>
@@ -332,10 +366,21 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<Submission>(entity =>
         {
+            entity.Property(s => s.Status).HasConversion<string>();
+            entity.HasIndex(s => new { s.AssessmentId, s.StudentId, s.AttemptNumber }).IsUnique();
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_Submissions_Score_Range", "\"ScoreObtained\" >= 0 AND \"ScoreObtained\" <= \"MaxScore\"");
+                t.HasCheckConstraint("CK_Submissions_Percentage_Range", "\"PercentageScore\" >= 0 AND \"PercentageScore\" <= 100");
+                t.HasCheckConstraint("CK_Submissions_AttemptNumber_Positive", "\"AttemptNumber\" > 0");
+            });
+
+            // Academic history is never deleted implicitly: an assessment (and therefore its
+            // module/course) cannot be deleted while attempts reference it.
             entity.HasOne(s => s.Assessment)
                   .WithMany(a => a.Submissions)
                   .HasForeignKey(s => s.AssessmentId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(s => s.Student)
                   .WithMany(u => u.Submissions)
                   .HasForeignKey(s => s.StudentId)
@@ -352,6 +397,106 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(sa => sa.QuestionId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(sa => sa.EvaluationMethod).HasConversion<string>();
+            entity.Property(sa => sa.EvaluationStatus).HasConversion<string>();
+            entity.HasIndex(sa => new { sa.SubmissionId, sa.QuestionId }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_SubmissionAnswers_Marks_Range",
+                "\"PointsAwarded\" >= 0 AND \"PointsAwarded\" <= \"MaxMarks\""));
+        });
+
+        // --- Grading ---
+        modelBuilder.Entity<GradingPolicy>(entity =>
+        {
+            entity.Property(p => p.Name).HasMaxLength(100);
+            entity.HasOne(p => p.Course)
+                  .WithMany()
+                  .HasForeignKey(p => p.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(p => p.CourseId);
+        });
+
+        modelBuilder.Entity<GradeBand>(entity =>
+        {
+            entity.Property(b => b.Label).HasMaxLength(10);
+            entity.Property(b => b.MinPercentage).HasPrecision(5, 2);
+            entity.HasOne(b => b.GradingPolicy)
+                  .WithMany(p => p.Bands)
+                  .HasForeignKey(b => b.GradingPolicyId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(b => new { b.GradingPolicyId, b.Label }).IsUnique();
+            entity.HasIndex(b => new { b.GradingPolicyId, b.MinPercentage }).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_GradeBands_MinPercentage_Range",
+                "\"MinPercentage\" >= 0 AND \"MinPercentage\" <= 100"));
+        });
+
+        modelBuilder.Entity<CourseGradingConfiguration>(entity =>
+        {
+            entity.Property(c => c.Status).HasConversion<string>();
+            entity.Property(c => c.AttemptScoring).HasConversion<string>();
+            entity.HasIndex(c => c.CourseId).IsUnique();
+            entity.HasOne(c => c.Course)
+                  .WithMany()
+                  .HasForeignKey(c => c.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(c => c.GradingPolicy)
+                  .WithMany()
+                  .HasForeignKey(c => c.GradingPolicyId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CourseResult>(entity =>
+        {
+            entity.Property(r => r.CoursePercentage).HasPrecision(5, 2);
+            entity.Property(r => r.CurrentPercentage).HasPrecision(5, 2);
+            entity.Property(r => r.AssessedWeight).HasPrecision(5, 2);
+            entity.Property(r => r.CalculatedGrade).HasMaxLength(10);
+            entity.Property(r => r.OverrideGrade).HasMaxLength(10);
+            entity.Ignore(r => r.EffectiveGrade);
+            entity.HasIndex(r => new { r.CourseId, r.StudentId }).IsUnique();
+            entity.HasOne(r => r.Course)
+                  .WithMany()
+                  .HasForeignKey(r => r.CourseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(r => r.Student)
+                  .WithMany()
+                  .HasForeignKey(r => r.StudentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_CourseResults_CoursePercentage_Range", "\"CoursePercentage\" >= 0 AND \"CoursePercentage\" <= 100");
+                t.HasCheckConstraint("CK_CourseResults_AssessedWeight_Range", "\"AssessedWeight\" >= 0 AND \"AssessedWeight\" <= 100");
+            });
+        });
+
+        modelBuilder.Entity<GradeOverride>(entity =>
+        {
+            entity.Property(o => o.PreviousGrade).HasMaxLength(10);
+            entity.Property(o => o.NewGrade).HasMaxLength(10);
+            entity.Property(o => o.Reason).HasMaxLength(1000);
+            entity.HasOne(o => o.CourseResult)
+                  .WithMany(r => r.Overrides)
+                  .HasForeignKey(o => o.CourseResultId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(o => o.Actor)
+                  .WithMany()
+                  .HasForeignKey(o => o.ActorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<MarkAdjustment>(entity =>
+        {
+            entity.Property(m => m.PreviousStatus).HasConversion<string>();
+            entity.Property(m => m.Reason).HasMaxLength(1000);
+            entity.HasOne(m => m.SubmissionAnswer)
+                  .WithMany(a => a.MarkAdjustments)
+                  .HasForeignKey(m => m.SubmissionAnswerId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            // Deleting the marker's account keeps the history row (the AuditLog keeps the actor id).
+            entity.HasOne(m => m.Actor)
+                  .WithMany()
+                  .HasForeignKey(m => m.ActorId)
+                  .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(m => m.SubmissionAnswerId);
         });
 
 
@@ -374,10 +519,25 @@ public class ApplicationDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<GamificationRule>(entity =>
+        {
+            entity.Property(r => r.Key).HasMaxLength(100);
+            entity.Property(r => r.Description).HasMaxLength(300);
+            entity.Property(r => r.Value).HasPrecision(12, 4);
+            entity.HasIndex(r => r.Key).IsUnique();
+        });
+
         modelBuilder.Entity<XpTransaction>(entity =>
         {
             entity.Property(x => x.SourceType).HasConversion<string>();
             entity.HasIndex(x => x.StudentId);
+            entity.Property(x => x.IdempotencyKey).HasMaxLength(200);
+            // The same event can never pay the same student twice.
+            entity.HasIndex(x => new { x.StudentId, x.IdempotencyKey })
+                  .IsUnique()
+                  .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+            entity.ToTable(t => t.HasCheckConstraint("CK_XpTransactions_NonNegative",
+                "\"XpAmount\" >= 0 AND \"CoinAmount\" >= 0"));
             entity.HasOne(x => x.Student)
                   .WithMany(u => u.XpTransactions)
                   .HasForeignKey(x => x.StudentId)
@@ -388,6 +548,7 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(b => b.Id);
             entity.Property(b => b.Category).HasConversion<string>();
+            entity.Property(b => b.Criteria).HasConversion<string>();
         });
 
         modelBuilder.Entity<StudentBadge>(entity =>
@@ -501,64 +662,53 @@ public class ApplicationDbContext : DbContext
             }).ToArray()
         );
 
-        // 2. Badges Seed
-        // 2. Badges Seed
-        modelBuilder.Entity<Badge>().HasData(
-            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50 },
-            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100 },
-            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200 },
-            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250 },
-            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75 }
+        // 2. Badge catalogue (reference data; fixed timestamps keep the model deterministic)
+        var catalogueDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+modelBuilder.Entity<Badge>().HasData(
+            new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50, Criteria = AchievementCriteria.LessonsCompleted, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Passed 5 different assessments", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, Criteria = AchievementCriteria.AssessmentsPassed, Threshold = 5, CreatedAt = catalogueDate },
+            new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200, Criteria = AchievementCriteria.StreakDays, Threshold = 7, CreatedAt = catalogueDate },
+            new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 challenges", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250, Criteria = AchievementCriteria.ChallengesCompleted, Threshold = 5, CreatedAt = catalogueDate },
+            new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75, Criteria = AchievementCriteria.TeamMemberships, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "PERFECT_SCORE", Title = "Perfect Score", Description = "Scored 100% on an assessment", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100, Criteria = AchievementCriteria.PerfectScores, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "BOSS_SLAYER", Title = "Boss Slayer", Description = "Passed a Boss-difficulty assessment", IconUrl = "⚔️", Category = BadgeCategory.Challenge, XpBonus = 200, Criteria = AchievementCriteria.BossAssessmentsPassed, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "COMEBACK_KID", Title = "Comeback Kid", Description = "Beat your own best score on an assessment", IconUrl = "📈", Category = BadgeCategory.Improvement, XpBonus = 80, Criteria = AchievementCriteria.ImprovementBonusesEarned, Threshold = 1, CreatedAt = catalogueDate },
+            new Badge { Id = "FOURTEEN_DAY_STREAK", Title = "14-Day Streak", Description = "Maintained a continuous 14-day study streak", IconUrl = "⚡", Category = BadgeCategory.Streak, XpBonus = 150, Criteria = AchievementCriteria.StreakDays, Threshold = 14, CreatedAt = catalogueDate },
+            new Badge { Id = "COURSE_GRADUATE", Title = "Course Graduate", Description = "Completed every unit of a course", IconUrl = "🎓", Category = BadgeCategory.Milestone, XpBonus = 250, Criteria = AchievementCriteria.CoursesCompleted, Threshold = 1, CreatedAt = catalogueDate }
         );
 
-        // 3. User Accounts (Admin, Instructor, Student)
-        var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-        var student1Id = Guid.Parse("33333333-3333-3333-3333-333333333333"); // Alex Rivera
+        // Gamification rules: every reward value is data (see GamificationRuleKeys).
+        modelBuilder.Entity<GamificationRule>().HasData(GamificationRuleKeys.Defaults.Select((rule, i) => new GamificationRule
+        {
+            Id = GamificationRuleKeys.SeedId(i),
+            Key = rule.Key,
+            Value = rule.Value,
+            Description = rule.Description,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        }).ToArray());
 
-        // Real bcrypt hash of "Password123!" (verified against BCrypt.Net)
-        var defaultPasswordHash = "$2b$11$XttOyjKFmPO5VWTsm9VBpu4qGcJOb/40AFmKfMSVPoBc6FW8ehWYK";
+        // 3. Institution default grading scale (configuration data; courses may define their own)
+        var defaultPolicyId = GradingDefaults.InstitutionPolicyId;
+        modelBuilder.Entity<GradingPolicy>().HasData(new GradingPolicy
+        {
+            Id = defaultPolicyId,
+            Name = "Institution default",
+            IsInstitutionDefault = true,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        });
+        modelBuilder.Entity<GradeBand>().HasData(GradingDefaults.Bands.Select((band, i) => new GradeBand
+        {
+            Id = new Guid($"6a0e1b00-0000-4000-8000-{i + 1:D12}"),
+            GradingPolicyId = defaultPolicyId,
+            Label = band.Label,
+            MinPercentage = band.MinPercentage,
+            CreatedAt = catalogueDate,
+            UpdatedAt = catalogueDate
+        }).ToArray());
 
-        modelBuilder.Entity<User>().HasData(
-            new User
-            {
-                Id = adminId,
-                FullName = "System Administrator",
-                Email = "admin@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Admin,
-                IsActive = true
-            },
-            new User
-            {
-                Id = instructorId,
-                FullName = "Dr. Sarah Jenkins",
-                Email = "instructor@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Instructor,
-                IsActive = true
-            },
-            new User
-            {
-                Id = student1Id,
-                FullName = "Alex Rivera",
-                Email = "student@eduflow.ai",
-                PasswordHash = defaultPasswordHash,
-                Role = UserRole.Student,
-                IsActive = true
-            }
-        );
-
-        // Student Gamification Baseline Profile
-        var staticSeedDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var staticSeedDateOnly = new DateOnly(2026, 1, 1);
-
-        modelBuilder.Entity<StudentXp>().HasData(
-            new StudentXp { StudentId = student1Id, TotalXp = 0, CurrentLevel = 1, Coins = 0, UpdatedAt = staticSeedDate }
-        );
-
-        modelBuilder.Entity<StudentStreak>().HasData(
-            new StudentStreak { StudentId = student1Id, CurrentStreak = 0, LongestStreak = 0, FreezeTokensAvailable = 1, LastActivityDate = staticSeedDateOnly, UpdatedAt = staticSeedDate }
-        );
+        // Demo accounts are NOT part of the model: they are created only by the Development
+        // seeder (DbInitializer.SeedDevelopmentData), never by migrations.
     }
 }

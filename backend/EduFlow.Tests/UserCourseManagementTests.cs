@@ -112,7 +112,7 @@ public class UserCourseManagementTests
             var streak = await db.StudentStreaks.SingleAsync(x => x.StudentId == user.Id);
             Assert.Equal(0, xp.TotalXp);
             Assert.Equal(1, xp.CurrentLevel);
-            Assert.Equal(50, xp.Coins);
+            Assert.Equal(0, xp.Coins); // every coin comes from a ledgered award
             Assert.Equal(0, streak.CurrentStreak);
             Assert.Equal(2, streak.FreezeTokensAvailable);
         }
@@ -971,7 +971,7 @@ public class UserCourseManagementTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = "Lesson 2.1: B-Tree Indexes",
@@ -980,12 +980,12 @@ public class UserCourseManagementTests
             AttachmentFileName = "btree_indexes_lecture_notes.pdf",
             XpReward = 30,
             EstimatedMinutes = 25,
-            OrderIndex = 1
+            DisplayOrder = 1
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
 
-        var retrieved = await db.Lessons.FirstOrDefaultAsync(l => l.Id == lesson.Id);
+        var retrieved = await db.ContentItems.FirstOrDefaultAsync(l => l.Id == lesson.Id);
         Assert.NotNull(retrieved);
         Assert.Equal("/uploads/pdfs/btree_indexes_lecture_notes.pdf", retrieved!.PdfUrl);
         Assert.Equal("btree_indexes_lecture_notes.pdf", retrieved.AttachmentFileName);

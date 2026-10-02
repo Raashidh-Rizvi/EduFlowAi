@@ -8,15 +8,20 @@ public static class DbInitializer
 {
     /// <summary>
     /// Applies any pending EF Core migrations, creating the database if it doesn't exist yet.
-    /// Ensures demo users (admin, instructor, student) are seeded with valid credentials.
+    /// Failure is NOT swallowed: the caller (Program.cs) rethrows so the application refuses
+    /// to start with an out-of-sync schema.
     /// </summary>
     public static void Initialize(ApplicationDbContext context)
     {
-        // Apply pending migrations. Failure is NOT swallowed: the caller (Program.cs)
-        // rethrows so the application refuses to start with an out-of-sync schema.
         context.Database.Migrate();
+    }
 
-        try
+    /// <summary>
+    /// Seeds demo accounts and demo course content. Development only: the caller must check
+    /// the hosting environment, and exceptions propagate so the caller can log them.
+    /// </summary>
+    public static void SeedDevelopmentData(ApplicationDbContext context)
+    {
         {
             var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
             var instructorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
@@ -91,59 +96,17 @@ public static class DbInitializer
 
             context.SaveChanges();
 
-            // Ensure student gamification baseline (Level 3, 1,850 XP, 450 Coins, 5-day streak)
+            // Demo accounts start with no XP, streak or badges; those come from real activity.
             var studentActual = student ?? context.Users.First(u => u.Email.ToLower() == "student@eduflow.ai");
-            
-            var studentXp = context.StudentXp.FirstOrDefault(x => x.StudentId == studentActual.Id);
-            if (studentXp == null)
-            {
-                context.StudentXp.Add(new StudentXp
-                {
-                    StudentId = studentActual.Id,
-                    TotalXp = 1850,
-                    CurrentLevel = 3,
-                    Coins = 450,
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                studentXp.TotalXp = 1850;
-                studentXp.CurrentLevel = 3;
-                studentXp.Coins = 450;
-                studentXp.UpdatedAt = DateTime.UtcNow;
-            }
-
-            var studentStreak = context.StudentStreaks.FirstOrDefault(s => s.StudentId == studentActual.Id);
-            if (studentStreak == null)
-            {
-                context.StudentStreaks.Add(new StudentStreak
-                {
-                    StudentId = studentActual.Id,
-                    CurrentStreak = 5,
-                    LongestStreak = 12,
-                    FreezeTokensAvailable = 2,
-                    LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
-            else
-            {
-                studentStreak.CurrentStreak = 5;
-                studentStreak.LongestStreak = 12;
-                studentStreak.FreezeTokensAvailable = 2;
-                studentStreak.LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow);
-                studentStreak.UpdatedAt = DateTime.UtcNow;
-            }
 
             // Seed additional cohort students if missing
             var cohortSeedData = new[]
             {
-                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333334"), Name = "Sarah Chen", Email = "sarah.chen@eduflow.ai", Xp = 1420, Level = 4, Streak = 8, Coins = 240 },
-                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333335"), Name = "Daniel Miller", Email = "daniel.miller@eduflow.ai", Xp = 1150, Level = 3, Streak = 6, Coins = 190 },
-                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333336"), Name = "Marcus Vance", Email = "marcus.vance@eduflow.ai", Xp = 890, Level = 3, Streak = 4, Coins = 150 },
-                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333337"), Name = "Priya Patel", Email = "priya.patel@eduflow.ai", Xp = 720, Level = 2, Streak = 5, Coins = 120 },
-                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333338"), Name = "Elena Rostova", Email = "elena.rostova@eduflow.ai", Xp = 480, Level = 2, Streak = 2, Coins = 80 }
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333334"), Name = "Sarah Chen", Email = "sarah.chen@eduflow.ai" },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333335"), Name = "Daniel Miller", Email = "daniel.miller@eduflow.ai" },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333336"), Name = "Marcus Vance", Email = "marcus.vance@eduflow.ai" },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333337"), Name = "Priya Patel", Email = "priya.patel@eduflow.ai" },
+                new { Id = Guid.Parse("33333333-3333-3333-3333-333333333338"), Name = "Elena Rostova", Email = "elena.rostova@eduflow.ai" }
             };
 
             foreach (var cs in cohortSeedData)
@@ -160,67 +123,10 @@ public static class DbInitializer
                         IsActive = true
                     });
                 }
-
-                if (!context.StudentXp.Any(x => x.StudentId == cs.Id))
-                {
-                    context.StudentXp.Add(new StudentXp
-                    {
-                        StudentId = cs.Id,
-                        TotalXp = cs.Xp,
-                        CurrentLevel = cs.Level,
-                        Coins = cs.Coins,
-                        UpdatedAt = DateTime.UtcNow
-                    });
-                }
-
-                if (!context.StudentStreaks.Any(s => s.StudentId == cs.Id))
-                {
-                    context.StudentStreaks.Add(new StudentStreak
-                    {
-                        StudentId = cs.Id,
-                        CurrentStreak = cs.Streak,
-                        LongestStreak = cs.Streak + 2,
-                        FreezeTokensAvailable = 2,
-                        LastActivityDate = DateOnly.FromDateTime(DateTime.UtcNow),
-                        UpdatedAt = DateTime.UtcNow
-                    });
-                }
             }
             context.SaveChanges();
 
-            // Seed Badges & Unlock for Alex Rivera
-            var badgesToEnsure = new[]
-            {
-                new Badge { Id = "FIRST_LESSON", Title = "First Step", Description = "Completed your first lesson in EduFlow AI", IconUrl = "🚀", Category = BadgeCategory.Learning, XpBonus = 50 },
-                new Badge { Id = "QUIZ_MASTER", Title = "Quiz Ace", Description = "Achieved 100% on any interactive quiz", IconUrl = "🎯", Category = BadgeCategory.Assessment, XpBonus = 100 },
-                new Badge { Id = "SEVEN_DAY_STREAK", Title = "Unstoppable", Description = "Maintained a 7-day continuous learning streak", IconUrl = "🔥", Category = BadgeCategory.Streak, XpBonus = 200 },
-                new Badge { Id = "CHALLENGE_CHAMPION", Title = "Boss Slayer", Description = "Completed 5 daily challenges or boss encounters", IconUrl = "🏆", Category = BadgeCategory.Milestone, XpBonus = 250 },
-                new Badge { Id = "SQUAD_GOALS", Title = "Team Player", Description = "Joined a student learning squad", IconUrl = "🤝", Category = BadgeCategory.Social, XpBonus = 75 }
-            };
-
-            foreach (var b in badgesToEnsure)
-            {
-                if (!context.Badges.Any(x => x.Id == b.Id))
-                {
-                    context.Badges.Add(b);
-                }
-            }
-            context.SaveChanges();
-
-            var alexBadgeIds = new[] { "FIRST_LESSON", "QUIZ_MASTER", "SEVEN_DAY_STREAK", "SQUAD_GOALS", "CHALLENGE_CHAMPION" };
-            foreach (var badgeId in alexBadgeIds)
-            {
-                if (!context.StudentBadges.Any(sb => sb.StudentId == studentActual.Id && sb.BadgeId == badgeId))
-                {
-                    context.StudentBadges.Add(new StudentBadge
-                    {
-                        StudentId = studentActual.Id,
-                        BadgeId = badgeId,
-                        UnlockedAt = DateTime.UtcNow.AddDays(-3)
-                    });
-                }
-            }
-            context.SaveChanges();
+            // The badge catalogue (with unlock criteria) is reference data seeded by the model.
 
             // Seed Team & Alex Rivera Team Membership
             var starterTeamId = Guid.Parse("99999999-9999-9999-9999-999999999991");
@@ -354,7 +260,7 @@ public static class DbInitializer
                 context.SaveChanges();
             }
 
-            // Ensure Alex Rivera is enrolled in CS-301 with 65% progress
+            // Ensure Alex Rivera is enrolled in CS-301 (progress is derived, never seeded)
             var alexEnrollment = context.Enrollments.FirstOrDefault(e => e.StudentId == studentActual.Id && e.CourseId == course.Id);
             if (alexEnrollment == null)
             {
@@ -363,14 +269,12 @@ public static class DbInitializer
                     StudentId = studentActual.Id,
                     CourseId = course.Id,
                     CreatedAt = DateTime.UtcNow.AddDays(-14),
-                    ProgressPercentage = 65.0,
                     Status = EnrollmentStatus.Active
                 });
                 context.SaveChanges();
             }
             else
             {
-                alexEnrollment.ProgressPercentage = 65.0;
                 alexEnrollment.Status = EnrollmentStatus.Active;
                 context.SaveChanges();
             }
@@ -441,7 +345,6 @@ public static class DbInitializer
                 {
                     CourseId = courseB.Id,
                     StudentId = pendingStudentId,
-                    ProgressPercentage = 0.0,
                     Status = EnrollmentStatus.Pending,
                     CreatedAt = DateTime.UtcNow.AddDays(-2)
                 });
@@ -456,7 +359,6 @@ public static class DbInitializer
                 {
                     CourseId = courseB.Id,
                     StudentId = courseBStudentId,
-                    ProgressPercentage = 42.0,
                     Status = EnrollmentStatus.Active,
                     CreatedAt = DateTime.UtcNow.AddDays(-20)
                 });
@@ -480,7 +382,6 @@ public static class DbInitializer
                     {
                         CourseId = sr.CourseId,
                         StudentId = sr.StudentId,
-                        ProgressPercentage = 50.0,
                         Status = EnrollmentStatus.Active,
                         CreatedAt = DateTime.UtcNow.AddDays(-25)
                     });
@@ -556,15 +457,20 @@ public static class DbInitializer
             }
             context.SaveChanges();
 
-            // Ensure baseline diagnostic assessment exists for CS-301
+            // Ensure baseline diagnostic assessment exists for CS-301 (in its first module)
             var quizId = Guid.Parse("66666666-6666-6666-6666-666666666666");
             var existingQuiz = context.Assessments.FirstOrDefault(a => a.Id == quizId || (a.CourseId == course.Id && a.Title.Contains("Clean Architecture & PostgreSQL")));
-            if (existingQuiz == null)
+            var diagnosticModule = context.Modules
+                .Where(m => m.CourseId == course.Id)
+                .OrderBy(m => m.OrderIndex)
+                .FirstOrDefault();
+            if (existingQuiz == null && diagnosticModule != null)
             {
                 var quiz = new Assessment
                 {
                     Id = quizId,
                     CourseId = course.Id,
+                    ModuleId = diagnosticModule.Id,
                     Title = "Clean Architecture & PostgreSQL Indexing Diagnostic",
                     Description = "Official diagnostic assessment for CS-301 covering ACID transactions, B-Tree index selectivity, and Clean Architecture boundaries.",
                     Type = AssessmentType.Quiz,
@@ -573,8 +479,8 @@ public static class DbInitializer
                     PassingScorePercent = 70,
                     XpReward = 80,
                     CoinReward = 30,
-                    ScopeType = QuizScopeType.Course,
-                    ScopeId = course.Id,
+                    ScopeType = QuizScopeType.Module,
+                    ScopeId = diagnosticModule.Id,
                     Status = QuizStatus.Published,
                     Difficulty = DifficultyLevel.Medium,
                     AttemptsAllowed = 3,
@@ -634,195 +540,6 @@ public static class DbInitializer
 
                 context.Assessments.Add(quiz);
                 context.Questions.AddRange(q1, q2, q3);
-                context.SaveChanges();
-            }
-
-            // Seed Alex Rivera Quiz Submission & Personal Best
-            var alexSubmission = context.Submissions.FirstOrDefault(s => s.StudentId == studentActual.Id && s.AssessmentId == quizId);
-            if (alexSubmission == null)
-            {
-                var subId = Guid.Parse("88888888-8888-8888-8888-888888888881");
-                var sub = new Submission
-                {
-                    Id = subId,
-                    AssessmentId = quizId,
-                    StudentId = studentActual.Id,
-                    ScoreObtained = 30,
-                    MaxScore = 30,
-                    PercentageScore = 100.0,
-                    Passed = true,
-                    IsAutoGraded = true,
-                    InstructorFeedback = "Outstanding performance on relational indexing and isolation levels!",
-                    SubmittedAt = DateTime.UtcNow.AddDays(-2)
-                };
-                context.Submissions.Add(sub);
-
-                var q1Id = Guid.Parse("77777777-7777-7777-7777-777777777771");
-                var q2Id = Guid.Parse("77777777-7777-7777-7777-777777777772");
-                var q3Id = Guid.Parse("77777777-7777-7777-7777-777777777773");
-
-                context.SubmissionAnswers.AddRange(
-                    new SubmissionAnswer { SubmissionId = subId, QuestionId = q1Id, SelectedAnswer = "Isolation", IsCorrect = true, PointsAwarded = 10 },
-                    new SubmissionAnswer { SubmissionId = subId, QuestionId = q2Id, SelectedAnswer = "Left-to-right starting with colA", IsCorrect = true, PointsAwarded = 10 },
-                    new SubmissionAnswer { SubmissionId = subId, QuestionId = q3Id, SelectedAnswer = "Enforce safety invariants like ≤ 20h/wk workload ceiling", IsCorrect = true, PointsAwarded = 10 }
-                );
-
-                if (!context.PersonalBestRecords.Any(pb => pb.StudentId == studentActual.Id && pb.AssessmentId == quizId))
-                {
-                    context.PersonalBestRecords.Add(new PersonalBestRecord
-                    {
-                        StudentId = studentActual.Id,
-                        AssessmentId = quizId,
-                        BestScorePercent = 100,
-                        BestTimeSeconds = 420,
-                        AchievedAt = DateTime.UtcNow.AddDays(-2)
-                    });
-                }
-                context.SaveChanges();
-            }
-
-            // Seed Alex Rivera XP Transactions
-            if (!context.XpTransactions.Any(x => x.StudentId == studentActual.Id))
-            {
-                context.XpTransactions.AddRange(
-                    new XpTransaction
-                    {
-                        StudentId = studentActual.Id,
-                        SourceType = XpSourceType.QuizCompleted,
-                        SourceId = quizId,
-                        XpAmount = 80,
-                        Description = "Completed Diagnostic Quiz: Clean Architecture & PostgreSQL",
-                        CreatedAt = DateTime.UtcNow.AddDays(-5)
-                    },
-                    new XpTransaction
-                    {
-                        StudentId = studentActual.Id,
-                        SourceType = XpSourceType.DailyChallenge,
-                        SourceId = Guid.NewGuid(),
-                        XpAmount = 120,
-                        Description = "Completed Daily Mission: PostgreSQL Indexing Scans",
-                        CreatedAt = DateTime.UtcNow.AddDays(-4)
-                    },
-                    new XpTransaction
-                    {
-                        StudentId = studentActual.Id,
-                        SourceType = XpSourceType.LessonCompleted,
-                        SourceId = Guid.NewGuid(),
-                        XpAmount = 150,
-                        Description = "Completed Lesson: B-Tree Indexing Masterclass",
-                        CreatedAt = DateTime.UtcNow.AddDays(-3)
-                    },
-                    new XpTransaction
-                    {
-                        StudentId = studentActual.Id,
-                        SourceType = XpSourceType.StreakBonus,
-                        SourceId = Guid.NewGuid(),
-                        XpAmount = 200,
-                        Description = "Streak Reward: 5-Day Continuous Learning Streak",
-                        CreatedAt = DateTime.UtcNow.AddDays(-2)
-                    },
-                    new XpTransaction
-                    {
-                        StudentId = studentActual.Id,
-                        SourceType = XpSourceType.TeamChallenge,
-                        SourceId = Guid.NewGuid(),
-                        XpAmount = 250,
-                        Description = "Team Quest Contribution: Master ACID Concurrency",
-                        CreatedAt = DateTime.UtcNow.AddDays(-1)
-                    }
-                );
-                context.SaveChanges();
-            }
-
-            // Seed Alex Rivera Skill Masteries
-            if (!context.SkillMasteries.Any(sm => sm.StudentId == studentActual.Id))
-            {
-                context.SkillMasteries.AddRange(
-                    new SkillMastery
-                    {
-                        StudentId = studentActual.Id,
-                        CourseId = courseId,
-                        TopicName = "B-Tree Indexing",
-                        SkillName = "Index Selectivity & Search Scans",
-                        MasteryPercentage = 92,
-                        TotalAttempts = 5,
-                        CorrectAttempts = 5,
-                        LastAssessedAt = DateTime.UtcNow.AddDays(-1)
-                    },
-                    new SkillMastery
-                    {
-                        StudentId = studentActual.Id,
-                        CourseId = courseId,
-                        TopicName = "ACID Concurrency",
-                        SkillName = "Isolation Levels & Anomalies",
-                        MasteryPercentage = 85,
-                        TotalAttempts = 4,
-                        CorrectAttempts = 3,
-                        LastAssessedAt = DateTime.UtcNow.AddDays(-1)
-                    },
-                    new SkillMastery
-                    {
-                        StudentId = studentActual.Id,
-                        CourseId = courseId,
-                        TopicName = "EF Core ORM",
-                        SkillName = "Query Profiling & Compiled Queries",
-                        MasteryPercentage = 78,
-                        TotalAttempts = 3,
-                        CorrectAttempts = 2,
-                        LastAssessedAt = DateTime.UtcNow.AddDays(-2)
-                    }
-                );
-                context.SaveChanges();
-            }
-
-            // Seed Alex Rivera Daily Missions
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            if (!context.StudentDailyMissions.Any(dm => dm.StudentId == studentActual.Id && dm.Date == today))
-            {
-                context.StudentDailyMissions.AddRange(
-                    new StudentDailyMission
-                    {
-                        StudentId = studentActual.Id,
-                        Date = today,
-                        MissionKey = "LESSON_COMPLETE",
-                        Title = "Deep Dive Lesson",
-                        Description = "Complete 1 core curriculum lesson in CS-301",
-                        CurrentCount = 1,
-                        TargetCount = 1,
-                        IsCompleted = true,
-                        Claimed = true,
-                        RewardXp = 50,
-                        RewardCoins = 15
-                    },
-                    new StudentDailyMission
-                    {
-                        StudentId = studentActual.Id,
-                        Date = today,
-                        MissionKey = "PRACTICE_5_QUESTIONS",
-                        Title = "Practice Master",
-                        Description = "Answer 5 diagnostic or topic quiz questions",
-                        CurrentCount = 5,
-                        TargetCount = 5,
-                        IsCompleted = true,
-                        Claimed = true,
-                        RewardXp = 60,
-                        RewardCoins = 20
-                    },
-                    new StudentDailyMission
-                    {
-                        StudentId = studentActual.Id,
-                        Date = today,
-                        MissionKey = "AI_CHALLENGE",
-                        Title = "AI Boss Battle",
-                        Description = "Conquer an AI-generated challenge scenario",
-                        CurrentCount = 1,
-                        TargetCount = 1,
-                        IsCompleted = true,
-                        Claimed = false,
-                        RewardXp = 100,
-                        RewardCoins = 30
-                    }
-                );
                 context.SaveChanges();
             }
 
@@ -975,10 +692,6 @@ public static class DbInitializer
 
             // Public storefront catalogue (published courses, curriculum, reviews).
             MarketplaceSeedData.Seed(context);
-        }
-        catch
-        {
-            // Ignore if already configured
         }
     }
 }

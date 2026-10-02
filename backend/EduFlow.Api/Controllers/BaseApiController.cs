@@ -139,7 +139,7 @@ public abstract class BaseApiController : ControllerBase
         var (userId, role) = GetCurrentUser();
         if (role.Equals("Admin", StringComparison.OrdinalIgnoreCase)) return true;
         if (userId == Guid.Empty) return false;
-        return await DbContext.Lessons
+        return await DbContext.ContentItems
             .Include(l => l.Module)
                 .ThenInclude(m => m.Course)
             .AnyAsync(l => l.Id == lessonId

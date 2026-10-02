@@ -73,18 +73,18 @@ public class Phase4_CurriculumTests
         return module;
     }
 
-    private static Lesson SeedLesson(ApplicationDbContext db, Guid moduleId)
+    private static ContentItem SeedLesson(ApplicationDbContext db, Guid moduleId)
     {
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = moduleId,
             Title = "Lesson 1",
             Content = "Lesson content",
-            OrderIndex = 1,
+            DisplayOrder = 1,
             XpReward = 10,
             EstimatedMinutes = 5
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         db.SaveChanges();
         return lesson;
     }
@@ -239,7 +239,7 @@ public class Phase4_CurriculumTests
         var module = SeedModule(db, course.Id);
         var lesson = SeedLesson(db, module.Id);
 
-        var loaded = await db.Lessons
+        var loaded = await db.ContentItems
             .Include(l => l.Module)
             .FirstAsync(l => l.Id == lesson.Id);
 
@@ -257,10 +257,10 @@ public class Phase4_CurriculumTests
         var module = SeedModule(db, course.Id);
         var lesson = SeedLesson(db, module.Id);
 
-        db.Lessons.Remove(lesson);
+        db.ContentItems.Remove(lesson);
         await db.SaveChangesAsync();
 
-        var loaded = await db.Lessons.FindAsync(lesson.Id);
+        var loaded = await db.ContentItems.FindAsync(lesson.Id);
         Assert.Null(loaded);
     }
 

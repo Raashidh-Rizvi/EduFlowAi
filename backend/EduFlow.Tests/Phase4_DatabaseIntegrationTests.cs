@@ -177,20 +177,20 @@ public class Phase4_DatabaseIntegrationTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = "Lesson to be cascade-deleted",
             Content = "Content",
-            OrderIndex = 1
+            DisplayOrder = 1
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
 
         db.Modules.Remove(module);
         await db.SaveChangesAsync();
 
-        var orphan = await db.Lessons.FindAsync(lesson.Id);
+        var orphan = await db.ContentItems.FindAsync(lesson.Id);
         Assert.Null(orphan);
     }
 
@@ -291,9 +291,8 @@ public class Phase4_DatabaseIntegrationTests
 
     // =========================================================================
     // 7. FK_Submission_To_Assessment_Preserved
-    //    NOTE: The DbContext configures Assessment→Submission as Cascade delete,
-    //    so submissions ARE removed when an assessment is deleted. This test
-    //    verifies the actual behavior (submissions removed).
+    //    Assessment -> Submission is Restrict: academic history blocks deleting
+    //    the assessment instead of being silently cascaded away.
     // =========================================================================
 
     [Fact]
@@ -306,13 +305,15 @@ public class Phase4_DatabaseIntegrationTests
         var assessment = SeedAssessment(db, course.Id);
         var submission = SeedSubmission(db, assessment.Id, student.Id);
 
-        db.Assessments.Remove(assessment);
-        await db.SaveChangesAsync();
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            db.Assessments.Remove(assessment);
+            await db.SaveChangesAsync();
+        });
 
-        // Per DbContext config: Assessment→Submission uses Cascade delete
-        // so submission IS deleted when assessment is removed
-        var orphan = await db.Submissions.FindAsync(submission.Id);
-        Assert.Null(orphan);
+        db.ChangeTracker.Clear();
+        Assert.NotNull(await db.Submissions.FindAsync(submission.Id));
+        Assert.NotNull(await db.Assessments.FindAsync(assessment.Id));
     }
 
     // =========================================================================
@@ -632,26 +633,23 @@ public class Phase4_DatabaseIntegrationTests
     }
 
     // =========================================================================
-    // 17. SeedData_IncludesBaselineUsers
+    // 17. SeedData_ContainsNoDemoAccounts
+    //     Demo accounts are created only by the Development seeder, never by the
+    //     EF model/migrations, so no other environment receives them.
     // =========================================================================
 
     [Fact]
-    public async Task SeedData_IncludesBaselineUsers()
+    public async Task SeedData_ContainsNoDemoAccounts()
     {
         await using var db = CreateDb();
 
-        var admin = await db.Users.FirstOrDefaultAsync(u => u.Email == "admin@eduflow.ai");
-        var instructor = await db.Users.FirstOrDefaultAsync(u => u.Email == "instructor@eduflow.ai");
-        var student = await db.Users.FirstOrDefaultAsync(u => u.Email == "student@eduflow.ai");
+        Assert.False(await db.Users.AnyAsync());
+        Assert.False(await db.StudentXp.AnyAsync());
+        Assert.False(await db.StudentStreaks.AnyAsync());
 
-        Assert.NotNull(admin);
-        Assert.Equal(UserRole.Admin, admin!.Role);
-
-        Assert.NotNull(instructor);
-        Assert.Equal(UserRole.Instructor, instructor!.Role);
-
-        Assert.NotNull(student);
-        Assert.Equal(UserRole.Student, student!.Role);
+        // Reference data (level curve, badge catalogue) is still part of the model.
+        Assert.True(await db.Levels.AnyAsync());
+        Assert.True(await db.Badges.AnyAsync());
     }
 
     // =========================================================================

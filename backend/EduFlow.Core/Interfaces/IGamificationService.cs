@@ -14,12 +14,18 @@ public interface IGamificationService
         Guid studentId, 
         Guid assessmentId, 
         int scorePercent, 
+        bool passed,
         int timeSpentSeconds, 
         DifficultyLevel difficulty, 
         QuizScopeType scopeType, 
         List<(Guid? TopicId, string TopicName, string SkillName, bool IsCorrect)> questionOutcomes,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Guid? attemptId = null,
+        Guid? courseId = null
     );
+
+    /// <summary>Rewards completing every unit of a course (once per course).</summary>
+    Task<ChallengeResultDto> AwardCourseCompletionAsync(Guid studentId, Guid courseId, CancellationToken ct = default);
     Task<StudentGameDashboardDto> GetStudentDashboardAsync(Guid studentId, CancellationToken ct = default);
     Task<TopicMasteryMatrixDto> GetSkillMasteryMatrixAsync(Guid studentId, CancellationToken ct = default);
     Task<ClaimDailyGrandMissionResponseDto> ClaimDailyMissionGrandRewardAsync(Guid studentId, CancellationToken ct = default);
@@ -31,8 +37,8 @@ public interface IGamificationService
     Task<List<LeaderboardEntryDto>> GetCourseLeaderboardAsync(Guid courseId, int top = 20, CancellationToken ct = default);
     Task<List<LeaderboardEntryDto>> GetGlobalLeaderboardAsync(int top = 20, CancellationToken ct = default);
     Task<FocusSessionResponseDto> AwardFocusSessionXpAsync(FocusSessionRequestDto request, CancellationToken ct = default);
-    double GetXpMultiplier();
-    void SetXpMultiplier(double multiplier);
+    /// <summary>The platform-wide XP multiplier (a gamification rule).</summary>
+    Task<double> GetXpMultiplierAsync(CancellationToken ct = default);
     int CalculateLevel(int totalXp);
     (int MinXp, int MaxXp, string LevelName) GetLevelBounds(int level);
 }

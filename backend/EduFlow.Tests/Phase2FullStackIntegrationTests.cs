@@ -200,12 +200,12 @@ public class Phase2FullStackIntegrationTests
         db.Enrollments.Add(new Enrollment { StudentId = student.Id, CourseId = course.Id, Status = EnrollmentStatus.Active });
         await db.SaveChangesAsync();
 
-        // Seed data includes 1 student + 1 instructor + 1 admin; we added 1 more student + 1 more instructor
+        // The model seeds no accounts, so the only student is the one added above.
         var totalStudents = await db.Users.CountAsync(u => u.Role == UserRole.Student);
         var totalCourses = await db.Courses.CountAsync(c => c.IsPublished);
         var totalEnrollments = await db.Enrollments.CountAsync(e => e.Status == EnrollmentStatus.Active);
 
-        Assert.True(totalStudents >= 2, $"Expected at least 2 students, got {totalStudents}");
+        Assert.Equal(1, totalStudents);
         Assert.True(totalCourses >= 1, $"Expected at least 1 course, got {totalCourses}");
         Assert.Equal(1, totalEnrollments);
     }
@@ -441,13 +441,13 @@ public class Phase2FullStackIntegrationTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson { ModuleId = module.Id, Title = "Lesson", Content = "Content", OrderIndex = 1 };
-        db.Lessons.Add(lesson);
+        var lesson = new ContentItem { ModuleId = module.Id, Title = "Lesson", Content = "Content", DisplayOrder = 1 };
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
 
         var completion = new LessonCompletion
         {
-            LessonId = lesson.Id,
+            ContentItemId = lesson.Id,
             StudentId = student.Id,
             CompletedAt = DateTime.UtcNow
         };
@@ -455,7 +455,7 @@ public class Phase2FullStackIntegrationTests
         await db.SaveChangesAsync();
 
         var completed = await db.LessonCompletions
-            .Where(lc => lc.StudentId == student.Id && lc.LessonId == lesson.Id)
+            .Where(lc => lc.StudentId == student.Id && lc.ContentItemId == lesson.Id)
             .ToListAsync();
 
         Assert.Single(completed);

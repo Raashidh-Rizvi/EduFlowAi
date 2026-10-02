@@ -18,25 +18,21 @@ namespace EduFlow.Infrastructure.Data.Migrations
                 nullable: false,
                 defaultValueSql: "CURRENT_TIMESTAMP");
 
-            migrationBuilder.AlterColumn<Guid>(
-                name: "Version",
-                table: "SupportTickets",
-                type: "uuid",
-                nullable: false,
-                oldClrType: typeof(int),
-                oldType: "integer");
+            // PostgreSQL has no integer -> uuid cast, so the scaffolded AlterColumn failed on every
+            // database. Version is only an optimistic-concurrency token: issue fresh values.
+            migrationBuilder.Sql("""
+                ALTER TABLE "SupportTickets"
+                ALTER COLUMN "Version" TYPE uuid USING gen_random_uuid();
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<int>(
-                name: "Version",
-                table: "SupportTickets",
-                type: "integer",
-                nullable: false,
-                oldClrType: typeof(Guid),
-                oldType: "uuid");
+            migrationBuilder.Sql("""
+                ALTER TABLE "SupportTickets"
+                ALTER COLUMN "Version" TYPE integer USING 1;
+                """);
 
             migrationBuilder.DropColumn(
                 name: "UpdatedAt",

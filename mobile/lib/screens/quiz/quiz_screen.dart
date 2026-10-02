@@ -30,8 +30,10 @@ class _QuizScreenState extends State<QuizScreen> {
   List<Map<String, dynamic>> _questions = [];
   int _currentQuestionIndex = 0;
   int? _selectedOptionIndex;
-  bool _hasSubmittedCurrent = false;
-  int _correctAnswersCount = 0;
+  // questionId -> selected option text; marks come only from the server.
+  final Map<String, String> _answers = {};
+  bool _isSubmitting = false;
+  Map<String, dynamic>? _result;
   bool _isFinished = false;
 
   // Timer
@@ -70,12 +72,11 @@ class _QuizScreenState extends State<QuizScreen> {
       _questions = questionsList.map<Map<String, dynamic>>((q) {
         final options = (q['options'] as List<dynamic>? ?? []).cast<String>();
         return {
-          'questionId': q['questionId']?.toString() ?? '',
+          'questionId': (q['id'] ?? q['questionId'])?.toString() ?? '',
           'prompt': q['prompt'] ?? '',
           'options': options,
           'type': q['type'] ?? 'MultipleChoice',
           'points': q['points'] ?? 10,
-          'explanation': q['explanation'] ?? '',
         };
       }).toList();
 
@@ -105,9 +106,8 @@ class _QuizScreenState extends State<QuizScreen> {
         timer.cancel();
         setState(() {
           _timerExpired = true;
-          _isFinished = true;
         });
-        widget.onQuizCompleted(0, 0);
+        _submitAttempt();
       } else {
         setState(() {
           _remainingSeconds--;
@@ -131,40 +131,67 @@ class _QuizScreenState extends State<QuizScreen> {
   }
 
   void _handleSelectOption(int index) {
-    if (_hasSubmittedCurrent || _timerExpired) return;
+    if (_isSubmitting || _timerExpired) return;
     setState(() {
       _selectedOptionIndex = index;
     });
   }
 
-  void _handleSubmitAnswer() {
+  void _recordCurrentAnswer() {
     if (_selectedOptionIndex == null) return;
-
-    final isCorrect = _selectedOptionIndex == 0; // Backend returns options with correct at index 0
-    setState(() {
-      _hasSubmittedCurrent = true;
-      if (isCorrect) _correctAnswersCount++;
-    });
+    final q = _questions[_currentQuestionIndex];
+    final options = q['options'] as List<String>;
+    _answers[q['questionId'] as String] = options[_selectedOptionIndex!];
   }
 
   void _handleNextQuestion() {
+    _recordCurrentAnswer();
     if (_currentQuestionIndex < _questions.length - 1) {
       setState(() {
         _currentQuestionIndex++;
         _selectedOptionIndex = null;
-        _hasSubmittedCurrent = false;
       });
     } else {
-      _timer?.cancel();
-      setState(() {
-        _isFinished = true;
+      _submitAttempt();
+    }
+  }
+
+  /// Submits the attempt; the server marks it and returns the authoritative result.
+  Future<void> _submitAttempt() async {
+    if (_isSubmitting || _isFinished) return;
+    _timer?.cancel();
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final response = await _dio.post('/quizzes/submit', data: {
+        'quizId': widget.quizId,
+        'attemptId': _attemptId,
+        'answers': _answers.entries
+            .map((e) => {'questionId': e.key, 'selectedAnswer': e.value})
+            .toList(),
       });
-      final scorePct = _questions.isNotEmpty
-          ? (_correctAnswersCount / _questions.length) * 100
-          : 0.0;
-      final xp = scorePct >= 70 ? 80 : 20;
-      final coins = scorePct >= 70 ? 30 : 5;
-      widget.onQuizCompleted(xp, coins);
+      final result = Map<String, dynamic>.from(response.data as Map);
+      setState(() {
+        _result = result;
+        _isFinished = true;
+        _isSubmitting = false;
+      });
+      widget.onQuizCompleted(
+        (result['xpEarned'] as num?)?.toInt() ?? 0,
+        (result['coinsEarned'] as num?)?.toInt() ?? 0,
+      );
+    } on DioException catch (e) {
+      setState(() {
+        _isSubmitting = false;
+        _error = e.response?.data?['message'] ?? 'Your answers could not be submitted. No result was recorded.';
+      });
+    } catch (e) {
+      setState(() {
+        _isSubmitting = false;
+        _error = 'Your answers could not be submitted. No result was recorded.';
+      });
     }
   }
 
@@ -221,11 +248,12 @@ class _QuizScreenState extends State<QuizScreen> {
       );
     }
 
-    if (_isFinished) {
-      final scorePct = _questions.isNotEmpty
-          ? ((_correctAnswersCount / _questions.length) * 100).toInt()
-          : 0;
-      final passed = scorePct >= 70;
+    if (_isFinished && _result != null) {
+      final result = _result!;
+      final scorePct = ((result['percentageScore'] as num?) ?? 0).round();
+      final passed = result['passed'] == true;
+      final xpEarned = (result['xpEarned'] as num?)?.toInt() ?? 0;
+      final coinsEarned = (result['coinsEarned'] as num?)?.toInt() ?? 0;
 
       return Scaffold(
         backgroundColor: AppTheme.bgMain,
@@ -245,7 +273,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'You scored $scorePct% ($_correctAnswersCount/${_questions.length} correct)',
+                  'You scored $scorePct% (${result['scoreObtained']}/${result['maxScore']} marks)',
                   style: const TextStyle(color: AppTheme.textMuted, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
@@ -257,7 +285,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     border: Border.all(color: passed ? AppTheme.success : AppTheme.primary),
                   ),
                   child: Text(
-                    passed ? '🏆 Earned +80 XP • +30 Coins' : '+20 Effort XP',
+                    '+$xpEarned XP • +$coinsEarned Coins',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -371,15 +399,7 @@ class _QuizScreenState extends State<QuizScreen> {
                   Color bgColor = AppTheme.bgSurface;
                   Color borderColor = AppTheme.borderSubtle;
 
-                  if (_hasSubmittedCurrent) {
-                    if (index == 0) {
-                      bgColor = AppTheme.success.withOpacity(0.2);
-                      borderColor = AppTheme.success;
-                    } else if (isSelected) {
-                      bgColor = AppTheme.accent.withOpacity(0.2);
-                      borderColor = AppTheme.accent;
-                    }
-                  } else if (isSelected) {
+                  if (isSelected) {
                     bgColor = AppTheme.primary.withOpacity(0.2);
                     borderColor = AppTheme.borderAccent;
                   }
@@ -426,39 +446,18 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
 
-            // Explanation Toast
-            if (_hasSubmittedCurrent && currentQ['explanation'] != null && (currentQ['explanation'] as String).isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppTheme.bgSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.borderSubtle),
-                ),
-                child: Text(
-                  '💡 Explanation: ${currentQ['explanation']}',
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
-
             // Submit / Next Button
             ElevatedButton(
-              onPressed: _selectedOptionIndex == null
-                  ? null
-                  : _hasSubmittedCurrent
-                      ? _handleNextQuestion
-                      : _handleSubmitAnswer,
+              onPressed: _selectedOptionIndex == null || _isSubmitting ? null : _handleNextQuestion,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primary,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               child: Text(
-                _hasSubmittedCurrent
-                    ? (_currentQuestionIndex == _questions.length - 1 ? 'Finish & Claim XP 🏆' : 'Next Question ➔')
-                    : 'Submit Answer',
+                _isSubmitting
+                    ? 'Submitting...'
+                    : (_currentQuestionIndex == _questions.length - 1 ? 'Submit Quiz' : 'Next Question ➔'),
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
               ),
             ),

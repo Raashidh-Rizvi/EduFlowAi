@@ -89,7 +89,7 @@ public class InstructorController : BaseApiController
                 .ToListAsync()
             : new List<Enrollment>();
 
-        var activeEnrollments = enrollments.Where(e => e.Status == EnrollmentStatus.Active).ToList();
+        var activeEnrollments = enrollments.Where(e => (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed)).ToList();
         var pendingEnrollments = enrollments.Where(e => e.Status == EnrollmentStatus.Pending).ToList();
 
         var moduleCount = await DbContext.Modules.AsNoTracking()
@@ -99,7 +99,7 @@ public class InstructorController : BaseApiController
             .Where(m => courseIds.Contains(m.CourseId))
             .Select(m => m.Id)
             .ToListAsync();
-        var lessonCount = await DbContext.Lessons.AsNoTracking()
+        var lessonCount = await DbContext.ContentItems.AsNoTracking()
             .CountAsync(l => lessonCourseIds.Contains(l.ModuleId));
 
         // Documented calculation: approved reviews on PUBLISHED courses only,
@@ -517,7 +517,7 @@ public class InstructorController : BaseApiController
 
         var enrollments = await DbContext.Enrollments.AsNoTracking()
             .Where(e => courseIds.Contains(e.CourseId)
-                && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Pending))
+                && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed || e.Status == EnrollmentStatus.Pending))
             .Include(e => e.Course)
             .Include(e => e.Student)
             .OrderBy(e => e.Student!.FullName)
@@ -611,7 +611,7 @@ public class InstructorController : BaseApiController
 
         var students = courseIds.Count > 0
             ? await DbContext.Enrollments.AsNoTracking()
-                .Where(e => courseIds.Contains(e.CourseId) && e.Status == EnrollmentStatus.Active)
+                .Where(e => courseIds.Contains(e.CourseId) && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
                 .Select(e => e.StudentId)
                 .Distinct()
                 .CountAsync()
@@ -652,7 +652,7 @@ public class InstructorController : BaseApiController
         var lessonCountsByModule = new Dictionary<Guid, int>();
         if (moduleIds.Count > 0)
         {
-            var lessons = await DbContext.Lessons.AsNoTracking()
+            var lessons = await DbContext.ContentItems.AsNoTracking()
                 .Where(l => moduleIds.Contains(l.ModuleId))
                 .Select(l => new { l.Id, l.ModuleId })
                 .ToListAsync();

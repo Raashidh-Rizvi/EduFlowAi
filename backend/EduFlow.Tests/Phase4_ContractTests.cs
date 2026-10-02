@@ -536,7 +536,8 @@ public class Phase4_ContractTests
         {
             CourseId = course.Id,
             ScopeType = QuizScopeType.Topic,
-            TopicScopeId = topic.Id,
+            ModuleId = module.Id,
+            TopicId = topic.Id,
             Title = "Topic Assessment",
             Description = "Assessment scoped to topic",
             Type = AssessmentType.Quiz,
@@ -552,16 +553,17 @@ public class Phase4_ContractTests
         await db.SaveChangesAsync();
 
         var loaded = await db.Assessments
-            .Include(a => a.TopicScope)
+            .Include(a => a.Topic)
             .ThenInclude(t => t!.Module)
             .ThenInclude(m => m!.Course)
             .FirstOrDefaultAsync(a => a.Id == assessment.Id);
 
         Assert.NotNull(loaded);
-        Assert.NotNull(loaded!.TopicScope);
-        Assert.Equal("Topic 1", loaded.TopicScope!.Title);
-        Assert.NotNull(loaded.TopicScope.Module);
-        Assert.Equal("Module 1", loaded.TopicScope.Module!.Title);
-        Assert.Equal(instructor.Id, loaded.TopicScope.Module.Course!.InstructorId);
+        Assert.NotNull(loaded!.Topic);
+        Assert.Equal("Topic 1", loaded.Topic!.Title);
+        Assert.Equal(module.Id, loaded.ModuleId);
+        Assert.NotNull(loaded.Topic.Module);
+        Assert.Equal("Module 1", loaded.Topic.Module!.Title);
+        Assert.Equal(instructor.Id, loaded.Topic.Module.Course!.InstructorId);
     }
 }

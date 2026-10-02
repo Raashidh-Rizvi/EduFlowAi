@@ -165,7 +165,6 @@ public class Module : BaseEntity
     public string Status { get; set; } = "Published";
 
     public ICollection<Topic> Topics { get; set; } = new List<Topic>();
-    public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
     public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
 }
@@ -204,11 +203,23 @@ public class ContentItem : BaseEntity
     public string? AttachmentFileName { get; set; }
     public string Status { get; set; } = "Published";
 
+    /// <summary>
+    /// When true, the body may be read WITHOUT enrollment (anonymous preview), provided the
+    /// parent course is published. Instructors mark this to advertise their course.
+    /// </summary>
+    public bool IsFreePreview { get; set; } = false;
+
     public ICollection<ContentItem> ChildContentItems { get; set; } = new List<ContentItem>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
     public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
 }
 
+/// <summary>
+/// LEGACY — read-only. Lessons now live in <see cref="ContentItem"/> (same Id), the canonical
+/// Course → Module → Topic → ContentItem tree. The table is kept only so existing foreign keys
+/// (<see cref="LessonCompletion.LessonId"/>, <see cref="StudyPlanItem.ReferencedLessonId"/>)
+/// stay valid until the legacy-removal migration. No code may read or write it.
+/// </summary>
 public class Lesson : BaseEntity
 {
     public Guid ModuleId { get; set; }
@@ -238,8 +249,13 @@ public class Enrollment : BaseEntity
     public User? Student { get; set; }
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
+
+    /// <summary>Cached course progress; written only by the progress service.</summary>
     public double ProgressPercentage { get; set; } = 0.0;
     public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
+
+    /// <summary>When every learning unit of the course was first completed.</summary>
+    public DateTime? CompletedAt { get; set; }
 
     /// <summary>When the (re-)submission that produced the current status was made.</summary>
     public DateTime? RequestedAt { get; set; }
@@ -255,10 +271,13 @@ public class Enrollment : BaseEntity
     public string? ReviewNotes { get; set; }
 }
 
+/// <summary>A student's completion of one content item (the canonical learning unit).</summary>
 public class LessonCompletion : BaseEntity
 {
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
+
+    /// <summary>LEGACY — completions recorded before lessons moved into ContentItems.</summary>
     public Guid? LessonId { get; set; }
     public Lesson? Lesson { get; set; }
     public Guid? ContentItemId { get; set; }
@@ -269,11 +288,22 @@ public class LessonCompletion : BaseEntity
 // -----------------------------------------------------------------------------
 // 3. Assessment & Unified Quiz Scope Engine Entities
 // -----------------------------------------------------------------------------
+/// <summary>
+/// An assessment always belongs to exactly one <see cref="Module"/> and may optionally
+/// target one <see cref="Topic"/> (or content item) inside that module.
+/// <see cref="CourseId"/> is a denormalized copy of Module.CourseId kept for querying.
+/// <see cref="ScopeType"/>/<see cref="ScopeId"/> are the legacy API-facing view of the same
+/// placement, written only through the scope helper; they will be removed with the legacy API.
+/// </summary>
 public class Assessment : BaseEntity
 {
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
-    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Course;
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Module;
     public Guid? ScopeId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
@@ -296,13 +326,12 @@ public class Assessment : BaseEntity
     public string? GenerationWorkflowId { get; set; }
     public DateTime? DueDate { get; set; }
 
-    // Navigation properties for hierarchy scopes
-    public Guid? TopicScopeId { get; set; }
-    public Topic? TopicScope { get; set; }
+    /// <summary>Share of the course grade (0-100), or null when the assessment is not graded.</summary>
+    public decimal? GradeWeightPercent { get; set; }
+
+    // Optional finer-grained target inside the module
     public Guid? ContentItemScopeId { get; set; }
     public ContentItem? ContentItemScope { get; set; }
-    public Guid? ModuleScopeId { get; set; }
-    public Module? ModuleScope { get; set; }
     public QuizConfiguration? Configuration { get; set; }
     public ICollection<Question> Questions { get; set; } = new List<Question>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
@@ -355,19 +384,31 @@ public class QuestionOption : BaseEntity
     public int DisplayOrder { get; set; }
 }
 
+/// <summary>
+/// One student attempt at an assessment (the canonical attempt record). Created when the
+/// attempt starts, completed on submission, and finalized by evaluation. Marks are only
+/// ever written by the server-side evaluation path.
+/// </summary>
 public class Submission : BaseEntity
 {
     public Guid AssessmentId { get; set; }
     public Assessment? Assessment { get; set; }
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
+
+    /// <summary>1-based, unique per (assessment, student).</summary>
+    public int AttemptNumber { get; set; } = 1;
+    public AttemptStatus Status { get; set; } = AttemptStatus.InProgress;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? EvaluatedAt { get; set; }
+
     public int ScoreObtained { get; set; }
     public int MaxScore { get; set; }
     public double PercentageScore { get; set; }
     public bool Passed { get; set; }
     public bool IsAutoGraded { get; set; } = true;
     public string? InstructorFeedback { get; set; }
-    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<SubmissionAnswer> Answers { get; set; } = new List<SubmissionAnswer>();
 }
@@ -380,13 +421,144 @@ public class SubmissionAnswer : BaseEntity
     public Question? Question { get; set; }
     public string SelectedAnswer { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
+
+    /// <summary>Awarded marks; constrained to 0..<see cref="MaxMarks"/>.</summary>
     public int PointsAwarded { get; set; }
+
+    /// <summary>The question's maximum marks at the time of evaluation.</summary>
+    public int MaxMarks { get; set; }
+    public string? Feedback { get; set; }
+    public EvaluationMethod EvaluationMethod { get; set; } = EvaluationMethod.Deterministic;
+    public AnswerEvaluationStatus EvaluationStatus { get; set; } = AnswerEvaluationStatus.Pending;
+
+    /// <summary>
+    /// JSON <c>QuestionSnapshot</c>: the prompt, options, answer key and maximum marks this
+    /// answer was marked against, so the result is reproducible after the question changes.
+    /// </summary>
+    public string? QuestionSnapshotJson { get; set; }
+
+    public ICollection<MarkAdjustment> MarkAdjustments { get; set; } = new List<MarkAdjustment>();
+}
+
+/// <summary>
+/// Every manual mark (first marking of a subjective answer, or an override of an existing
+/// mark) with its author, previous and new value and the stated reason.
+/// </summary>
+public class MarkAdjustment : BaseEntity
+{
+    public Guid SubmissionAnswerId { get; set; }
+    public SubmissionAnswer? SubmissionAnswer { get; set; }
+    /// <summary>The marker; null only if that account was later deleted.</summary>
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public int PreviousMarks { get; set; }
+    public int NewMarks { get; set; }
+    public AnswerEvaluationStatus PreviousStatus { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 
 // -----------------------------------------------------------------------------
+// 3b. Grading: policies, weights, course results
+// -----------------------------------------------------------------------------
+
+/// <summary>
+/// A grading scale. The institution default has no <see cref="CourseId"/>; a course may own
+/// a custom policy. Thresholds are data, never code.
+/// </summary>
+public class GradingPolicy : BaseEntity
+{
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsInstitutionDefault { get; set; }
+
+    public ICollection<GradeBand> Bands { get; set; } = new List<GradeBand>();
+}
+
+/// <summary>
+/// A grade awarded for percentages from <see cref="MinPercentage"/> (inclusive) up to the next
+/// higher band's minimum (exclusive). The lowest band must start at 0.
+/// </summary>
+public class GradeBand : BaseEntity
+{
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal MinPercentage { get; set; }
+}
+
+/// <summary>
+/// How a course turns assessment results into a course grade: the grading policy, which
+/// attempt counts, and (on each assessment) its weight. Weights may be incomplete while
+/// <see cref="Status"/> is Draft; activation requires them to total exactly 100.
+/// </summary>
+public class CourseGradingConfiguration : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public GradingConfigurationStatus Status { get; set; } = GradingConfigurationStatus.Draft;
+    public AttemptScoringRule AttemptScoring { get; set; } = AttemptScoringRule.Highest;
+    public DateTime? ActivatedAt { get; set; }
+    public Guid? ActivatedById { get; set; }
+}
+
+/// <summary>
+/// A student's course result, derived from evaluated attempts by the grade service and never
+/// written by clients. A manual override is recorded alongside, never in place of, the
+/// calculated grade.
+/// </summary>
+public class CourseResult : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+
+    /// <summary>Weighted percentage over the full 100% (assessments without a result count as 0).</summary>
+    public decimal CoursePercentage { get; set; }
+
+    /// <summary>Weighted percentage over only the weight already assessed (null when nothing is assessed).</summary>
+    public decimal? CurrentPercentage { get; set; }
+
+    /// <summary>Total weight of assessments that have an evaluated attempt.</summary>
+    public decimal AssessedWeight { get; set; }
+    public string CalculatedGrade { get; set; } = string.Empty;
+    public string? OverrideGrade { get; set; }
+
+    /// <summary>True when every weighted assessment has an evaluated attempt.</summary>
+    public bool IsComplete { get; set; }
+    public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
+
+    public string EffectiveGrade => OverrideGrade ?? CalculatedGrade;
+
+    public ICollection<GradeOverride> Overrides { get; set; } = new List<GradeOverride>();
+}
+
+/// <summary>Audit trail of manual grade overrides (original value, new value, reason, actor).</summary>
+public class GradeOverride : BaseEntity
+{
+    public Guid CourseResultId { get; set; }
+    public CourseResult? CourseResult { get; set; }
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public string PreviousGrade { get; set; } = string.Empty;
+
+    /// <summary>The override grade, or null when an override was removed.</summary>
+    public string? NewGrade { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+// -----------------------------------------------------------------------------
 // 4. Gamification: XP, Levels, Badges, Streaks & Challenges
 // -----------------------------------------------------------------------------
+/// <summary>
+/// The points ledger. Every XP or coin change is one row; <see cref="StudentXp"/> is only an
+/// aggregate of these rows. <see cref="IdempotencyKey"/> (unique per student) guarantees that
+/// the same LMS event can never pay twice.
+/// </summary>
 public class XpTransaction : BaseEntity
 {
     public Guid StudentId { get; set; }
@@ -394,6 +566,21 @@ public class XpTransaction : BaseEntity
     public XpSourceType SourceType { get; set; }
     public Guid SourceId { get; set; }
     public int XpAmount { get; set; }
+    public int CoinAmount { get; set; }
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>Stable key of the event that caused this award, e.g. "quiz-completed:{assessmentId}".</summary>
+    public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>
+/// One configurable gamification value (XP amount, tier threshold, coin ratio, cap...).
+/// Rules are data: changing a reward never requires a code change.
+/// </summary>
+public class GamificationRule : BaseEntity
+{
+    public string Key { get; set; } = string.Empty;
+    public decimal Value { get; set; }
     public string Description { get; set; } = string.Empty;
 }
 
@@ -426,6 +613,10 @@ public class Badge
     public BadgeCategory Category { get; set; } = BadgeCategory.Learning;
     public int XpBonus { get; set; } = 100;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>What the achievement measures; unlocked when the measure reaches <see cref="Threshold"/>.</summary>
+    public AchievementCriteria Criteria { get; set; } = AchievementCriteria.None;
+    public int Threshold { get; set; } = 1;
 
     public ICollection<StudentBadge> StudentBadges { get; set; } = new List<StudentBadge>();
 }

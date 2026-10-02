@@ -10,8 +10,10 @@ using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Interfaces;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -64,12 +66,11 @@ public class EnrollmentLifecycleTests
             options.UseInMemoryDatabase(databaseName));
 
         builder.Services.AddScoped<IAuthService, AuthService>();
-        builder.Services.AddScoped<IGamificationService, GamificationService>();
+        builder.Services.AddLmsDomainServices();
         builder.Services.AddScoped<IRatingService, RatingService>();
+        // AddLmsDomainServices registers the default payment gate; a test gate overrides it.
         if (paymentGate != null)
             builder.Services.AddScoped<IPaymentVerificationService>(_ => paymentGate);
-        else
-            builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
 
         builder.Services.AddAuthentication("EnrollmentTest")
             .AddScheme<AuthenticationSchemeOptions, EnrollmentTestAuthHandler>("EnrollmentTest", _ => { });
@@ -177,14 +178,14 @@ public class EnrollmentLifecycleTests
         db.Modules.Add(module);
         await db.SaveChangesAsync();
 
-        var lesson = new Lesson
+        var lesson = new ContentItem
         {
             ModuleId = module.Id,
             Title = $"{title} Lesson",
             Content = "PROTECTED LESSON BODY — must not leak before approval.",
-            OrderIndex = 1
+            DisplayOrder = 1
         };
-        db.Lessons.Add(lesson);
+        db.ContentItems.Add(lesson);
         await db.SaveChangesAsync();
         return lesson.Id;
     }

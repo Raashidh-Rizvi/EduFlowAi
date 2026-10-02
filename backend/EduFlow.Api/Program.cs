@@ -1,8 +1,10 @@
 using System.Text;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
+using EduFlow.Infrastructure;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
+using EduFlow.Infrastructure.Services.Evaluation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -31,14 +33,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 // 2. Register Domain & Infrastructure Services
 builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IGamificationService, GamificationService>();
+builder.Services.AddLmsDomainServices();
 builder.Services.AddScoped<ITeamService, TeamService>();
 // Enrollment approval must never bypass payment verification. Swap this registration for a
 // provider-backed implementation when a payment gateway is introduced.
-builder.Services.AddScoped<IPaymentVerificationService, PaymentVerificationService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
 builder.Services.AddScoped<ISupportTicketService, SupportTicketService>();
-builder.Services.AddScoped<IAuditLogWriter, AuditLogWriter>();
 builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
 
 // 2b. Review moderation behaviour (see docs/current/RATINGS_AND_REVIEWS.md)
@@ -164,6 +164,19 @@ using (var scope = app.Services.CreateScope())
     {
         logger.LogCritical(ex, "Database initialization/migration failed. Application cannot start safely.");
         throw;
+    }
+
+    // Demo accounts and content exist only in Development; other environments get schema only.
+    if (app.Environment.IsDevelopment())
+    {
+        try
+        {
+            DbInitializer.SeedDevelopmentData(services.GetRequiredService<ApplicationDbContext>());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Development demo data seeding failed; continuing without complete demo data.");
+        }
     }
 }
 

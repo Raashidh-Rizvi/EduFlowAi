@@ -30,7 +30,25 @@ public enum XpSourceType
     TeamChallenge,
     AiAdaptiveChallenge,
     RemediationCompleted,
-    FocusSession
+    FocusSession,
+    LevelUp,
+    BadgeUnlocked,
+    DailyMissionCompleted
+}
+
+/// <summary>The measure an achievement (badge) is unlocked by.</summary>
+public enum AchievementCriteria
+{
+    None,
+    LessonsCompleted,
+    StreakDays,
+    PerfectScores,
+    AssessmentsPassed,
+    BossAssessmentsPassed,
+    ImprovementBonusesEarned,
+    ChallengesCompleted,
+    CoursesCompleted,
+    TeamMemberships
 }
 
 public enum DifficultyLevel
@@ -125,6 +143,44 @@ public enum QuizStatus
     Failed
 }
 
+/// <summary>Lifecycle of one assessment attempt (persisted as <c>Submission</c>).</summary>
+public enum AttemptStatus
+{
+    InProgress,
+    Submitted,
+    Evaluating,
+    Evaluated,
+    Cancelled
+}
+
+/// <summary>How an answer's marks were produced.</summary>
+public enum EvaluationMethod
+{
+    Deterministic,
+    Ai,
+    Manual
+}
+
+public enum AnswerEvaluationStatus
+{
+    Pending,
+    Evaluated,
+    NeedsReview
+}
+
+public enum GradingConfigurationStatus
+{
+    Draft,
+    Active
+}
+
+/// <summary>Which evaluated attempt counts toward the course grade.</summary>
+public enum AttemptScoringRule
+{
+    Highest,
+    Latest
+}
+
 public enum FeedbackMode
 {
     Immediate,
@@ -144,7 +200,8 @@ public enum QuestionType
     ScenarioBased,
     TimedChallenge,
     CodeSnippet,
-    OpenEnded
+    OpenEnded,
+    Numerical
 }
 
 public enum EnrollmentStatus

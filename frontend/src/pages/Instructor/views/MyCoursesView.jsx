@@ -6,6 +6,7 @@ import {
   SectionHeading, LoadingBlock, EmptyState, ErrorBanner, StarRating, fmtMoney, fmtNumber
 } from '../shared';
 import CourseMetadataFields, { metadataPayload, metadataFormState } from './CourseMetadataFields';
+import CourseGradingPanel from './CourseGradingPanel';
 
 const FIELD = {
   width: '100%', padding: '10px 13px', fontSize: '13px', color: 'var(--text-main)',
@@ -35,6 +36,7 @@ export default function MyCoursesView({ onNavigate }) {
   const [editForm, setEditForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  const [gradingCourse, setGradingCourse] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -303,13 +305,20 @@ export default function MyCoursesView({ onNavigate }) {
                 <button className="btn-ghost" onClick={() => onNavigate('assessments')} style={{ fontSize: '12px', padding: '8px 10px' }}>
                   Assessments
                 </button>
-                <button className="btn-danger" onClick={() => removeCourse(c)} disabled={busyId === c.id} style={{ fontSize: '12px', padding: '8px 10px', gridColumn: '1 / -1' }}>
+                <button className="btn-secondary" onClick={() => setGradingCourse(c)} style={{ fontSize: '12px', padding: '8px 10px' }}>
+                  Grading & Weights
+                </button>
+                <button className="btn-danger" onClick={() => removeCourse(c)} disabled={busyId === c.id} style={{ fontSize: '12px', padding: '8px 10px' }}>
                   Delete
                 </button>
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {gradingCourse && (
+        <CourseGradingPanel course={gradingCourse} onClose={() => setGradingCourse(null)} />
       )}
 
       {editing && editForm && (

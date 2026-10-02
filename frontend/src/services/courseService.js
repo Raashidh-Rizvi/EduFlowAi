@@ -114,6 +114,12 @@ export const courseService = {
     return response.data;
   },
 
+  // Server-calculated progress (completed content items + passed assessments over all published units).
+  async getProgress(courseId) {
+    const response = await api.get(`/courses/${courseId}/progress`);
+    return response.data;
+  },
+
   async completeLesson(lessonId) {
     const response = await api.post(`/courses/lessons/${lessonId}/complete`);
     return response.data;

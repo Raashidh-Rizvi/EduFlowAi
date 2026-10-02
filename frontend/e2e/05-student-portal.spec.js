@@ -107,25 +107,20 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     await expect(page.locator('text=Clean Architecture & PostgreSQL Indexing Diagnostic')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('text=Question 1 of 3')).toBeVisible();
 
-    // Answer Q1: Select "Isolation"
+    // Answers are collected without revealing correctness; the server marks the attempt on submit.
     await page.locator('text=Isolation').first().click();
-    await page.getByRole('button', { name: /Submit Answer/i }).click();
     await page.getByRole('button', { name: /Next Question/i }).click();
 
-    // Answer Q2: Select "Left-to-right"
     await expect(page.locator('text=Question 2 of 3')).toBeVisible();
     await page.locator('text=Left-to-right').first().click();
-    await page.getByRole('button', { name: /Submit Answer/i }).click();
     await page.getByRole('button', { name: /Next Question/i }).click();
 
-    // Answer Q3: Select "Enforce safety invariants"
     await expect(page.locator('text=Question 3 of 3')).toBeVisible();
     await page.locator('text=Enforce safety invariants').first().click();
-    await page.getByRole('button', { name: /Submit Answer/i }).click();
-    await page.getByRole('button', { name: /Finish & Record XP/i }).click();
+    await page.getByRole('button', { name: /Submit Assessment/i }).click();
 
-    // Verify Completion Card
-    await expect(page.locator('text=Assessment Completed')).toBeVisible({ timeout: 30000 });
+    // Completion card shows the server's result (pass or fail)
+    await expect(page.locator('text=/Assessment (Passed|Finished)/')).toBeVisible({ timeout: 30000 });
     await expect(page.getByText(/\+\d+ XP/).first()).toBeVisible({ timeout: 15000 });
 
     await page.screenshot({ path: 'e2e/screenshots/15-quiz-completed.png' });

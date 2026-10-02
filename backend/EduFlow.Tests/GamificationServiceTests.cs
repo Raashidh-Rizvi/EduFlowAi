@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using EduFlow.Core.Enums;
 using EduFlow.Infrastructure.Data;
@@ -49,10 +50,10 @@ public class GamificationServiceTests
         var service = new GamificationService(db);
         var studentId = Guid.NewGuid();
 
-        // 1. Award 300 XP
+        // 1. Award 300 XP (a source with no daily mission attached)
         var result = await service.AwardXpAsync(
             studentId,
-            XpSourceType.LessonCompleted,
+            XpSourceType.PracticeCompleted,
             Guid.NewGuid(),
             300,
             "Completed Clean Architecture Lesson"
@@ -80,8 +81,10 @@ public class GamificationServiceTests
         Assert.Equal(2, result2.NewLevel);
         Assert.True(result2.LevelUpOccurred);
 
+        // Two awards plus the ledgered level-up coin bonus.
         var totalTxCount = await db.XpTransactions.CountAsync(x => x.StudentId == studentId);
-        Assert.Equal(2, totalTxCount);
+        Assert.Equal(3, totalTxCount);
+        Assert.Single(await db.XpTransactions.Where(x => x.StudentId == studentId && x.SourceType == XpSourceType.LevelUp).ToListAsync());
     }
 
     [Fact]
@@ -91,10 +94,15 @@ public class GamificationServiceTests
         var service = new GamificationService(db);
         var studentId = Guid.NewGuid();
 
+        // Achievements are measured from LMS records: record the completion first.
+        var lessonId = Guid.NewGuid();
+        db.LessonCompletions.Add(new EduFlow.Core.Entities.LessonCompletion { StudentId = studentId, ContentItemId = lessonId });
+        await db.SaveChangesAsync();
+
         var result = await service.AwardXpAsync(
             studentId,
             XpSourceType.LessonCompleted,
-            Guid.NewGuid(),
+            lessonId,
             50,
             "First Lesson Completion"
         );
@@ -145,7 +153,7 @@ public class GamificationServiceTests
         // Award exactly 500 XP (Level 2 boundary)
         var result = await service.AwardXpAsync(
             studentId,
-            XpSourceType.LessonCompleted,
+            XpSourceType.PracticeCompleted,
             Guid.NewGuid(),
             500,
             "Boundary test"
@@ -165,7 +173,7 @@ public class GamificationServiceTests
         var studentId = Guid.NewGuid();
 
         // Award 300 XP for a lesson
-        await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 300, "Lesson");
+        await service.AwardXpAsync(studentId, XpSourceType.PracticeCompleted, Guid.NewGuid(), 300, "Practice");
 
         // Check the DB directly — XP must be saved
         var xpRecord = await db.StudentXp.FirstOrDefaultAsync(x => x.StudentId == studentId);
@@ -173,5 +181,68 @@ public class GamificationServiceTests
         Assert.Equal(300, xpRecord.TotalXp);
         Assert.Equal(1, service.CalculateLevel(xpRecord.TotalXp)); // Level 1 at 300 XP
     }
-}
 
+    [Fact]
+    public async Task AwardXpAsync_IsIdempotentPerSource()
+    {
+        using var db = CreateInMemoryDbContext();
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+        var challengeId = Guid.NewGuid();
+
+        var first = await service.AwardXpAsync(studentId, XpSourceType.PracticeCompleted, challengeId, 100, "Practice");
+        var replay = await service.AwardXpAsync(studentId, XpSourceType.PracticeCompleted, challengeId, 100, "Practice");
+
+        Assert.Equal(100, first.XpEarned);
+        Assert.Equal(0, replay.XpEarned);
+        Assert.Equal(100, (await db.StudentXp.SingleAsync(x => x.StudentId == studentId)).TotalXp);
+    }
+
+    [Fact]
+    public async Task LessonActivity_CompletesTheDailyMission_AndPaysItsConfiguredRewardOnce()
+    {
+        using var db = CreateInMemoryDbContext();
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+        int missionXp = (int)(await db.GamificationRules.SingleAsync(r => r.Key == EduFlow.Core.Constants.GamificationRuleKeys.MissionLessonXp)).Value;
+
+        await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 50, "Lesson 1");
+        await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 50, "Lesson 2");
+
+        var missionRows = await db.XpTransactions.Where(x => x.StudentId == studentId && x.SourceType == XpSourceType.DailyMissionCompleted).ToListAsync();
+        Assert.Equal(missionXp, Assert.Single(missionRows).XpAmount);
+        Assert.Equal(100 + missionXp, (await db.StudentXp.SingleAsync(x => x.StudentId == studentId)).TotalXp);
+    }
+
+    [Fact]
+    public async Task RewardValues_AreReadFromTheRulesTable()
+    {
+        using var db = CreateInMemoryDbContext();
+        var rule = await db.GamificationRules.SingleAsync(r => r.Key == EduFlow.Core.Constants.GamificationRuleKeys.CourseCompletedXp);
+        rule.Value = 777;
+        await db.SaveChangesAsync();
+
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+        var result = await service.AwardCourseCompletionAsync(studentId, Guid.NewGuid());
+
+        Assert.Equal(777, result.XpEarned);
+    }
+
+    [Fact]
+    public async Task ProfileTotals_AlwaysEqualTheLedger()
+    {
+        using var db = CreateInMemoryDbContext();
+        var service = new GamificationService(db);
+        var studentId = Guid.NewGuid();
+
+        await service.AwardXpAsync(studentId, XpSourceType.LessonCompleted, Guid.NewGuid(), 450, "Lesson");
+        await service.AwardXpAsync(studentId, XpSourceType.DailyChallenge, Guid.NewGuid(), 120, "Challenge");
+        await service.AwardCourseCompletionAsync(studentId, Guid.NewGuid());
+
+        var profile = await db.StudentXp.SingleAsync(x => x.StudentId == studentId);
+        var ledger = await db.XpTransactions.Where(x => x.StudentId == studentId).ToListAsync();
+        Assert.Equal(ledger.Sum(x => x.XpAmount), profile.TotalXp);
+        Assert.Equal(ledger.Sum(x => x.CoinAmount), profile.Coins);
+    }
+}

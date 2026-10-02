@@ -154,4 +154,61 @@ public class LearningAgentGatewayTests
         Assert.Equal(status, response.StatusCode);
         Assert.Equal(body, response.Content);
     }
+
+    // -------------------------------------------------------------------------
+    // Single-question regeneration must never substitute a canned question:
+    // upstream failures are passed through as errors so the controller leaves
+    // the instructor's original question untouched (LMS refactor PR 7).
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(404, "{\"detail\":\"Not Found\"}")]
+    [InlineData(422, "{\"detail\":\"No course material available\"}")]
+    [InlineData(502, "{\"detail\":\"AI quiz output failed validation\"}")]
+    [InlineData(503, "{\"detail\":\"GEMINI_API_KEY is not configured\"}")]
+    public async Task RegenerateQuestion_UpstreamErrors_PassthroughInsteadOfCannedQuestion(int status, string body)
+    {
+        var gateway = Gateway(req =>
+        {
+            Assert.Equal(HttpMethod.Post, req.Method);
+            var expected = $"/api/v1/ai/questions/{_regenerateQuestionId}/regenerate";
+            Assert.Equal(expected, req.RequestUri!.AbsolutePath);
+            return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status) { Content = new StringContent(body) });
+        });
+
+        var response = await gateway.RegenerateQuestionAsync(_regenerateQuestionId.ToString(), new { focus_topic = "Indexes" });
+        using var json = JsonDocument.Parse(response);
+        var root = json.RootElement;
+
+        Assert.Equal("error", root.GetProperty("status").GetString());
+        Assert.Equal(status, root.GetProperty("status_code").GetInt32());
+        Assert.False(root.TryGetProperty("question", out _),
+            "An error response must never carry a canned 'question' payload.");
+        Assert.Contains(body, root.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task RegenerateQuestion_NetworkFailure_ReportsErrorWithoutFakeQuestion()
+    {
+        var gateway = Gateway(_ => throw new HttpRequestException("offline"));
+        var response = await gateway.RegenerateQuestionAsync(_regenerateQuestionId.ToString(), new { });
+        using var json = JsonDocument.Parse(response);
+        var root = json.RootElement;
+
+        Assert.Equal("error", root.GetProperty("status").GetString());
+        Assert.Equal(503, root.GetProperty("status_code").GetInt32());
+        Assert.False(root.TryGetProperty("question", out _));
+        Assert.Contains("Unable to connect", root.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task RegenerateQuestion_Success_ReturnsPythonBodyUnchanged()
+    {
+        const string body = "{\"question\":{\"question_text\":\"Grounded?\",\"question_type\":\"MULTIPLE_CHOICE\",\"options\":[\"A\",\"B\"],\"correct_answer\":\"A\",\"explanation\":\"Slide 2\"},\"validation_passed\":true,\"source\":\"gemini\"}";
+        var gateway = Gateway(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) }));
+        var response = await gateway.RegenerateQuestionAsync(_regenerateQuestionId.ToString(), new { focus_topic = "Indexes" });
+        Assert.Equal(body, response);
+    }
+
+    private static readonly Guid _regenerateQuestionId = Guid.NewGuid();
 }

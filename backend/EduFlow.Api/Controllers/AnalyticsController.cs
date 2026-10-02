@@ -375,7 +375,7 @@ public class AnalyticsController : ControllerBase
         var averageScore = totalQuizzes > 0 ? Math.Round(submissions.Average(s => s.PercentageScore), 1) : 0.0;
         var badgesCount = await _dbContext.StudentBadges.CountAsync(sb => sb.StudentId == id);
         var challengesCompleted = await _dbContext.StudentChallenges.CountAsync(sc => sc.StudentId == id && sc.Status == ChallengeStatus.Completed);
-        var enrolledCoursesCount = await _dbContext.Enrollments.CountAsync(e => e.StudentId == id && e.Status == EnrollmentStatus.Active);
+        var enrolledCoursesCount = await _dbContext.Enrollments.CountAsync(e => e.StudentId == id && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed));
 
         return Ok(new
         {
@@ -406,7 +406,7 @@ public class AnalyticsController : ControllerBase
     {
         var course = await _dbContext.Courses
             .Include(c => c.Modules)
-                .ThenInclude(m => m.Lessons)
+                .ThenInclude(m => m.ContentItems)
             .Include(c => c.Assessments)
             .FirstOrDefaultAsync(c => c.Id == id);
 
@@ -448,7 +448,7 @@ public class AnalyticsController : ControllerBase
             courseCode = course.Code,
             isPublished = course.IsPublished,
             totalModules = course.Modules.Count,
-            totalLessons = course.Modules.Sum(m => m.Lessons.Count),
+            totalLessons = course.Modules.Sum(m => m.ContentItems.Count),
             totalAssessments = course.Assessments.Count,
             totalEnrolledStudents = totalEnrolled,
             activeStudents = activeEnrolled,

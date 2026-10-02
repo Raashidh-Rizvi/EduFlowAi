@@ -50,6 +50,7 @@ import CourseReviews from '../../components/reviews/CourseReviews';
 import { courseService } from '../../services/courseService';
 import AdminCourseManagement from './AdminCourseManagement';
 import { quizService } from '../../services/quizService';
+import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser }) {
@@ -624,7 +625,10 @@ function InstructorCourses({ currentUser }) {
         : detectedSlideTopics.filter(t => selectedTopicIds.includes(t.id)).map(t => t.title);
 
       const payload = {
-        courseId: aiQuizScope.courseId || '44444444-4444-4444-4444-444444444444',
+        courseId: aiQuizScope.courseId || currentCourse?.id,
+        moduleId: module?.id,
+        scopeType: toScopeTypeValue('Module'),
+        scopeId: module?.id,
         topic: topicsToInclude.join(', '),
         moduleTitle: aiQuizScope.moduleTitle,
         difficulty: aiQuizDifficulty,
@@ -645,7 +649,7 @@ function InstructorCourses({ currentUser }) {
         questions = res.questions.map((q, idx) => ({
           id: q.id || `q-item-${idx + 1}`,
           prompt: q.prompt,
-          type: q.type === 4 ? 'ShortAnswer' : q.type === 3 ? 'Matching' : q.type === 2 ? 'FillInBlank' : q.type === 1 ? 'Dropdown' : 'MultipleChoice',
+          type: questionTypeName(q.type),
           options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
           correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
           explanation: q.explanation || 'Verified with Bloom taxonomy analysis and SlideQuest Strict RAG Grounding.',
@@ -657,6 +661,9 @@ function InstructorCourses({ currentUser }) {
         setGeneratedDraft({
           title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
           description: `Strictly grounded in lecture slides (${topicsToInclude.join(', ')}) with transparent marking scheme & auto-evaluation.`,
+          // The backend already persisted this draft quiz (Status=Draft, awaiting
+          // instructor review). Approval must publish THIS quiz, not create a new one.
+          serverQuizId: res.id || res.quizId || null,
           questions
         });
 
@@ -710,11 +717,86 @@ function InstructorCourses({ currentUser }) {
       return;
     }
 
-    const targetCourseId = (currentCourse?.id && currentCourse.id.length === 36) ? currentCourse.id : '44444444-4444-4444-4444-444444444444';
-    const courseCode = currentCourse?.courseCode || currentCourse?.code || 'SE3090';
+    if (!currentCourse?.id) {
+      alert('Open a course before publishing a quiz.');
+      return;
+    }
+    const targetCourseId = currentCourse.id;
+    const courseCode = currentCourse.courseCode || currentCourse.code || '';
+
+    // The generation step already persisted a server-side Draft quiz; approving
+    // publishes THAT quiz. Re-creating it here used to duplicate every AI quiz.
+    const serverQuizId = typeof generatedDraft.serverQuizId === 'string' && generatedDraft.serverQuizId.length === 36
+      ? generatedDraft.serverQuizId
+      : null;
+
+    // Every assessment is stored in a module; a course-level quiz names its module too.
+    const moduleIdVal = aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36 ? aiQuizScope.moduleId : null;
+    const scopeTypeEnum = toScopeTypeValue(aiQuizScope.scopeLevel === 'Course' ? 'Course' : 'Module');
+    const scopeIdVal = aiQuizScope.scopeLevel === 'Course' ? targetCourseId : moduleIdVal;
+
+    const questionPayload = generatedDraft.questions.map((q, idx) => ({
+      prompt: q.prompt,
+      type: toQuestionTypeValue(q.type),
+      options: q.options || [],
+      correctAnswer: q.correctAnswer || '',
+      explanation: q.explanation || '',
+      points: q.points || 10,
+      orderIndex: idx + 1,
+      metadataJson: JSON.stringify({
+        slideCitation: q.slideCitation,
+        markingScheme: q.markingScheme,
+        questionType: q.type
+      })
+    }));
+
+    let createdQuizId = null;
+    try {
+      if (serverQuizId) {
+        // Apply the instructor's review edits to the existing server draft…
+        await quizService.updateQuiz(serverQuizId, {
+          courseId: targetCourseId,
+          title: generatedDraft.title,
+          description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
+          timeLimitMinutes: Number(aiTimeLimit),
+          passingScorePercent: Number(aiPassMark),
+          xpReward: Number(aiXpReward),
+          coinReward: Number(aiCoinReward),
+          scopeType: scopeTypeEnum,
+          scopeId: scopeIdVal,
+          moduleId: moduleIdVal,
+          status: 'Draft',
+          questions: questionPayload
+        });
+        // …then publish through the validated, audited lifecycle endpoint.
+        await quizService.publishQuiz(serverQuizId);
+      } else {
+        // No server draft (e.g. a legacy local-only review): create it now.
+        const created = await quizService.createQuiz({
+          courseId: targetCourseId,
+          title: generatedDraft.title,
+          description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
+          timeLimitMinutes: Number(aiTimeLimit),
+          passingScorePercent: Number(aiPassMark),
+          xpReward: Number(aiXpReward),
+          coinReward: Number(aiCoinReward),
+          scopeType: scopeTypeEnum,
+          scopeId: scopeIdVal,
+          moduleId: moduleIdVal,
+          questions: questionPayload
+        });
+        createdQuizId = created?.id || null;
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Publishing failed.';
+      alert(`Could not publish the AI quiz: ${errMsg}`);
+      return; // Stay in review mode — never fake a successful publish locally.
+    }
+
+    const finalQuizId = serverQuizId || createdQuizId || `q-${Date.now()}`;
 
     const newQuizObj = {
-      id: `q-${Date.now()}`,
+      id: finalQuizId,
       courseId: targetCourseId,
       courseCode: courseCode,
       title: generatedDraft.title,
@@ -779,42 +861,6 @@ function InstructorCourses({ currentUser }) {
     setCoursesList(updatedCourses);
     setShowAiQuizModal(false);
     showToast(`🎉 "${generatedDraft.title}" approved & published to ${aiQuizScope.scopeLevel}! Streamed to Assessments tab.`);
-
-    // Sync with backend API in background
-    try {
-      const scopeTypeEnum = aiQuizScope.scopeLevel === 'Course' ? 0 : aiQuizScope.scopeLevel === 'Topic' ? 1 : 2;
-      const scopeIdVal = (aiQuizScope.moduleId && aiQuizScope.moduleId.length === 36)
-        ? aiQuizScope.moduleId
-        : targetCourseId;
-
-      await quizService.createQuiz({
-        courseId: targetCourseId,
-        title: generatedDraft.title,
-        description: generatedDraft.description || `Assessment for ${aiQuizScope.moduleTitle}`,
-        timeLimitMinutes: Number(aiTimeLimit),
-        passingScorePercent: Number(aiPassMark),
-        xpReward: Number(aiXpReward),
-        coinReward: Number(aiCoinReward),
-        scopeType: scopeTypeEnum,
-        scopeId: scopeIdVal,
-        questions: generatedDraft.questions.map((q, idx) => ({
-          prompt: q.prompt,
-          type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : 0,
-          options: q.options || [],
-          correctAnswer: q.correctAnswer || '',
-          explanation: q.explanation || '',
-          points: q.points || 10,
-          orderIndex: idx + 1,
-          metadataJson: JSON.stringify({
-            slideCitation: q.slideCitation,
-            markingScheme: q.markingScheme,
-            questionType: q.type
-          })
-        }))
-      });
-    } catch {
-      // safely preserved in localStorage and component state
-    }
   };
 
   // ── INSTRUCTOR QUIZ REVIEW / EDIT & RENAME HANDLERS ────────────────────
@@ -935,7 +981,7 @@ function InstructorCourses({ currentUser }) {
     // 3. Persist to backend when this quiz actually lives there (GUID id)
     if (quizItem.id && quizItem.id.length === 36) {
       try {
-        const scopeTypeEnum = updatedQuiz.scopeType === 'Course' ? 0 : updatedQuiz.scopeType === 'Topic' ? 1 : 2;
+        const scopeTypeEnum = toScopeTypeValue(updatedQuiz.scopeType || 'Module');
         const scopeIdVal = (updatedQuiz.scopeId && String(updatedQuiz.scopeId).length === 36) ? updatedQuiz.scopeId : (quizModule?.id && quizModule.id.length === 36 ? quizModule.id : currentCourse.id);
         await quizService.updateQuiz(quizItem.id, {
           courseId: currentCourse.id,
@@ -947,9 +993,10 @@ function InstructorCourses({ currentUser }) {
           coinReward: Number(updatedQuiz.coinReward || 20),
           scopeType: scopeTypeEnum,
           scopeId: scopeIdVal,
+          moduleId: quizModule?.id && quizModule.id.length === 36 ? quizModule.id : undefined,
           questions: updatedQuiz.questions.map((q, idx) => ({
             prompt: q.prompt,
-            type: q.type === 'ShortAnswer' ? 3 : q.type === 'Matching' ? 4 : q.type === 'FillInBlank' ? 2 : q.type === 'TrueFalse' ? 2 : 0,
+            type: toQuestionTypeValue(q.type),
             options: q.options || [],
             correctAnswer: q.correctAnswer || '',
             explanation: q.explanation || '',
@@ -973,15 +1020,25 @@ function InstructorCourses({ currentUser }) {
   };
 
   // ── INTERACTIVE QUIZ QUEST RUNNER HANDLERS ────────────────────────────────
-  const handleStartSlideQuestRunner = (assessmentObj, mod) => {
-    let questions = assessmentObj.questions || [];
+  const handleStartSlideQuestRunner = async (assessmentObj, mod) => {
+    let questions;
+    let attemptId;
+    try {
+      const attempt = await quizService.startQuiz(assessmentObj.id);
+      questions = attempt.questions || [];
+      attemptId = attempt.attemptId;
+    } catch (err) {
+      alert(err.friendlyMessage || 'This assessment cannot be started right now.');
+      return;
+    }
     if (questions.length === 0) {
-      alert('No AI generated questions are available for this assessment.');
+      alert('This assessment has no questions yet.');
       return;
     }
 
     setActiveRunnerQuiz({
       ...assessmentObj,
+      attemptId,
       moduleTitle: mod?.title || currentCourse?.title || 'Curriculum',
       questions
     });
@@ -1001,116 +1058,59 @@ function InstructorCourses({ currentUser }) {
 
   const handleSubmitQuizQuest = async () => {
     if (!activeRunnerQuiz || !activeRunnerQuiz.questions) return;
+
+    const isLearner = !(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin');
+    if (!isLearner) {
+      showToast('Preview mode: instructor attempts are not submitted or graded.');
+      return;
+    }
+
     setIsSubmittingQuiz(true);
-
     try {
-      const breakdown = [];
-      let earnedPoints = 0;
-      let totalPoints = 0;
-      let currentStreak = 0;
-      let maxStreak = 0;
+      const answers = activeRunnerQuiz.questions.map((q) => ({
+        questionId: q.id,
+        selectedAnswer: (runnerAnswers[q.id] || '').trim()
+      }));
+      const res = await quizService.submitQuiz(activeRunnerQuiz.id, answers, activeRunnerQuiz.attemptId);
+      const pointsById = new Map(activeRunnerQuiz.questions.map((q) => [q.id, q.points]));
 
-      activeRunnerQuiz.questions.forEach((q, idx) => {
-        const qId = q.id || `q-item-${idx + 1}`;
-        const studentAns = (runnerAnswers[qId] || '').trim();
-        const pts = q.points || 10;
-        totalPoints += pts;
-
-        let isCorrect = false;
-        let awarded = 0;
-        let aiFeedback = null;
-
-        if (q.type === 'ShortAnswer') {
-          // Automated semantic grading for typed answer
-          if (studentAns.length > 15) {
-            const lower = studentAns.toLowerCase();
-            const keywords = ['consistency', 'latency', 'quorum', 'coordination', 'synchronous', 'replica', 'partition', 'trade-off', 'delay'];
-            const matched = keywords.filter(k => lower.includes(k));
-            if (matched.length >= 3) {
-              isCorrect = true;
-              awarded = pts;
-              aiFeedback = `Excellent conceptual grasp! Accurately cited key invariants: ${matched.join(', ')}. Full credit awarded against slide rubric.`;
-            } else if (matched.length >= 1) {
-              isCorrect = true;
-              awarded = Math.round(pts * 0.7);
-              aiFeedback = `Good effort. Covered ${matched.join(', ')}, but missed complete trade-off rationale. Partial credit (70%) awarded.`;
-            } else {
-              isCorrect = false;
-              awarded = Math.round(pts * 0.3);
-              aiFeedback = 'Response lacks key slide terminology. Partial credit (30%) awarded for conceptual attempt.';
-            }
-          } else {
-            isCorrect = false;
-            awarded = 0;
-            aiFeedback = 'Response too brief to satisfy slide marking rubric.';
-          }
-        } else if (q.type === 'FillInBlank') {
-          isCorrect = studentAns.toLowerCase() === q.correctAnswer.toLowerCase();
-          awarded = isCorrect ? pts : 0;
-        } else if (q.type === 'Matching') {
-          isCorrect = studentAns.length > 0 && (studentAns.includes('Coordinates') || studentAns.toLowerCase() === q.correctAnswer.toLowerCase());
-          awarded = isCorrect ? pts : Math.round(pts * 0.5);
-        } else {
-          // MultipleChoice or Dropdown
-          isCorrect = studentAns.toLowerCase() === q.correctAnswer.toLowerCase();
-          awarded = isCorrect ? pts : 0;
-        }
-
-        earnedPoints += awarded;
-
-        if (isCorrect) {
-          currentStreak += 1;
-          if (currentStreak > maxStreak) maxStreak = currentStreak;
-        } else {
-          currentStreak = 0;
-        }
-
-        breakdown.push({
-          questionId: qId,
-          prompt: q.prompt,
-          type: q.type,
-          selectedAnswer: studentAns || '(No Answer Provided)',
-          correctAnswer: q.correctAnswer,
-          isCorrect,
-          pointsAwarded: awarded,
-          maxPoints: pts,
-          explanation: q.explanation,
-          markingScheme: q.markingScheme,
-          slideCitation: q.slideCitation,
-          aiFeedback
-        });
-      });
-
-      const percentageScore = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-      const passed = percentageScore >= (activeRunnerQuiz.passPercentage || 70);
-      const streakBonus = maxStreak >= 3 ? maxStreak * 10 : maxStreak * 5;
-      const finalXpEarned = passed ? (activeRunnerQuiz.xpReward || 100) + streakBonus : Math.round((activeRunnerQuiz.xpReward || 100) * 0.3);
-      const finalCoinsEarned = passed ? (activeRunnerQuiz.coinReward || 30) : 5;
-
-      const resultObj = {
+      setMarkingSchemeResult({
         quizTitle: activeRunnerQuiz.title,
         moduleTitle: activeRunnerQuiz.moduleTitle,
-        scoreObtained: earnedPoints,
-        maxScore: totalPoints,
-        percentageScore,
-        passed,
-        xpEarned: finalXpEarned,
-        coinsEarned: finalCoinsEarned,
-        streakBonus,
-        maxStreak,
-        badgeUnlocked: passed && maxStreak >= 3 ? '🏅 SlideQuest Master Badge' : passed ? '🎯 Slide Explorer Badge' : null,
-        questionBreakdown: breakdown
-      };
-
-      setMarkingSchemeResult(resultObj);
+        scoreObtained: res.scoreObtained,
+        maxScore: res.maxScore,
+        percentageScore: Math.round(res.percentageScore),
+        passed: res.passed,
+        xpEarned: res.xpEarned,
+        coinsEarned: res.coinsEarned,
+        streakBonus: res.xpBreakdown?.streakBonus || 0,
+        badgeUnlocked: res.badgeUnlocked || null,
+        status: res.status,
+        pendingReviewCount: res.pendingReviewCount || 0,
+        questionBreakdown: (res.questionBreakdown || []).map((item) => ({
+          questionId: item.questionId,
+          prompt: item.prompt,
+          type: item.questionType,
+          selectedAnswer: item.selectedAnswer || '(No Answer Provided)',
+          correctAnswer: item.correctAnswer,
+          isCorrect: item.isCorrect,
+          pointsAwarded: item.pointsAwarded,
+          maxPoints: item.maxMarks || pointsById.get(item.questionId),
+          evaluationStatus: item.evaluationStatus,
+          explanation: item.explanation,
+          markingScheme: item.markingScheme,
+          slideCitation: item.slideCitation,
+          aiFeedback: null
+        }))
+      });
       setShowQuizRunnerModal(false);
       setShowMarkingSchemeModal(true);
-
-      if (passed) {
-        showToast(`🏆 Quiz Quest Passed! ${percentageScore}% • +${finalXpEarned} XP • +${finalCoinsEarned} Coins!`);
-      } else {
-        showToast(`Quiz completed with ${percentageScore}%. Review the marking scheme below.`);
-      }
+      showToast(res.passed
+        ? `🏆 Quiz passed! ${Math.round(res.percentageScore)}% • +${res.xpEarned} XP`
+        : `Quiz completed with ${Math.round(res.percentageScore)}%. Review the marking scheme below.`);
+    } catch (err) {
+      // Nothing was recorded; the runner stays open so the student can retry.
+      alert(err.friendlyMessage || 'Your answers could not be submitted. No result was recorded.');
     } finally {
       setIsSubmittingQuiz(false);
     }
@@ -4724,9 +4724,6 @@ function InstructorCourses({ currentUser }) {
                 )}
               </div>
 
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Max Streak: <strong>{markingSchemeResult.maxStreak || 0}x</strong>
-              </span>
             </div>
 
             {/* Detailed Question-by-Question Marking Scheme Breakdown */}
