@@ -5,7 +5,7 @@ FastAPI service with the implemented LearningAgent, Breakdown/Planner/Explainer 
 From `ai-agent/`, after following [setup](../docs/current/LOCAL_SETUP_GUIDE.md):
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8888
 ```
 
 Do not run this separately when the root dev runner already owns the service. `/health` and `/docs` expose health and actual routes. Browser Learning traffic goes through ASP.NET, not directly to this service.

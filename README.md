@@ -8,7 +8,7 @@ The approved AI direction is Learning Agent + Quiz Generator Agent using shared 
 
 ## Local development
 
-Follow the [current setup guide](docs/current/LOCAL_SETUP_GUIDE.md) before starting services. From repository root, `npm run dev` launches React (2174), ASP.NET (5204) and Python (8000). PostgreSQL/configuration and local lecture indexing are separate prerequisites. Do not run competing server instances or overwrite existing private configuration.
+Follow the [current setup guide](docs/current/LOCAL_SETUP_GUIDE.md) before starting services. From repository root, `npm run dev` launches React (2174), ASP.NET (5204) and Python (8888). PostgreSQL/configuration and local lecture indexing are separate prerequisites. Do not run competing server instances or overwrite existing private configuration.
 
 Learning browser requests follow **React → ASP.NET Core → Python**.
 

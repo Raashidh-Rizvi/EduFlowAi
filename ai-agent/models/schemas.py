@@ -8,7 +8,7 @@ It uses Pydantic (BaseModel) to define:
 1. Incoming Data Rules (Requests): What fields MUST be sent by .NET or React.
 2. Outgoing Data Rules (Responses): The exact structure of data sent back.
 3. Automatic Type Safety: Stops invalid data from crashing our server.
-4. Auto-Documentation: Generates the interactive docs at http://localhost:8000/docs.
+4. Auto-Documentation: Generates the interactive docs at http://localhost:8888/docs.
 
 SECTIONS IN THIS FILE:
 - SECTION 1: Document Indexing (When an instructor uploads lecture slides)

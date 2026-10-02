@@ -770,7 +770,7 @@ export default function AdminManagement() {
                   </div>
                   <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     <span className="status-dot-active" style={{ width: '6px', height: '6px' }}></span>
-                    <span style={{ color: 'var(--success)', fontWeight: '600' }}>FastAPI Gateway :8000 Healthy</span>
+                    <span style={{ color: 'var(--success)', fontWeight: '600' }}>FastAPI Gateway :8888 Healthy</span>
                   </div>
                 </div>
               </div>
@@ -1202,7 +1202,7 @@ export default function AdminManagement() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           {[
             { title: 'PostgreSQL 16 Database', status: 'Connected (Neon Cloud Cluster)', latency: '34ms', icon: Database, color: 'var(--success)' },
-            { title: 'LangGraph Multi-Agent Service', status: 'Healthy (FastAPI Gateway :8000)', latency: '12ms', icon: Cpu, color: 'var(--primary)' },
+            { title: 'LangGraph Multi-Agent Service', status: 'Healthy (FastAPI Gateway :8888)', latency: '12ms', icon: Cpu, color: 'var(--primary)' },
             { title: 'SignalR Real-Time Hub', status: 'Active (WebSockets WSS Protocol)', latency: '8ms', icon: Activity, color: 'var(--secondary)' },
             { title: 'JWT Authentication Guard', status: 'Active (RSA256 Bearer Token)', latency: '0ms', icon: Lock, color: 'var(--warning)' },
           ].map((item, i) => {

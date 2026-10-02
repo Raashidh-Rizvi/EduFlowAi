@@ -5,7 +5,7 @@
  * Runs all three subsystems concurrently with live-reloading:
  * 1. React Frontend (Vite with full-stack external watcher on port 2174)
  * 2. ASP.NET Core Backend API (dotnet watch on port 5204)
- * 3. Python AI Multi-Agent Service (Uvicorn auto-reload on port 8000)
+ * 3. Python AI Multi-Agent Service (Uvicorn auto-reload on port 8888)
  */
 
 import { spawn } from 'child_process';
@@ -19,9 +19,19 @@ const __dirname = path.dirname(__filename);
 const isWindows = process.platform === 'win32';
 const shellCmd = isWindows ? true : '/bin/sh';
 
-const relativeVenvPython = isWindows ? path.join('.', '.venv', 'Scripts', 'python.exe') : path.join('.', '.venv', 'bin', 'python');
-const fullVenvPython = path.join(__dirname, 'ai-agent', isWindows ? path.join('.venv', 'Scripts', 'python.exe') : path.join('.venv', 'bin', 'python'));
-const pythonCmd = fs.existsSync(fullVenvPython) ? relativeVenvPython : 'python';
+function getPythonCommand() {
+  const venvNames = ['.venv', 'venv'];
+  for (const name of venvNames) {
+    const relPath = isWindows ? path.join('.', name, 'Scripts', 'python.exe') : path.join('.', name, 'bin', 'python');
+    const fullPath = path.join(__dirname, 'ai-agent', isWindows ? path.join(name, 'Scripts', 'python.exe') : path.join(name, 'bin', 'python'));
+    if (fs.existsSync(fullPath)) {
+      return relPath;
+    }
+  }
+  return 'python';
+}
+const pythonCmd = getPythonCommand();
+
 
 const services = [
   {
@@ -45,8 +55,8 @@ const services = [
     color: '\x1b[35m', // Magenta
     cwd: path.join(__dirname, 'ai-agent'),
     cmd: pythonCmd,
-    args: ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', '8000'],
-    url: 'http://localhost:8000 (API Docs: http://localhost:8000/docs)'
+    args: ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', '8888'],
+    url: 'http://localhost:8888 (API Docs: http://localhost:8888/docs)'
   }
 ];
 
@@ -58,7 +68,7 @@ console.log('\x1b[1m\x1b[34m====================================================
 console.log('\x1b[1mService URLs:\x1b[0m');
 console.log('  🌐 \x1b[36mFrontend Web App\x1b[0m  : http://localhost:2174');
 console.log('  ⚙️  \x1b[32m.NET Backend API\x1b[0m  : http://localhost:5204 (Swagger: http://localhost:5204/swagger)');
-console.log('  ⚡ \x1b[35mPython AI Engine\x1b[0m  : http://localhost:8000 (Interactive Docs: http://localhost:8000/docs)');
+console.log('  ⚡ \x1b[35mPython AI Engine\x1b[0m  : http://localhost:8888 (Interactive Docs: http://localhost:8888/docs)');
 console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m\n');
 
 services.forEach((service) => {

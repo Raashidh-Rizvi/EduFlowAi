@@ -267,7 +267,7 @@ print(f"""
 
   Then open browser:
     Frontend  :  http://localhost:2174
-    AI Docs   :  http://localhost:8000/docs
+    AI Docs   :  http://localhost:8888/docs
     Backend   :  http://localhost:5204/swagger
 
   Go to Student page -> AI Learning Assistant -> Ask any question!

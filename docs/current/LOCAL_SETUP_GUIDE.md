@@ -6,7 +6,7 @@
 
 - Node/npm for the repository and React frontend; Python with the `ai-agent/.venv` virtual environment; PostgreSQL for business data.
 - API target: .NET 8. The checked-in `global.json` selects **SDK 10.0.401**. Use a compatible installed SDK/runtime according to the actual project files; do not edit them as a documentation workaround.
-- Configure the backend database and service settings privately. `AiService:BaseUrl` should match Python, normally `http://localhost:8000`. Keep credentials out of documents and version control.
+- Configure the backend database and service settings privately. `AiService:BaseUrl` should match Python, normally `http://localhost:8888`. Keep credentials out of documents and version control.
 - React defaults to `http://localhost:5204/api`; `VITE_API_BASE_URL` can override that backend URL. Learning browser requests must continue through ASP.NET.
 
 From repository root, install dependencies as needed:
@@ -44,19 +44,19 @@ From repository root:
 npm run dev
 ```
 
-`dev-runner.js` launches React/Vite, `dotnet watch run`, and `.venv` Python Uvicorn with reload. Expected ports: **2174 / 5204 / 8000**. It does not start PostgreSQL or automatically index every lecture. Do not also start independent copies on the same port.
+`dev-runner.js` launches React/Vite, `dotnet watch run`, and `.venv` Python Uvicorn with reload. Expected ports: **2174 / 5204 / 8888**. It does not start PostgreSQL or automatically index every lecture. Do not also start independent copies on the same port.
 
 Read-only checks:
 
 ```powershell
-Invoke-WebRequest http://localhost:8000/health
+Invoke-WebRequest http://localhost:8888/health
 Invoke-WebRequest http://localhost:5204/health
 ```
 
 Use Python `/docs` and backend `/swagger` to inspect actual contracts. If manually starting Python, run from `ai-agent/`:
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+.\.venv\Scripts\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8888
 ```
 
 Use either the runner or manual service launches. A reload supervisor/worker pair is normal; separate competing server instances are not required. Do not disable Windows security policy to start a build.

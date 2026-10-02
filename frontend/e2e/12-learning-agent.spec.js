@@ -25,7 +25,7 @@ test('global chat, strict chat, breakdown, topic plan, explanation and full plan
   const chats = [];
   const learning = [];
   const directPythonRequests = [];
-  page.on('request', req => { if (new URL(req.url()).port === '8000') directPythonRequests.push(req.url()); });
+  page.on('request', req => { if (new URL(req.url()).port === '8888') directPythonRequests.push(req.url()); });
   await page.route('**/api/aireview/coach/chat', route => {
     chats.push(route.request().postDataJSON());
     return route.fulfill({ json: { reply: 'According to Slide 2, breadth first search uses a FIFO queue.', citations: [citation], source: 'mock_rag' } });
@@ -119,7 +119,7 @@ test('lecture discovery failure has a visible retry state', async ({ page }) => 
 
 test('extractive RAG answers and citations are displayed through the gateway', async ({ page }) => {
   const directRequests = [];
-  page.on('request', request => { if (new URL(request.url()).port === '8000') directRequests.push(request.url()); });
+  page.on('request', request => { if (new URL(request.url()).port === '8888') directRequests.push(request.url()); });
   await page.route('**/api/aireview/coach/chat', route => route.fulfill({ json: {
     reply: 'Based on the course lecture slides: Breadth first search uses a FIFO queue.',
     source: 'extractive_rag', citations: [citation]

@@ -7,7 +7,7 @@ test.setTimeout(180000);
 test('real IT3091 breakdown supports a scoped topic plan and explanation via ASP.NET', async ({ page }) => {
   const directPython = [];
   page.on('request', request => {
-    if (new URL(request.url()).port === '8000') directPython.push(request.url());
+    if (new URL(request.url()).port === '8888') directPython.push(request.url());
   });
   await page.goto('/');
   await page.getByRole('button', { name: /Try Now|Get Started Free/i }).first().click();

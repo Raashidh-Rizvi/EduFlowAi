@@ -22,7 +22,7 @@ public class LearningAgentGatewayTests
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["AiService:BaseUrl"] = "http://python.test:8000"
+            ["AiService:BaseUrl"] = "http://python.test:8888"
         }).Build();
         return new AiGatewayClient(new HttpClient(new StubHandler(send)), config);
     }

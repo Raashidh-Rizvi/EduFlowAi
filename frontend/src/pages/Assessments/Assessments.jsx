@@ -148,7 +148,7 @@ export default function Assessments({ currentUser }) {
       setAiApiStatus({
         color: 'red',
         status: 'unreachable',
-        message: 'AI Microservice Unreachable at http://localhost:8000. Please verify Python service is active.',
+        message: 'AI Microservice Unreachable at http://localhost:8888. Please verify Python service is active.',
         canGenerate: false
       });
     } finally {
@@ -359,7 +359,7 @@ export default function Assessments({ currentUser }) {
     if (aiApiStatus.color === 'red') {
       setAiErrorDetails({
         title: 'AI Microservice Unreachable / Offline',
-        message: aiApiStatus.message || 'Unable to connect to the EduFlow AI Microservice at http://localhost:8000. Please verify the Python service is active.',
+        message: aiApiStatus.message || 'Unable to connect to the EduFlow AI Microservice at http://localhost:8888. Please verify the Python service is active.',
         color: 'red'
       });
       setShowAiErrorModal(true);

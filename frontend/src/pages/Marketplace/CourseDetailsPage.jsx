@@ -3,12 +3,16 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, Clock, BookOpen, Layers, Users, BarChart3,
   CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, Loader2, GraduationCap, Send,
-  Zap, Award, Target, Globe2, Eye, Lock, X, ListChecks
+  Zap, Award, Target, Globe2, Eye, Lock, X, ListChecks, FileText, List, Plus, Trash2, Edit3, Save, Wand2, Sparkles, MessageSquare, Bell, Type, ChevronRight, ChevronUp, MoreVertical
 } from 'lucide-react';
 import Avatar from '../../components/marketplace/Avatar';
 import StarRating from '../../components/marketplace/StarRating';
 import { SkeletonBlock } from '../../components/marketplace/Skeletons';
 import { ErrorState, EmptyState } from '../../components/marketplace/States';
+import { Dropdown } from '../../components/marketplace/Dropdown';
+import { generateUUID } from '../../services/supportService';
+import { aiService } from '../../services/aiService';
+import { quizService } from '../../services/quizService';
 import { marketplaceService } from '../../services/marketplaceService';
 import { reviewService } from '../../services/reviewService';
 import { courseService } from '../../services/courseService';
@@ -201,6 +205,14 @@ export default function CourseDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openModules, setOpenModules] = useState({});
+  // Per-module content drafts (instructor selects the AI-generated course content assets).
+  const [moduleContentDrafts, setModuleContentDrafts] = useState({});
+  // Instructor notes, notices and free text saved per module.
+  const [moduleNotes, setModuleNotes] = useState({});
+  const [moduleNotices, setModuleNotices] = useState({});
+  const [moduleFreeTexts, setModuleFreeTexts] = useState({});
+  // Module-scoped quizzes pending instructor review/approval.
+  const [moduleQuizzes, setModuleQuizzes] = useState({});
   const [enrollment, setEnrollment] = useState(null);
   const [enrollState, setEnrollState] = useState({ status: 'idle', message: '' });
 
@@ -388,6 +400,59 @@ export default function CourseDetailsPage() {
       });
     } finally {
       setDeletingReview(false);
+    }
+  };
+
+  // Generate lesson / course content for a module via the AI service (course-level AI action).
+  const handleGenerateMlContent = async (moduleId, title) => {
+    const request = {
+      courseId: course.id,
+      moduleTitle: title,
+      moduleDescription: (course.modules || []).find((m) => m.id === moduleId)?.description || ''
+    };
+    try {
+      setModuleContentDrafts((prev) => ({ ...prev, [moduleId]: { status: 'generating' } }));
+      const drafts = await aiService.generateQuiz(request);
+      setModuleContentDrafts((prev) => ({
+        ...prev,
+        [moduleId]: { status: 'ready', shapes: drafts.shapes || [] }
+      }));
+    } catch (err) {
+      setModuleContentDrafts((prev) => ({
+        ...prev,
+        [moduleId]: { status: 'error', message: err?.friendlyMessage || 'AI content generation failed.' }
+      }));
+    }
+  };
+
+  // Generate a quiz for a module and let the instructor review it before publishing.
+  const handleGenerateQuiz = async (moduleId, title) => {
+    const request = {
+      courseId: course.id,
+      moduleId,
+      moduleTitle: title,
+      questionCount: 5,
+      scopeType: 'Module'
+    };
+    try {
+      const quiz = await quizService.generateAiQuiz(request);
+      setModuleQuizzes((prev) => ({
+        ...prev,
+        [moduleId]: { ...(prev[moduleId] || {}), list: [...(prev[moduleId]?.list || []), quiz] }
+      }));
+
+      // Also attach the newly generated quiz id to the module so it renders under it.
+      if (quiz?.id) {
+        setModuleContentDrafts((prev) => ({
+          ...prev,
+          [moduleId]: { ...(prev[moduleId] || {}), quizId: quiz.id }
+        }));
+      }
+    } catch (err) {
+      setModuleQuizzes((prev) => ({
+        ...prev,
+        [moduleId]: { ...(prev[moduleId] || {}), error: err?.friendlyMessage || 'Quiz generation failed.' }
+      }));
     }
   };
 
@@ -645,9 +710,10 @@ export default function CourseDetailsPage() {
             </section>
           )}
 
-          <section className="mk-detail__block" aria-labelledby="curriculum-title">
-            <div className="mk-detail__block-head">
-              <h2 id="curriculum-title">Course curriculum</h2>
+          {/* ── Course curriculum + module editing (collapsible/expandable dropdowns + inline editor) ── */}
+          <section className="mk-detail__block mk-cms" aria-labelledby="cms-title">
+            <div className="mk-cms__block-head">
+              <h2 id="cms-title">Course curriculum &amp; modules</h2>
               <span>
                 {totalModules} modules · {totalLessons} lessons ·{' '}
                 {formatMinutes((course.modules || []).reduce(
@@ -658,78 +724,152 @@ export default function CourseDetailsPage() {
             </div>
 
             {totalModules === 0 ? (
-              <EmptyState
-                icon={Layers}
-                title="Curriculum is being prepared"
-                message="The instructor has not published lessons for this course yet."
-              />
+              <div className="mk-cms__block">
+                <div className="mk-info-banner">
+                  <Layers size={18} aria-hidden="true" />
+                  <p>No modules yet. Click <strong>Add module</strong> to start building your curriculum.</p>
+                </div>
+                <div className="mk-module-actions">
+                  <button type="button" className="btn-primary" onClick={() => setEditor(null)}>
+                    <Plus size={15} aria-hidden="true" /> Add module
+                  </button>
+                </div>
+              </div>
             ) : (
-              <div className="mk-curriculum">
+              {/* Module dropdowns: each module header is expandable/collapsable and acts as a dropdown selector. */}
+              <div className="mk-cms__body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 18 }}>
                 {(course.modules || []).map((module) => {
                   const isOpen = Boolean(openModules[module.id]);
-                  const minutes = (module.lessons || []).reduce((sum, lesson) => sum + (lesson.estimatedMinutes || 0), 0);
+                  const captions = (module.lessons || []).map((lesson) => lesson.title || 'Untitled lesson');
+                  const aiDraft = moduleContentDrafts[module.id] || {};
+                  const notes = moduleNotes[module.id] || '';
+                  const notices = moduleNotices[module.id] || '';
+                  const freeText = moduleFreeTexts[module.id] || '';
+                  const quizzes = (module.quizId ? [module.quizId] : []).map((qid) => ({
+                    id: qid,
+                    title: module.title,
+                    scopeType: 'Module',
+                    scopeId: module.id,
+                    status: 'PendingAI',
+                    questionCount: 0
+                  }));
                   return (
-                    <div className={`mk-curriculum__module ${isOpen ? 'is-open' : ''}`} key={module.id}>
-                      <button
-                        type="button"
-                        className="mk-curriculum__head"
-                        onClick={() => setOpenModules((prev) => ({ ...prev, [module.id]: !prev[module.id] }))}
-                        aria-expanded={isOpen}
-                      >
-                        <span className="mk-curriculum__head-text">
+                    <details key={module.id} className={`mk-module-dropdown ${isOpen ? 'is-open' : ''}`} open={isOpen}>
+                      <summary className="mk-module-dropdown__head">
+                        <span className="mk-module-dropdown__head-text">
                           <strong>{module.title}</strong>
                           <small>
-                            {(module.lessons || []).length} lessons · {formatMinutes(minutes)}
+                            {(module.lessons || []).length} lessons · {formatMinutes((module.lessons || []).reduce((sum, lesson) => sum + (lesson.estimatedMinutes || 0), 0))}
                             {module.quizCount > 0 && ` · ${module.quizCount} quiz${module.quizCount > 1 ? 'zes' : ''}`}
+                            <span style={{ marginLeft: 8 }}>{module.assetCount || 0} assets</span>
                           </small>
                         </span>
-                        <ChevronDown size={18} aria-hidden="true" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }} />
-                      </button>
+                        <ChevronDown size={18} className="mk-module-dropdown__chevron" aria-hidden="true" />
+                        <span className="mk-module-dropdown__meta">
+                          <span>{(module.lessons || []).length} lessons</span>
+                          {module.description && <span>· {module.description.slice(0, 60)}…</span>}
+                        </span>
+                      </summary>
 
                       {isOpen && (
-                        <div className="mk-curriculum__body">
-                          {module.description && <p className="mk-curriculum__desc">{module.description}</p>}
-                          {(module.lessons || []).length === 0 ? (
-                            <p className="mk-curriculum__empty">Lessons are being prepared for this module.</p>
-                          ) : (
-                            <ul>
-                              {module.lessons.map((lesson) => (
-                                <li key={lesson.id}>
-                                  {lesson.isFreePreview ? (
-                                    <button
-                                      type="button"
-                                      className="mk-curriculum__preview-btn"
-                                      onClick={() => handleOpenPreview(lesson.id)}
-                                      title="Free preview — no enrollment required"
-                                      style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                                        border: 'none', background: 'transparent', padding: 0,
-                                        cursor: 'pointer', color: 'var(--primary)', fontWeight: 600,
-                                        fontSize: 'inherit', textDecoration: 'underline dotted'
-                                      }}
-                                    >
-                                      <Eye size={15} aria-hidden="true" />
-                                      <span>{lesson.title}</span>
-                                    </button>
-                                  ) : (
-                                    <>
-                                      <PlayCircle size={15} aria-hidden="true" />
-                                      <span>{lesson.title}</span>
-                                    </>
-                                  )}
-                                  {lesson.xpReward > 0 && (
-                                    <span title="XP for completing this lesson" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, color: '#7C3AED', fontSize: 11 }}>
-                                      <Zap size={11} aria-hidden="true" />+{lesson.xpReward}
-                                    </span>
-                                  )}
-                                  <small>{lesson.estimatedMinutes ? `${lesson.estimatedMinutes} min` : '—'}</small>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                        <div className="mk-module-dropdown__body" style={{ gridTemplateColumns: captions.length > 0 ? 'repeat(auto-fill, minmax(240px, 1fr))' : '1fr' }}>
+                          {/* Course content generated by AI — instructor picks slides/media assets. */}
+                          <div className="mk-editor-card">
+                            <div className="mk-editor-card__header">
+                              <h3>AI course content</h3>
+                              <span className="tag">AI generated</span>
+                            </div>
+                            <div className="mk-editor-card__body">
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <button type="button" className="btn-secondary" onClick={() => {}}>
+                                  <Wand2 size={15} aria-hidden="true" /> Generate with AI
+                                </button>
+                                <span className="mk-editor-card__progress">AI drafts slides, media and notes from the module outline.</span>
+                              </div>
+                              {aiDraft.shapes && aiDraft.shapes.length > 0 ? (
+                                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  {aiDraft.shapes.map((shape) => (
+                                    <li key={shape.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)' }}>
+                                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0 }} />
+                                      <span className="mk-editor-card__preview">{shape.title}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : aiDraft.status ? (
+                                <p className="mk-editor-card__empty">{aiDraft.status === 'generating' ? 'AI is drafting the next lesson…' : 'AI has not generated anything yet for this module.'}</p>
+                              ) : null}
+                              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                <button type="button" className="btn-secondary" onClick={() => {}}>
+                                  <Upload size={14} aria-hidden="true" /> Upload slides / media
+                                </button>
+                                <label className="btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <FileText size={14} aria-hidden="true" /> Add notes
+                                  <input type="file" accept=".pdf,.pptx,.ppt,.docx,.doc" style={{ display: 'none' }} />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Notes */}
+                          <div className="mk-editor-card">
+                            <div className="mk-editor-card__header">
+                              <h3>Notes</h3>
+                              <span className="tag">Education</span>
+                            </div>
+                            <textarea
+                              value={notes}
+                              onChange={(e) => setModuleNotes(module.id, e.target.value)}
+                              placeholder="Instructor notes for this module…"
+                              rows={6}
+                            />
+                            {notes && <p className="mk-editor-card__preview" style={{ marginTop: 6 }}>{notes.slice(0, 160)}…</p>}
+                          </div>
+
+                          {/* Notices */}
+                          <div className="mk-editor-card">
+                            <div className="mk-editor-card__header">
+                              <h3>Notices</h3>
+                              <span className="tag">Announcements</span>
+                            </div>
+                            <textarea
+                              value={notices}
+                              onChange={(e) => setModuleNotices(module.id, e.target.value)}
+                              placeholder="Writing a notice for students…"
+                              rows={5}
+                            />
+                            {notices && <p className="mk-editor-card__preview" style={{ marginTop: 6 }}>{notices.slice(0, 160)}…</p>}
+                          </div>
+
+                          {/* Free text / type anything */}
+                          <div className="mk-editor-card">
+                            <div className="mk-editor-card__header">
+                              <h3>Type anything</h3>
+                              <span className="tag">Free text</span>
+                            </div>
+                            <textarea
+                              value={freeText}
+                              onChange={(e) => setModuleFreeTexts(module.id, e.target.value)}
+                              placeholder="Type anything you want for this module…"
+                              rows={6}
+                            />
+                            {freeText && <p className="mk-editor-card__preview" style={{ marginTop: 6 }}>{freeText.slice(0, 160)}…</p>}
+                          </div>
                         </div>
                       )}
-                    </div>
+
+                      {/* Module actions */}
+                      <div className="mk-module-actions">
+                        <button type="button" className="btn-secondary" onClick={() => {}}>
+                          <Edit3 size={14} aria-hidden="true" /> Edit details
+                        </button>
+                        <button type="button" className="btn-secondary" onClick={() => {}}>
+                          <Trash2 size={14} aria-hidden="true" /> Delete
+                        </button>
+                        <button type="button" className="btn-primary" onClick={() => {}}>
+                          <Plus size={14} aria-hidden="true" /> Add lesson
+                        </button>
+                      </div>
+                    </details>
                   );
                 })}
               </div>
