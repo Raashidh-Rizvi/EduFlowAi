@@ -9,7 +9,6 @@ import Avatar from '../../components/marketplace/Avatar';
 import StarRating from '../../components/marketplace/StarRating';
 import { SkeletonBlock } from '../../components/marketplace/Skeletons';
 import { ErrorState, EmptyState } from '../../components/marketplace/States';
-import { Dropdown } from '../../components/marketplace/Dropdown';
 import { generateUUID } from '../../services/supportService';
 import { aiService } from '../../services/aiService';
 import { quizService } from '../../services/quizService';
@@ -736,8 +735,8 @@ export default function CourseDetailsPage() {
                 </div>
               </div>
             ) : (
-              {/* Module dropdowns: each module header is expandable/collapsable and acts as a dropdown selector. */}
               <div className="mk-cms__body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 18 }}>
+                {/* Module dropdowns: each module header is expandable/collapsable and acts as a dropdown selector. */}
                 {(course.modules || []).map((module) => {
                   const isOpen = Boolean(openModules[module.id]);
                   const captions = (module.lessons || []).map((lesson) => lesson.title || 'Untitled lesson');
