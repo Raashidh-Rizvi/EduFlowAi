@@ -52,7 +52,7 @@ import { courseService } from '../../services/courseService';
 import AdminCourseManagement from './AdminCourseManagement';
 import StudentJourneyMap from './StudentJourneyMap';
 import { quizService } from '../../services/quizService';
-import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
+import { questionTypeName, toQuestionTypeValue, toScopeTypeValue, QUIZ_STATUS } from '../../constants/domain';
 import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes, deleteGeneratedQuiz, deleteGeneratedQuizzesWhere } from '../../utils/quizStorageHelper';
 
 export default function Courses({ currentUser, initialCourseId, onCourseChange }) {
@@ -827,7 +827,10 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           scopeType: scopeTypeEnum,
           scopeId: scopeIdVal,
           moduleId: moduleIdVal,
-          status: 'Draft',
+          // The API binds enums as numbers (no string-enum converter) — a
+          // literal 'Draft' makes model binding fail with a 400 before any
+          // handler code runs.
+          status: QUIZ_STATUS.Draft,
           questions: questionPayload
         });
         // …then publish through the validated, audited lifecycle endpoint.
@@ -906,7 +909,9 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
     const updatedCourses = coursesList.map(c => {
       if (c.id === currentCourse.id) {
         if (aiQuizScope.scopeLevel === 'Course') {
-          const keptQuizzes = (c.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && q.title !== newQuizObj.title);
+          // Ids only: generated titles repeat across drafts, so a title match
+          // would silently drop unrelated sibling quizzes.
+          const keptQuizzes = (c.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && (newQuizObj.id == null || q.id !== newQuizObj.id));
           return {
             ...c,
             quizzes: [...keptQuizzes, newQuizObj],
@@ -915,7 +920,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         } else if (aiQuizScope.scopeLevel === 'Module' || aiQuizScope.scopeLevel === 'Remediation') {
           const updatedMods = (c.modules || []).map(m => {
             if (m.id === aiQuizScope.moduleId) {
-              const keptQuizzes = (m.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && q.title !== newQuizObj.title);
+              const keptQuizzes = (m.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && (newQuizObj.id == null || q.id !== newQuizObj.id));
               const quizzes = [...keptQuizzes, { ...newQuizObj }];
               return {
                 ...m,
@@ -1049,13 +1054,15 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
       if (!quizModule) return c;
       const updatedMods = (c.modules || []).map(m => {
         if (m.id !== quizModule.id) return m;
+        // Ids only — several drafts can share the same generated title, and a
+        // title match would rename all of them at once.
         return {
           ...m,
-          quizzes: (m.quizzes || []).map(q => (q.id === quizItem.id || q.title === oldTitle) ? updatedQuiz : q),
-          moduleAssessment: m.moduleAssessment && (m.moduleAssessment.id === quizItem.id || m.moduleAssessment.title === oldTitle)
+          quizzes: (m.quizzes || []).map(q => q.id === quizItem.id ? updatedQuiz : q),
+          moduleAssessment: m.moduleAssessment && m.moduleAssessment.id === quizItem.id
             ? updatedQuiz
             : m.moduleAssessment,
-          topics: (m.topics || []).map(t => t.quiz && (t.quiz.id === quizItem.id || t.quiz.title === oldTitle) ? { ...t, quiz: updatedQuiz } : t)
+          topics: (m.topics || []).map(t => t.quiz && t.quiz.id === quizItem.id ? { ...t, quiz: updatedQuiz } : t)
         };
       });
       return { ...c, modules: updatedMods };
@@ -1406,21 +1413,30 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
     }
     deleteGeneratedQuiz(quizItem.id);
 
+    // Match by id whenever the card has a real server id. Falling back to a
+    // title comparison here would wipe every other quiz that happens to share
+    // a generated title (e.g. a batch of "AI Draft: ..." cards) even though
+    // only one of them was deleted on the server.
+    const isServerId = typeof quizItem.id === 'string' && quizItem.id.length === 36;
+    const isSameQuiz = q => (isServerId
+      ? q.id === quizItem.id
+      : (!q.id || q.id === quizItem.id) && q.title === quizItem.title);
+
     const updatedCourses = coursesList.map(c => {
       if (c.id !== currentCourse.id) return c;
 
       if (isFinal) {
         return {
           ...c,
-          quizzes: (c.quizzes || []).filter(q => q.id !== quizItem.id && q.title !== quizItem.title),
+          quizzes: (c.quizzes || []).filter(q => !isSameQuiz(q)),
           finalAssessment: null
         };
       }
 
       const updatedMods = (c.modules || []).map(m => {
         if (m.id !== mod?.id) return m;
-        const quizzes = (m.quizzes || []).filter(q => q.id !== quizItem.id && q.title !== quizItem.title);
-        const keptAssessment = m.moduleAssessment && m.moduleAssessment.id !== quizItem.id && m.moduleAssessment.title !== quizItem.title
+        const quizzes = (m.quizzes || []).filter(q => !isSameQuiz(q));
+        const keptAssessment = m.moduleAssessment && !isSameQuiz(m.moduleAssessment)
           ? m.moduleAssessment
           : (quizzes[0] || null);
         return { ...m, quizzes, moduleAssessment: keptAssessment };

@@ -26,7 +26,7 @@ import {
   Layers,
   ArrowUpRight
 } from 'lucide-react';
-import gamificationService, { isStaffRole } from '../../services/gamificationService';
+import gamificationService, { getLoggedInRole, isStaffRole } from '../../services/gamificationService';
 
 const THEME_PRESETS = [
   { icon: '🚀', label: 'Quantum Coders', color: '#3b82f6' },
@@ -100,6 +100,9 @@ export default function Gamification() {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // Guards overlapping refreshes (poll tick + focus tick can collide).
+  const inFlight = useRef(false);
+
   // Modal State for Instructor Team Creation
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -130,9 +133,11 @@ export default function Gamification() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const loadData = async () => {
+  const loadData = async ({ background = false } = {}) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    background ? setRefreshing(true) : setLoading(true);
     try {
-      setLoading(true);
       setError(null);
       const [
         squadsData,
@@ -140,16 +145,16 @@ export default function Gamification() {
         leaderboardData,
         squadLeaderboardData,
         badgesData,
-        ledgerData,
-        multiplierVal
+        multiplierVal,
+        coursesData
       ] = await Promise.all([
         gamificationService.getAllSquads(),
         gamificationService.getEligibleStudents(),
         gamificationService.getLeaderboard('weekly', 20),
         gamificationService.getSquadLeaderboard(10),
         gamificationService.getAllBadges(),
-        gamificationService.getXpLedger(),
-        gamificationService.getXpMultiplier()
+        gamificationService.getXpMultiplier(),
+        gamificationService.getQuestCourses()
       ]);
 
       setSquads(squadsData || []);
@@ -157,29 +162,80 @@ export default function Gamification() {
       setLeaderboard(leaderboardData || []);
       setSquadLeaderboard(squadLeaderboardData || []);
       setBadges(badgesData || []);
-      setLedger(ledgerData || []);
       setXpMultiplier(multiplierVal || 1.0);
+      setQuestCourses(coursesData || []);
+
+      await refreshLedger();
+      setLastUpdated(new Date());
     } catch (err) {
       console.warn('Error loading gamification data:', err);
-      setError('Unable to load gamification data. Please try refreshing.');
+      if (!background) {
+        setError('Unable to load gamification data. Please try refreshing.');
+      }
     } finally {
+      inFlight.current = false;
       setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Ledger: staff get the cohort-wide audit trail (they would otherwise see the
+  // signed-in staffer's own — almost always empty — transactions), students get
+  // their own. Failures are swallowed here so one 403 can't blank the console.
+  const refreshLedger = async () => {
+    if (isStaffRole()) {
+      try {
+        setCohortLedger(await gamificationService.getCohortLedger(60));
+      } catch {
+        setCohortLedger([]);
+      }
+    }
+    try {
+      const mine = await gamificationService.getXpLedger();
+      setLedger(Array.isArray(mine) ? mine : []);
+    } catch {
+      setLedger([]);
     }
   };
 
   useEffect(() => {
     loadData();
+
+    const tick = () => loadData({ background: true });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+
+    const timer = setInterval(tick, REFRESH_INTERVAL_MS);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // POST /gamification/multiplier is [Authorize(Roles="Admin")]; everyone else
+  // only ever reads it.
+  const canEditMultiplier = getLoggedInRole() === 'Admin';
+
   const handleToggleMultiplier = async () => {
+    if (!canEditMultiplier) {
+      showToast('Only administrators can change the platform XP multiplier.');
+      return;
+    }
     const nextVal = xpMultiplier > 1.0 ? 1.0 : 2.0;
     setMultiplierLoading(true);
     try {
       await gamificationService.setXpMultiplier(nextVal);
       setXpMultiplier(nextVal);
       showToast(`Global Event: ${nextVal > 1.0 ? '⚡ 2.0x DOUBLE XP EVENT ACTIVATED' : 'Standard 1.0x XP Restored'}`);
-    } catch {
-      setXpMultiplier(nextVal);
+    } catch (err) {
+      // Report the failure honestly instead of flipping state optimistically.
+      showToast(err?.message || 'Could not change the XP multiplier.');
+      loadData({ background: true });
     } finally {
       setMultiplierLoading(false);
     }
@@ -211,40 +267,80 @@ export default function Gamification() {
       return;
     }
 
+    const chosenCourse = questCourses.find(c => (c.id || c.courseId) === newTeamCourseId);
+    const courseTitle = chosenCourse?.title || chosenCourse?.name || '';
+    const questTitle = (newTeamQuest && newTeamQuest.trim())
+      ? newTeamQuest.trim()
+      : (courseTitle ? `${courseTitle} Quest` : '');
+    const targetXp = Number(newTeamTargetXp) || 0;
+
     setCreatingTeam(true);
     try {
       const res = await gamificationService.instructorCreateSquad({
         name: finalTeamName,
-        description: `Quest: ${newTeamQuest.trim() || 'Architecture Mastery Sprint'}`,
+        description: questTitle ? `Quest: ${questTitle}` : null,
         avatarUrl: newTeamTheme?.icon || '🚀',
         leaderId: selectedLeaderId || selectedStudentIds[0],
         studentIds: selectedStudentIds,
-        activeQuest: newTeamQuest.trim() || 'Architecture Mastery Sprint',
-        targetGoalXp: Number(newTeamTargetXp) || 2500
+        activeQuest: questTitle || null,
+        targetGoalXp: targetXp,
+        courseId: newTeamCourseId || null
       });
 
-      if (res?.squad) {
-        setSquads(prev => {
-          const exists = prev.some(s => s.id === res.squad.id);
-          return exists ? prev : [res.squad, ...prev];
-        });
+      if (res?.success === false) {
+        throw new Error(res?.message || 'The server refused the squad creation.');
       }
 
       showToast(`🎉 Squad "${finalTeamName}" assembled & launched successfully!`);
+      resetCreateModal();
       setShowCreateModal(false);
-      setNewTeamName('');
-      setSelectedStudentIds([]);
-      setSelectedLeaderId('');
       await loadData();
     } catch (err) {
       console.warn('Error launching squad:', err);
-      showToast(`🎉 Squad "${finalTeamName}" assembled successfully!`);
-      setShowCreateModal(false);
-      setNewTeamName('');
-      setSelectedStudentIds([]);
-      setSelectedLeaderId('');
+      // Honest failure: the modal stays open and the server's reason is shown.
+      showToast(err?.message || `Could not create squad "${finalTeamName}".`);
     } finally {
       setCreatingTeam(false);
+    }
+  };
+
+  const resetCreateModal = () => {
+    setNewTeamName('');
+    setSelectedStudentIds([]);
+    setSelectedLeaderId('');
+    setNewTeamQuest('');
+    setNewTeamCourseId('');
+    setCourseXpSummary(null);
+    setNewTeamTargetXp(0);
+    setTargetXpTouched(false);
+    setStudentSearchQuery('');
+  };
+
+  // Selecting a course re-anchors the quest: the title follows the course and
+  // the XP target is read from GET /courses/{id}/xp-summary (the course's real
+  // reward total) rather than a fixed 2500.
+  const handleCourseChange = async (courseId) => {
+    setNewTeamCourseId(courseId);
+    setCourseXpSummary(null);
+    if (!courseId) return;
+
+    const course = questCourses.find(c => (c.id || c.courseId) === courseId);
+    const title = course?.title || course?.name || '';
+    if (title && !(newTeamQuest && newTeamQuest.trim())) {
+      setNewTeamQuest(`${title} Quest`);
+    }
+
+    setCourseXpLoading(true);
+    try {
+      const summary = await gamificationService.getCourseXpSummary(courseId);
+      setCourseXpSummary(summary);
+      if (!targetXpTouched && summary?.displayTotal) {
+        setNewTeamTargetXp(Number(summary.displayTotal));
+      }
+    } catch (err) {
+      console.warn('Could not load course XP summary:', err);
+    } finally {
+      setCourseXpLoading(false);
     }
   };
 
@@ -252,12 +348,14 @@ export default function Gamification() {
     if (!window.confirm(`Remove ${studentName} from this squad?`)) return;
     try {
       const res = await gamificationService.removeSquadMember(squadId, studentId);
-      if (res?.success) {
-        showToast(`Removed ${studentName} from squad`);
-        await loadData();
+      if (res?.success === false) {
+        showToast(res?.message || 'Error removing student');
+        return;
       }
-    } catch {
-      showToast('Error removing student');
+      showToast(`Removed ${studentName} from squad`);
+      await loadData();
+    } catch (err) {
+      showToast(err?.message || 'Error removing student');
     }
   };
 
@@ -265,25 +363,31 @@ export default function Gamification() {
     if (!addMemberSquad || !studentToAddId) return;
     try {
       const res = await gamificationService.addSquadMember(addMemberSquad.id, studentToAddId);
-      if (res?.success) {
-        showToast(`Added student to squad ${addMemberSquad.name}`);
-        setAddMemberSquad(null);
-        setStudentToAddId('');
-        await loadData();
+      if (res?.success === false) {
+        showToast(res?.message || 'Error adding student to squad');
+        return;
       }
-    } catch {
-      showToast('Error adding student to squad');
+      showToast(`Added student to squad ${addMemberSquad.name}`);
+      setAddMemberSquad(null);
+      setStudentToAddId('');
+      await loadData();
+    } catch (err) {
+      showToast(err?.message || 'Error adding student to squad');
     }
   };
 
   const handleDeleteSquad = async (squadId, squadName) => {
     if (!window.confirm(`Are you sure you want to disband the squad "${squadName}"?`)) return;
     try {
-      await gamificationService.deleteSquad(squadId);
+      const res = await gamificationService.deleteSquad(squadId);
+      if (res?.success === false) {
+        showToast(res?.message || 'Error disbanding squad');
+        return;
+      }
       showToast(`Squad "${squadName}" has been disbanded`);
       await loadData();
-    } catch {
-      showToast('Error disbanding squad');
+    } catch (err) {
+      showToast(err?.message || 'Error disbanding squad');
     }
   };
 
@@ -364,7 +468,7 @@ export default function Gamification() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-          {/* Multiplier control */}
+          {/* Multiplier control — Admin can change it, everyone else reads it */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -378,8 +482,13 @@ export default function Gamification() {
             <span style={{ fontSize: '12.5px', color: 'var(--text-muted)', fontWeight: '600' }}>XP Event Multiplier:</span>
             <button
               onClick={handleToggleMultiplier}
-              disabled={multiplierLoading}
-              className="hover-scale"
+              disabled={multiplierLoading || !canEditMultiplier}
+              title={
+                canEditMultiplier
+                  ? 'Toggle the platform-wide XP event multiplier'
+                  : 'Read-only: the platform multiplier is managed by administrators'
+              }
+              className={canEditMultiplier ? 'hover-scale' : undefined}
               style={{
                 fontSize: '12px',
                 fontWeight: '700',
@@ -388,7 +497,8 @@ export default function Gamification() {
                 backgroundColor: xpMultiplier > 1.0 ? 'var(--warning)' : 'var(--bg-surface)',
                 color: xpMultiplier > 1.0 ? '#000000' : 'var(--text-main)',
                 border: '1px solid var(--border-subtle)',
-                cursor: 'pointer',
+                cursor: canEditMultiplier ? 'pointer' : 'not-allowed',
+                opacity: canEditMultiplier ? 1 : 0.75,
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px'
@@ -396,6 +506,11 @@ export default function Gamification() {
             >
               {xpMultiplier}x {xpMultiplier > 1.0 ? 'DOUBLE XP' : 'Standard'}
             </button>
+            {!canEditMultiplier && (
+              <span className="badge-pill badge-neutral" style={{ fontSize: '10px' }}>
+                Admin only
+              </span>
+            )}
           </div>
 
           <button
