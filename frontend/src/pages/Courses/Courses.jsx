@@ -35,6 +35,7 @@ import {
   ShieldCheck,
   Flame,
   ArrowRight,
+  ArrowLeft,
   Play,
   Trophy,
   CheckSquare,
@@ -49,19 +50,20 @@ import StarRating from '../../components/marketplace/StarRating';
 import CourseReviews from '../../components/reviews/CourseReviews';
 import { courseService } from '../../services/courseService';
 import AdminCourseManagement from './AdminCourseManagement';
+import StudentJourneyMap from './StudentJourneyMap';
 import { quizService } from '../../services/quizService';
 import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
-import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes } from '../../utils/quizStorageHelper';
+import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes, deleteGeneratedQuiz, deleteGeneratedQuizzesWhere } from '../../utils/quizStorageHelper';
 
-export default function Courses({ currentUser }) {
+export default function Courses({ currentUser, initialCourseId, onCourseChange }) {
   return currentUser?.role === 'Admin'
     ? <AdminCourseManagement />
-    : <InstructorCourses currentUser={currentUser} />;
+    : <InstructorCourses currentUser={currentUser} initialCourseId={initialCourseId} onCourseChange={onCourseChange} />;
 }
 
-function InstructorCourses({ currentUser }) {
+function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange }) {
   const [coursesList, setCoursesList] = useState([]);
-  const [selectedCourseId, setSelectedCourseId] = useState(null);
+  const [selectedCourseId, setSelectedCourseId] = useState(initialCourseId);
   const [viewMode, setViewMode] = useState('curriculum'); // 'curriculum' | 'journey'
   const [expandedModules, setExpandedModules] = useState({});
   const [loading, setLoading] = useState(true);
@@ -72,7 +74,9 @@ function InstructorCourses({ currentUser }) {
     const localQuizzes = getGeneratedQuizzes(courseId);
 
     const apiCourseQuizzes = backendCourse.quizzes || [];
-    const localCourseQuizzes = localQuizzes.filter(q => q.scopeType === 'Course' || !q.scopeType);
+    const localCourseQuizzes = localQuizzes.filter(q =>
+      q.scopeType === 'Course' || (!q.scopeType && !q.scopeId && !q.moduleId)
+    );
     const combinedCourseQuizzes = [...apiCourseQuizzes];
     for (const lq of localCourseQuizzes) {
       if (!combinedCourseQuizzes.some(cq => cq.id === lq.id || cq.title === lq.title)) {
@@ -82,7 +86,12 @@ function InstructorCourses({ currentUser }) {
 
     const mappedModules = (backendCourse.modules || []).map(m => {
       const apiModQuizzes = m.quizzes || [];
-      const localModQuizzes = localQuizzes.filter(q => q.scopeType === 'Module' && (q.scopeId === m.id || q.moduleId === m.id));
+      // Module-owned quizzes: explicit Module/Remediation scope or any local quiz
+      // stamped with this module id (covers Topic-scoped drafts too).
+      const localModQuizzes = localQuizzes.filter(q =>
+        q.moduleId === m.id ||
+        ((q.scopeType === 'Module' || q.scopeType === 'Remediation') && q.scopeId === m.id)
+      );
       const combinedModQuizzes = [...apiModQuizzes];
       for (const lq of localModQuizzes) {
         if (!combinedModQuizzes.some(cq => cq.id === lq.id || cq.title === lq.title)) {
@@ -123,10 +132,6 @@ function InstructorCourses({ currentUser }) {
   };
 
   useEffect(() => {
-    loadCourses();
-  }, []);
-
-  useEffect(() => {
     const handleQuizRefresh = () => {
       if (selectedCourseId) {
         courseService.getCourseById(selectedCourseId).then(fullCourse => {
@@ -152,42 +157,90 @@ function InstructorCourses({ currentUser }) {
 
   const loadCourses = async () => {
     setLoading(true);
+    let list = [];
     try {
       const data = await courseService.getCourses();
-      if (data && data.length > 0) {
-        const fullCourse = await courseService.getCourseById(data[0].id);
-        const mappedData = data.map(c => (c.id === data[0].id && fullCourse) ? mapBackendCourseToFrontend(fullCourse) : c);
-        setCoursesList(mappedData);
-        setSelectedCourseId(data[0].id);
-        if (fullCourse?.modules?.[0]?.id) {
-          setExpandedModules({ [fullCourse.modules[0].id]: true });
-        }
-      } else {
-        setCoursesList([]);
-      }
+      list = Array.isArray(data) ? data : [];
     } catch {
-      setCoursesList([]);
-    } finally {
-      setLoading(false);
+      list = [];
     }
-  };
+    setCoursesList(list);
 
-  const handleSelectCourse = async (id) => {
-    setSelectedCourseId(id);
-    setCoursesList(prev => {
-      const course = prev.find(c => c.id === id);
-      if (course && !course.fullDetailsLoaded) {
-        courseService.getCourseById(id).then(fullCourse => {
-          if (fullCourse) {
-            setCoursesList(current => current.map(c => c.id === id ? mapBackendCourseToFrontend(fullCourse) : c));
+    // Only open a dedicated course page when one was requested by the caller.
+    // Otherwise stay on the course directory (selectedCourseId stays null).
+    if (initialCourseId && list.some(c => c.id === initialCourseId)) {
+      try {
+        const fullCourse = await courseService.getCourseById(initialCourseId);
+        if (fullCourse) {
+          const mapped = mapBackendCourseToFrontend(fullCourse);
+          setCoursesList(prev => prev.map(c => (c.id === initialCourseId ? mapped : c)));
+          if (mapped?.modules?.[0]?.id) {
+            setExpandedModules({ [mapped.modules[0].id]: true });
           }
-        });
+        }
+      } catch {
+        // Leave the stub; the details-fetch effect retries and marks it loaded.
       }
-      return prev;
-    });
+    }
+    setLoading(false);
   };
 
-  const currentCourse = coursesList.find(c => c.id === selectedCourseId) || coursesList[0];
+  useEffect(() => {
+    loadCourses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep the view in sync when navigation supplies a different course
+  // (e.g. clicking "Manage Curriculum" on another course card).
+  useEffect(() => {
+    if (!initialCourseId) {
+      setSelectedCourseId(null);
+      return;
+    }
+    setSelectedCourseId(initialCourseId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCourseId]);
+
+  // Fetch full details once the list (or the selection) makes a course available.
+  useEffect(() => {
+    if (!selectedCourseId) return;
+    const course = coursesList.find(c => c.id === selectedCourseId);
+    if (!course || course.fullDetailsLoaded) return;
+    let alive = true;
+    courseService.getCourseById(selectedCourseId).then(fullCourse => {
+      if (!alive || !fullCourse) return;
+      const mapped = mapBackendCourseToFrontend(fullCourse);
+      setCoursesList(current => current.map(c => (c.id === selectedCourseId ? mapped : c)));
+      if (mapped?.modules?.[0]?.id) {
+        setExpandedModules({ [mapped.modules[0].id]: true });
+      }
+    }).catch(() => {
+      // Mark as attempted so a failed load can't trigger a refetch loop.
+      if (!alive) return;
+      setCoursesList(current => current.map(c =>
+        (c.id === selectedCourseId && !c.fullDetailsLoaded) ? { ...c, fullDetailsLoaded: true } : c
+      ));
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCourseId, coursesList]);
+
+  // Opening a course from the directory list. The details-fetch effect above
+  // loads the full hierarchy once the selection changes.
+  const handleOpenCourse = (id) => {
+    setSelectedCourseId(id);
+    onCourseChange?.(id);
+  };
+
+  // Closing the dedicated page returns to the directory.
+  const handleBackToDirectory = () => {
+    setSelectedCourseId(null);
+    onCourseChange?.(null);
+  };
+
+  const currentCourse = selectedCourseId
+    ? coursesList.find(c => c.id === selectedCourseId)
+    : null;
 
   // ── Modal States ──────────────────────────────────────────────────────────
   const [showCourseModal, setShowCourseModal] = useState(false);
@@ -289,6 +342,8 @@ function InstructorCourses({ currentUser }) {
   const [editQuizDesc, setEditQuizDesc] = useState('');
   const [editQuizQuestions, setEditQuizQuestions] = useState([]);
   const [isSavingQuizEdit, setIsSavingQuizEdit] = useState(false);
+  // When set, the AI generator replaces this quiz instead of adding a new one.
+  const [regeneratingQuiz, setRegeneratingQuiz] = useState(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -357,7 +412,9 @@ function InstructorCourses({ currentUser }) {
   // ── Open Handlers for different Hierarchy Levels ─────────────────────────
   
   // 1. Course Level (Final Assessment)
-  const handleOpenCourseAiQuiz = () => {
+  // Pass the existing final assessment as `targetQuiz` to replace it in place.
+  const handleOpenCourseAiQuiz = (targetQuiz = null) => {
+    setRegeneratingQuiz(targetQuiz || null);
     setAiQuizScope({
       scopeLevel: 'Course',
       courseId: currentCourse.id,
@@ -383,7 +440,10 @@ function InstructorCourses({ currentUser }) {
   };
 
   // 2. Module Level (Module Assessment or Boss Quiz) with SlideQuest Topic Discovery
-  const handleOpenModuleAiQuiz = async (mod, isBoss = false) => {
+  const handleOpenModuleAiQuiz = async (mod, isBoss = false, targetQuiz = null) => {
+    // "AI Regenerate" passes the quiz being replaced so the freshly published
+    // draft takes its place instead of piling up duplicates.
+    setRegeneratingQuiz(targetQuiz);
     setAiQuizScope({
       scopeLevel: 'Module',
       courseId: currentCourse.id,
@@ -452,6 +512,7 @@ function InstructorCourses({ currentUser }) {
 
   // 3. Topic Level (Topic Quiz)
   const handleOpenTopicAiQuiz = (mod, topic) => {
+    setRegeneratingQuiz(null);
     setAiQuizScope({
       scopeLevel: 'Topic',
       courseId: currentCourse.id,
@@ -478,6 +539,7 @@ function InstructorCourses({ currentUser }) {
 
   // 4. Remediation Quiz Generator
   const handleOpenRemediationFromTopic = (mod, topic) => {
+    setRegeneratingQuiz(null);
     setAiQuizScope({
       scopeLevel: 'Remediation',
       courseId: currentCourse.id,
@@ -811,8 +873,31 @@ function InstructorCourses({ currentUser }) {
       passThreshold: Number(aiPassMark),
       avgScore: 0,
       status: 'Published',
-      questions: generatedDraft.questions
+      questions: generatedDraft.questions,
+      // Hierarchy placement — keeps this quiz from being mistaken for a
+      // course-level (final assessment) quiz on the next reload.
+      scopeType: aiQuizScope.scopeLevel === 'Course' ? 'Course' : (aiQuizScope.scopeLevel === 'Remediation' ? 'Remediation' : (aiQuizScope.scopeLevel === 'Topic' ? 'Topic' : 'Module')),
+      scopeId: scopeIdVal,
+      moduleId: aiQuizScope.moduleId || null,
+      topicId: aiQuizScope.topicId || null,
+      isBossBattle: aiQuizType === 'BossBattle'
     };
+
+    // "AI Regenerate" replaces the quiz it was launched from: drop the old copy
+    // server-side and from the localStorage mirror before broadcasting the new one.
+    const replacedQuiz = regeneratingQuiz;
+    if (replacedQuiz?.id && replacedQuiz.id !== finalQuizId) {
+      try {
+        if (typeof replacedQuiz.id === 'string' && replacedQuiz.id.length === 36) {
+          await quizService.deleteQuiz(replacedQuiz.id);
+        }
+      } catch (e) {
+        // 404 = already gone; anything else is logged but must not block the publish.
+        console.warn('Could not delete replaced quiz from backend:', e);
+      }
+      deleteGeneratedQuiz(replacedQuiz.id);
+    }
+    setRegeneratingQuiz(null);
 
     // Persist to unified localStorage and broadcast window event for Assessments & Quizzes tab
     saveGeneratedQuiz(newQuizObj);
@@ -821,19 +906,21 @@ function InstructorCourses({ currentUser }) {
     const updatedCourses = coursesList.map(c => {
       if (c.id === currentCourse.id) {
         if (aiQuizScope.scopeLevel === 'Course') {
+          const keptQuizzes = (c.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && q.title !== newQuizObj.title);
           return {
             ...c,
+            quizzes: [...keptQuizzes, newQuizObj],
             finalAssessment: newQuizObj
           };
         } else if (aiQuizScope.scopeLevel === 'Module' || aiQuizScope.scopeLevel === 'Remediation') {
           const updatedMods = (c.modules || []).map(m => {
             if (m.id === aiQuizScope.moduleId) {
+              const keptQuizzes = (m.quizzes || []).filter(q => q.id !== replacedQuiz?.id && q.id !== finalQuizId && q.title !== newQuizObj.title);
+              const quizzes = [...keptQuizzes, { ...newQuizObj }];
               return {
                 ...m,
-                moduleAssessment: {
-                  ...newQuizObj,
-                  isBossBattle: aiQuizType === 'BossBattle'
-                }
+                quizzes,
+                moduleAssessment: quizzes[0] || null
               };
             }
             return m;
@@ -1151,6 +1238,7 @@ function InstructorCourses({ currentUser }) {
 
       setCoursesList(prev => [...prev, created]);
       setSelectedCourseId(created.id);
+      onCourseChange?.(created.id);
       setShowCourseModal(false);
       setNewCourseCode('');
       setNewCourseTitle('');
@@ -1203,15 +1291,10 @@ function InstructorCourses({ currentUser }) {
             lessons: []
           }
         ],
-        moduleAssessment: {
-          id: `assm-${createdMod.id}`,
-          title: `${createdMod.title} Assessment`,
-          questionsCount: 5,
-          timeLimitMinutes: 15,
-          passPercentage: 70,
-          xpReward: 100,
-          isBossBattle: false
-        }
+        // No placeholder assessment: the module starts with an empty quiz list
+        // so the instructor adds a real one via "Add Quiz".
+        quizzes: [],
+        moduleAssessment: null
       };
 
       const updated = coursesList.map(c => {
@@ -1301,21 +1384,102 @@ function InstructorCourses({ currentUser }) {
     }
   };
 
-  const handleDeleteModule = (moduleId) => {
-    if (window.confirm('Are you sure you want to delete this module and its assessments?')) {
-      const updated = coursesList.map(c => {
-        if (c.id === currentCourse.id) {
-          return {
-            ...c,
-            modules: (c.modules || []).filter(m => m.id !== moduleId)
-          };
+  // ── DELETE HANDLERS (Instructor/Admin only — backend enforces the role) ──
+  const isStaff = currentUser?.role === 'Instructor' || currentUser?.role === 'Admin';
+
+  const handleDeleteQuiz = async (quizItem, mod = null, isFinal = false) => {
+    if (!quizItem) return;
+    if (!isStaff) return;
+    if (!window.confirm(`Delete quiz "${quizItem.title}"? This cannot be undone.`)) return;
+
+    // Backend first — never remove it locally if the server delete failed.
+    if (typeof quizItem.id === 'string' && quizItem.id.length === 36) {
+      try {
+        await quizService.deleteQuiz(quizItem.id);
+      } catch (e) {
+        if (e.response?.status !== 404) {
+          alert('Could not delete the quiz: ' + (e.response?.data?.message || e.message));
+          return;
         }
-        return c;
-      });
-      setCoursesList(updated);
-      courseService.deleteModule(moduleId).catch(e => console.warn('Backend delete module error ignored:', e));
-      showToast('🗑️ Module deleted successfully.');
+        // 404 → already removed server-side; continue cleaning up locally.
+      }
     }
+    deleteGeneratedQuiz(quizItem.id);
+
+    const updatedCourses = coursesList.map(c => {
+      if (c.id !== currentCourse.id) return c;
+
+      if (isFinal) {
+        return {
+          ...c,
+          quizzes: (c.quizzes || []).filter(q => q.id !== quizItem.id && q.title !== quizItem.title),
+          finalAssessment: null
+        };
+      }
+
+      const updatedMods = (c.modules || []).map(m => {
+        if (m.id !== mod?.id) return m;
+        const quizzes = (m.quizzes || []).filter(q => q.id !== quizItem.id && q.title !== quizItem.title);
+        const keptAssessment = m.moduleAssessment && m.moduleAssessment.id !== quizItem.id && m.moduleAssessment.title !== quizItem.title
+          ? m.moduleAssessment
+          : (quizzes[0] || null);
+        return { ...m, quizzes, moduleAssessment: keptAssessment };
+      });
+      return { ...c, modules: updatedMods };
+    });
+
+    setCoursesList(updatedCourses);
+    showToast(`🗑️ Quiz "${quizItem.title}" deleted.`);
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!currentCourse?.id || !isStaff) return;
+    const courseTitle = currentCourse.title;
+    if (!window.confirm(`Delete course "${courseTitle}" and ALL of its modules, quizzes and enrollments? This cannot be undone.`)) return;
+
+    try {
+      await courseService.deleteCourse(currentCourse.id);
+    } catch (e) {
+      if (e.response?.status !== 404) {
+        alert('Could not delete the course: ' + (e.response?.data?.message || e.message));
+        return;
+      }
+    }
+
+    deleteGeneratedQuizzesWhere(q => q.courseId === currentCourse.id);
+
+    const remaining = coursesList.filter(c => c.id !== currentCourse.id);
+    setCoursesList(remaining);
+    setSelectedCourseId(remaining[0]?.id || null);
+    showToast(`🗑️ Course "${courseTitle}" deleted.`);
+  };
+
+  const handleDeleteModule = async (moduleId) => {
+    if (!isStaff) return;
+    if (!window.confirm('Are you sure you want to delete this module and its assessments?')) return;
+
+    try {
+      await courseService.deleteModule(moduleId);
+    } catch (e) {
+      if (e.response?.status !== 404) {
+        alert('Could not delete the module: ' + (e.response?.data?.message || e.message));
+        return;
+      }
+    }
+
+    deleteGeneratedQuizzesWhere(q => q.moduleId === moduleId || (q.scopeId === moduleId && (q.scopeType === 'Module' || q.scopeType === 'Remediation')));
+
+    const updated = coursesList.map(c => {
+      if (c.id === currentCourse.id) {
+        return {
+          ...c,
+          modules: (c.modules || []).filter(m => m.id !== moduleId)
+        };
+      }
+      return c;
+    });
+    setCoursesList(updated);
+    showToast('🗑️ Module deleted successfully.');
   };
 
   if (loading) {
@@ -1327,17 +1491,101 @@ function InstructorCourses({ currentUser }) {
     );
   }
 
+  // A course page was requested but its full hierarchy hasn't arrived yet —
+  // show a spinner rather than a half-empty page.
+  if (currentCourse && !currentCourse.fullDetailsLoaded) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '60px 20px', alignItems: 'center', justifyContent: 'center', minHeight: '400px' }}>
+        <RefreshCw size={32} className="spin" color="var(--primary)" />
+        <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+          Loading {currentCourse.code} &amp; its curriculum…
+        </span>
+      </div>
+    );
+  }
+
   if (!currentCourse) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '1360px', margin: '0 auto', width: '100%' }}>
-        <div style={{ padding: '60px 20px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', marginTop: '20px' }}>
-          <BookOpen size={48} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
-          <h3 style={{ marginBottom: '8px', color: 'var(--text-main)' }}>No Courses Found</h3>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>Get started by creating your first course.</p>
-          <button onClick={() => setShowCourseModal(true)} className="btn-primary" style={{ margin: '0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Plus size={16} /> Create Course
+        {/* ── DIRECTORY HEADER ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '14px' }}>
+          <div>
+            <span style={{ fontSize: '11px', fontWeight: '800', letterSpacing: '0.1em', color: 'var(--primary)', textTransform: 'uppercase' }}>
+              Course Studio
+            </span>
+            <h1 style={{ fontSize: '24px', fontWeight: '800', color: 'var(--text-main)', margin: '6px 0 4px', letterSpacing: '-0.02em' }}>
+              Curriculum & Modules
+            </h1>
+            <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', margin: 0 }}>
+              Select a course to open its dedicated page — modules, quizzes, students and assessments all in one place.
+            </p>
+          </div>
+          <button onClick={() => setShowCourseModal(true)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Plus size={16} /> New Course
           </button>
         </div>
+
+        {/* ── COURSE DIRECTORY ── */}
+        {coursesList.length === 0 ? (
+          <div data-testid="course-directory-empty" style={{ padding: '60px 20px', textAlign: 'center', backgroundColor: 'var(--bg-surface)', borderRadius: 'var(--radius-lg)', marginTop: '20px' }}>
+            <BookOpen size={48} color="var(--text-muted)" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ marginBottom: '8px', color: 'var(--text-main)' }}>No Courses Found</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '24px' }}>Get started by creating your first course.</p>
+            <button onClick={() => setShowCourseModal(true)} className="btn-primary" style={{ margin: '0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Plus size={16} /> Create Course
+            </button>
+          </div>
+        ) : (
+          <div data-testid="course-directory" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '18px' }}>
+            {coursesList.map(c => (
+              <button
+                key={c.id}
+                data-testid="course-directory-card"
+                onClick={() => handleOpenCourse(c.id)}
+                className="card-premium"
+                style={{
+                  textAlign: 'left',
+                  padding: '22px 22px 20px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  transition: 'transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--primary-border)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+                  <span className="badge-pill badge-primary" style={{ fontWeight: '700' }}>{c.code}</span>
+                  <ArrowRight size={16} color="var(--primary)" />
+                </div>
+
+                <div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: '0 0 6px', lineHeight: 1.35 }}>
+                    {c.title}
+                  </h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.55 }}>
+                    {c.description || 'No description yet.'}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: 'auto' }}>
+                  <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <Layers size={12} /> {c.modules?.length ?? 0} Modules
+                  </span>
+                  <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <Users size={12} /> {c.studentsCount ?? 0} Students
+                  </span>
+                  <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <HelpCircle size={12} /> {c.quizzes?.length ?? 0} Quizzes
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Create Course Modal */}
         {showCourseModal && (
@@ -1634,43 +1882,21 @@ function InstructorCourses({ currentUser }) {
         </button>
       )}
 
-      {/* ── 1. COURSE SWITCHER & TOP ACTIONS ──────────────────────────────── */}
+      {/* ── 1. DEDICATED COURSE PAGE HEADER & TOP ACTIONS ─────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {coursesList.map(c => (
-            <button
-              key={c.id}
-              onClick={() => handleSelectCourse(c.id)}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: selectedCourseId === c.id ? 'var(--primary-soft)' : 'var(--bg-surface)',
-                color: selectedCourseId === c.id ? 'var(--text-main)' : 'var(--text-muted)',
-                fontWeight: selectedCourseId === c.id ? '700' : '600',
-                fontSize: '13px',
-                border: selectedCourseId === c.id ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
-                transition: 'all 0.15s ease',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <span className="badge-pill badge-primary" style={{ fontSize: '10.5px' }}>
-                {c.code}
-              </span>
-              <span>{c.title}</span>
-            </button>
-          ))}
-
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
-            onClick={() => setShowCourseModal(true)}
+            onClick={handleBackToDirectory}
             className="btn-secondary"
-            style={{ padding: '8px 14px', fontSize: '12.5px', borderStyle: 'dashed', gap: '6px' }}
+            style={{ padding: '8px 14px', fontSize: '12.5px', gap: '6px' }}
+            title="Back to all courses"
           >
-            <Plus size={14} /> 
-            <span>New Course</span>
+            <ArrowLeft size={14} />
+            <span>All Courses</span>
           </button>
+          <span style={{ fontSize: '11px', fontWeight: '700', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
+            {coursesList.length} course{coursesList.length === 1 ? '' : 's'} in your workspace
+          </span>
         </div>
 
         {/* View Toggle */}
@@ -1827,12 +2053,21 @@ function InstructorCourses({ currentUser }) {
               <Plus size={14} /> 
               <span>Add Module</span>
             </button>
+
+            {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+              <button
+                onClick={handleDeleteCourse}
+                className="btn-danger"
+                style={{ padding: '9px 16px', fontSize: '12.5px', fontWeight: '700', gap: '6px' }}
+                title="Delete this course and everything inside it"
+              >
+                <Trash2 size={14} />
+                <span>Delete Course</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
-
-      {/* ── 2b. COURSE RATINGS & REVIEWS ────────────────────────────────────── */}
-      <CourseReviews courseId={currentCourse.id} currentUser={currentUser} />
 
       {/* ── 3. COURSE-LEVEL FINAL ASSESSMENT CARD ──────────────────────────── */}
       {currentCourse.finalAssessment && (
@@ -1908,18 +2143,32 @@ function InstructorCourses({ currentUser }) {
               </button>
             )}
             <button
-              onClick={() => handleOpenCourseAiQuiz()}
+              onClick={() => handleOpenCourseAiQuiz(currentCourse.finalAssessment)}
               className="btn-secondary"
               style={{ padding: '7px 14px', fontSize: '12px', gap: '6px' }}
+              title="Regenerate the final assessment with AI (replaces it)"
             >
               <Bot size={14} />
               <span>Regenerate with AI</span>
             </button>
+            {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+              <button
+                onClick={() => handleDeleteQuiz(currentCourse.finalAssessment, null, true)}
+                className="btn-danger"
+                style={{ padding: '7px 14px', fontSize: '12px', fontWeight: '700', gap: '6px' }}
+                title="Delete the course final assessment"
+              >
+                <Trash2 size={14} />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         </div>
       )}
 
       {/* ── 4. MAIN HIERARCHICAL CURRICULUM & ASSESSMENT TREE ──────────────── */}
+      {/* Rendered only in the "Hierarchy & Quizzes Tree" view mode.           */}
+      {viewMode === 'curriculum' && (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -2121,12 +2370,16 @@ function InstructorCourses({ currentUser }) {
                     )}
 
                     {/* ── MODULE ASSESSMENTS & QUIZZES SECTION (SUPPORTS MULTIPLE QUIZZES) ── */}
-                    {((mod.quizzes && mod.quizzes.length > 0) || mod.moduleAssessment) && (
+                    {(() => {
+                      const modQuizzes = (mod.quizzes && mod.quizzes.length > 0)
+                        ? mod.quizzes
+                        : (mod.moduleAssessment ? [mod.moduleAssessment] : []);
+                      return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ fontSize: '11.5px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <HelpCircle size={14} />
-                            <span>Module Quizzes & Assessments ({mod.quizzes?.length || (mod.moduleAssessment ? 1 : 0)})</span>
+                            <span>Module Quizzes & Assessments ({modQuizzes.length})</span>
                           </div>
                           {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
                             <button
@@ -2139,7 +2392,31 @@ function InstructorCourses({ currentUser }) {
                           )}
                         </div>
 
-                        {(mod.quizzes && mod.quizzes.length > 0 ? mod.quizzes : [mod.moduleAssessment]).map((quizItem, qIdx) => (
+                        {modQuizzes.length === 0 && (
+                          <div style={{
+                            padding: '18px 16px',
+                            borderRadius: 'var(--radius-md)',
+                            backgroundColor: 'var(--bg-surface)',
+                            border: '1px dashed var(--border-card)',
+                            textAlign: 'center'
+                          }}>
+                            <HelpCircle size={22} color="var(--text-muted)" style={{ margin: '0 auto 6px' }} />
+                            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>
+                              No quizzes in this module yet.
+                            </p>
+                            {(currentUser?.role === 'Instructor' || currentUser?.role === 'Admin') && (
+                              <button
+                                onClick={() => handleOpenModuleAiQuiz(mod, false)}
+                                className="btn-primary"
+                                style={{ marginTop: '10px', padding: '6px 14px', fontSize: '12px', gap: '5px', display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                <Sparkles size={13} /> <span>⚡ Generate Module Quiz</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {modQuizzes.map((quizItem, qIdx) => (
                           <div
                             key={quizItem.id || qIdx}
                             style={{
@@ -2227,13 +2504,22 @@ function InstructorCourses({ currentUser }) {
                                     <span>Review / Edit</span>
                                   </button>
                                   <button
-                                    onClick={() => handleOpenModuleAiQuiz(mod, quizItem.isBossBattle)}
+                                    onClick={() => handleOpenModuleAiQuiz(mod, quizItem.isBossBattle, quizItem)}
                                     className="btn-secondary"
                                     style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
-                                    title="Regenerate this quiz with AI"
+                                    title="Regenerate this quiz with AI (replaces it)"
                                   >
                                     <Bot size={13} />
                                     <span>AI Regenerate</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteQuiz(quizItem, mod, false)}
+                                    className="btn-danger"
+                                    style={{ padding: '5px 10px', fontSize: '11.5px', gap: '4px' }}
+                                    title="Delete this quiz"
+                                  >
+                                    <Trash2 size={13} />
+                                    <span>Delete</span>
                                   </button>
                                 </>
                               )}
@@ -2241,7 +2527,8 @@ function InstructorCourses({ currentUser }) {
                           </div>
                         ))}
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* ── TOPICS & LESSONS IN MODULE ────────────────────────── */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2407,6 +2694,15 @@ function InstructorCourses({ currentUser }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* ── 4. ALTERNATE: STUDENT JOURNEY MAP VIEW ──────────────────────────── */}
+      {viewMode === 'journey' && (
+        <StudentJourneyMap course={currentCourse} currentUser={currentUser} />
+      )}
+
+      {/* ── 4b. COURSE RATINGS & REVIEWS (bottom of page) ───────────────────── */}
+      <CourseReviews courseId={currentCourse.id} currentUser={currentUser} />
 
       {/* ── 5. UNIFIED AI QUIZ GENERATOR & REVIEWER MODAL ────────────────── */}
       {showAiQuizModal && (

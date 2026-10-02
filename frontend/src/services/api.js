@@ -2,6 +2,13 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5204/api';
 
+/**
+ * Origin of the API host (scheme + host + port, no path). Health probes live at the
+ * origin (`/health`), not under `/api`, so callers derive it from here rather than
+ * hard-coding another localhost URL.
+ */
+export const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
+
 const TOKEN_KEY = 'eduflow_token';
 const REFRESH_TOKEN_KEY = 'eduflow_refresh_token';
 const EXPIRES_KEY = 'eduflow_token_expires_at';

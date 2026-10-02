@@ -1,13 +1,47 @@
 import api from './api';
 
-// Phase 2A fix: Read real logged-in student ID from session — never use hardcoded test ID
-function getLoggedInStudentId() {
+/**
+ * Gamification API client.
+ *
+ * History: this service used to swallow every failing squad call and write a
+ * fabricated squad into `localStorage` (`eduflow_custom_squads`) so the UI could
+ * toast "created successfully". That made the console look live while the real
+ * database stayed empty. Every mutation below now propagates the API error so
+ * the caller can show the truth.
+ */
+
+// ── Session helpers ──────────────────────────────────────────────────────────
+
+function readSessionUser() {
   try {
-    const user = JSON.parse(localStorage.getItem('eduflow_user') || '{}');
-    return user.id || user.userId || user.studentId || '';
+    return JSON.parse(localStorage.getItem('eduflow_user') || '{}');
   } catch {
-    return '';
+    return {};
   }
+}
+
+export function getLoggedInStudentId() {
+  const user = readSessionUser();
+  return user.id || user.userId || user.studentId || '';
+}
+
+export function getLoggedInRole() {
+  return readSessionUser().role || '';
+}
+
+export function isStaffRole(role = getLoggedInRole()) {
+  return role === 'Admin' || role === 'Instructor';
+}
+
+/** Axios errors are noisy; surface the API's own message when there is one. */
+function toApiError(err, fallback) {
+  const message =
+    err?.response?.data?.message ||
+    err?.response?.data?.title ||
+    err?.message;
+  const error = new Error(message || fallback);
+  error.status = err?.response?.status;
+  return error;
 }
 
 export const gamificationService = {
@@ -15,42 +49,6 @@ export const gamificationService = {
   async getLeaderboard(type = 'weekly', top = 20) {
     const response = await api.get(`/gamification/leaderboard?type=${type}&top=${top}`);
     return response.data;
-  },
-
-  // ── Team / Squad Management (Instructor & Student) ──────────────────────────
-  getLocalCustomSquads() {
-    try {
-      const stored = localStorage.getItem('eduflow_custom_squads');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  },
-
-  saveLocalCustomSquad(squad) {
-    try {
-      const existing = this.getLocalCustomSquads();
-      const updated = [squad, ...existing.filter(s => s.id !== squad.id)];
-      localStorage.setItem('eduflow_custom_squads', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('Failed saving squad:', e);
-    }
-  },
-
-  removeLocalCustomSquad(squadId) {
-    try {
-      const existing = this.getLocalCustomSquads();
-      const updated = existing.filter(s => s.id !== squadId);
-      localStorage.setItem('eduflow_custom_squads', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('Failed removing squad:', e);
-    }
-  },
-
-  async getAllSquads() {
-    const response = await api.get('/gamification/squads');
-    const remoteSquads = Array.isArray(response.data) ? response.data : [];
-    return remoteSquads;
   },
 
   async getSquadLeaderboard(top = 10) {
@@ -63,115 +61,69 @@ export const gamificationService = {
     return response.data;
   },
 
+  // ── Team / Squad Management (Instructor & Admin) ────────────────────────────
+  async getAllSquads() {
+    const response = await api.get('/gamification/squads');
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /** Creates a squad server-side. Throws when the API rejects it. */
   async instructorCreateSquad(payload) {
-    let remoteRes = null;
     try {
       const response = await api.post('/gamification/squads/instructor-create', payload);
-      if (response.data && response.data.success) {
-        remoteRes = response.data;
-      }
+      return response.data;
     } catch (err) {
-      console.warn('Backend instructor squad creation fallback:', err);
+      throw toApiError(err, 'Squad creation failed.');
     }
-
-    // Build enriched local squad object
-    const studentList = await this.getEligibleStudents();
-    const selectedIds = payload.studentIds || [];
-    const leaderId = payload.leaderId || selectedIds[0];
-    
-    let leaderName = 'Student Leader';
-    let combinedXp = 0;
-
-    const members = selectedIds.map(id => {
-      const found = studentList.find(st => (st.studentId || st.id || st.userId) === id);
-      const name = found ? (found.fullName || found.name) : 'Student';
-      const xp = found ? (found.totalXp ?? found.totalXP ?? 500) : 500;
-      combinedXp += xp;
-      if (id === leaderId) leaderName = name;
-      return {
-        studentId: id,
-        studentName: name,
-        role: id === leaderId ? 'Leader' : 'Member',
-        totalXp: xp
-      };
-    });
-
-    const newSquad = {
-      id: remoteRes?.squad?.id || ('squad-' + Date.now()),
-      name: payload.name,
-      description: payload.description || `Quest: ${payload.activeQuest || 'Sprint'}`,
-      avatarUrl: payload.avatarUrl || '🚀',
-      leaderId: leaderId,
-      leaderName: leaderName,
-      activeQuest: payload.activeQuest || 'Architecture Mastery Sprint',
-      targetGoalXp: payload.targetGoalXp || 2500,
-      combinedXp: combinedXp,
-      memberCount: members.length,
-      members: members
-    };
-
-    this.saveLocalCustomSquad(newSquad);
-
-    return {
-      success: true,
-      message: `Squad '${payload.name}' created successfully.`,
-      squad: newSquad
-    };
   },
 
   async addSquadMember(squadId, studentId) {
     try {
       const response = await api.post(`/gamification/squads/${squadId}/members?studentId=${studentId}`);
-      if (response.data && response.data.success) return response.data;
+      return response.data;
     } catch (err) {
-      console.warn('Failed to add squad member remote:', err);
+      throw toApiError(err, 'Could not add the student to this squad.');
     }
-    // Update local squad
-    const squads = this.getLocalCustomSquads();
-    const sq = squads.find(s => s.id === squadId);
-    if (sq) {
-      const studentList = await this.getEligibleStudents();
-      const st = studentList.find(s => (s.studentId || s.id || s.userId) === studentId);
-      const name = st ? (st.fullName || st.name) : 'Student';
-      const xp = st ? (st.totalXp ?? st.totalXP ?? 500) : 500;
-      if (!(sq.members || []).some(m => m.studentId === studentId)) {
-        sq.members = sq.members || [];
-        sq.members.push({ studentId, studentName: name, role: 'Member', totalXp: xp });
-        sq.memberCount = sq.members.length;
-        sq.combinedXp = (sq.combinedXp || 0) + xp;
-        this.saveLocalCustomSquad(sq);
-      }
-    }
-    return { success: true, message: 'Student added to squad.' };
   },
 
   async removeSquadMember(squadId, studentId) {
     try {
       const response = await api.delete(`/gamification/squads/${squadId}/members/${studentId}`);
-      if (response.data && response.data.success) return response.data;
+      return response.data;
     } catch (err) {
-      console.warn('Failed to remove squad member remote:', err);
+      throw toApiError(err, 'Could not remove the student from this squad.');
     }
-    const squads = this.getLocalCustomSquads();
-    const sq = squads.find(s => s.id === squadId);
-    if (sq && sq.members) {
-      const removed = sq.members.find(m => m.studentId === studentId);
-      sq.members = sq.members.filter(m => m.studentId !== studentId);
-      sq.memberCount = sq.members.length;
-      if (removed) sq.combinedXp = Math.max(0, (sq.combinedXp || 0) - (removed.totalXp || 0));
-      this.saveLocalCustomSquad(sq);
-    }
-    return { success: true, message: 'Student removed from squad.' };
   },
 
   async deleteSquad(squadId) {
     try {
-      await api.delete(`/gamification/squads/${squadId}`);
+      const response = await api.delete(`/gamification/squads/${squadId}`);
+      return response.data;
     } catch (err) {
-      console.warn('Failed to delete squad remote:', err);
+      throw toApiError(err, 'Could not disband this squad.');
     }
-    this.removeLocalCustomSquad(squadId);
-    return true;
+  },
+
+  // ── Quest courses (real learning content the quests point at) ──────────────
+  /**
+   * Courses a quest can bind to. `GET /courses` is already role-scoped by the
+   * API: instructors see their own courses (incl. drafts), students and anon
+   * see published ones, admins see everything.
+   */
+  async getQuestCourses() {
+    const response = await api.get('/courses');
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
+   * Real XP value of a course (course reward, or lessons + quizzes when the
+   * course has no explicit reward). Used as the squad quest target so the goal
+   * is derived from content instead of a hard-coded 2500.
+   */
+  async getCourseXpSummary(courseId) {
+    if (!courseId) return null;
+    const response = await api.get(`/courses/${courseId}/xp-summary`);
+    return response.data;
   },
 
   // ── Badges Registry ─────────────────────────────────────────────────────────
@@ -187,9 +139,14 @@ export const gamificationService = {
     return response.data;
   },
 
+  /** Admin-only on the backend (403 for anyone else). Propagates that failure. */
   async setXpMultiplier(multiplier) {
-    const response = await api.post('/gamification/multiplier', { multiplier });
-    return response.data;
+    try {
+      const response = await api.post('/gamification/multiplier', { multiplier });
+      return response.data;
+    } catch (err) {
+      throw toApiError(err, 'The XP multiplier can only be changed by an administrator.');
+    }
   },
 
   // ── Deep Work & Focus Studio ────────────────────────────────────────────────
@@ -199,25 +156,36 @@ export const gamificationService = {
   },
 
   // ── Student Game Dashboard & Ledger ─────────────────────────────────────────
-  // Phase 2A fix: uses real student ID from session, not hardcoded test ID
   async getGameDashboard(studentId = getLoggedInStudentId()) {
     const response = await api.get(`/gamification/dashboard/${studentId}`);
     return response.data;
   },
 
-  // Phase 2A fix: uses real student ID from session
   async claimDailyGrandMission(studentId = getLoggedInStudentId()) {
     const response = await api.post(`/gamification/missions/claim-grand/${studentId}`);
     return response.data;
   },
 
-  // Phase 2A fix: uses real student ID from session
+  /** Self-only ledger for the signed-in learner. */
   async getXpLedger(studentId = getLoggedInStudentId()) {
     const response = await api.get(`/gamification/ledger/${studentId}`);
     return response.data;
   },
 
-  // Phase 2A fix: uses real student ID from session
+  /**
+   * Cohort-wide ledger for the staff console. The self-only route above returns
+   * the staffer's own (usually empty) transactions, which is why the ledger tab
+   * used to render nothing. Admin/Instructor only — the API returns 403 otherwise.
+   */
+  async getCohortLedger(limit = 60) {
+    try {
+      const response = await api.get(`/gamification/ledger?limit=${Math.min(limit, 200)}`);
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (err) {
+      throw toApiError(err, 'The cohort ledger is only available to instructors and administrators.');
+    }
+  },
+
   async useStreakFreeze(studentId = getLoggedInStudentId()) {
     const response = await api.post(`/gamification/streak/freeze/${studentId}`);
     return response.data;
@@ -225,8 +193,7 @@ export const gamificationService = {
 
   // Phase 2B fix: reads real user data from session; calls correct /api/ai/ route from Phase 1
   async getNextBestAction() {
-    const userStr = localStorage.getItem('eduflow_user');
-    const user = userStr ? JSON.parse(userStr) : {};
+    const user = readSessionUser();
 
     const response = await api.post('/ai/next-best-action', {
       student_name: user.fullName || user.name || 'Student',

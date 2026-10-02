@@ -11,6 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 namespace EduFlow.Api.Controllers;
 
 [ApiController]
+// The squad service (frontend gamificationService.js) calls /api/gamification/squads/*,
+// while the documented API contract is /api/v1/gamification/squads/*. Both prefixes are
+// registered — same pattern as QuizzesController — so neither client breaks.
+[Route("api/gamification/squads")]
 [Route("api/v1/gamification/squads")]
 [Authorize]
 public class TeamsController : ControllerBase

@@ -70,6 +70,45 @@ public class GamificationController : ControllerBase
         return Ok(ledger);
     }
 
+    /// <summary>
+    /// Cohort-wide XP ledger for the instructor/admin console. Students never reach
+    /// this — the Gamification page's "Points Ledger" tab is a staff view, so it reads
+    /// the whole roster instead of silently returning the signed-in staffer's own (empty) history.
+    /// </summary>
+    [HttpGet("ledger")]
+    [Authorize(Roles = "Admin,Instructor")]
+    public async Task<ActionResult<List<CohortXpLedgerEntryDto>>> GetCohortLedger(
+        [FromQuery] int limit = 60,
+        CancellationToken ct = default)
+    {
+        var safeLimit = Math.Clamp(limit, 1, 200);
+
+        var rows = await _dbContext.XpTransactions.AsNoTracking()
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(safeLimit)
+            .Select(x => new
+            {
+                x.Id,
+                x.XpAmount,
+                x.Description,
+                x.SourceType,
+                x.CreatedAt,
+                StudentName = x.Student != null ? x.Student.FullName : null
+            })
+            .ToListAsync(ct);
+
+        var result = rows.Select(x => new CohortXpLedgerEntryDto(
+            x.Id,
+            x.XpAmount,
+            x.Description,
+            x.SourceType,
+            x.CreatedAt,
+            x.StudentName
+        )).ToList();
+
+        return Ok(result);
+    }
+
     // Phase 1A: Self-only guard — student can only see their own mastery
     [HttpGet("mastery/{studentId:guid}")]
     [Authorize]

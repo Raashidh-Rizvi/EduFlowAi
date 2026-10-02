@@ -101,7 +101,7 @@ export default function CreateCourseView({ onNavigate }) {
             Add modules and lessons, then publish it when you are ready to enroll students.
           </p>
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn-primary" onClick={() => onNavigate('courses')}>Open Curriculum Editor</button>
+            <button className="btn-primary" onClick={() => onNavigate('courses', { courseId: created?.id })}>Open Curriculum Editor</button>
             <button className="btn-secondary" onClick={() => onNavigate('my-courses')}>Back to My Courses</button>
             <button className="btn-ghost" onClick={() => {
               setCreated(null);

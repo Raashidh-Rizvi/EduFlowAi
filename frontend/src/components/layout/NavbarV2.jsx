@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Search, Bell, ChevronDown, LogOut, GraduationCap, BookOpen, Shield } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
+import useApiHealth from '../../hooks/useApiHealth';
 
-export default function NavbarV2({ activeTab, unreadNotifications = 3, currentUser, onLogout, onSwitchRole }) {
+export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUser, onLogout, onSwitchRole }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const health = useApiHealth();
 
   const user = currentUser || { fullName: '', email: '', role: '' };
   const isAdmin = user.role === 'Admin';
@@ -33,14 +35,23 @@ export default function NavbarV2({ activeTab, unreadNotifications = 3, currentUs
         <kbd className="v2-search-kbd">⌘K</kbd>
       </div>
 
-      {/* API status */}
-      <div className="v2-api-badge">
+      {/* API status — live probe against GET /health, not a hard-coded string */}
+      <div
+        className="v2-api-badge"
+        title={
+          health
+            ? `Last checked ${new Date(health.checkedAt).toLocaleTimeString()}`
+            : 'Checking API…'
+        }
+      >
         <span style={{
           width: '7px', height: '7px', borderRadius: '50%',
-          background: '#10B981', boxShadow: '0 0 6px #10B981', flexShrink: 0,
+          background: health?.ok ? '#10B981' : '#EF4444',
+          boxShadow: health?.ok ? '0 0 6px #10B981' : '0 0 6px #EF4444',
+          flexShrink: 0,
           animation: 'none'
         }} />
-        API 8.0: 18ms
+        {health ? health.message : 'API …'}
       </div>
 
       {/* Spacer */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Trophy, 
   Flame, 
@@ -26,7 +26,7 @@ import {
   Layers,
   ArrowUpRight
 } from 'lucide-react';
-import gamificationService from '../../services/gamificationService';
+import gamificationService, { isStaffRole } from '../../services/gamificationService';
 
 const THEME_PRESETS = [
   { icon: '🚀', label: 'Quantum Coders', color: '#3b82f6' },
@@ -54,6 +54,28 @@ const RANDOM_NAMES = [
 // were live data.
 const DEFAULT_FALLBACK_STUDENTS = [];
 
+// Background cadence for the console: a quiet 15s poll keeps standings/XP fresh
+// without hammering the API, and a refresh also fires whenever the tab regains
+// focus or visibility (see the effect below).
+const REFRESH_INTERVAL_MS = 15000;
+
+// BadgeCategory enum order from DomainEnums.cs — labels shown instead of the
+// fabricated "4 Rarity tiers configured" line.
+const BADGE_CATEGORIES = [
+  'Learning',
+  'Assessment',
+  'Consistency',
+  'Improvement',
+  'Mastery',
+  'Challenge',
+  'Streak',
+  'Social',
+  'Milestone'
+];
+
+const badgeCategoryLabel = (category) =>
+  BADGE_CATEGORIES[category] ?? (category === undefined || category === null ? 'General' : 'Achievement');
+
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'
   const [leaderboardScope, setLeaderboardScope] = useState('cohort'); // 'cohort' | 'squads'
@@ -67,7 +89,14 @@ export default function Gamification() {
   const [squadLeaderboard, setSquadLeaderboard] = useState([]);
   const [badges, setBadges] = useState([]);
   const [ledger, setLedger] = useState([]);
+  // Staff view of the ledger: cohort-wide XP movements (Admin/Instructor only).
+  const [cohortLedger, setCohortLedger] = useState([]);
+  const [ledgerScope, setLedgerScope] = useState('cohort'); // 'cohort' | 'mine'
+  // Real courses a quest can bind to (role-scoped by GET /courses).
+  const [questCourses, setQuestCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
 
@@ -75,8 +104,14 @@ export default function Gamification() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamTheme, setNewTeamTheme] = useState(THEME_PRESETS[0]);
-  const [newTeamQuest, setNewTeamQuest] = useState('Architecture Mastery Sprint');
-  const [newTeamTargetXp, setNewTeamTargetXp] = useState(2500);
+  const [newTeamQuest, setNewTeamQuest] = useState('');
+  const [newTeamTargetXp, setNewTeamTargetXp] = useState(0);
+  // Course the quest is anchored to. Persisted server-side on the Team row and
+  // drives both the quest title and the real XP target.
+  const [newTeamCourseId, setNewTeamCourseId] = useState('');
+  const [courseXpSummary, setCourseXpSummary] = useState(null);
+  const [courseXpLoading, setCourseXpLoading] = useState(false);
+  const [targetXpTouched, setTargetXpTouched] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState([]);
   const [selectedLeaderId, setSelectedLeaderId] = useState('');
   const [studentSearchQuery, setStudentSearchQuery] = useState('');

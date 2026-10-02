@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using EduFlow.Core.Constants;
 using EduFlow.Core.Entities;
@@ -9,6 +10,8 @@ using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using EduFlow.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Xunit;
 
 namespace EduFlow.Tests;
@@ -134,6 +137,90 @@ public class GradeServiceTests
             new GradingConfigurationInput(AttemptScoringRule.Highest, new[] { new AssessmentWeightInput(s.Assessments[0].Id, 30) }),
             s.Instructor.Id, "Instructor");
         Assert.Equal(GradingError.WeightsDoNotTotal100, result.Error);
+    }
+
+    // --- Configuration ------------------------------------------------------------------
+
+    [Fact]
+    public async Task GetOrCreateConfiguration_WhenLosingTheRaceToInsert_ReadsTheWinnersRow()
+    {
+        // Regression: the grading panel loads twice concurrently (React StrictMode
+        // double-effect), so two GET /courses/{id}/grading requests race to insert the single
+        // configuration row allowed per course (unique index IX_CourseGradingConfigurations_CourseId).
+        // The loser used to surface the DbUpdateException as HTTP 500 while the winner rendered
+        // the panel; it must instead re-read the winner's row.
+        var databaseName = Guid.NewGuid().ToString();
+        var store = new InMemoryDatabaseRoot(); // shared: the racing contexts build different
+                                                // options (one has the interceptor), so the
+                                                // name-only store would not be shared.
+
+        using var seedDb = NewContext(databaseName, store);
+        seedDb.Database.EnsureCreated(); // seeds the institution default grading policy
+
+        var instructor = new User { FullName = "Instructor", Email = "i@test", Role = UserRole.Instructor };
+        var course = new Course { Code = "G-1", Title = "Grading", InstructorId = instructor.Id };
+        seedDb.AddRange(instructor, course);
+        await seedDb.SaveChangesAsync();
+
+        var raced = false;
+        Guid winnerId = default;
+        var interceptor = new RaceLosingInsertInterceptor(async () =>
+        {
+            raced = true;
+            // The competing request commits its configuration row first...
+            using var rivalDb = NewContext(databaseName, store);
+            var rival = new CourseGradingConfiguration
+            {
+                CourseId = course.Id,
+                GradingPolicyId = GradingDefaults.InstitutionPolicyId
+            };
+            rivalDb.CourseGradingConfigurations.Add(rival);
+            await rivalDb.SaveChangesAsync();
+            winnerId = rival.Id;
+            // ...so this request's insert dies on the unique index, as it does on Postgres.
+            throw new DbUpdateException(
+                "Simulated unique index violation on IX_CourseGradingConfigurations_CourseId.");
+        });
+
+        using var racedContext = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, store, null)
+            .AddInterceptors(interceptor)
+            .Options);
+        var service = new GradeService(racedContext, new AuditLogWriter(racedContext));
+
+        var configuration = await service.GetOrCreateConfigurationAsync(course.Id);
+
+        Assert.True(raced, "the simulated losing insert must have run.");
+        Assert.NotNull(configuration);
+        Assert.Equal(winnerId, configuration!.Id); // the winner's row, not a second insert.
+        Assert.Equal(GradingDefaults.InstitutionPolicyId, configuration.GradingPolicyId);
+
+        using var assertDb = NewContext(databaseName, store);
+        Assert.Equal(1, await assertDb.CourseGradingConfigurations.CountAsync(c => c.CourseId == course.Id));
+    }
+
+    private static ApplicationDbContext NewContext(string databaseName, InMemoryDatabaseRoot store)
+        => new(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, store, null).Options);
+
+    /// <summary>Throws a <see cref="DbUpdateException"/> instead of the first insert, as the
+    /// unique index on <c>CourseGradingConfigurations.CourseId</c> would on a real database.</summary>
+    private sealed class RaceLosingInsertInterceptor(Func<Task> losingInsert) : SaveChangesInterceptor
+    {
+        private bool _fired;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_fired)
+            {
+                _fired = true;
+                await losingInsert();
+            }
+            return result;
+        }
     }
 
     // --- Calculation ------------------------------------------------------------------

@@ -633,7 +633,11 @@ public class QuizzesController : BaseApiController
                 }
             }
 
-            quiz.Questions.Add(question);
+            // BaseEntity.Id ships with a preset Guid, so if this new question is only discovered
+            // through the tracked quiz's collection, EF attaches it as Modified and issues an
+            // UPDATE matching 0 rows (DbUpdateConcurrencyException). Add it to the DbSet
+            // explicitly; relationship fixup then places it in quiz.Questions for us.
+            DbContext.Questions.Add(question);
         }
 
         quiz.QuestionCount = quiz.Questions.Count;
@@ -1397,8 +1401,11 @@ public class QuizzesController : BaseApiController
         foreach (var opt in options)
         {
             bool isCorrect = opt.Equals(question.CorrectAnswer, StringComparison.OrdinalIgnoreCase);
-            question.Options.Add(new QuestionOption
+            // Preset Guid key: without an explicit Add EF attaches the new option as Modified.
+            // Fixup places it in question.Options for us.
+            DbContext.QuestionOptions.Add(new QuestionOption
             {
+                QuestionId = question.Id,
                 OptionText = opt,
                 IsCorrect = isCorrect,
                 DisplayOrder = optIdx++

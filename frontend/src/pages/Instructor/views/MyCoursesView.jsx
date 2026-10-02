@@ -227,7 +227,15 @@ export default function MyCoursesView({ onNavigate }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '16px' }}>
           {visible.map(c => (
-            <div key={c.id} className="card-premium glass-card-interactive" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '13px' }}>
+            <div
+              key={c.id}
+              className="card-premium glass-card-interactive"
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate('courses', { courseId: c.id })}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('courses', { courseId: c.id }); } }}
+              style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '13px', cursor: 'pointer' }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
                 <div style={{
                   width: '44px', height: '44px', borderRadius: 'var(--radius-md)',
@@ -280,18 +288,18 @@ export default function MyCoursesView({ onNavigate }) {
               {(c.pendingEnrollmentCount || 0) > 0 && (
                 <button
                   className="btn-secondary"
-                  onClick={() => onNavigate('enrollment-requests')}
+                  onClick={e => { e.stopPropagation(); onNavigate('enrollment-requests'); }}
                   style={{ fontSize: '12px', justifyContent: 'center' }}
                 >
                   {c.pendingEnrollmentCount} pending enrollment request{c.pendingEnrollmentCount === 1 ? '' : 's'}
                 </button>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
+              <div onClick={e => e.stopPropagation()} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '7px' }}>
                 <button className="btn-secondary" onClick={() => openEdit(c)} style={{ fontSize: '12px', padding: '8px 10px' }}>
                   <Pencil size={13} /> Edit Course
                 </button>
-                <button className="btn-primary" onClick={() => onNavigate('courses')} style={{ fontSize: '12px', padding: '8px 10px' }}>
+                <button className="btn-primary" onClick={() => onNavigate('courses', { courseId: c.id })} style={{ fontSize: '12px', padding: '8px 10px' }}>
                   Manage Curriculum
                 </button>
                 <button

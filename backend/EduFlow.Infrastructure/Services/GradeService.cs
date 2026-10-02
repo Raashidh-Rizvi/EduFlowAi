@@ -143,33 +143,49 @@ public class GradeService : IGradeService
 
     public async Task<CourseGradingConfiguration?> GetOrCreateConfigurationAsync(Guid courseId, CancellationToken ct = default)
     {
-        if (!await _dbContext.Courses.AnyAsync(c => c.Id == courseId, ct))
+        // Bounded because concurrent callers (e.g. the grading panel loading twice) race to insert
+        // the single configuration row allowed per course; only one insert can win.
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return null;
+            if (!await _dbContext.Courses.AnyAsync(c => c.Id == courseId, ct))
+            {
+                return null;
+            }
+
+            var config = await _dbContext.CourseGradingConfigurations
+                .Include(c => c.GradingPolicy!).ThenInclude(p => p.Bands)
+                .FirstOrDefaultAsync(c => c.CourseId == courseId, ct);
+            if (config != null)
+            {
+                return config;
+            }
+
+            var defaultPolicy = await _dbContext.GradingPolicies
+                .Include(p => p.Bands)
+                .FirstOrDefaultAsync(p => p.IsInstitutionDefault, ct)
+                ?? throw new InvalidOperationException("The institution default grading policy is missing.");
+
+            config = new CourseGradingConfiguration
+            {
+                CourseId = courseId,
+                GradingPolicyId = defaultPolicy.Id,
+                GradingPolicy = defaultPolicy
+            };
+            _dbContext.CourseGradingConfigurations.Add(config);
+            try
+            {
+                await _dbContext.SaveChangesAsync(ct);
+                return config;
+            }
+            catch (DbUpdateException)
+            {
+                // A concurrent request created the row first (unique index on CourseId). Discard our
+                // pending insert so the next attempt reads the winner instead of re-inserting it.
+                _dbContext.Entry(config).State = EntityState.Detached;
+            }
         }
 
-        var config = await _dbContext.CourseGradingConfigurations
-            .Include(c => c.GradingPolicy!).ThenInclude(p => p.Bands)
-            .FirstOrDefaultAsync(c => c.CourseId == courseId, ct);
-        if (config != null)
-        {
-            return config;
-        }
-
-        var defaultPolicy = await _dbContext.GradingPolicies
-            .Include(p => p.Bands)
-            .FirstOrDefaultAsync(p => p.IsInstitutionDefault, ct)
-            ?? throw new InvalidOperationException("The institution default grading policy is missing.");
-
-        config = new CourseGradingConfiguration
-        {
-            CourseId = courseId,
-            GradingPolicyId = defaultPolicy.Id,
-            GradingPolicy = defaultPolicy
-        };
-        _dbContext.CourseGradingConfigurations.Add(config);
-        await _dbContext.SaveChangesAsync(ct);
-        return config;
+        throw new InvalidOperationException($"Could not create the grading configuration for course {courseId}.");
     }
 
     public async Task<GradingOperationResult> SaveConfigurationAsync(

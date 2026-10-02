@@ -48,12 +48,18 @@ export default function InstructorPortalV2({
   const [pendingEnrollments, setPendingEnrollments] = useState(0);
   const [pendingAiProposals] = useState(readPendingAi);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
+  // Which course's dedicated page the "courses" section should show.
+  // null → the course directory list.
+  const [activeCourseId, setActiveCourseId] = useState(null);
 
-  const setSection = useCallback((next) => {
+  const setSection = useCallback((next, params) => {
     try {
       sessionStorage.setItem(SECTION_KEY, next);
     } catch {}
     setSectionState(next);
+    setActiveCourseId(
+      params && typeof params === "object" ? params.courseId ?? null : null
+    );
     try {
       const main = document.getElementById("instructor-main-v2");
       if (main) main.scrollTop = 0;
@@ -93,7 +99,13 @@ export default function InstructorPortalV2({
       case "profile":
         return <ProfileView />;
       case "courses":
-        return <Courses currentUser={user} />;
+        return (
+          <Courses
+            currentUser={user}
+            initialCourseId={activeCourseId}
+            onCourseChange={setActiveCourseId}
+          />
+        );
       case "assessments":
         return <Assessments currentUser={user} />;
       case "ai-review":

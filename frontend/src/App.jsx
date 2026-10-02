@@ -34,6 +34,7 @@ import InstructorPortal from "./pages/Instructor/InstructorPortal";
 import EnrollmentRequestsView from "./pages/Instructor/views/EnrollmentRequestsView";
 import { authService } from "./services/authService";
 import instructorService from "./services/instructorService";
+import api from "./services/api";
 import { AuthProvider } from "./context/AuthContext";
 import { ShieldAlert } from "lucide-react";
 
@@ -65,7 +66,8 @@ function AppRoutes() {
     setActiveTabState(tab);
   };
 
-  const [unreadNotifications] = useState(3);
+  // Real unread count from GET /notifications/user (0 until the API reports otherwise).
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [pendingAiProposals] = useState(() => {
     try {
       const saved = localStorage.getItem("eduflow_ai_proposals_dynamic");
@@ -105,6 +107,31 @@ function AppRoutes() {
 
   useEffect(() => {
     refreshPendingEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  // Unread badge: counted from the signed-in user's real notifications
+  // (GET /notifications/user), refreshed on boot and on window focus instead
+  // of a hard-coded number.
+  const refreshUnreadNotifications = async () => {
+    if (!localStorage.getItem("eduflow_token")) {
+      setUnreadNotifications(0);
+      return;
+    }
+    try {
+      const response = await api.get("/notifications/user");
+      const items = Array.isArray(response?.data) ? response.data : [];
+      setUnreadNotifications(items.filter((n) => !n?.isRead).length);
+    } catch {
+      setUnreadNotifications((prev) => prev);
+    }
+  };
+
+  useEffect(() => {
+    refreshUnreadNotifications();
+    const onFocus = () => refreshUnreadNotifications();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 

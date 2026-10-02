@@ -152,14 +152,35 @@ public class TeamService : ITeamService
             studentIds.Insert(0, leaderId);
         }
 
+        // Anchor the quest to a real course so its progress is derived from learning
+        // activity instead of a free-text label and a fixed XP number.
+        Course? questCourse = null;
+        if (request.CourseId.HasValue)
+        {
+            questCourse = await _dbContext.Courses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == request.CourseId.Value, ct);
+            if (questCourse == null)
+            {
+                return new SquadActionResultDto(false, "The selected course no longer exists.", null);
+            }
+        }
+
+        var questTitle = ResolveQuestTitle(request.ActiveQuest, questCourse);
+        var targetXp = request.TargetGoalXp > 0
+            ? request.TargetGoalXp
+            : await DeriveCourseTargetXpAsync(questCourse, ct);
+
         var team = new Team
         {
             Name = request.Name.Trim(),
             Description = !string.IsNullOrWhiteSpace(request.Description)
                 ? request.Description.Trim()
-                : (!string.IsNullOrWhiteSpace(request.ActiveQuest) ? $"Quest: {request.ActiveQuest.Trim()}" : "Collaborative Learning Squad"),
+                : $"Quest: {questTitle}",
             AvatarUrl = !string.IsNullOrWhiteSpace(request.AvatarUrl) ? request.AvatarUrl.Trim() : "⚔️",
             LeaderId = leaderId,
+            CourseId = questCourse?.Id,
+            QuestTitle = questTitle,
+            TargetXp = targetXp,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -218,6 +239,11 @@ public class TeamService : ITeamService
             team.AvatarUrl = request.AvatarUrl.Trim();
         if (request.LeaderId.HasValue)
             team.LeaderId = request.LeaderId.Value;
+        if (!string.IsNullOrWhiteSpace(request.ActiveQuest))
+            team.QuestTitle = request.ActiveQuest.Trim();
+        // The XP target is stored, never discarded — 0 keeps the course-derived value.
+        if (request.TargetGoalXp > 0)
+            team.TargetXp = request.TargetGoalXp;
 
         team.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
@@ -392,6 +418,23 @@ public class TeamService : ITeamService
         int combinedXp = memberDtos.Sum(m => m.TotalXp);
         string leaderName = memberDtos.FirstOrDefault(m => m.Role == TeamRole.Leader)?.StudentName ?? "Unknown";
 
+        string? courseTitle = null;
+        double learningProgress = 0;
+        int completedLessons = 0;
+        int totalLessons = 0;
+
+        if (team.CourseId.HasValue)
+        {
+            var course = await _dbContext.Courses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == team.CourseId.Value, ct);
+            courseTitle = course?.Title;
+
+            var squad = await BuildCourseProgressAsync(team.CourseId.Value, memberDtos, ct);
+            learningProgress = squad.LearningProgressPercent;
+            completedLessons = squad.CompletedLessons;
+            totalLessons = squad.TotalLessons;
+        }
+
         return new SquadDto(
             team.Id,
             team.Name,
@@ -402,7 +445,108 @@ public class TeamService : ITeamService
             memberDtos.Count,
             combinedXp,
             memberDtos,
-            team.CreatedAt
+            team.CreatedAt,
+            team.CourseId,
+            courseTitle,
+            ResolveQuestTitle(team.QuestTitle, courseTitle),
+            team.TargetXp,
+            learningProgress,
+            completedLessons,
+            totalLessons
         );
+    }
+
+    /// <summary>Live learning progress of a squad through the course its quest is anchored to.</summary>
+    private async Task<(double LearningProgressPercent, int CompletedLessons, int TotalLessons)> BuildCourseProgressAsync(
+        Guid courseId,
+        List<SquadMemberDto> members,
+        CancellationToken ct)
+    {
+        var memberIds = members.Select(m => m.StudentId).ToList();
+        if (memberIds.Count == 0)
+        {
+            return (0, 0, 0);
+        }
+
+        // Lessons (content items) that make up the bound course.
+        var lessonIds = await _dbContext.ContentItems.AsNoTracking()
+            .Where(ci => ci.Module!.CourseId == courseId)
+            .Select(ci => ci.Id)
+            .ToListAsync(ct);
+        int totalLessons = lessonIds.Count;
+
+        // Distinct lessons completed by at least one squad member.
+        var completions = new List<(Guid? ContentId, Guid? LessonId)>();
+        if (totalLessons > 0)
+        {
+            var rows = await _dbContext.LessonCompletions.AsNoTracking()
+                .Where(lc => memberIds.Contains(lc.StudentId)
+                             && ((lc.ContentItemId != null && lessonIds.Contains(lc.ContentItemId.Value))
+                                 || (lc.LessonId != null && lessonIds.Contains(lc.LessonId.Value))))
+                .Select(lc => new { lc.ContentItemId, lc.LessonId })
+                .ToListAsync(ct);
+            completions.AddRange(rows.Select(r => (r.ContentItemId, r.LessonId)));
+        }
+
+        int completedLessons = completions
+            .Select(c => c.ContentId ?? c.LessonId ?? Guid.Empty)
+            .Distinct()
+            .Count();
+
+        // Prefer the stored enrollment progress (authoritative, instructor-visible);
+        // fall back to the completion ratio for members without an enrollment row.
+        var progresses = await _dbContext.Enrollments.AsNoTracking()
+            .Where(e => e.CourseId == courseId
+                        && memberIds.Contains(e.StudentId)
+                        && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed))
+            .Select(e => e.ProgressPercentage)
+            .ToListAsync(ct);
+
+        double learningProgress;
+        if (progresses.Count > 0)
+        {
+            learningProgress = Math.Round(progresses.Average(), 1);
+        }
+        else if (totalLessons > 0)
+        {
+            learningProgress = Math.Round(100.0 * completedLessons / (totalLessons * memberIds.Count), 1);
+        }
+        else
+        {
+            learningProgress = 0;
+        }
+
+        return (Math.Clamp(learningProgress, 0, 100), completedLessons, totalLessons);
+    }
+
+    /// <summary>
+    /// Quest title is never a hard-coded constant: it comes from the instructor's input,
+    /// else the bound course, else a neutral label.
+    /// </summary>
+    private static string ResolveQuestTitle(string? requested, string? courseTitle)
+    {
+        if (!string.IsNullOrWhiteSpace(requested)) return requested.Trim();
+        if (!string.IsNullOrWhiteSpace(courseTitle)) return $"{courseTitle} Mastery Quest";
+        return "Collaborative Learning Sprint";
+    }
+
+    private static string ResolveQuestTitle(string? requested, Course? course)
+        => ResolveQuestTitle(requested, course?.Title);
+
+    /// <summary>The real reward total of a course: configured total, else lesson + quiz XP.</summary>
+    private async Task<int> DeriveCourseTargetXpAsync(Course? course, CancellationToken ct)
+    {
+        if (course == null) return 0;
+        if (course.XpReward > 0) return course.XpReward;
+
+        int lessonXp = await _dbContext.ContentItems.AsNoTracking()
+            .Where(ci => ci.Module!.CourseId == course.Id)
+            .SumAsync(ci => (int?)ci.XpReward) ?? 0;
+
+        int quizXp = await _dbContext.Assessments.AsNoTracking()
+            .Where(a => a.CourseId == course.Id)
+            .SumAsync(a => (int?)a.XpReward) ?? 0;
+
+        return lessonXp + quizXp;
     }
 }

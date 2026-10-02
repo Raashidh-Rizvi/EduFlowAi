@@ -12,16 +12,18 @@ import {
 } from "lucide-react";
 import ThemeToggle from "../common/ThemeToggle";
 import RoleSwitcher from "../common/RoleSwitcher";
+import useApiHealth from "../../hooks/useApiHealth";
 
 export default function Navbar({
   activeTab,
-  unreadNotifications = 3,
+  unreadNotifications = 0,
   currentUser,
   onLogout,
   onSwitchRole,
   onNavigate,
 }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const health = useApiHealth();
 
   // Identity always comes from the authenticated user supplied by App (which
   // sources it from GET /api/auth/me). Never default to a fabricated persona.
@@ -221,23 +223,37 @@ export default function Navbar({
           </kbd>
         </div>
 
-        {/* Live Backend Telemetry Indicator */}
+        {/* Live Backend Telemetry Indicator — real round trip to GET /health */}
         <div
           className="glass-badge"
+          title={
+            health
+              ? `Last checked ${new Date(health.checkedAt).toLocaleTimeString()}`
+              : "Checking API\u2026"
+          }
           style={{
             display: "inline-flex",
             alignItems: "center",
             gap: "7px",
             padding: "8px 14px",
-            backgroundColor: "var(--success-soft)",
-            color: "var(--success)",
+            backgroundColor: health?.ok
+              ? "var(--success-soft)"
+              : "rgba(239, 68, 68, 0.12)",
+            color: health?.ok ? "var(--success)" : "#EF4444",
             fontSize: "12px",
             fontWeight: "700",
-            border: "1px solid var(--success-border)",
+            border: `1px solid ${health?.ok ? "var(--success-border)" : "rgba(239, 68, 68, 0.4)"}`,
           }}
         >
-          <span className="status-dot-active"></span>
-          <span>API 8.0: 18ms</span>
+          <span
+            className="status-dot-active"
+            style={
+              health?.ok
+                ? undefined
+                : { backgroundColor: "#EF4444", boxShadow: "0 0 6px #EF4444" }
+            }
+          ></span>
+          <span>{health ? health.message : "API \u2026"}</span>
         </div>
 
         {/* Theme Toggle Button */}

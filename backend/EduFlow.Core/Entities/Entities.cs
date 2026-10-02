@@ -743,6 +743,23 @@ public class Team : BaseEntity
     public Guid LeaderId { get; set; }
     public User? Leader { get; set; }
 
+    // ── Quest binding ────────────────────────────────────────────────────────
+    // A squad's quest is anchored to a real course so progress is derived from
+    // actual lesson completions / enrollments rather than a free-text label.
+
+    /// <summary>The course this squad's quest is anchored to. Null = unbound squad.</summary>
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+
+    /// <summary>Display title of the active quest (falls back to the bound course title).</summary>
+    public string QuestTitle { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Quest XP target. When 0 the target is derived from the bound course's real
+    /// reward total (see <see cref="TeamService"/>); never a hard-coded number.
+    /// </summary>
+    public int TargetXp { get; set; } = 0;
+
     public ICollection<TeamMember> Members { get; set; } = new List<TeamMember>();
     public ICollection<TeamChallenge> TeamChallenges { get; set; } = new List<TeamChallenge>();
 }

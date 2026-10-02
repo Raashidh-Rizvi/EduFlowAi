@@ -594,6 +594,13 @@ public class ApplicationDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(t => t.LeaderId)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            // A quest is anchored to a course. Deleting the course leaves the squad
+            // intact but unbound (the quest simply loses its learning anchor).
+            entity.HasOne(t => t.Course)
+                  .WithMany()
+                  .HasForeignKey(t => t.CourseId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<TeamMember>(entity =>

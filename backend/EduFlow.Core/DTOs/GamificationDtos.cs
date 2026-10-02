@@ -31,6 +31,16 @@ public record XpTransactionDto(
     DateTime CreatedAt
 );
 
+/// <summary>One row of the cohort-wide XP ledger shown in the staff console.</summary>
+public record CohortXpLedgerEntryDto(
+    Guid Id,
+    int XpAmount,
+    string Description,
+    XpSourceType SourceType,
+    DateTime CreatedAt,
+    string? StudentName
+);
+
 public record BadgeDto(
     string Id,
     string Title,
@@ -39,8 +49,30 @@ public record BadgeDto(
     BadgeCategory Category,
     int XpBonus,
     bool IsUnlocked,
-    DateTime? UnlockedAt
+    DateTime? UnlockedAt,
+    // Human-readable unlock rule + the count it must reach. Rendered by the UI so
+    // the criteria shown are the ones the engine actually enforces.
+    string CriteriaLabel = "",
+    int Threshold = 0
 );
+
+/// <summary>Turns <see cref="AchievementCriteria"/> into the sentence shown to learners.</summary>
+public static class BadgeCriteria
+{
+    public static string Describe(AchievementCriteria criteria, int threshold) => criteria switch
+    {
+        AchievementCriteria.LessonsCompleted => $"Complete {threshold} lesson{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.StreakDays => $"Keep a {threshold}-day learning streak",
+        AchievementCriteria.PerfectScores => $"Score 100% on {threshold} assessment{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.AssessmentsPassed => $"Pass {threshold} assessment{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.BossAssessmentsPassed => $"Pass {threshold} boss-difficulty assessment{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.ImprovementBonusesEarned => $"Beat your own best score {threshold} time{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.ChallengesCompleted => $"Complete {threshold} challenge{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.CoursesCompleted => $"Complete {threshold} course{(threshold == 1 ? "" : "s")}",
+        AchievementCriteria.TeamMemberships => $"Join {threshold} learning squad{(threshold == 1 ? "" : "s")}",
+        _ => "Awarded automatically by the reward engine"
+    };
+}
 
 public record DailyChallengeDto(
     Guid ChallengeId,
@@ -208,7 +240,18 @@ public record SquadDto(
     int MemberCount,
     int CombinedXp,
     List<SquadMemberDto> Members,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // ── Quest binding (derived from real course data, never hard-coded) ──────
+    Guid? CourseId = null,
+    string? CourseTitle = null,
+    string QuestTitle = "",
+    // 0 means the squad is unbound and has no target yet.
+    int TargetXp = 0,
+    // Average progress of the squad's members through the bound course (0-100).
+    double LearningProgressPercent = 0,
+    // Lessons the squad has completed out of the bound course's lesson count.
+    int CompletedLessons = 0,
+    int TotalLessons = 0
 );
 
 public record SquadLeaderboardEntryDto(
@@ -238,7 +281,9 @@ public record InstructorCreateSquadRequest(
     Guid? LeaderId,
     List<Guid> StudentIds,
     string? ActiveQuest,
-    int TargetGoalXp
+    int TargetGoalXp,
+    // Course the squad's quest is anchored to. Null = unbound quest.
+    Guid? CourseId = null
 );
 
 public record UpdateSquadRequest(

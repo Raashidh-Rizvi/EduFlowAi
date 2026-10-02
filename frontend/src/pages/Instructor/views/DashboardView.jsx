@@ -251,7 +251,7 @@ export default function DashboardView({ user, onNavigate }) {
                     </button>
                     <button
                       className="btn-secondary"
-                      onClick={() => onNavigate('courses')}
+                      onClick={() => onNavigate('courses', { courseId: c.id })}
                       style={{ fontSize: '11.5px', padding: '6px 11px' }}
                     >
                       Curriculum

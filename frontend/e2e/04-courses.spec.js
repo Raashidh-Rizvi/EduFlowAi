@@ -21,6 +21,13 @@ test.describe('Courses Curriculum & Learning Path Exploration', () => {
     // Verify page loaded
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });
 
+    // The section opens on the course directory; open the first course's dedicated page.
+    const dirCard = page.getByTestId('course-directory-card').first();
+    if (await dirCard.isVisible().catch(() => false)) {
+      await dirCard.click();
+      await page.waitForTimeout(800);
+    }
+
     // Check if courses exist or create button is visible
     const addCourseBtn = page.getByRole('button', { name: /\+ New Course|Create Course|\+ Add Course/i }).first();
     if (await addCourseBtn.isVisible()) {

@@ -16,12 +16,19 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
 
   test('should generate a SlideQuest assessment and publish it', async ({ page }) => {
     test.setTimeout(90000); // 90 seconds timeout for this test
-    // 1. Navigate to Curriculum & Modules
+    // 1. Navigate to Curriculum & Modules (opens the course directory)
     await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });
 
     // Wait briefly for course data to load
     await page.waitForTimeout(1000);
+
+    // 1b. Open the first course's dedicated page from the directory
+    const courseCard = page.getByTestId('course-directory-card').first();
+    if (await courseCard.isVisible().catch(() => false)) {
+      await courseCard.click();
+      await page.waitForTimeout(1000);
+    }
 
     // 2. Open Module AI Quiz Generator
     const generateAiQuizBtn = page.locator('text=⚡ Module AI Quiz').first();

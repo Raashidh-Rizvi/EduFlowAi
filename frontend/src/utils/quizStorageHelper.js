@@ -30,6 +30,13 @@ export const saveGeneratedQuiz = (quizObj) => {
       avgScore: quizObj.avgScore || 0,
       status: quizObj.status || 'Published',
       createdAt: quizObj.createdAt || new Date().toISOString(),
+      // Hierarchy placement. Without these a module quiz is later mistaken for a
+      // course-level (final assessment) quiz and shows up in the wrong place.
+      scopeType: quizObj.scopeType || null,
+      scopeId: quizObj.scopeId || null,
+      moduleId: quizObj.moduleId || null,
+      topicId: quizObj.topicId || null,
+      isBossBattle: Boolean(quizObj.isBossBattle),
       questions: (quizObj.questions || []).map((q, idx) => ({
         id: q.id || `q-item-${idx + 1}`,
         prompt: q.prompt || `Question ${idx + 1}`,
@@ -122,5 +129,26 @@ export const deleteGeneratedQuiz = (quizId) => {
     window.dispatchEvent(new CustomEvent('eduflow_quiz_deleted', { detail: { quizId } }));
   } catch (err) {
     console.warn('Failed to delete generated quiz from localStorage:', err);
+  }
+};
+
+/**
+ * Removes every locally-mirrored quiz matching `predicate` (e.g. belonging to a
+ * deleted course or module) and broadcasts a single refresh event.
+ * Returns how many entries were dropped.
+ */
+export const deleteGeneratedQuizzesWhere = (predicate) => {
+  try {
+    const existingRaw = localStorage.getItem(STORAGE_KEY);
+    if (!existingRaw) return 0;
+    const list = JSON.parse(existingRaw);
+    const kept = list.filter(q => !predicate(q));
+    if (kept.length === list.length) return 0;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(kept));
+    window.dispatchEvent(new CustomEvent('eduflow_quiz_deleted', { detail: { removed: list.length - kept.length } }));
+    return list.length - kept.length;
+  } catch (err) {
+    console.warn('Failed to purge generated quizzes from localStorage:', err);
+    return 0;
   }
 };

@@ -534,7 +534,9 @@ public class GamificationService : IGamificationService
                 sb.Badge != null ? sb.Badge.Category : BadgeCategory.Learning,
                 sb.Badge != null ? sb.Badge.XpBonus : 50,
                 true,
-                sb.UnlockedAt
+                sb.UnlockedAt,
+                sb.Badge != null ? BadgeCriteria.Describe(sb.Badge.Criteria, sb.Badge.Threshold) : "",
+                sb.Badge != null ? sb.Badge.Threshold : 0
             ))
             .ToListAsync(ct);
 
@@ -619,7 +621,9 @@ public class GamificationService : IGamificationService
             b.Category,
             b.XpBonus,
             unlockedBadgeMap.ContainsKey(b.Id),
-            unlockedBadgeMap.TryGetValue(b.Id, out var dt) ? dt : null
+            unlockedBadgeMap.TryGetValue(b.Id, out var dt) ? dt : null,
+            BadgeCriteria.Describe(b.Criteria, b.Threshold),
+            b.Threshold
         )).ToList();
     }
 
