@@ -106,7 +106,7 @@ function AppRoutes() {
   // (GET /notifications/user), refreshed on boot and on window focus instead
   // of a hard-coded number.
   const refreshUnreadNotifications = async () => {
-    if (!localStorage.getItem("eduflow_token")) {
+    if (!currentUser || !localStorage.getItem("eduflow_token")) {
       setUnreadNotifications(0);
       return;
     }
@@ -155,8 +155,13 @@ function AppRoutes() {
 
   useEffect(() => {
     const invalidate = () => setCurrentUser(null);
+    const update = event => setCurrentUser(event.detail);
     window.addEventListener('eduflow-session-cleared', invalidate);
-    return () => window.removeEventListener('eduflow-session-cleared', invalidate);
+    window.addEventListener('eduflow-session-updated', update);
+    return () => {
+      window.removeEventListener('eduflow-session-cleared', invalidate);
+      window.removeEventListener('eduflow-session-updated', update);
+    };
   }, []);
 
   const handleLogout = useCallback(async () => {

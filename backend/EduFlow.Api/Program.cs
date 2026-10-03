@@ -54,6 +54,7 @@ if (string.IsNullOrWhiteSpace(jwtSecret))
         "Set it via appsettings.json, environment variable JwtSettings__Secret, or user secrets.");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecret);
+if (key.Length < 32) throw new InvalidOperationException("JwtSettings:Secret must contain at least 32 UTF-8 bytes.");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -67,6 +68,8 @@ builder.Services.AddAuthentication(options =>
     options.Events = new JwtBearerEvents { OnTokenValidated = AccountTokenValidation.ValidateAsync };
     options.TokenValidationParameters = new TokenValidationParameters
     {
+        ValidateLifetime = true,
+        RequireExpirationTime = true,
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ValidateIssuer = true,
@@ -168,6 +171,11 @@ using (var scope = app.Services.CreateScope())
         throw;
     }
 
+    // This separate flag provisions only the requested local auth account, no LMS demo content.
+    DbInitializer.EnsureDevelopmentAdmin(services.GetRequiredService<ApplicationDbContext>(),
+        app.Environment.IsDevelopment(), builder.Configuration.GetValue<bool>("DemoAccounts:Enabled"),
+        builder.Configuration.GetValue<bool>("DemoAccounts:ResetCredentials"));
+
     // Historical migrations also insert demo users. Enforce the current policy
     // after migration, in every environment, before accepting any requests.
     var demoEnabled = builder.Configuration.GetValue<bool>("DevelopmentDemo:Enabled");
@@ -200,8 +208,7 @@ app.UseExceptionHandler(errorApp =>
         context.Response.ContentType = "application/json";
         await context.Response.WriteAsJsonAsync(new 
         { 
-            message = "An unexpected server error occurred. Please try again later.",
-            error = app.Environment.IsDevelopment() ? exception?.Message : null
+            message = "An unexpected server error occurred. Please try again later."
         });
     });
 });

@@ -113,3 +113,12 @@ authentication tests remain separate follow-up concerns.
 - frontend/src/services/authErrors.js
 - frontend/src/services/authService.js
 - frontend/src/services/gamificationService.js
+
+## Authentication completion follow-up (2026-10-03)
+
+See [local setup and current behavior](AUTHENTICATION_SETUP.md) and the
+[implementation and verification report](AUTHENTICATION_IMPLEMENTATION_REPORT.md).
+The original P0 policy and historical results above are retained. The new
+DemoAccounts flags provision only a controlled local admin; they do not enable
+the broader DevelopmentDemo content seed. Current tests distinguish mocked
+browser verification from real PostgreSQL verification.

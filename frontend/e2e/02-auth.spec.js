@@ -56,7 +56,8 @@ test('registration offers Student only and sends the Student role', async ({ pag
   await expect(page.getByText('Create your Student account')).toBeVisible();
   await page.getByLabel('Full Name').fill('P0 Learner');
   await page.getByLabel('Email Address').fill('learner@example.test');
-  await page.getByLabel('Password', { exact: true }).fill('Test-login-credential');
+  await page.getByLabel('Password', { exact: true }).fill('StrongPassword123!');
+  await page.getByLabel('Confirm Password').fill('StrongPassword123!');
   await page.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(new RegExp("/console$"));
   expect(request.role).toBe('Student');
@@ -193,4 +194,200 @@ test('Student squad view uses self lookup and never calls the staff directory', 
   await page.getByRole('button', { name: 'Rankings & Squad' }).click();
   await expect(page.getByText('My authorized squad')).toBeVisible();
   expect(staffDirectoryRequests).toBe(0);
+});
+
+for (const fields of [
+  { email: '', password: 'Password123!', error: 'Enter a valid email address' },
+  { email: 'broken', password: 'Password123!', error: 'Enter a valid email address' },
+  { email: 'learner@example.test', password: '', error: 'Password is required' },
+]) {
+  test('login blocks invalid input: ' + JSON.stringify(fields), async ({ page }) => {
+    await mockApi(page);
+    let calls = 0;
+    await page.route('**/api/auth/login', route => { calls++; return route.fulfill({ json: auth() }); });
+    await page.goto('/login');
+    await page.getByLabel('Email Address').fill(fields.email);
+    await page.getByLabel('Password', { exact: true }).fill(fields.password);
+    await page.locator('button[type="submit"]').click();
+    await expect(page.getByRole('alert')).toContainText(fields.error);
+    expect(calls).toBe(0);
+  });
+}
+
+for (const fields of [
+  { name: '   ', email: 'learner@example.test', password: 'Password123!', confirm: 'Password123!', error: 'Full name must be' },
+  { name: 'Learner', email: 'broken', password: 'Password123!', confirm: 'Password123!', error: 'Enter a valid email address' },
+  { name: 'Learner', email: 'learner@example.test', password: 'weak', confirm: 'weak', error: 'Password must be at least' },
+  { name: 'Learner', email: 'learner@example.test', password: 'Password123!', confirm: '', error: 'Passwords must match.' },
+  { name: 'Learner', email: 'learner@example.test', password: 'Password123!', confirm: 'Different123!', error: 'Passwords must match.' },
+]) {
+  test('registration validates ' + fields.error + ' / ' + fields.confirm, async ({ page }) => {
+    await mockApi(page);
+    let calls = 0;
+    await page.route('**/api/auth/register', route => { calls++; return route.fulfill({ json: auth() }); });
+    await page.goto('/login?mode=register');
+    await page.getByLabel('Full Name').fill(fields.name);
+    await page.getByLabel('Email Address').fill(fields.email);
+    await page.getByLabel('Password', { exact: true }).fill(fields.password);
+    await page.getByLabel('Confirm Password').fill(fields.confirm);
+    await page.locator('button[type="submit"]').click();
+    await expect(page.getByRole('alert')).toContainText(fields.error);
+    expect(calls).toBe(0);
+  });
+}
+
+test('registration trims identity, never sends confirmation, and blocks duplicate submission', async ({ page }) => {
+  await mockApi(page);
+  let calls = 0, payload, release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/auth/register', async route => {
+    calls++; payload = route.request().postDataJSON(); await gate;
+    await route.fulfill({ status: 201, json: auth() });
+  });
+  await page.goto('/login?mode=register');
+  await page.getByLabel('Full Name').fill('  P0 Learner  ');
+  await page.getByLabel('Email Address').fill('  LEARNER@EXAMPLE.TEST  ');
+  await page.getByLabel('Password', { exact: true }).fill('Password123!');
+  await page.getByLabel('Confirm Password').fill('Password123!');
+  await page.locator('button[type="submit"]').click();
+  await expect(page.locator('button[type="submit"]')).toBeDisabled();
+  await expect.poll(() => calls).toBe(1);
+  expect(payload).toEqual({ fullName: 'P0 Learner', email: 'learner@example.test', password: 'Password123!', role: 'Student' });
+  release();
+  await expect(page).toHaveURL(/\/console$/);
+});
+
+test('model validation errors use safe messages and login errors never trigger refresh', async ({ page }) => {
+  await mockApi(page);
+  let refreshes = 0;
+  await page.route('**/api/auth/refresh', route => { refreshes++; return route.fulfill({ status: 401, json: {} }); });
+  await page.route('**/api/auth/login', route => route.fulfill({ status: 400, json: { errors: { Email: ['Enter a valid email address of at most 254 characters.'], Internal: ['secret stack trace'] } } }));
+  await page.goto('/login');
+  await submitLogin(page);
+  await expect(page.getByRole('alert')).toContainText('Enter a valid email address');
+  await expect(page.getByText('secret stack trace')).toHaveCount(0);
+  expect(refreshes).toBe(0);
+});
+
+test('Admin login, page reload and logout use server identity and revoke the session', async ({ page }) => {
+  await mockApi(page, { role: 'Admin' });
+  await page.route('**/api/auth/login', route => route.fulfill({ json: auth('Admin') }));
+  let logouts = 0;
+  await page.route('**/api/auth/logout', route => { logouts++; return route.fulfill({ json: { message: 'Logged out successfully.' } }); });
+  await page.goto('/login');
+  await submitLogin(page);
+  await expect(page).toHaveURL(/\/console$/);
+  await page.goto('/console/admin');
+  await expect(page.getByRole('heading', { name: 'Access Restricted' })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('eduflow_user')).role)).toBe('Admin');
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('eduflow_user'))?.role)).toBe('Admin');
+  await page.evaluate(async () => { const { authService } = await import('/src/services/authService.js'); await authService.logout(); });
+  await page.goto('/console/admin');
+  await expect(page).toHaveURL(/\/login/);
+  expect(logouts).toBe(1);
+  expect(await page.evaluate(() => localStorage.getItem('eduflow_token'))).toBeNull();
+  await expect(page.getByText(/admin123|Admin@gmail.com/)).toHaveCount(0);
+});
+
+test('parallel protected failures perform one refresh and each retry once', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/login');
+  await page.evaluate(() => {
+    localStorage.setItem('eduflow_token', 'expired');
+    localStorage.setItem('eduflow_refresh_token', 'refresh-test');
+  });
+  let refreshes = 0, attempts = 0;
+  await page.route('**/api/auth/refresh', async route => { refreshes++; await new Promise(resolve => setTimeout(resolve, 100)); return route.fulfill({ json: auth() }); });
+  await page.route('**/api/auth-test', route => {
+    attempts++;
+    const valid = route.request().headers().authorization === 'Bearer access-test';
+    return route.fulfill({ status: valid ? 200 : 401, json: {} });
+  });
+  const statuses = await page.evaluate(async () => {
+    const { default: api } = await import('/src/services/api.js');
+    return Promise.all([api.get('/auth-test'), api.get('/auth-test')]).then(items => items.map(item => item.status));
+  });
+  expect(statuses).toEqual([200, 200]); expect(refreshes).toBe(1); expect(attempts).toBe(4);
+});
+
+test('successful refresh followed by another 401 ends session without a loop', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/login');
+  await page.evaluate(() => { localStorage.setItem('eduflow_token', 'expired'); localStorage.setItem('eduflow_refresh_token', 'refresh-test'); });
+  let refreshes = 0, attempts = 0;
+  await page.route('**/api/auth/refresh', route => { refreshes++; return route.fulfill({ json: auth() }); });
+  await page.route('**/api/auth-test', route => { attempts++; return route.fulfill({ status: 401, json: {} }); });
+  await page.evaluate(async () => { const { default: api } = await import('/src/services/api.js'); await api.get('/auth-test').catch(() => {}); });
+  expect(refreshes).toBe(1); expect(attempts).toBe(2);
+  expect(await page.evaluate(() => localStorage.getItem('eduflow_token'))).toBeNull();
+});
+
+test('logout during refresh prevents the delayed response from recreating a session', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/login');
+  await page.evaluate(() => { localStorage.setItem('eduflow_token', 'expired'); localStorage.setItem('eduflow_refresh_token', 'refresh-test'); });
+  let release, refreshing = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/auth/refresh', async route => { refreshing = true; await gate; return route.fulfill({ json: auth() }); });
+  await page.route('**/api/auth-test', route => route.fulfill({ status: 401, json: {} }));
+  await page.evaluate(async () => { const { default: api } = await import('/src/services/api.js'); window.pendingAuthRequest = api.get('/auth-test').catch(() => null); });
+  await expect.poll(() => refreshing).toBe(true);
+  await page.evaluate(async () => { const { authService } = await import('/src/services/authService.js'); await authService.logout(); });
+  release();
+  await page.evaluate(() => window.pendingAuthRequest);
+  expect(await page.evaluate(() => ['eduflow_token', 'eduflow_refresh_token', 'eduflow_user'].map(key => localStorage.getItem(key)))).toEqual([null, null, null]);
+});
+
+test('browser restoration issues only one auth/me request under React StrictMode', async ({ page }) => {
+  await mockApi(page);
+  await storedSession(page);
+  let meCalls = 0;
+  await page.route('**/api/auth/me', async route => { meCalls++; await new Promise(resolve => setTimeout(resolve, 100)); return route.fulfill({ json: profile() }); });
+  await page.goto('/console/student');
+  await expect(page.getByText('Student Workspace', { exact: true })).toBeVisible();
+  expect(meCalls).toBe(1);
+});
+
+test('public auth errors neither attach stale JWTs nor refresh an existing session', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/login');
+  await page.evaluate(() => {
+    localStorage.setItem('eduflow_token', 'stale-access');
+    localStorage.setItem('eduflow_refresh_token', 'existing-refresh');
+  });
+  let authorization, refreshes = 0;
+  await page.route('**/api/auth/refresh', route => { refreshes++; return route.fulfill({ status: 401, json: {} }); });
+  await page.route('**/api/auth/login', route => { authorization = route.request().headers().authorization; return route.fulfill({ status: 401, json: { message: 'Invalid email or password.' } }); });
+  await submitLogin(page);
+  await expect(page.getByRole('alert')).toContainText('Invalid email or password.');
+  expect(authorization).toBeUndefined(); expect(refreshes).toBe(0);
+  expect(await page.evaluate(() => localStorage.getItem('eduflow_refresh_token'))).toBe('existing-refresh');
+});
+
+test('a delayed protected failure cannot clear a newer login session', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/login');
+  await page.evaluate(() => { localStorage.setItem('eduflow_token', 'old-access'); localStorage.setItem('eduflow_refresh_token', 'old-refresh'); });
+  let release, waiting = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/auth-test', async route => { waiting = true; await gate; return route.fulfill({ status: 401, json: {} }); });
+  await page.route('**/api/auth/login', route => route.fulfill({ json: auth() }));
+  await page.evaluate(async () => { const { default: api } = await import('/src/services/api.js'); window.pendingOldRequest = api.get('/auth-test').catch(() => null); });
+  await expect.poll(() => waiting).toBe(true);
+  await submitLogin(page);
+  await expect(page).toHaveURL(/\/console$/);
+  release();
+  await page.evaluate(() => window.pendingOldRequest);
+  expect(await page.evaluate(() => localStorage.getItem('eduflow_token'))).toBe('access-test');
+  await expect(page.getByText('Student Workspace', { exact: true })).toBeVisible();
+});
+
+test('backend profile without explicit active status cannot restore authentication', async ({ page }) => {
+  await mockApi(page);
+  await storedSession(page);
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { id, fullName: 'Learner', email: 'learner@example.test', role: 'Student' } }));
+  await page.goto('/console/student');
+  await expect(page).toHaveURL(/\/login/);
+  expect(await page.evaluate(() => localStorage.getItem('eduflow_user'))).toBeNull();
 });

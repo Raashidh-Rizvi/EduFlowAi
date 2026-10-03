@@ -1,5 +1,9 @@
+import { AUTH_MESSAGES } from './authValidation';
+
 // Only known authentication/validation messages may be displayed verbatim.
 const safeMessages = new Set([
+  ...Object.values(AUTH_MESSAGES),
+  'Your account is inactive. Contact an administrator.',
   'Invalid email or password.',
   'This user account is inactive.',
   'Public registration only allows Student accounts.',
@@ -12,6 +16,8 @@ const safeMessages = new Set([
 export function getAuthenticationErrorMessage(error) {
   const status = error?.response?.status;
   const message = error?.response?.data?.message;
+  const validation = Object.values(error?.response?.data?.errors || {}).flat().filter(value => safeMessages.has(value));
+  if ((status === 400 || status === 422) && validation.length) return [...new Set(validation)].join(' ');
   if (!status || status >= 500) {
     return 'Authentication service unavailable. We cannot reach the API. Please try again later.';
   }

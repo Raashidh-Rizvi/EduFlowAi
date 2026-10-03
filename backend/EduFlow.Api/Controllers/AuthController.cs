@@ -24,7 +24,7 @@ public class AuthController : ControllerBase
     {
         try
         {
-            var result = await _authService.RegisterAsync(request);
+            var result = await _authService.RegisterAsync(request, HttpContext.RequestAborted);
             return CreatedAtAction(nameof(GetProfile), result);
         }
         catch (InvalidOperationException ex)
@@ -38,7 +38,7 @@ public class AuthController : ControllerBase
     {
         try
         {
-            var result = await _authService.LoginAsync(request);
+            var result = await _authService.LoginAsync(request, HttpContext.RequestAborted);
             return Ok(result);
         }
         catch (UnauthorizedAccessException ex)
@@ -52,7 +52,7 @@ public class AuthController : ControllerBase
     {
         try
         {
-            var result = await _authService.RefreshTokenAsync(request);
+            var result = await _authService.RefreshTokenAsync(request, HttpContext.RequestAborted);
             return Ok(result);
         }
         catch (UnauthorizedAccessException ex)
@@ -68,7 +68,7 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
     {
-        await _authService.LogoutAsync(request.RefreshToken);
+        await _authService.LogoutAsync(request.RefreshToken, HttpContext.RequestAborted);
         return Ok(new { message = "Logged out successfully." });
     }
 
@@ -82,7 +82,7 @@ public class AuthController : ControllerBase
             return Unauthorized();
         }
 
-        var profile = await _authService.GetUserProfileAsync(userId);
+        var profile = await _authService.GetUserProfileAsync(userId, HttpContext.RequestAborted);
         return Ok(profile);
     }
 

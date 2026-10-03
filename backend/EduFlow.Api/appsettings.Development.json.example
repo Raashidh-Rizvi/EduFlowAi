@@ -22,5 +22,9 @@
     "BaseUrl": "http://localhost:8888",
     "ApiKey": "eduflow-local-dev-internal-token-2026",
     "TimeoutSeconds": 30
+  },
+  "DemoAccounts": {
+    "Enabled": false,
+    "ResetCredentials": false
   }
 }

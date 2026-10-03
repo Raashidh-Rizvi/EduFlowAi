@@ -39,7 +39,7 @@ public class AuthService : IAuthService
         var user = await PrepareUserAsync(request, ct);
 
         var (token, expiresAt) = GenerateJwtToken(user);
-        var refreshToken = GenerateRefreshToken(user.Id);
+        var (refreshToken, refreshValue) = GenerateRefreshToken(user.Id);
         await _dbContext.RefreshTokens.AddAsync(refreshToken, ct);
 
         await SaveNewUserAsync(ct);
@@ -50,7 +50,7 @@ public class AuthService : IAuthService
             Email: user.Email,
             Role: user.Role.ToString(),
             Token: token,
-            RefreshToken: refreshToken.Token,
+            RefreshToken: refreshValue,
             ExpiresAt: expiresAt
         );
     }
@@ -64,13 +64,10 @@ public class AuthService : IAuthService
 
     private async Task<User> PrepareUserAsync(RegisterRequest request, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length > 200)
-            throw new InvalidOperationException("Full name is required and must be at most 200 characters.");
-        var email = request.Email?.Trim().ToLowerInvariant();
-        if (string.IsNullOrWhiteSpace(email) || email.Length > 254 || !new EmailAddressAttribute().IsValid(email))
-            throw new InvalidOperationException("A valid email address is required.");
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 8 || Encoding.UTF8.GetByteCount(request.Password) > 72)
-            throw new InvalidOperationException("Password must be at least 8 characters and at most 72 UTF-8 bytes.");
+        if (!AuthValidation.ValidName(request.FullName)) throw new InvalidOperationException(AuthValidation.NameMessage);
+        var email = AuthValidation.NormalizeEmail(request.Email);
+        if (!AuthValidation.ValidEmail(email)) throw new InvalidOperationException(AuthValidation.EmailMessage);
+        if (!AuthValidation.ValidPassword(request.Password)) throw new InvalidOperationException(AuthValidation.PasswordMessage);
         if (request.Role is not (UserRole.Student or UserRole.Instructor or UserRole.Admin))
             throw new InvalidOperationException("Role must be Student, Instructor, or Admin.");
 
@@ -123,7 +120,7 @@ public class AuthService : IAuthService
         {
             await _dbContext.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Users_Email" })
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "IX_Users_Email" or "IX_Users_NormalizedEmail" })
         {
             // The unique email index also protects simultaneous creation requests.
             throw new InvalidOperationException("A user with this email address already exists.", ex);
@@ -132,7 +129,10 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.ToLower(), ct);
+        if (!AuthValidation.ValidEmail(request.Email)) throw new ArgumentException(AuthValidation.EmailMessage);
+        if (!AuthValidation.ValidLoginPassword(request.Password)) throw new ArgumentException(AuthValidation.LoginPasswordMessage);
+        var email = AuthValidation.NormalizeEmail(request.Email);
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email.ToLower() == email, ct);
         if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
         {
             throw new UnauthorizedAccessException("Invalid email or password.");
@@ -140,11 +140,11 @@ public class AuthService : IAuthService
 
         if (!user.IsActive)
         {
-            throw new UnauthorizedAccessException("This user account is inactive.");
+            throw new UnauthorizedAccessException("Your account is inactive. Contact an administrator.");
         }
 
         var (token, expiresAt) = GenerateJwtToken(user);
-        var refreshToken = GenerateRefreshToken(user.Id);
+        var (refreshToken, refreshValue) = GenerateRefreshToken(user.Id);
         await _dbContext.RefreshTokens.AddAsync(refreshToken, ct);
 
         await _dbContext.SaveChangesAsync(ct);
@@ -155,18 +155,21 @@ public class AuthService : IAuthService
             Email: user.Email,
             Role: user.Role.ToString(),
             Token: token,
-            RefreshToken: refreshToken.Token,
+            RefreshToken: refreshValue,
             ExpiresAt: expiresAt
         );
     }
 
     public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken ct = default)
     {
+        if (!AuthValidation.ValidRefreshToken(request.RefreshToken) || request.RefreshToken.StartsWith("sha256:", StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("Invalid or expired refresh token.");
+        var tokenHash = HashRefreshToken(request.RefreshToken);
         var tokenEntity = await _dbContext.RefreshTokens
             .Include(r => r.User)
-            .FirstOrDefaultAsync(r => r.Token == request.RefreshToken && !r.IsRevoked, ct);
+            .FirstOrDefaultAsync(r => (r.Token == tokenHash || r.Token == request.RefreshToken) && !r.IsRevoked, ct);
 
-        if (tokenEntity == null || tokenEntity.ExpiresAt < DateTime.UtcNow || tokenEntity.User == null || !tokenEntity.User.IsActive)
+        if (tokenEntity == null || tokenEntity.ExpiresAt <= DateTime.UtcNow || tokenEntity.User == null || !tokenEntity.User.IsActive)
         {
             throw new UnauthorizedAccessException("Invalid or expired refresh token.");
         }
@@ -174,10 +177,15 @@ public class AuthService : IAuthService
         tokenEntity.IsRevoked = true;
 
         var (newToken, expiresAt) = GenerateJwtToken(tokenEntity.User);
-        var newRefreshToken = GenerateRefreshToken(tokenEntity.UserId);
+        var (newRefreshToken, refreshValue) = GenerateRefreshToken(tokenEntity.UserId);
         await _dbContext.RefreshTokens.AddAsync(newRefreshToken, ct);
 
-        await _dbContext.SaveChangesAsync(ct);
+        try { await _dbContext.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Exactly one rotation may consume a token, including parallel clients.
+            throw new UnauthorizedAccessException("Invalid or expired refresh token.");
+        }
 
         return new AuthResponse(
             UserId: tokenEntity.User.Id,
@@ -185,20 +193,20 @@ public class AuthService : IAuthService
             Email: tokenEntity.User.Email,
             Role: tokenEntity.User.Role.ToString(),
             Token: newToken,
-            RefreshToken: newRefreshToken.Token,
+            RefreshToken: refreshValue,
             ExpiresAt: expiresAt
         );
     }
 
     public async Task<UserProfileDto> GetUserProfileAsync(Guid userId, CancellationToken ct = default)
     {
-        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var user = await _dbContext.Users.FindAsync(new object[] { userId }, ct);
         if (user == null)
         {
             throw new KeyNotFoundException("User not found.");
         }
 
-        if (!user.IsActive) throw new UnauthorizedAccessException("This user account is inactive.");
+        if (!user.IsActive) throw new UnauthorizedAccessException("Your account is inactive. Contact an administrator.");
 
         return new UserProfileDto(
             Id: user.Id,
@@ -212,13 +220,16 @@ public class AuthService : IAuthService
 
     public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
     {
+        if (!AuthValidation.ValidRefreshToken(refreshToken) || refreshToken.StartsWith("sha256:", StringComparison.Ordinal)) return;
+        var tokenHash = HashRefreshToken(refreshToken);
         var tokenEntity = await _dbContext.RefreshTokens
-            .FirstOrDefaultAsync(r => r.Token == refreshToken && !r.IsRevoked, ct);
+            .FirstOrDefaultAsync(r => (r.Token == tokenHash || r.Token == refreshToken) && !r.IsRevoked, ct);
 
         if (tokenEntity != null)
         {
             tokenEntity.IsRevoked = true;
-            await _dbContext.SaveChangesAsync(ct);
+            try { await _dbContext.SaveChangesAsync(ct); }
+            catch (DbUpdateConcurrencyException) { /* Already consumed/revoked by another request. */ }
         }
         // Silently succeed even if token not found (idempotent logout)
     }
@@ -249,7 +260,8 @@ public class AuthService : IAuthService
             throw new KeyNotFoundException("User not found.");
         }
 
-        user.FullName = request.FullName;
+        Validator.ValidateObject(request, new ValidationContext(request), validateAllProperties: true);
+        user.FullName = request.FullName.Trim();
         if (request.AvatarUrl != null)
         {
             user.AvatarUrl = request.AvatarUrl;
@@ -310,24 +322,32 @@ public class AuthService : IAuthService
         return (tokenHandler.WriteToken(token), expiresAt);
     }
 
-    private static RefreshToken GenerateRefreshToken(Guid userId)
+    private static (RefreshToken Entity, string Value) GenerateRefreshToken(Guid userId)
     {
         var randomBytes = new byte[64];
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(randomBytes);
 
-        return new RefreshToken
+        var value = Convert.ToBase64String(randomBytes);
+        return (new RefreshToken
         {
             UserId = userId,
-            Token = Convert.ToBase64String(randomBytes),
+            Token = HashRefreshToken(value),
             ExpiresAt = DateTime.UtcNow.AddDays(7),
             IsRevoked = false
-        };
+        }, value);
     }
+
+    private static string HashRefreshToken(string value)
+        => "sha256:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     private static string HashPassword(string password)
         => BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 
     private static bool VerifyPassword(string password, string storedHash)
-        => BCrypt.Net.BCrypt.Verify(password, storedHash);
+    {
+        try { return BCrypt.Net.BCrypt.Verify(password, storedHash); }
+        catch (BCrypt.Net.SaltParseException) { return false; }
+        catch (ArgumentException) { return false; }
+    }
 }
