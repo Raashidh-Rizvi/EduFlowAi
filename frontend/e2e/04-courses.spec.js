@@ -9,7 +9,8 @@ test.describe('Courses Curriculum & Learning Path Exploration', () => {
     // Login as Instructor
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=Dr. Sarah Jenkins').click();
+    await page.getByLabel('Email Address').fill('instructor@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
   });

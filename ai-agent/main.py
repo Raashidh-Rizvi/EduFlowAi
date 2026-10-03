@@ -8,9 +8,10 @@ Grounded Student Q&A with Slide Citations, and Course Assessments.
 import hmac
 import logging
 import os
+import time
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -34,12 +35,15 @@ from models.schemas import (
     SingleQuestionRegenerateRequest,
     SingleQuestionRegenerateResponse
 )
-from rag.rag_service import SimpleRagService
-from agents.gemini_quiz_generation_service import (
-    GeminiQuizGenerationService,
+from core.errors import (
+    AiServiceError,
     QuizGenerationUnavailable,
     QuizGenerationValidationError,
 )
+from core.providers import provider_status_list
+from core.request_context import begin_request_id, end_request_id, get_request_id
+from rag.rag_service import SimpleRagService
+from agents.gemini_quiz_generation_service import GeminiQuizGenerationService
 from agents.learning_agent import LearningAgent
 from models.schemas import LearningRequest, LearningResponse
 from tools.learning_support import LearningUnavailable
@@ -115,8 +119,73 @@ app = FastAPI(
 def _internal_auth_error_handler(_request, exc: InternalAuthError):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"success": False, "message": exc.message, "code": exc.code, "errors": None, "traceId": None},
+        content={"success": False, "message": exc.message, "code": exc.code,
+                 "detail": exc.message, "errors": None,
+                 "requestId": get_request_id(), "traceId": get_request_id()},
     )
+
+
+# -----------------------------------------------------------------------------
+# REQUEST CORRELATION
+# X-Request-Id / X-Correlation-ID from the .NET gateway is echoed back and used
+# in every log line and error body, so a browser error can be grepped server-side.
+# -----------------------------------------------------------------------------
+
+@app.middleware("http")
+async def _request_id_middleware(request: Request, call_next):
+    token = begin_request_id(
+        request.headers.get("X-Request-Id") or request.headers.get("X-Correlation-ID")
+    )
+    rid = get_request_id()
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = rid
+        return response
+    finally:
+        end_request_id(token)
+
+
+_HTTP_CODE_MAP = {
+    400: "BAD_REQUEST", 401: "UNAUTHENTICATED", 403: "FORBIDDEN", 404: "NOT_FOUND",
+    409: "CONFLICT", 413: "PAYLOAD_TOO_LARGE", 422: "VALIDATION_FAILED",
+    429: "RATE_LIMITED", 500: "INTERNAL_ERROR", 502: "BAD_GATEWAY",
+    503: "SERVICE_UNAVAILABLE", 504: "GATEWAY_TIMEOUT",
+}
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(_request: Request, exc: HTTPException):
+    """Uniform {code, message, detail, requestId} shape for raised HTTP errors."""
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        headers=getattr(exc, "headers", None),
+        content={
+            "success": False,
+            "code": _HTTP_CODE_MAP.get(exc.status_code, "REQUEST_FAILED"),
+            "message": detail,
+            "detail": detail,
+            "details": None,
+            "requestId": get_request_id(),
+            "traceId": get_request_id(),
+        },
+    )
+
+
+@app.exception_handler(AiServiceError)
+async def _ai_service_error_handler(_request: Request, exc: AiServiceError):
+    """AI errors answer with a stable code, a safe message and the request id.
+
+    Never: stack traces, SDK internals, API key values, endpoint URLs.
+    """
+    rid = get_request_id()
+    if isinstance(exc, QuizGenerationValidationError):
+        logger.warning("AI output failed validation [requestId=%s]: %s",
+                       rid, "; ".join(exc.errors[:10]))
+    else:
+        logger.warning("AI request failed [code=%s requestId=%s]: %s",
+                       exc.code, rid, exc.message)
+    return JSONResponse(status_code=exc.status_code, content=exc.to_body(request_id=rid))
 
 
 # CORS: explicit origin list from ALLOWED_ORIGINS (never "*" together with credentials).
@@ -179,6 +248,20 @@ def ai_status():
     }
 
 
+@app.get("/api/v1/ai/providers", tags=["Health"], dependencies=internal_auth)
+def ai_providers():
+    """Configuration health per AI provider (gemini/groq/azure).
+
+    Returns `configured: bool` and model names only — never API keys, endpoints
+    or any other credential. The frontend uses this to grey out providers that
+    cannot generate quizzes yet.
+    """
+    return {
+        "providers": provider_status_list(),
+        "requestId": get_request_id(),
+    }
+
+
 # -----------------------------------------------------------------------------
 # 2. CORE SIMPLE RAG ENDPOINTS (PDF Indexing & Student Chat)
 # -----------------------------------------------------------------------------
@@ -203,6 +286,17 @@ def index_pdf(request: IndexPdfRequest):
     except Exception:
         logger.exception("Indexing a lecture file failed.")
         raise HTTPException(status_code=500, detail="Failed to index the lecture file.")
+
+
+@app.get("/api/v1/rag/document-status", tags=["RAG Core"], dependencies=internal_auth)
+def document_status(file_name: str):
+    """Ingestion state of an uploaded course document.
+
+    States: UPLOADED | PROCESSING | READY | FAILED, plus chunk/embedding
+    metadata so a changed embedding model can be detected (re-index needed).
+    `file_name` is the stored file's basename, which is the vector-store key.
+    """
+    return rag_service.document_status(file_name)
 
 
 @app.post("/api/v1/rag/chat", response_model=RagChatResponse, tags=["RAG Core"], dependencies=internal_auth)
@@ -311,17 +405,38 @@ def generate_slide_quiz(request: GenerateSlideQuizRequest):
     """
     request.slide_path = require_upload_path(request.slide_path)
     request.pdf_path = require_upload_path(request.pdf_path)
+    started = time.perf_counter()
+
+    def _duration_ms() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
     try:
-        return quiz_generation_service.generate_quiz(request)
-    except QuizGenerationUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        response = quiz_generation_service.generate_quiz(request)
+        logger.info(
+            "quiz_generation status=ok requestId=%s provider=%s courseId=%s moduleId=%s "
+            "questions=%d durationMs=%d",
+            get_request_id(), response.source, request.course_id, request.module_id,
+            len(response.questions), _duration_ms(),
+        )
+        return response
+    except QuizGenerationValidationError as e:
+        logger.warning(
+            "quiz_generation status=validation_failed requestId=%s provider=%s durationMs=%d "
+            "errors=%s",
+            get_request_id(), quiz_generation_service.provider, _duration_ms(),
+            "; ".join(e.errors[:10]),
+        )
+        raise
+    except AiServiceError as e:
+        logger.warning(
+            "quiz_generation status=error requestId=%s code=%s provider=%s durationMs=%d",
+            get_request_id(), e.code, quiz_generation_service.provider, _duration_ms(),
+        )
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except QuizGenerationValidationError as e:
-        logger.warning("AI quiz output failed validation: %s", e)
-        raise HTTPException(status_code=502, detail="AI quiz output failed validation. Please retry.")
     except Exception:
-        logger.exception("Quiz generation failed.")
+        logger.exception("quiz_generation status=fatal requestId=%s", get_request_id())
         raise HTTPException(status_code=500, detail="Quiz generation failed. Please retry.")
 
 
@@ -336,15 +451,27 @@ def regenerate_quiz_question(question_id: str, request: SingleQuestionRegenerate
     request.question_id = request.question_id or question_id
     request.slide_path = require_upload_path(request.slide_path)
     request.pdf_path = require_upload_path(request.pdf_path)
+    started = time.perf_counter()
+
+    def _duration_ms() -> int:
+        return int((time.perf_counter() - started) * 1000)
+
     try:
         return quiz_generation_service.regenerate_question(request)
-    except QuizGenerationUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except QuizGenerationValidationError as e:
+        logger.warning(
+            "question_regenerate status=validation_failed requestId=%s provider=%s durationMs=%d",
+            get_request_id(), quiz_generation_service.provider, _duration_ms(),
+        )
+        raise
+    except AiServiceError as e:
+        logger.warning(
+            "question_regenerate status=error requestId=%s code=%s provider=%s durationMs=%d",
+            get_request_id(), e.code, quiz_generation_service.provider, _duration_ms(),
+        )
+        raise
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except QuizGenerationValidationError as e:
-        logger.warning("AI question output failed validation: %s", e)
-        raise HTTPException(status_code=502, detail="AI question output failed validation. Please retry.")
     except Exception:
-        logger.exception("Question regeneration failed.")
+        logger.exception("question_regenerate status=fatal requestId=%s", get_request_id())
         raise HTTPException(status_code=500, detail="Question regeneration failed. Please retry.")

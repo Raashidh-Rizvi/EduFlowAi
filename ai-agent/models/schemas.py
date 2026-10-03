@@ -343,7 +343,15 @@ class GenerateSlideQuizRequest(BaseModel):
         question_types (List[str]): Allowed question formats the instructor picked.
         learning_objectives (List[str]): Objectives the quiz should assess.
         time_limit_minutes / pass_percentage: Config echo (informational).
+        provider (Optional[str]): AI provider override for this request
+            (gemini | groq | azure). Defaults to QUIZ_LLM_PROVIDER. Validated
+            server-side against the provider registry; unknown/unconfigured
+            providers fail with a stable AI_PROVIDER_NOT_CONFIGURED error.
+        model (Optional[str]): Model/deployment override for this request.
+            Must be on the server-side allowlist for the selected provider.
     """
+    provider: Optional[str] = None
+    model: Optional[str] = None
     slide_path: Optional[str] = None
     pdf_path: Optional[str] = None
     module_id: Optional[str] = None
@@ -441,6 +449,8 @@ class SingleQuestionRegenerateRequest(BaseModel):
     slide_path: Optional[str] = None
     pdf_path: Optional[str] = None
     source_question_text: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
     def effective_slide_path(self) -> Optional[str]:
         return self.slide_path or self.pdf_path

@@ -11,7 +11,8 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     // Login as Instructor
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=Dr. Sarah Jenkins').click();
+    await page.getByLabel('Email Address').fill('instructor@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
 
@@ -29,18 +30,21 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     // Login as Admin
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=System Administrator').click();
+    await page.getByLabel('Email Address').fill('admin@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
-    // Verify Admin is logged in
-    await expect(page.getByRole('heading', { name: 'Executive Overview' })).toBeVisible({ timeout: 10000 });
+    // Verify Admin is logged in (Admin "Overview" renders Platform Summary,
+    // the instructor/admin dashboard heading differs per role)
+    await expect(page.getByRole('heading', { name: 'Platform Summary' })).toBeVisible({ timeout: 10000 });
 
-    // Click Platform Governance in sidebar
+    // Click User Management in sidebar
     const adminLink = page.getByRole('button', { name: /Platform Governance|User Management/i });
     await expect(adminLink).toBeVisible();
     await adminLink.click();
 
-    await expect(page.getByRole('heading', { name: 'Platform Governance & Administration', level: 1 })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: 'User Management' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Manage user details, roles, and account status.').first()).toBeVisible();
     await expect(page.locator('text=System Administrator').first()).toBeVisible();
 
     // Check sub-tabs: Configuration
@@ -57,11 +61,12 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     // 1. Login as Admin
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=System Administrator').click();
+    await page.getByLabel('Email Address').fill('admin@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
-    await expect(page.locator('text=ADMINISTRATOR CONSOLE')).toBeVisible({ timeout: 30000 });
-    await expect(page.locator('text=Active Students')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('text=Platform Summary').first()).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('text=Current database totals')).toBeVisible({ timeout: 30000 });
     // Verify "My Courses" is NOT visible for Admin
     await expect(page.locator('text=My Courses')).not.toBeVisible();
     await page.screenshot({ path: 'e2e/screenshots/17-admin-overview-no-my-courses.png' });
@@ -71,7 +76,8 @@ test.describe('Gamification & Admin Governance Exploration', () => {
     await page.goto('/');
     const tryNow2 = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNow2.click();
-    await page.locator('text=Dr. Sarah Jenkins').click();
+    await page.getByLabel('Email Address').fill('instructor@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
     await expect(page.locator('text=INSTRUCTOR CONSOLE')).toBeVisible({ timeout: 30000 });

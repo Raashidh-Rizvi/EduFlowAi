@@ -9,7 +9,8 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     // Login as Student
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=Alex Rivera').click();
+    await page.getByLabel('Email Address').fill('student@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
 
     // Verify Student Portal loads
@@ -94,39 +95,42 @@ test.describe('Student Portal & AI Coach Exploration', () => {
     await page.screenshot({ path: 'e2e/screenshots/16-focus-sprint-active.png' });
   });
 
-  test('should take a quiz in QuizRunner, answer questions, submit, and earn XP', async ({ page }) => {
+  test('should open the mission quiz in QuizRunner, answer every question, and surface a rejected submission', async ({ page }) => {
     // Navigate to Dashboard tab
     const dashboardTab = page.getByRole('button', { name: /Dashboard/i }).first();
     await dashboardTab.click();
 
-    // Click "Start Mission Assessment"
+    // The static mission card starts the built-in mastery quiz runner.
     const startQuizBtn = page.getByRole('button', { name: /Start Mission Assessment/i }).first();
     await startQuizBtn.click();
 
-    // Verify QuizRunner opens with question prompt
-    await expect(page.locator('text=Clean Architecture & PostgreSQL Indexing Diagnostic')).toBeVisible({ timeout: 30000 });
+    // Verify QuizRunner opens with the mastery quiz and question flow
+    await expect(page.locator('text=Module Mastery & Knowledge Check')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('text=Question 1 of 3')).toBeVisible();
 
-    // Answers are collected without revealing correctness; the server marks the attempt on submit.
-    await page.locator('text=Isolation').first().click();
+    // Answers are collected locally; nothing is graded until submit.
+    await page.locator('text=Loose coupling and independent deployability').first().click();
     await page.getByRole('button', { name: /Next Question/i }).click();
 
     await expect(page.locator('text=Question 2 of 3')).toBeVisible();
-    await page.locator('text=Left-to-right').first().click();
+    await page.locator('text=lookup trees').first().click();
     await page.getByRole('button', { name: /Next Question/i }).click();
 
     await expect(page.locator('text=Question 3 of 3')).toBeVisible();
-    await page.locator('text=Enforce safety invariants').first().click();
+    await page.locator('text=Dependency Inversion').first().click();
     await page.getByRole('button', { name: /Submit Assessment/i }).click();
 
-    // Completion card shows the server's result (pass or fail)
-    await expect(page.locator('text=/Assessment (Passed|Finished)/')).toBeVisible({ timeout: 30000 });
-    await expect(page.getByText(/\+\d+ XP/).first()).toBeVisible({ timeout: 15000 });
+    // The mission card binds no server attempt, so the submission is rejected
+    // and the runner must show a clear retry state — never a fake result.
+    await expect(page.locator('text=Submission Failed')).toBeVisible({ timeout: 30000 });
+    await expect(page.locator('text=Retry Submission')).toBeVisible();
+    await expect(page.locator('text=Assessment Passed')).toHaveCount(0);
+    await expect(page.locator('text=Assessment Finished')).toHaveCount(0);
 
     await page.screenshot({ path: 'e2e/screenshots/15-quiz-completed.png' });
 
-    // Return to dashboard/curriculum
-    await page.getByRole('button', { name: /Return to Curriculum/i }).click();
+    // Recovery path: return to the student workspace
+    await page.locator('text=Return to Curriculum').first().click();
     await expect(page.locator('text=Student Workspace').first()).toBeVisible();
   });
 });

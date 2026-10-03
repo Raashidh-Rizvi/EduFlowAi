@@ -2,10 +2,16 @@
 EduFlow AI - Quiz Generation Service (Gemini / Groq / Azure OpenAI)
 ====================================================================
 
-The LLM is chosen in ai-agent/.env:
+The LLM is chosen per request (validated against the provider registry in
+core/providers.py): the .NET backend may pass provider/model for a specific
+generation, otherwise ai-agent/.env decides:
     QUIZ_LLM_PROVIDER = gemini | groq | azure   (default: gemini)
     QUIZ_LLM_MODEL    = optional model/deployment override; otherwise
                         GEMINI_MODEL, GROQ_MODEL or AZURE_OPENAI_CHAT_DEPLOYMENT.
+
+Every failure leaves this service as an AiServiceError carrying a stable code
+(AI_PROVIDER_NOT_CONFIGURED, AI_RATE_LIMITED, AI_OUTPUT_VALIDATION_FAILED, ...)
+so the gateway and the frontend can map it to a friendly message.
 
 Grounded, schema-validated assessment generation for instructors.
 
@@ -33,7 +39,30 @@ import logging
 import os
 import re
 import uuid
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional, Tuple
+
+from core.errors import (
+    AI_AUTHENTICATION_FAILED,
+    AI_INVALID_RESPONSE,
+    AI_MODEL_NOT_FOUND,
+    AI_PROVIDER_NOT_CONFIGURED,
+    AI_PROVIDER_UNAVAILABLE,
+    AI_RATE_LIMITED,
+    AI_REQUEST_FAILED,
+    AiServiceError,
+    CourseMaterialUnavailable,
+    DocumentExtractionFailed,
+    ProviderNotConfigured,
+    QuizGenerationUnavailable,
+    QuizGenerationValidationError,
+)
+from core.providers import (
+    configured_models,
+    normalize_provider,
+    provider_label as registry_provider_label,
+    supported_providers,
+)
 
 from models.schemas import (
     GenerateSlideQuizRequest,
@@ -70,23 +99,25 @@ MAX_ATTEMPTS = 2  # initial attempt + one corrective retry with validation error
 MAX_OUTPUT_TOKENS = 8192
 REQUEST_TIMEOUT_SECONDS = 60
 
-# QUIZ_LLM_PROVIDER values (a few common spellings are accepted).
-PROVIDER_ALIASES = {"google": "gemini", "grok": "groq", "azure_openai": "azure", "azure-openai": "azure"}
+# Per-request provider/model selection. ContextVars keep concurrent requests
+# isolated even though this service is a module-level singleton.
+_REQUEST_PROVIDER: ContextVar[Optional[str]] = ContextVar("quiz_request_provider", default=None)
+_REQUEST_MODEL: ContextVar[Optional[str]] = ContextVar("quiz_request_model", default=None)
+
 PROVIDER_LABELS = {"gemini": "Gemini", "groq": "Groq", "azure": "Azure OpenAI"}
 PROVIDER_KEY_VARS = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "azure": "AZURE_OPENAI_API_KEY"}
 PROVIDER_MODEL_VARS = {"gemini": "GEMINI_MODEL", "groq": "GROQ_MODEL", "azure": "AZURE_OPENAI_CHAT_DEPLOYMENT"}
 
-
-class QuizGenerationUnavailable(Exception):
-    """Raised when the quiz LLM is not configured or unreachable. Never fall back."""
-
-
-class QuizGenerationValidationError(Exception):
-    """Raised when the model output cannot be repaired into the strict schema."""
-
-    def __init__(self, errors: List[str]):
-        self.errors = errors
-        super().__init__("; ".join(errors))
+# HTTP status the gateway should use for each stable error code.
+_STATUS_FOR_CODE = {
+    AI_PROVIDER_NOT_CONFIGURED: 503,
+    AI_PROVIDER_UNAVAILABLE: 503,
+    AI_RATE_LIMITED: 429,
+    AI_MODEL_NOT_FOUND: 502,
+    AI_AUTHENTICATION_FAILED: 502,
+    AI_INVALID_RESPONSE: 502,
+    AI_REQUEST_FAILED: 502,
+}
 
 
 class GeminiQuizGenerationService:
@@ -104,6 +135,17 @@ class GeminiQuizGenerationService:
     # ------------------------------------------------------------------
 
     def generate_quiz(self, request: GenerateSlideQuizRequest) -> GenerateSlideQuizResponse:
+        """Validate the provider/model selection, then run generation scoped to it."""
+        provider, model = self._resolve_request_target(request)
+        token_p = _REQUEST_PROVIDER.set(provider)
+        token_m = _REQUEST_MODEL.set(model)
+        try:
+            return self._generate_quiz_impl(request)
+        finally:
+            _REQUEST_PROVIDER.reset(token_p)
+            _REQUEST_MODEL.reset(token_m)
+
+    def _generate_quiz_impl(self, request: GenerateSlideQuizRequest) -> GenerateSlideQuizResponse:
         num_questions = request.effective_question_count()
         target_topics = request.effective_target_topics()
         question_types = request.effective_question_types()
@@ -113,16 +155,24 @@ class GeminiQuizGenerationService:
             slide_path=slide_path,
             module_context=request.module_context,
             module_description=request.module_description,
+            course_id=request.course_id,
+            module_id=request.module_id,
+            retrieval_query=" ".join(
+                filter(None, [
+                    request.course_title, request.module_title, request.topic_title,
+                    ",".join(target_topics), request.difficulty, "quiz assessment questions",
+                ])
+            ),
         )
         if not content.strip():
-            raise ValueError(
+            raise CourseMaterialUnavailable(
                 "No course material is available for this module. Upload lecture slides "
                 "or add topics/content items before generating an AI quiz."
             )
         has_slides = self._count_slides(slide_path) > 0
         logger.info("Quiz generation context: slides=%s, chars=%d", has_slides, len(content))
         if not has_slides and len(content.strip()) < MIN_CONTEXT_CHARS_WITHOUT_SLIDES:
-            raise ValueError(
+            raise CourseMaterialUnavailable(
                 "This module has no lecture slides and too little written content to build a "
                 "meaningful quiz. Upload the lecture slides (PDF) for this module, or add "
                 "detailed topic descriptions/content items, then try again."
@@ -165,13 +215,29 @@ class GeminiQuizGenerationService:
         )
 
     def regenerate_question(self, request: SingleQuestionRegenerateRequest) -> SingleQuestionRegenerateResponse:
+        provider, model = self._resolve_request_target(request)
+        token_p = _REQUEST_PROVIDER.set(provider)
+        token_m = _REQUEST_MODEL.set(model)
+        try:
+            return self._regenerate_question_impl(request)
+        finally:
+            _REQUEST_PROVIDER.reset(token_p)
+            _REQUEST_MODEL.reset(token_m)
+
+    def _regenerate_question_impl(self, request: SingleQuestionRegenerateRequest) -> SingleQuestionRegenerateResponse:
         slide_path = request.effective_slide_path()
         content = self._build_content_context(
             slide_path=slide_path,
             module_context=request.module_context,
+            course_id=request.course_id,
+            module_id=None,
+            retrieval_query=" ".join(filter(None, [
+                request.focus_topic, request.module_title, request.course_title,
+                request.source_question_text, "quiz question",
+            ])),
         )
         if not content.strip():
-            raise ValueError(
+            raise CourseMaterialUnavailable(
                 "No course material is available to regenerate this question. Upload lecture "
                 "slides or add topics/content items to the module first."
             )
@@ -216,6 +282,49 @@ class GeminiQuizGenerationService:
     # Gemini call + validation loop
     # ------------------------------------------------------------------
 
+    def _resolve_request_target(self, request) -> Tuple[str, str]:
+        """Validate the provider/model selection BEFORE any LLM call.
+
+        The request may name a provider/model; otherwise ai-agent/.env decides.
+        Unknown providers and models outside the server-side allowlist fail with
+        stable codes (AI_PROVIDER_NOT_CONFIGURED / AI_MODEL_NOT_FOUND) instead
+        of reaching the network. Credential presence itself is re-checked by the
+        provider callers immediately before the request goes out.
+        """
+        requested_provider = getattr(request, "provider", None)
+        requested_model = getattr(request, "model", None)
+
+        provider = (
+            normalize_provider(requested_provider)
+            or normalize_provider(os.environ.get("QUIZ_LLM_PROVIDER"))
+            or normalize_provider(os.environ.get("AI_PROVIDER"))  # documented alias
+            or "gemini"
+        )
+        if provider not in supported_providers():
+            source = "provider" if requested_provider else "QUIZ_LLM_PROVIDER"
+            raise ProviderNotConfigured(
+                f'The AI provider "{requested_provider or provider}" is not supported.',
+                details=(f"Unknown {source} value. Supported providers: "
+                         f"{', '.join(supported_providers())}. Configure one of them in "
+                         "ai-agent/.env before generating a quiz."),
+            )
+
+        model = (requested_model or "").strip()
+        if model:
+            allowlist = configured_models(provider)
+            if model not in allowlist:
+                raise AiServiceError(
+                    f'The model "{model}" is not available for {registry_provider_label(provider)}.',
+                    details=("Configured models: " + ", ".join(allowlist))
+                            if allowlist
+                            else "No model is configured for this provider on the server.",
+                    code=AI_MODEL_NOT_FOUND,
+                    status_code=400,
+                )
+        return provider, model
+
+    # ------------------------------------------------------------------
+
     def _call_with_validation(self, prompt: str, validator, temperature: float) -> Dict[str, Any]:
         """Call the LLM, validate, and retry once feeding the errors back in."""
         errors: List[str] = []
@@ -245,21 +354,43 @@ class GeminiQuizGenerationService:
 
     @property
     def provider(self) -> str:
-        """Which LLM generates quizzes: "gemini", "groq" or "azure" (read live from .env)."""
-        raw = (os.environ.get("QUIZ_LLM_PROVIDER") or "gemini").strip().lower()
-        return PROVIDER_ALIASES.get(raw, raw)
+        """Which LLM generates quizzes: "gemini", "groq" or "azure".
+
+        Per-request selection wins (set by generate_quiz/regenerate_question),
+        otherwise QUIZ_LLM_PROVIDER from ai-agent/.env decides.
+        """
+        active = _REQUEST_PROVIDER.get()
+        if active:
+            return active
+        raw = (
+            os.environ.get("QUIZ_LLM_PROVIDER")
+            or os.environ.get("AI_PROVIDER")  # documented alias
+            or "gemini"
+        ).strip().lower()
+        return normalize_provider(raw) or raw
 
     @property
     def model_name(self) -> str:
-        """QUIZ_LLM_MODEL overrides the provider's own model/deployment setting."""
-        override = (os.environ.get("QUIZ_LLM_MODEL") or "").strip()
+        """Per-request model, then QUIZ_LLM_MODEL, then the provider's default."""
+        active = _REQUEST_MODEL.get()
+        if active:
+            return active
+        override = (
+            os.environ.get("QUIZ_LLM_MODEL")
+            or os.environ.get("AI_MODEL")  # documented alias
+            or ""
+        ).strip()
         if override:
             return override
         provider = self.provider
         if provider == "groq":
             return self._rag.groq_model_name or "openai/gpt-oss-120b"
         if provider == "azure":
-            return (os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT") or "").strip()
+            return (
+                os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT")
+                or os.environ.get("AZURE_OPENAI_DEPLOYMENT")  # documented alias
+                or ""
+            ).strip()
         return self._rag.gemini_model_name or "models/gemini-flash-latest"
 
     @property
@@ -275,30 +406,56 @@ class GeminiQuizGenerationService:
             "azure": self._call_azure_json,
         }
         if provider not in callers:
-            raise QuizGenerationUnavailable(
+            raise ProviderNotConfigured(
                 f"Unknown QUIZ_LLM_PROVIDER '{provider}' in ai-agent/.env. "
                 "Use one of: gemini, groq, azure."
             )
         try:
             text = callers[provider](prompt, temperature)
             if not text or not text.strip():
-                raise QuizGenerationUnavailable(f"{self.provider_label} returned an empty response.")
+                raise QuizGenerationUnavailable(
+                    f"{self.provider_label} returned an empty response.",
+                    code=AI_INVALID_RESPONSE,
+                    status_code=_STATUS_FOR_CODE[AI_INVALID_RESPONSE],
+                )
             return text
         except (QuizGenerationUnavailable, QuizGenerationValidationError):
             raise
         except Exception as exc:  # network, quota, safety-block, SDK errors
             message = self._describe_provider_error(exc)
+            error_code = self._classify_provider_error(exc)
             logger.warning(
-                "%s quiz generation call failed: %s (code=%s, status=%s): %s",
-                self.provider_label, type(exc).__name__, self._error_code(exc),
+                "%s quiz generation call failed [%s]: %s (code=%s, status=%s): %s",
+                self.provider_label, error_code, type(exc).__name__, self._error_code(exc),
                 getattr(exc, "status", None), str(getattr(exc, "message", None) or exc)[:500],
             )
-            raise QuizGenerationUnavailable(message) from exc
+            raise QuizGenerationUnavailable(
+                message, code=error_code,
+                status_code=_STATUS_FOR_CODE.get(error_code, 503),
+            ) from exc
+
+    @staticmethod
+    def _classify_provider_error(exc: Exception) -> str:
+        """Map an SDK/network exception to one of the stable AI error codes."""
+        code = GeminiQuizGenerationService._error_code(exc)
+        status = str(getattr(exc, "status", "") or "").upper()
+        name = type(exc).__name__.lower()
+        if code == 429 or status == "RESOURCE_EXHAUSTED":
+            return AI_RATE_LIMITED
+        if code in (401, 403) or status in ("UNAUTHENTICATED", "PERMISSION_DENIED"):
+            return AI_AUTHENTICATION_FAILED
+        if code == 404 or status == "NOT_FOUND":
+            return AI_MODEL_NOT_FOUND
+        if isinstance(code, int) and code >= 500:
+            return AI_PROVIDER_UNAVAILABLE
+        if "timeout" in name or "timedout" in name or "connect" in name or "network" in name:
+            return AI_PROVIDER_UNAVAILABLE
+        return AI_REQUEST_FAILED
 
     def _call_gemini_json(self, prompt: str, temperature: float) -> str:
         api_key = (self._rag.gemini_api_key or "").strip()
         if not api_key:
-            raise QuizGenerationUnavailable(
+            raise ProviderNotConfigured(
                 "GEMINI_API_KEY is not configured in ai-agent/.env, so the Gemini quiz generator is disabled. "
                 "Add the key or switch QUIZ_LLM_PROVIDER to groq/azure."
             )
@@ -326,7 +483,7 @@ class GeminiQuizGenerationService:
     def _call_groq_json(self, prompt: str, temperature: float) -> str:
         api_key = (self._rag.groq_api_key or "").strip()
         if not api_key:
-            raise QuizGenerationUnavailable(
+            raise ProviderNotConfigured(
                 "GROQ_API_KEY is not configured in ai-agent/.env, so the Groq quiz generator is disabled. "
                 "Add the key or switch QUIZ_LLM_PROVIDER to gemini/azure."
             )
@@ -353,13 +510,13 @@ class GeminiQuizGenerationService:
             ("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_BASE_URL", endpoint or base_url),
         ) if not value]
         if missing:
-            raise QuizGenerationUnavailable(
+            raise ProviderNotConfigured(
                 "Azure OpenAI quiz generation is not fully configured. Set " + ", ".join(missing)
                 + " in ai-agent/.env (shown in Azure AI Foundry under Keys and Endpoint)."
             )
         deployment = self.model_name or self._discover_azure_chat_deployment(api_key, endpoint or base_url)
         if not deployment:
-            raise QuizGenerationUnavailable(
+            raise ProviderNotConfigured(
                 "Azure OpenAI is connected, but this Azure resource has no chat model deployed "
                 f"(found only: {', '.join(self._azure_deployments_seen) or 'no deployments'}). "
                 "Embedding models cannot write quizzes. In Azure AI Foundry open Deployments -> Deploy model, "
@@ -528,14 +685,20 @@ class GeminiQuizGenerationService:
         if not isinstance(questions, list) or not questions:
             return ["The response must contain a non-empty 'questions' array."]
 
-        if len(questions) != num_questions:
-            errors.append(f"Exactly {num_questions} questions are required; the response has {len(questions)}.")
+        if len(questions) > num_questions:
+            # LLM provided extra questions; truncate cleanly to the requested count
+            questions = questions[:num_questions]
+            payload["questions"] = questions
 
-        for i, q in enumerate(questions[:num_questions]):
+        if len(questions) < num_questions:
+            errors.append(f"At least {num_questions} questions are required; the response has {len(questions)}.")
+
+        for i, q in enumerate(questions):
             errors.extend(
                 self._validate_question_fields(q, f"Question {i + 1}", question_types, total_slides)
             )
         return errors
+
 
     def _validate_single_question_payload(self, payload: Dict[str, Any], total_slides: int) -> List[str]:
         question = payload.get("question")
@@ -558,7 +721,12 @@ class GeminiQuizGenerationService:
         text = (q.get("question_text") or "").strip()
         options = [str(o).strip() for o in (q.get("options") or [])]
         options = [o for o in options if o]
-        correct = (q.get("correct_answer") or "").strip()
+        raw_correct = q.get("correct_answer")
+        if isinstance(raw_correct, list):
+            correct = ", ".join(str(c).strip() for c in raw_correct if str(c).strip())
+        else:
+            correct = str(raw_correct or "").strip()
+
 
         if not text:
             errors.append(f"{label} is missing question_text.")
@@ -583,10 +751,21 @@ class GeminiQuizGenerationService:
                     errors.append(f"{label} ({q_type}) needs at least 2 options.")
                 if len(options) != len(set(o.lower() for o in options)):
                     errors.append(f"{label} ({q_type}) has duplicate options.")
-            if correct.upper() not in [o.upper() for o in options]:
-                errors.append(
-                    f"{label} ({q_type}) correct_answer '{correct}' must exactly match one of the options."
-                )
+            if q_type == "MULTIPLE_SELECT":
+                correct_items = [c.strip() for c in (raw_correct if isinstance(raw_correct, list) else str(raw_correct or "").split(",")) if c.strip()]
+                if not correct_items:
+                    errors.append(f"{label} (MULTIPLE_SELECT) requires at least one correct_answer.")
+                for item in correct_items:
+                    if item.upper() not in [o.upper() for o in options]:
+                        errors.append(
+                            f"{label} (MULTIPLE_SELECT) correct_answer '{item}' must match one of the options."
+                        )
+            else:
+                if correct.upper() not in [o.upper() for o in options]:
+                    errors.append(
+                        f"{label} ({q_type}) correct_answer '{correct}' must exactly match one of the options."
+                    )
+
         elif q_type == "MATCHING":
             pairs = q.get("matching_pairs")
             if not isinstance(pairs, list) or len(pairs) < 2:
@@ -627,7 +806,12 @@ class GeminiQuizGenerationService:
     def _to_question_item(q: Dict[str, Any], order: int) -> QuizQuestionItem:
         q_type = str(q.get("question_type", "MULTIPLE_CHOICE")).strip().upper()
         options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
-        correct = (q.get("correct_answer") or "").strip()
+        raw_correct = q.get("correct_answer")
+        if isinstance(raw_correct, list):
+            correct = ", ".join(str(c).strip() for c in raw_correct if str(c).strip())
+        else:
+            correct = str(raw_correct or "").strip()
+
 
         if q_type == "TRUE_FALSE":
             options = ["TRUE", "FALSE"]
@@ -635,11 +819,25 @@ class GeminiQuizGenerationService:
 
         correct_index = None
         if q_type in CHOICE_TYPES:
-            for idx, opt in enumerate(options):
-                if opt.upper() == correct.upper():
-                    correct_index = idx
-                    correct = opt  # store the exact option text
-                    break
+            if q_type == "MULTIPLE_SELECT":
+                correct_items = [c.strip() for c in (raw_correct if isinstance(raw_correct, list) else str(raw_correct or "").split(",")) if c.strip()]
+                matched_opts = []
+                for item in correct_items:
+                    for idx, opt in enumerate(options):
+                        if opt.upper() == item.upper():
+                            if correct_index is None:
+                                correct_index = idx
+                            matched_opts.append(opt)
+                            break
+                if matched_opts:
+                    correct = ", ".join(matched_opts)
+            else:
+                for idx, opt in enumerate(options):
+                    if opt.upper() == correct.upper():
+                        correct_index = idx
+                        correct = opt  # store the exact option text
+                        break
+
 
         pairs = q.get("matching_pairs")
         matching_pairs = (
@@ -679,27 +877,140 @@ class GeminiQuizGenerationService:
         slide_path: Optional[str],
         module_context: Optional[str] = None,
         module_description: Optional[str] = None,
+        course_id: Optional[str] = None,
+        module_id: Optional[str] = None,
+        retrieval_query: Optional[str] = None,
     ) -> str:
-        """Real course material: parsed slide pages first, DB module context second."""
+        """Real course material: parsed slide pages first, DB module context second.
+
+        When the deck's raw text exceeds MAX_CONTENT_CHARS the deck is retrieved
+        through the vector store (top-k + course/module/source metadata filters +
+        similarity threshold + per-slide diversity) instead of blindly cutting
+        the tail of the document.
+        """
         sections: List[str] = []
+        extraction_failed = False
 
         if slide_path and os.path.exists(slide_path):
             try:
                 pages = self._rag.parser.parse(slide_path)
             except Exception as exc:
                 logger.warning("Slide parsing failed for %s: %s", slide_path, type(exc).__name__)
+                extraction_failed = True
                 pages = []
             for page in pages:
                 body = (page.text or "").replace("\n", " ").strip()
                 if body:
                     sections.append(f"Slide {page.page_number} ({page.title}):\n{body}")
 
+            if not sections:
+                # File exists but produced no extractable text (image-only or corrupt).
+                extraction_failed = True
+
+        if extraction_failed and not sections and not (module_context and module_context.strip()) \
+                and not (module_description and module_description.strip()):
+            raise DocumentExtractionFailed(
+                "We could not read any text from this course document. "
+                "Please re-upload the file so it can be prepared for AI generation.",
+                details=f"Text extraction produced no content for "
+                        f"{os.path.basename(slide_path or 'the uploaded file')}.",
+            )
+
         if module_description and module_description.strip():
             sections.append(f"Module description: {module_description.strip()}")
         if module_context and module_context.strip():
             sections.append(module_context.strip())
 
-        return "\n\n".join(sections)[:MAX_CONTENT_CHARS]
+        full = "\n\n".join(sections)
+        if len(full) <= MAX_CONTENT_CHARS:
+            return full
+
+        # Too long for a focused prompt: retrieve the most relevant chunks
+        # (scoped to this course/module/deck) instead of truncating the tail.
+        retrieved = self._retrieve_quiz_context(
+            query=retrieval_query or "",
+            course_id=course_id,
+            module_id=module_id,
+            source_file=os.path.basename(slide_path) if slide_path else None,
+        )
+        if retrieved:
+            return retrieved[:MAX_CONTENT_CHARS]
+
+        logger.warning(
+            "Slide digest (%d chars) exceeds the %d-char prompt cap and retrieval returned "
+            "nothing; using a truncated digest.", len(full), MAX_CONTENT_CHARS,
+        )
+        return full[:MAX_CONTENT_CHARS]
+
+    def _retrieve_quiz_context(
+        self,
+        query: str,
+        course_id: Optional[str],
+        module_id: Optional[str],
+        source_file: Optional[str],
+    ) -> str:
+        """Top-k vector retrieval with metadata filtering and slide diversity.
+
+        Configurable via RAG_QUIZ_TOP_K (default 8) and RAG_QUIZ_MIN_SIMILARITY
+        (default 0.2). Never raises: on any retrieval failure the caller falls
+        back to the truncated full-text digest, which is still grounded in the
+        uploaded document (never in the model's general knowledge).
+        """
+        if not query.strip():
+            return ""
+        try:
+            top_k = max(1, int(os.environ.get("RAG_QUIZ_TOP_K", "8")))
+            min_score = float(os.environ.get("RAG_QUIZ_MIN_SIMILARITY", "0.2"))
+        except ValueError:
+            top_k, min_score = 8, 0.2
+
+        store = getattr(self._rag, "vector_store", None)
+        if store is None:
+            return ""
+        try:
+            results = store.search(
+                query=query,
+                course_id=course_id,
+                module_id=module_id,
+                source_file=source_file,
+                top_k=top_k * 2,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Quiz context retrieval failed (%s); falling back to truncated digest.",
+                type(exc).__name__,
+            )
+            return ""
+
+        picked: List[Dict[str, Any]] = []
+        per_page: Dict[Any, int] = {}
+        for r in results or []:
+            if float(r.get("relevance_score") or 0.0) < min_score:
+                continue
+            meta = r.get("metadata") or {}
+            page = meta.get("page_number", 0)
+            if per_page.get(page, 0) >= 2:  # diversity: don't stuff one slide
+                continue
+            per_page[page] = per_page.get(page, 0) + 1
+            picked.append(r)
+            if len(picked) >= top_k:
+                break
+
+        if not picked:
+            return ""
+
+        logger.info(
+            "Quiz context retrieval: %d/%d chunks (top_k=%d, min_score=%.2f, source=%s)",
+            len(picked), len(results or []), top_k, min_score, source_file or "-",
+        )
+        blocks: List[str] = []
+        for r in picked:
+            meta = r.get("metadata") or {}
+            blocks.append(
+                f"Slide {meta.get('page_number', '?')} ({meta.get('title') or 'Slide'}):\n"
+                f"{r.get('text', '')}"
+            )
+        return "\n\n\n".join(blocks)
 
     def _count_slides(self, slide_path: Optional[str]) -> int:
         if not slide_path or not os.path.exists(slide_path):
@@ -737,16 +1048,19 @@ Create a {difficulty} difficulty quiz for the module "{module_title}" covering: 
 STRICT RULES:
 1. Ground EVERY question in the COURSE MATERIAL below. Never invent facts that are not present there.
    Questions must test the SUBJECT KNOWLEDGE taught in the material (concepts, definitions, methods,
-   formulas, worked examples, comparisons, applications). NEVER ask about the module, course, slides,
-   syllabus, descriptions, outlines, "artifacts", "entities" or how the course is organised, and never
-   quote headings like "Module description" or "Topic" as if they were subject matter.
+   formulas, worked examples, calculations, comparisons, applications).
+   CRITICAL FOR QUESTION & ANSWER FORMAT:
+   - NEVER ask meta-questions about the document, slides, pages, syllabus, module outline, or file structure (e.g., NEVER ask "What is this document telling about?", "What does page 4 discuss?", "Which slide contains...").
+   - NEVER include page numbers, slide numbers, or phrases like "According to Slide X", "Refer to page Y", or "As mentioned in the document" inside the question_text or options.
+   - The question_text and options MUST be pure domain subject matter (e.g., "What is machine learning?", "Which algorithm minimizes mean squared error?", "Calculate the output of...").
 2. Produce EXACTLY {num_questions} questions, each with a distinct angle; do not repeat the same concept.
 3. Allowed question_type values: {", ".join(question_types)}.
 4. question_type MULTIPLE_CHOICE / MULTIPLE_SELECT: 3-5 unique options.
    question_type TRUE_FALSE: options exactly ["TRUE", "FALSE"].
-   question_type FILL_IN_THE_BLANK / SHORT_ANSWER: options = [] and correct_answer = the model answer.
+   question_type FILL_IN_THE_BLANK: question_text contains '___', correct_answer = the exact missing term/concept, options = 3-5 candidate terms (including correct_answer) for drag-and-drop word bank selection.
+   question_type SHORT_ANSWER: options = [] and correct_answer = the ideal model answer.
    question_type MATCHING: 3-5 matching_pairs objects with "left" and "right" strings, options = [].
-5. correct_answer must EXACTLY equal one option for choice questions (copy the option text verbatim).
+5. correct_answer must EXACTLY equal one option for choice & fill-in-the-blank questions (copy the option text verbatim).
 6. Every question needs explanation (why the answer is right, referencing the material) and a marking_scheme
    (how full/partial/no marks are awarded, referencing the marks).
 7. blooms_taxonomy_level must be exactly one of: {", ".join(BLOOMS_LEVELS)}. Spread the levels across the quiz.
@@ -805,15 +1119,15 @@ JSON:"""
 STRICT RULES:
 1. Ground the question in the COURSE MATERIAL below. Never invent facts that are not present there.
    Questions must test the SUBJECT KNOWLEDGE taught in the material (concepts, definitions, methods,
-   formulas, worked examples, comparisons, applications). NEVER ask about the module, course, slides,
-   syllabus, descriptions, outlines, "artifacts", "entities" or how the course is organised, and never
-   quote headings like "Module description" or "Topic" as if they were subject matter.
+   formulas, worked examples, comparisons, applications).
+   NEVER ask meta-questions or refer to slide numbers, page numbers, or phrases like "According to Slide X", "What is this document about?", or "Refer to page number" in question_text or options.
 2. question_type must be {q_type}.
 3. question_type MULTIPLE_CHOICE / MULTIPLE_SELECT: 3-5 unique options.
    question_type TRUE_FALSE: options exactly ["TRUE", "FALSE"].
-   question_type FILL_IN_THE_BLANK / SHORT_ANSWER: options = [] and correct_answer = the model answer.
+   question_type FILL_IN_THE_BLANK: question_text contains '___', correct_answer = the exact missing term, options = 3-5 candidate word bank terms (including correct_answer) for drag-and-drop.
+   question_type SHORT_ANSWER: options = [] and correct_answer = model answer.
    question_type MATCHING: 3-5 matching_pairs objects with "left" and "right" strings, options = [].
-4. correct_answer must EXACTLY equal one option for choice questions (copy the option text verbatim).
+4. correct_answer must EXACTLY equal one option for choice & fill-in-the-blank questions (copy option text verbatim).
 5. explanation: why the answer is right, referencing the material.
 6. distractor_rationales: one string per option (first = why the correct answer is right, rest = why each
    wrong option is wrong).
@@ -836,6 +1150,7 @@ STRICT RULES:
 
 COURSE MATERIAL:
 {content}
+
 
 CONTEXT:
 - Focus topic: {focus_topic or "any topic in the module"}

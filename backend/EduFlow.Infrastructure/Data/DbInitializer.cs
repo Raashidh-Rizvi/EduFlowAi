@@ -230,7 +230,9 @@ public static class DbInitializer
                 context.SaveChanges();
             }
 
-            if (!context.TeamMembers.Any(tm => tm.TeamId == starterTeamId && tm.StudentId == studentActual.Id))
+            // A learner belongs to exactly one squad — never seed a second membership
+            // for a student who already belongs to a different squad.
+            if (!context.TeamMembers.Any(tm => tm.StudentId == studentActual.Id))
             {
                 context.TeamMembers.Add(new TeamMember
                 {
@@ -776,6 +778,85 @@ public static class DbInitializer
 
             // Public storefront catalogue (published courses, curriculum, reviews).
             MarketplaceSeedData.Seed(context);
+
+            // Squad membership invariant: one learner belongs to exactly one squad.
+            // Older seeds attached the same learner to two squads, which shows up in
+            // the console as a learner counted twice and makes the eligible-student
+            // feed ambiguous. Keep the leadership membership, then the earliest join.
+            var allMemberships = context.TeamMembers.ToList();
+            var keeperIds = new HashSet<Guid>();
+            foreach (var learnerMemberships in allMemberships.GroupBy(m => m.StudentId))
+            {
+                keeperIds.Add(learnerMemberships
+                    .OrderByDescending(m => m.Role == TeamRole.Leader)
+                    .ThenBy(m => m.JoinedAt)
+                    .ThenBy(m => m.Id)
+                    .First().Id);
+            }
+            var keptMemberships = allMemberships.Where(m => keeperIds.Contains(m.Id)).ToList();
+            var strayMemberships = allMemberships.Where(m => !keeperIds.Contains(m.Id)).ToList();
+            if (strayMemberships.Count > 0)
+            {
+                context.TeamMembers.RemoveRange(strayMemberships);
+            }
+
+            // A squad whose leader is not on its own roster can only ever render as
+            // "Unknown" in the console, so promote a real member instead.
+            foreach (var squad in context.Teams.ToList())
+            {
+                var squadRoster = keptMemberships.Where(m => m.TeamId == squad.Id).ToList();
+                if (squadRoster.Count == 0 || squadRoster.Any(m => m.StudentId == squad.LeaderId))
+                {
+                    continue;
+                }
+
+                var promoted = squadRoster.OrderBy(m => m.JoinedAt).ThenBy(m => m.Id).First();
+                var sittingLeader = squadRoster.FirstOrDefault(m => m.Role == TeamRole.Leader);
+                if (sittingLeader != null && sittingLeader.Id != promoted.Id)
+                {
+                    sittingLeader.Role = TeamRole.Member;
+                }
+                promoted.Role = TeamRole.Leader;
+                squad.LeaderId = promoted.StudentId;
+                squad.UpdatedAt = DateTime.UtcNow;
+            }
+            context.SaveChanges();
+
+            // Squad quests are anchored to real courses. Reconcile any squad created
+            // before quest binding existed so its target and progress come from
+            // lesson/quiz rewards instead of a hard-coded number.
+            var questAnchorCandidates = context.Courses
+                .Where(c => c.IsPublished)
+                .OrderBy(c => c.CreatedAt)
+                .ToList();
+            var unboundTeams = context.Teams.Where(t => t.CourseId == null).ToList();
+            if (questAnchorCandidates.Count > 0 && unboundTeams.Count > 0)
+            {
+                foreach (var unboundTeam in unboundTeams)
+                {
+                    // Prefer the cohort's demo course (CS-301) so the quest matches
+                    // what the seeded students are actually enrolled in.
+                    var anchor = questAnchorCandidates.FirstOrDefault(c => c.Id == course.Id)
+                                 ?? questAnchorCandidates[0];
+
+                    var derivedTarget = anchor.XpReward > 0
+                        ? anchor.XpReward
+                        : (context.ContentItems
+                               .Where(ci => ci.Module!.CourseId == anchor.Id)
+                               .Sum(ci => (int?)ci.XpReward) ?? 0)
+                          + (context.Assessments
+                               .Where(a => a.CourseId == anchor.Id)
+                               .Sum(a => (int?)a.XpReward) ?? 0);
+
+                    unboundTeam.CourseId = anchor.Id;
+                    if (string.IsNullOrWhiteSpace(unboundTeam.QuestTitle))
+                        unboundTeam.QuestTitle = $"{anchor.Title} Mastery Quest";
+                    if (unboundTeam.TargetXp <= 0)
+                        unboundTeam.TargetXp = derivedTarget;
+                    unboundTeam.UpdatedAt = DateTime.UtcNow;
+                }
+                context.SaveChanges();
+            }
         }
     }
 }

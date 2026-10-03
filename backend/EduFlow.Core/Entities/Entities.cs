@@ -324,6 +324,11 @@ public class Assessment : BaseEntity
     public Guid? CreatedBy { get; set; }
     public bool GeneratedByAI { get; set; } = false;
     public string? GenerationWorkflowId { get; set; }
+
+    /// <summary>Provider/model that produced this quiz (e.g. "groq" / "openai/gpt-oss-120b").
+    /// Historical quizzes keep their metadata even if that provider is later unconfigured.</summary>
+    public string? AiProvider { get; set; }
+    public string? AiModel { get; set; }
     public DateTime? DueDate { get; set; }
 
     /// <summary>Share of the course grade (0-100), or null when the assessment is not graded.</summary>

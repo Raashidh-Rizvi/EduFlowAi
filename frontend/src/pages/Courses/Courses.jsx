@@ -54,6 +54,8 @@ import StudentJourneyMap from './StudentJourneyMap';
 import { quizService } from '../../services/quizService';
 import { questionTypeName, toQuestionTypeValue, toScopeTypeValue, QUIZ_STATUS } from '../../constants/domain';
 import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes, deleteGeneratedQuiz, deleteGeneratedQuizzesWhere } from '../../utils/quizStorageHelper';
+import { mapAiError } from '../../utils/aiErrors';
+import AiProviderPicker from '../../components/common/AiProviderPicker';
 
 export default function Courses({ currentUser, initialCourseId, onCourseChange }) {
   return currentUser?.role === 'Admin'
@@ -295,12 +297,16 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
   const [aiCoinReward, setAiCoinReward] = useState(30);
   const [aiQuestionTypes, setAiQuestionTypes] = useState(['MultipleChoice', 'CodeSnippet', 'TrueFalse']);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  // Empty strings mean "let the server use its configured default provider/model".
+  const [aiProvider, setAiProvider] = useState('');
+  const [aiModel, setAiModel] = useState('');
   const [generatedDraft, setGeneratedDraft] = useState(null);
   const [validationReport, setValidationReport] = useState(null);
   // Set when slide topic discovery fails or returns nothing, so the UI does not claim there are no slides.
   const [topicDiscoveryUnavailable, setTopicDiscoveryUnavailable] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [quizNotification, setQuizNotification] = useState(null);
+  const [aiErrorModal, setAiErrorModal] = useState(null);
 
   // ── SLIDEQUEST AI: TOPIC DISCOVERY & RAG ENGINE STATE ─────────────────────
   const [detectedSlideTopics, setDetectedSlideTopics] = useState([]);
@@ -668,8 +674,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
   // ── SlideQuest AI Generation Logic with Strict RAG & Marking Schemes ───────
   const handleGenerateAiQuizDraft = async () => {
     setIsGeneratingQuiz(true);
-    setShowAiQuizModal(false); // Non-blocking UX: close modal so user can use the app freely
     setQuizNotification(null);
+    setAiErrorModal(null);
     showToast(`⚡ AI Quiz synthesis started for "${aiQuizScope.moduleTitle}". You can continue using EduFlow freely!`);
 
     try {
@@ -695,7 +701,10 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         pdfUrl: module?.pdfUrl || null,
         slideUrl: module?.pdfUrl || null,
         selectedTopics: topicsToInclude,
-        questionTypes: selectedQuestionFormats
+        questionTypes: selectedQuestionFormats,
+        // Omitted when empty: the AI service falls back to QUIZ_LLM_PROVIDER.
+        provider: aiProvider || undefined,
+        model: aiModel || undefined
       };
 
       const res = await quizService.generateAiQuiz(payload);
@@ -728,6 +737,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           questions
         });
 
+        setShowAiQuizModal(true); // Open draft review modal
         setQuizNotification({
           title: '🎉 SlideQuest Assessment Draft Ready!',
           message: `Successfully synthesized ${questions.length} RAG-grounded questions for "${aiQuizScope.moduleTitle}". Click to review & publish.`,
@@ -735,11 +745,25 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           moduleTitle: aiQuizScope.moduleTitle
         });
       } else {
-        alert('AI Quiz Generator failed to produce questions. Please try again.');
+        setShowAiQuizModal(true);
+        setAiErrorModal({
+          title: 'AI Generation Returned No Questions',
+          message: 'The AI model completed the request but did not return valid assessment questions. Please try selecting a different AI provider or model.',
+          code: 'AI_EMPTY_OUTPUT',
+          details: 'Zero questions were synthesized from the course content. Check provider settings in the modal below.'
+        });
       }
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed.';
-      alert(`AI Quiz Generator Error: ${errMsg}`);
+      // Structured AI errors become a clear, actionable Error Modal Popup — never a raw alert or unhandled exception.
+      const mapped = mapAiError(err);
+      setShowAiQuizModal(true);
+      setAiErrorModal({
+        title: mapped.title || 'AI Service Connection Error',
+        message: mapped.message || 'Failed to connect to the AI model or generate questions.',
+        details: err?.response?.data?.details || mapped.details || 'The LLM service may be offline, unavailable (code 503), or not properly configured.',
+        code: err?.response?.data?.code || mapped.code || 'AI_PROVIDER_UNAVAILABLE',
+        requestId: err?.response?.data?.requestId || mapped.reference || ''
+      });
     } finally {
       setIsGeneratingQuiz(false);
     }
@@ -2709,6 +2733,102 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
       {/* ── 4b. COURSE RATINGS & REVIEWS (bottom of page) ───────────────────── */}
       <CourseReviews courseId={currentCourse.id} currentUser={currentUser} />
 
+      {/* ── PROPER AI ERROR MODAL POPUP ── */}
+      {aiErrorModal && (
+        <div className="modal-backdrop" style={{ zIndex: 1200 }}>
+          <div className="modal-content" style={{
+            maxWidth: '520px',
+            padding: '24px',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)',
+            border: '1px solid var(--border-card)',
+            backgroundColor: 'var(--bg-surface)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '16px' }}>
+              <div style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#EF4444',
+                flexShrink: 0
+              }}>
+                <AlertTriangle size={24} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: '0 0 4px 0' }}>
+                  {aiErrorModal.title || 'AI Service Connection Error'}
+                </h3>
+                {aiErrorModal.code && (
+                  <span className="badge-pill badge-danger" style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '800' }}>
+                    {aiErrorModal.code}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setAiErrorModal(null)}
+                className="btn-ghost"
+                style={{ padding: '4px', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'var(--bg-canvas)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '13px',
+              color: 'var(--text-main)',
+              lineHeight: '1.5',
+              marginBottom: '18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px'
+            }}>
+              <p style={{ margin: 0, fontWeight: '600', color: 'var(--text-main)' }}>
+                {aiErrorModal.message}
+              </p>
+              {aiErrorModal.details && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' }}>
+                  💡 <strong>Troubleshooting Guidance:</strong> {aiErrorModal.details}
+                </div>
+              )}
+              {aiErrorModal.requestId && (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                  Trace ID: {aiErrorModal.requestId}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setAiErrorModal(null);
+                  setShowAiQuizModal(true);
+                }}
+                className="btn-primary"
+                style={{ padding: '9px 20px', fontSize: '12.5px', fontWeight: '800' }}
+              >
+                🔌 Reconfigure Provider / Retry
+              </button>
+              <button
+                onClick={() => setAiErrorModal(null)}
+                className="btn-secondary"
+                style={{ padding: '9px 16px', fontSize: '12.5px' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 5. UNIFIED AI QUIZ GENERATOR & REVIEWER MODAL ────────────────── */}
       {showAiQuizModal && (
         <div style={{
@@ -3155,6 +3275,18 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         }}
                       />
                     </div>
+                  </div>
+
+                  {/* Provider / model selection — status comes from the server,
+                      never from secrets in the browser. */}
+                  <div style={{ marginTop: '12px' }}>
+                    <AiProviderPicker
+                      provider={aiProvider}
+                      model={aiModel}
+                      onProviderChange={setAiProvider}
+                      onModelChange={setAiModel}
+                      disabled={isGeneratingQuiz}
+                    />
                   </div>
 
                   {/* Generate Button */}
@@ -4758,28 +4890,98 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                     </div>
                   )}
 
-                  {/* Format 3: Fill in the Blanks */}
+                  {/* Format 3: Fill in the Blanks / Drag and Drop */}
                   {currentQ.type === 'FillInBlank' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '6px' }}>
                       <label style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
-                        Fill in the blank with the exact technical keyword from the lecture slides:
+                        Fill in the blank by typing or dragging / clicking a term from the Word Bank below:
                       </label>
-                      <input
-                        type="text"
-                        placeholder="Type missing term here..."
-                        value={currentAnswer}
-                        onChange={e => handleRunnerAnswerChange(qId, e.target.value)}
-                        style={{
-                          width: '100%',
+
+                      {/* Main Answer input box & drop zone */}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          placeholder="Type missing term or select from word bank..."
+                          value={currentAnswer}
+                          onChange={e => handleRunnerAnswerChange(qId, e.target.value)}
+                          onDragOver={e => e.preventDefault()}
+                          onDrop={e => {
+                            e.preventDefault();
+                            const draggedText = e.dataTransfer.getData('text/plain');
+                            if (draggedText) handleRunnerAnswerChange(qId, draggedText);
+                          }}
+                          style={{
+                            flex: 1,
+                            padding: '12px 14px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: currentAnswer ? '2px solid var(--primary)' : '1px solid var(--border-card)',
+                            backgroundColor: currentAnswer ? 'var(--primary-soft)' : 'var(--bg-canvas)',
+                            color: 'var(--text-main)',
+                            fontSize: '14px',
+                            fontWeight: '700'
+                          }}
+                        />
+                        {currentAnswer && (
+                          <button
+                            type="button"
+                            onClick={() => handleRunnerAnswerChange(qId, '')}
+                            className="btn-ghost"
+                            style={{ padding: '8px 12px', fontSize: '12px', color: '#EF4444' }}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Interactive Drag & Drop Word Bank */}
+                      {currentQ.options && currentQ.options.length > 0 && (
+                        <div style={{
                           padding: '12px 14px',
                           borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border-card)',
                           backgroundColor: 'var(--bg-canvas)',
-                          color: 'var(--text-main)',
-                          fontSize: '14px',
-                          fontWeight: '600'
-                        }}
-                      />
+                          border: '1px dashed var(--primary-border)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px'
+                        }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Sparkles size={14} />
+                            <span>Interactive Word Bank (Drag & Drop or Click to Select):</span>
+                          </span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {currentQ.options.map((optWord, wIdx) => {
+                              const isSelected = (currentAnswer || '').trim().toLowerCase() === (optWord || '').trim().toLowerCase();
+                              return (
+                                <div
+                                  key={wIdx}
+                                  draggable
+                                  onDragStart={e => e.dataTransfer.setData('text/plain', optWord)}
+                                  onClick={() => handleRunnerAnswerChange(qId, optWord)}
+                                  style={{
+                                    padding: '8px 14px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    backgroundColor: isSelected ? 'var(--primary)' : 'var(--bg-surface)',
+                                    color: isSelected ? '#FFFFFF' : 'var(--text-main)',
+                                    border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                                    fontSize: '12.5px',
+                                    fontWeight: '700',
+                                    cursor: 'grab',
+                                    boxShadow: isSelected ? '0 2px 8px rgba(79, 70, 229, 0.3)' : '0 1px 4px rgba(0, 0, 0, 0.05)',
+                                    userSelect: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                >
+                                  <span>{optWord}</span>
+                                  {isSelected && <Check size={13} strokeWidth={3} />}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

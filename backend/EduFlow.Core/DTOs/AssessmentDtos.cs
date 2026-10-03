@@ -218,7 +218,11 @@ public record GenerateAiQuizRequest(
     Dictionary<string, int>? DifficultyDistribution = null,
     List<string>? LearningObjectives = null,
     string? ModuleTitle = null,
-    Guid? ModuleId = null
+    Guid? ModuleId = null,
+    /// <summary>Optional AI provider override for this generation (gemini|groq|azure).</summary>
+    string? Provider = null,
+    /// <summary>Optional model override; must be on the server-side allowlist for the provider.</summary>
+    string? Model = null
 );
 
 public record UploadQuizRequest(

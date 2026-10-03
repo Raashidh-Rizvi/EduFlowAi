@@ -30,6 +30,7 @@ import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
 import { questionTypeName } from '../../constants/domain';
 import api from '../../services/api';
+import { mapAiError } from '../../utils/aiErrors';
 
 export default function Dashboard({ onNavigateTo, currentUser }) {
   const userRole = currentUser?.role || (() => {
@@ -187,8 +188,10 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
         alert('AI Quiz Generator failed to produce questions. Please try again.');
       }
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed.';
-      alert(`AI Quiz Generator Error: ${errMsg}`);
+      // Structured AI errors become a clear, actionable message with a
+      // support reference — never a stack trace or raw server payload.
+      const mapped = mapAiError(err);
+      alert(`${mapped.title}\n\n${mapped.message}`);
     } finally {
       setGeneratingRemediation(false);
     }

@@ -15,6 +15,11 @@ Updated 2026-09-28. Read [source of truth](00_SOURCE_OF_TRUTH.md) first. Current
 | [current/RESPONSIBILITY_MATRIX.md](current/RESPONSIBILITY_MATRIX.md) | CURRENT confirmed allocation | Team | Replaces old responsibility matrix/trackers |
 | [current/API_CONTRACTS.md](current/API_CONTRACTS.md) | CURRENT verified Learning/RAG routes | Shared gateway/AI owners | Separates implemented and planned endpoints |
 | [current/RAG_PIPELINE.md](current/RAG_PIPELINE.md) | CURRENT shared RAG description | Shared; primary foundation contribution Atheek | Replaces old RAG blueprint/walkthrough as runtime guidance |
+| [current/AI_ARCHITECTURE.md](current/AI_ARCHITECTURE.md) | CURRENT AI quiz pipeline reference | Shared | End-to-end flow, error codes, correlation IDs, security boundaries |
+| [current/RAG_ARCHITECTURE.md](current/RAG_ARCHITECTURE.md) | CURRENT ingestion/retrieval reference | Shared | PDF states, chunk metadata, embedding provenance, quiz grounding |
+| [current/AI_PROVIDER_CONFIGURATION.md](current/AI_PROVIDER_CONFIGURATION.md) | CURRENT provider operations guide | Shared | Registry, env vars/aliases, switching providers, FAQ |
+| [current/QUIZ_GENERATION.md](current/QUIZ_GENERATION.md) | CURRENT generation pipeline reference | Shared | Gates, validation retry, persistence, frontend states |
+| [current/QUIZ_EVALUATION.md](current/QUIZ_EVALUATION.md) | CURRENT evaluation reference | Shared | Attempts, deterministic grading, scores, dashboards |
 | [current/LOCAL_SETUP_GUIDE.md](current/LOCAL_SETUP_GUIDE.md) | CURRENT consolidated setup | Shared | Replaces root and numbered setup guides |
 | [MOVED_DOCUMENTS.md](MOVED_DOCUMENTS.md) | CURRENT archive navigation | Documentation maintainers | Original-to-preserved path map |
 

@@ -76,6 +76,40 @@ const BADGE_CATEGORIES = [
 const badgeCategoryLabel = (category) =>
   BADGE_CATEGORIES[category] ?? (category === undefined || category === null ? 'General' : 'Achievement');
 
+// XpSourceType enum order from DomainEnums.cs. The API serialises enums as
+// numbers, so without this map the ledger prints "Source: 3".
+const XP_SOURCE_LABELS = [
+  'Lesson completed',
+  'Practice completed',
+  'Topic completed',
+  'Module completed',
+  'Course completed',
+  'Quiz completed',
+  'Pass bonus',
+  'High-score bonus',
+  'Perfect score',
+  'Improvement bonus',
+  'Streak bonus',
+  'Daily mission grand bonus',
+  'Daily challenge',
+  'Weekly challenge',
+  'Boss battle',
+  'Team challenge',
+  'AI adaptive challenge',
+  'Remediation completed',
+  'Focus session',
+  'Level up',
+  'Badge unlocked',
+  'Daily mission completed'
+];
+
+const xpSourceLabel = (sourceType) => XP_SOURCE_LABELS[sourceType] ?? 'XP event';
+
+// Signed XP rendering: credits are green "+", debits red "-". The old UI forced
+// a "+" on every row, which would misreport any deduction.
+const signedXp = (amount) => `${amount >= 0 ? '+' : '\u2212'}${Math.abs(Number(amount) || 0).toLocaleString()} XP`;
+const signedXpColor = (amount) => (amount >= 0 ? 'var(--success)' : 'var(--danger)');
+
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'
   const [leaderboardScope, setLeaderboardScope] = useState('cohort'); // 'cohort' | 'squads'
@@ -139,15 +173,10 @@ export default function Gamification() {
     background ? setRefreshing(true) : setLoading(true);
     try {
       setError(null);
-      const [
-        squadsData,
-        studentsData,
-        leaderboardData,
-        squadLeaderboardData,
-        badgesData,
-        multiplierVal,
-        coursesData
-      ] = await Promise.all([
+      // Every feed loads independently. A single failing endpoint (a 403 on a
+      // staff-only route, a transient 500) must not blank the whole console, so
+      // only the squad roster is treated as essential.
+      const results = await Promise.allSettled([
         gamificationService.getAllSquads(),
         gamificationService.getEligibleStudents(),
         gamificationService.getLeaderboard('weekly', 20),
@@ -156,13 +185,28 @@ export default function Gamification() {
         gamificationService.getXpMultiplier(),
         gamificationService.getQuestCourses()
       ]);
+      const settledValue = (index) => (
+        results[index].status === 'fulfilled' ? results[index].value : undefined
+      );
+
+      if (results[0].status === 'rejected') {
+        throw results[0].reason;
+      }
+
+      const squadsData = settledValue(0);
+      const studentsData = settledValue(1);
+      const leaderboardData = settledValue(2);
+      const squadLeaderboardData = settledValue(3);
+      const badgesData = settledValue(4);
+      const multiplierVal = settledValue(5);
+      const coursesData = settledValue(6);
 
       setSquads(squadsData || []);
       setStudents(studentsData || []);
       setLeaderboard(leaderboardData || []);
       setSquadLeaderboard(squadLeaderboardData || []);
       setBadges(badgesData || []);
-      setXpMultiplier(multiplierVal || 1.0);
+      if (multiplierVal !== undefined) setXpMultiplier(multiplierVal || 1.0);
       setQuestCourses(coursesData || []);
 
       await refreshLedger();
@@ -220,6 +264,8 @@ export default function Gamification() {
   // POST /gamification/multiplier is [Authorize(Roles="Admin")]; everyone else
   // only ever reads it.
   const canEditMultiplier = getLoggedInRole() === 'Admin';
+  // Squad mutations are [Authorize(Roles="Instructor,Admin")] on the backend.
+  const canManageSquads = isStaffRole();
 
   const handleToggleMultiplier = async () => {
     if (!canEditMultiplier) {
@@ -393,6 +439,10 @@ export default function Gamification() {
 
   const totalCombinedXp = squads.reduce((acc, s) => acc + (s.combinedXp || 0), 0);
 
+  // Distinct BadgeCategory values present in the loaded catalogue — replaces the
+  // hard-coded "4 Rarity tiers configured" line with something actually counted.
+  const badgeCategoryCount = new Set(badges.map((b) => b.category)).size;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Error Banner */}
@@ -455,8 +505,21 @@ export default function Gamification() {
             <span className={xpMultiplier > 1.0 ? "badge-pill badge-warning" : "badge-pill badge-primary"} style={{ fontWeight: '800' }}>
               {xpMultiplier > 1.0 ? '⚡ 2.0x BOOST EVENT ACTIVE' : 'REWARD ENGINE ONLINE'}
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Deterministic Progression & Team Quests
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{
+                width: '7px', height: '7px', borderRadius: '50%',
+                backgroundColor: error ? '#EF4444' : (refreshing ? '#F59E0B' : '#10B981'),
+                boxShadow: error ? '0 0 6px #EF4444' : '0 0 6px rgba(16,185,129,0.7)'
+              }} />
+              {error
+                ? 'Disconnected'
+                : loading && !lastUpdated
+                  ? 'Loading\u2026'
+                  : refreshing
+                    ? 'Syncing\u2026'
+                    : lastUpdated
+                      ? `Live \u00b7 updated ${lastUpdated.toLocaleTimeString()}`
+                      : 'Live \u00b7 awaiting first sync'}
             </span>
           </div>
           <h2 style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.02em', margin: 0 }}>
@@ -513,23 +576,29 @@ export default function Gamification() {
             )}
           </div>
 
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary hover-scale"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '9px 18px',
-              fontSize: '13px',
-              fontWeight: '700',
-              borderRadius: 'var(--radius-sm)',
-              boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
-            }}
-          >
-            <Plus size={16} />
-            Create Student Team
-          </button>
+          {canManageSquads ? (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="btn-primary hover-scale"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 18px',
+                fontSize: '13px',
+                fontWeight: '700',
+                borderRadius: 'var(--radius-sm)',
+                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)'
+              }}
+            >
+              <Plus size={16} />
+              Create Student Team
+            </button>
+          ) : (
+            <span className="badge-pill badge-neutral" style={{ fontSize: '11.5px', padding: '6px 12px' }}>
+              Read-only view — squads are managed by instructors
+            </span>
+          )}
         </div>
       </div>
 
@@ -553,7 +622,9 @@ export default function Gamification() {
         <div className="card-premium" style={{ padding: '16px 20px', backgroundColor: 'var(--bg-surface)' }}>
           <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Milestone Registry</div>
           <div style={{ fontSize: '24px', fontWeight: '800', color: 'var(--warning)', marginTop: '4px' }}>{badges.length} Badges</div>
-          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>4 Rarity tiers configured</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            {badgeCategoryCount} award categories configured
+          </div>
         </div>
       </div>
 
@@ -615,13 +686,15 @@ export default function Gamification() {
                 Organize students into squads, assign custom names & theme symbols, and track their collective sprint velocity.
               </p>
             </div>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
-              style={{ padding: '8px 16px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <Plus size={15} /> Assemble New Team
-            </button>
+            {canManageSquads && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="btn-primary"
+                style={{ padding: '8px 16px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={15} /> Assemble New Team
+              </button>
+            )}
           </div>
 
           {squads.length === 0 ? (
@@ -629,17 +702,26 @@ export default function Gamification() {
               <Users size={36} color="var(--primary)" style={{ opacity: 0.6, marginBottom: '12px' }} />
               <h4 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>No Teams Assembled Yet</h4>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '440px', margin: '6px auto 16px' }}>
-                Create your first student squad to unlock collaborative challenges, collective XP pooling, and peer learning accountability.
+                {canManageSquads
+                  ? 'Create your first student squad and bind it to a course to unlock collaborative quests, collective XP pooling, and peer accountability.'
+                  : 'No squads have been assembled for this cohort yet.'}
               </p>
-              <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-                <Plus size={15} /> Create Team Now
-              </button>
+              {canManageSquads && (
+                <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+                  <Plus size={15} /> Create Team Now
+                </button>
+              )}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' }}>
               {squads.map((sq) => {
-                const targetXp = 2500;
-                const progressPct = Math.min(100, Math.round(((sq.combinedXp || 0) / targetXp) * 100));
+                // Real quest target from the bound course (0 = squad is unbound).
+                const targetXp = sq.targetXp || 0;
+                const progressPct = targetXp > 0
+                  ? Math.min(100, Math.round(((sq.combinedXp || 0) / targetXp) * 100))
+                  : 0;
+                const questLabel = sq.questTitle || sq.description || 'Unbound quest — pick a course';
+                const learningPct = Math.round(sq.learningProgressPercent || 0);
 
                 return (
                   <div key={sq.id} className="card-premium glass-card-hover" style={{
@@ -675,24 +757,26 @@ export default function Gamification() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          onClick={() => { setAddMemberSquad(sq); setStudentToAddId(''); }}
-                          title="Add student to squad"
-                          className="btn-ghost"
-                          style={{ padding: '6px', color: 'var(--primary)' }}
-                        >
-                          <UserPlus size={15} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSquad(sq.id, sq.name)}
-                          title="Disband squad"
-                          className="btn-ghost"
-                          style={{ padding: '6px', color: 'var(--danger)' }}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
+                      {canManageSquads && (
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            onClick={() => { setAddMemberSquad(sq); setStudentToAddId(''); }}
+                            title="Add student to squad"
+                            className="btn-ghost"
+                            style={{ padding: '6px', color: 'var(--primary)' }}
+                          >
+                            <UserPlus size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSquad(sq.id, sq.name)}
+                            title="Disband squad"
+                            className="btn-ghost"
+                            style={{ padding: '6px', color: 'var(--danger)' }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Quest Progress Tracker */}
@@ -702,14 +786,20 @@ export default function Gamification() {
                       backgroundColor: 'var(--bg-card)',
                       border: '1px solid var(--border-subtle)'
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Target size={12} /> {sq.description || 'Sprint Quest'}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
+                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--secondary)', display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                          <Target size={12} /> {questLabel}
                         </span>
-                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-main)' }}>
-                          {sq.combinedXp?.toLocaleString() || 0} / {targetXp.toLocaleString()} XP ({progressPct}%)
+                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                          {sq.courseTitle
+                            ? `${learningPct}% complete`
+                            : targetXp > 0
+                              ? `${progressPct}% of ${targetXp.toLocaleString()} XP`
+                              : 'No target set'}
                         </span>
                       </div>
+                      {/* Bound quests advance on real enrollment/lesson progress;
+                          unbound ones fall back to the XP ratio against their target. */}
                       <div style={{
                         width: '100%',
                         height: '6px',
@@ -718,12 +808,31 @@ export default function Gamification() {
                         overflow: 'hidden'
                       }}>
                         <div style={{
-                          width: `${progressPct}%`,
+                          width: `${sq.courseTitle ? learningPct : progressPct}%`,
                           height: '100%',
                           background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)',
                           borderRadius: 'var(--radius-full)',
                           transition: 'width 0.4s ease'
                         }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                          <BookOpen size={11} />
+                          {sq.courseTitle ? sq.courseTitle : 'No course bound'}
+                        </span>
+                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
+                          {sq.courseTitle
+                            ? (sq.totalLessons > 0
+                              ? `${sq.completedLessons || 0}/${sq.totalLessons} lessons done`
+                              : 'Enrollment progress')
+                            : 'Bind a course to track learning'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                        Squad lifetime XP {(sq.combinedXp || 0).toLocaleString()}
+                        {targetXp > 0
+                          ? ` \u00b7 ${sq.courseTitle ? 'course reward' : 'quest target'} ${targetXp.toLocaleString()} XP`
+                          : ''}
                       </div>
                     </div>
 
@@ -775,14 +884,16 @@ export default function Gamification() {
                                 <span style={{ fontWeight: '700', color: 'var(--secondary)' }}>
                                   {m.totalXp?.toLocaleString() || 0} XP
                                 </span>
-                                <button
-                                  onClick={() => handleRemoveMember(sq.id, m.studentId, m.studentName)}
-                                  title="Remove from squad"
-                                  className="btn-ghost"
-                                  style={{ padding: '3px', color: 'var(--text-muted)' }}
-                                >
-                                  <X size={13} />
-                                </button>
+                                {canManageSquads && (
+                                  <button
+                                    onClick={() => handleRemoveMember(sq.id, m.studentId, m.studentName)}
+                                    title="Remove from squad"
+                                    className="btn-ghost"
+                                    style={{ padding: '3px', color: 'var(--text-muted)' }}
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -1159,9 +1270,23 @@ export default function Gamification() {
                       +{b.xpBonus} XP
                     </span>
                   </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '3px' }}>
+                    {badgeCategoryLabel(b.category)}
+                  </div>
                   <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4' }}>{b.description}</p>
-                  <div style={{ fontSize: '10.5px', color: 'var(--success)', marginTop: '6px', fontWeight: '600' }}>
-                    Criteria: Automated verification enabled
+                  <div style={{
+                    fontSize: '10.5px',
+                    marginTop: '6px',
+                    fontWeight: '600',
+                    color: b.isUnlocked ? 'var(--success)' : 'var(--primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}>
+                    <CheckCircle2 size={12} />
+                    {b.isUnlocked
+                      ? `Unlocked ${b.unlockedAt ? new Date(b.unlockedAt).toLocaleDateString() : ''}`.trim()
+                      : `Criterion: ${b.criteriaLabel || 'Awarded automatically by the reward engine'}`}
                   </div>
                 </div>
               </div>
@@ -1173,42 +1298,101 @@ export default function Gamification() {
       {/* ── TAB 4: XP POINTS LEDGER & AUDIT ──────────────────────────────────── */}
       {activeTab === 'ledger' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-              Deterministic Points Ledger & Audit Trail
-            </h3>
-            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Append-only immutable record of all XP mutations, ensuring points integrity across all learners.
-            </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                Deterministic Points Ledger & Audit Trail
+              </h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Append-only record of every XP mutation across the cohort, straight from the database.
+              </p>
+            </div>
+
+            {isStaffRole() && (
+              <div style={{
+                display: 'flex',
+                backgroundColor: 'var(--bg-canvas)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '3px',
+                border: '1px solid var(--border-subtle)',
+                gap: '4px'
+              }}>
+                {[{ id: 'cohort', label: 'Cohort ledger' }, { id: 'mine', label: 'My XP' }].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setLedgerScope(opt.id)}
+                    style={{
+                      padding: '5px 14px',
+                      borderRadius: 'var(--radius-xs)',
+                      backgroundColor: ledgerScope === opt.id ? 'var(--bg-card)' : 'transparent',
+                      color: ledgerScope === opt.id ? 'var(--text-main)' : 'var(--text-muted)',
+                      fontSize: '12.5px',
+                      fontWeight: '600',
+                      border: ledgerScope === opt.id ? '1px solid var(--border-card)' : '1px solid transparent',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="card-premium" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {ledger.map((tx) => (
-              <div key={tx.id} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-xs)',
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '12.5px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <CheckCircle2 size={16} color="var(--success)" />
-                  <div>
-                    <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{tx.description}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Source: {tx.sourceType} • {new Date(tx.createdAt).toLocaleDateString()}
-                    </div>
+          {(() => {
+            const rows = isStaffRole() && ledgerScope === 'cohort' ? cohortLedger : ledger;
+
+            if (rows.length === 0) {
+              return (
+                <div className="card-premium" style={{ padding: '40px 24px', textAlign: 'center' }}>
+                  <Layers size={32} color="var(--primary)" style={{ opacity: 0.6, marginBottom: '10px' }} />
+                  <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>
+                    No XP transactions recorded yet
+                  </div>
+                  <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Points appear here the moment a lesson, assessment, challenge or focus session is credited.
                   </div>
                 </div>
-                <div style={{ fontWeight: '800', color: 'var(--success)', fontSize: '13px' }}>
-                  +{tx.xpAmount} XP
-                </div>
+              );
+            }
+
+            return (
+              <div className="card-premium" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {rows.map((tx) => {
+                  const isCredit = (tx.xpAmount || 0) >= 0;
+                  return (
+                    <div key={tx.id} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-xs)',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '12.5px',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <CheckCircle2 size={16} color={isCredit ? 'var(--success)' : 'var(--danger)'} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{tx.description}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {tx.studentName ? `${tx.studentName} \u00b7 ` : ''}
+                            {xpSourceLabel(tx.sourceType)}
+                            {' \u00b7 '}
+                            {new Date(tx.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: '800', color: signedXpColor(tx.xpAmount), fontSize: '13px', whiteSpace: 'nowrap' }}>
+                        {signedXp(tx.xpAmount)}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1254,7 +1438,7 @@ export default function Gamification() {
                   Assemble New Student Squad
                 </h3>
               </div>
-              <button onClick={() => setShowCreateModal(false)} className="btn-ghost" style={{ padding: '6px' }}>
+              <button onClick={() => { resetCreateModal(); setShowCreateModal(false); }} className="btn-ghost" style={{ padding: '6px' }}>
                 <X size={18} />
               </button>
             </div>
@@ -1344,16 +1528,51 @@ export default function Gamification() {
                 </div>
               </div>
 
+              {/* Quest binding: which real course the squad is chasing */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
+                  QUEST COURSE
+                </label>
+                <select
+                  value={newTeamCourseId}
+                  onChange={(e) => handleCourseChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-xs)',
+                    backgroundColor: 'var(--bg-input)',
+                    border: '1px solid var(--border-card)',
+                    color: 'var(--text-main)',
+                    fontSize: '13px'
+                  }}
+                >
+                  <option value="">— Free-form quest (no course) —</option>
+                  {questCourses.map((c) => {
+                    const cId = c.id || c.courseId;
+                    return (
+                      <option key={cId} value={cId}>
+                        {c.title || c.name} {c.isPublished === false ? '(draft)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                  {questCourses.length === 0
+                    ? 'No courses available to your role yet.'
+                    : 'The quest title and XP target are derived from this course.'}
+                </div>
+              </div>
+
               {/* Active Quest Objective */}
               <div>
                 <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
-                  ACTIVE SPRINT QUEST
+                  ACTIVE QUEST TITLE
                 </label>
                 <input
                   type="text"
                   value={newTeamQuest}
                   onChange={(e) => setNewTeamQuest(e.target.value)}
-                  placeholder="e.g. Clean Architecture & PostgreSQL Indexing Sprint"
+                  placeholder={newTeamCourseId ? 'e.g. React Foundations Quest' : 'e.g. Clean Architecture & PostgreSQL Indexing Sprint'}
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -1364,6 +1583,39 @@ export default function Gamification() {
                     fontSize: '13px'
                   }}
                 />
+              </div>
+
+              {/* XP target — seeded from the course's real reward total */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
+                  QUEST TARGET XP
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newTeamTargetXp || ''}
+                  onChange={(e) => {
+                    setTargetXpTouched(true);
+                    setNewTeamTargetXp(Number(e.target.value) || 0);
+                  }}
+                  placeholder={courseXpLoading ? 'Loading course XP…' : '0'}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-xs)',
+                    backgroundColor: 'var(--bg-input)',
+                    border: '1px solid var(--border-card)',
+                    color: 'var(--text-main)',
+                    fontSize: '13px'
+                  }}
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '5px' }}>
+                  {courseXpLoading
+                    ? 'Reading the course reward total…'
+                    : courseXpSummary?.displayTotal
+                      ? `Course reward total: ${Number(courseXpSummary.displayTotal).toLocaleString()} XP (lessons + quizzes unless the course sets its own reward).`
+                      : 'No course selected — set a custom target or leave 0 to track progress only.'}
+                </div>
               </div>
 
               {/* Student Roster Selector */}
@@ -1551,7 +1803,7 @@ export default function Gamification() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => { resetCreateModal(); setShowCreateModal(false); }}
                   className="btn-secondary"
                   style={{ padding: '8px 16px' }}
                 >

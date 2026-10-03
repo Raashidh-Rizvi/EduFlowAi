@@ -206,7 +206,8 @@ test.describe('LMS mandatory integration scenario', () => {
     await openInstructorSection(page, 'create-course');
     await page.getByLabel('Course Title').fill(uiTitle);
     await page.getByLabel('Course Code').fill(uiCode);
-    await page.getByLabel('Category').fill('Quality Engineering');
+    // exact: the support dialog also renders a "Ticket Category" field in the DOM.
+    await page.getByLabel('Category', { exact: true }).fill('Quality Engineering');
     await page.locator('form').getByRole('button', { name: /^Create Course$/ }).click();
     await expect(page.locator('text=Course created as a draft')).toBeVisible({ timeout: 20000 });
 

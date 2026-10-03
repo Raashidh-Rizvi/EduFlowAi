@@ -891,6 +891,7 @@ public class CoursesController : BaseApiController
 
         await DbContext.Modules.AddAsync(module);
         await DbContext.SaveChangesAsync();
+        ScheduleModuleIndexing(module);
         return Ok(module);
     }
 
@@ -912,12 +913,61 @@ public class CoursesController : BaseApiController
         module.Title = request.Title;
         module.Description = request.Description;
         module.OrderIndex = request.OrderIndex;
+        var previousPdfUrl = module.PdfUrl;
         if (request.PdfUrl != null) module.PdfUrl = request.PdfUrl;
         if (request.AttachmentFileName != null) module.AttachmentFileName = request.AttachmentFileName;
         module.UpdatedAt = DateTime.UtcNow;
 
         await DbContext.SaveChangesAsync();
+        if (!string.Equals(previousPdfUrl, module.PdfUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            ScheduleModuleIndexing(module);
+        }
         return Ok(module);
+    }
+
+    /// <summary>
+    /// Fire-and-forget RAG indexing when a module gets or changes its course document, so
+    /// the vector store stays in sync with the PDF the quiz generator grounds against.
+    /// Indexing failures are logged server-side and never block saving the module; the
+    /// document-status endpoint keeps reporting PROCESSING/READY/FAILED for the frontend.
+    /// </summary>
+    private void ScheduleModuleIndexing(Module module)
+    {
+        if (_aiGatewayClient == null || string.IsNullOrWhiteSpace(module.PdfUrl))
+        {
+            return;
+        }
+
+        var webRoot = Path.GetFullPath(_environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"));
+        var physicalPath = Path.GetFullPath(Path.Combine(webRoot, module.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+        var rootWithSeparator = webRoot.EndsWith(Path.DirectorySeparatorChar) ? webRoot : webRoot + Path.DirectorySeparatorChar;
+        if (!physicalPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(physicalPath))
+        {
+            return;
+        }
+
+        var gateway = _aiGatewayClient;
+        var courseId = module.CourseId;
+        var moduleId = module.Id;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await gateway.IndexDocumentAsync(new
+                {
+                    file_path = physicalPath,
+                    course_id = courseId.ToString(),
+                    module_id = moduleId.ToString()
+                });
+                Logger.LogInformation("module_document_index module={ModuleId} file={File} status={Status}",
+                    moduleId, Path.GetFileName(physicalPath), result.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "module_document_index failed for module {ModuleId}", moduleId);
+            }
+        });
     }
 
     [HttpDelete("modules/{moduleId:guid}")]

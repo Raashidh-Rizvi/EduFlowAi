@@ -20,6 +20,8 @@ import os
 import re
 import json
 import logging
+import threading
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -55,11 +57,21 @@ class SimpleRagService:
         self.chunker = SlideChunker()
         self.vector_store = vector_store or ChromaVectorStore()
 
+        # Document ingestion states (UPLOADED/PROCESSING/READY/FAILED) are
+        # persisted next to the vector index so the .NET gateway can refuse to
+        # generate from a document that has not finished processing.
+        self._status_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                         "data", "document_status.json")
+        self._status_lock = threading.Lock()
+
         # LLM Provider Switch: "gemini" or "groq"
         self.llm_provider = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
 
-        # Google Gemini Credentials
-        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        # Google Gemini Credentials (GOOGLE_API_KEY accepted as a documented alias)
+        self.gemini_api_key = (
+            os.environ.get("GEMINI_API_KEY", "").strip()
+            or os.environ.get("GOOGLE_API_KEY", "").strip()
+        )
         self.gemini_model_name = os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest")
 
         # Groq Credentials (Ultra-Fast LPU Inference)
@@ -84,35 +96,83 @@ class SimpleRagService:
         """
         STEP-BY-STEP INDEXING PIPELINE:
         Called when an instructor uploads a course PDF in the web portal.
+
+        State transitions are recorded so callers can observe
+        PROCESSING -> READY / FAILED instead of guessing.
         """
+        file_name = os.path.basename(file_path or "")
+        self._set_document_state(file_name, "PROCESSING", course_id=course_id, module_id=module_id)
+
         if not os.path.exists(file_path):
+            self._set_document_state(file_name, "FAILED",
+                                     error="File not found on disk.",
+                                     course_id=course_id, module_id=module_id)
             raise FileNotFoundError(f"File not found on disk: {file_path}")
 
-        file_name = os.path.basename(file_path)
+        try:
+            # Step 1: Parse document into structured pages
+            pages = self.parser.parse(file_path)
+            if not pages:
+                self._set_document_state(
+                    file_name, "FAILED",
+                    error="File was read but contained no extractable text.",
+                    course_id=course_id, module_id=module_id, pages_parsed=0,
+                )
+                return IndexPdfResponse(
+                    status="warning",
+                    file_name=file_name,
+                    pages_parsed=0,
+                    chunks_indexed=0,
+                    course_id=course_id,
+                    module_id=module_id,
+                    message="File was read but contained no extractable text."
+                )
 
-        # Step 1: Parse document into structured pages
-        pages = self.parser.parse(file_path)
-        if not pages:
-            return IndexPdfResponse(
-                status="warning",
-                file_name=file_name,
-                pages_parsed=0,
-                chunks_indexed=0,
+            # Step 2: Chunk pages into 500-token segments retaining slide metadata
+            chunks = self.chunker.chunk_pages(
+                pages=pages,
+                source_file=file_name,
                 course_id=course_id,
-                module_id=module_id,
-                message="File was read but contained no extractable text."
+                module_id=module_id or ""
             )
+            if not chunks:
+                self._set_document_state(
+                    file_name, "FAILED",
+                    error="File was read but contained no extractable text.",
+                    course_id=course_id, module_id=module_id, pages_parsed=len(pages),
+                )
+                return IndexPdfResponse(
+                    status="warning",
+                    file_name=file_name,
+                    pages_parsed=len(pages),
+                    chunks_indexed=0,
+                    course_id=course_id,
+                    module_id=module_id,
+                    message="File was read but contained no extractable text."
+                )
 
-        # Step 2: Chunk pages into 500-token segments retaining slide metadata
-        chunks = self.chunker.chunk_pages(
-            pages=pages,
-            source_file=file_name,
-            course_id=course_id,
-            module_id=module_id or ""
+            # Step 3: Save vectors into local ChromaDB
+            indexed_count = self.vector_store.add_chunks(chunks)
+        except Exception as exc:
+            # Technical reason stays server-side in the status record + logs.
+            logger.exception("Indexing %s failed.", file_name)
+            self._set_document_state(
+                file_name, "FAILED",
+                error=f"{type(exc).__name__}: {str(exc)[:200]}",
+                course_id=course_id, module_id=module_id,
+            )
+            raise
+
+        self._set_document_state(
+            file_name, "READY",
+            course_id=course_id, module_id=module_id,
+            pages_parsed=len(pages), chunks_indexed=indexed_count,
+            embedding_provider=self.vector_store.active_provider,
+            embedding_model=self.vector_store.embedding_model_name,
+            embedding_version=self.vector_store.embedding_version,
         )
-
-        # Step 3: Save vectors into local ChromaDB
-        indexed_count = self.vector_store.add_chunks(chunks)
+        logger.info("Indexed %s: %d pages -> %d chunks (course=%s module=%s)",
+                    file_name, len(pages), indexed_count, course_id, module_id or "-")
 
         return IndexPdfResponse(
             status="success",
@@ -123,6 +183,93 @@ class SimpleRagService:
             module_id=module_id,
             message=f"Successfully indexed {len(pages)} pages into {indexed_count} vector chunks."
         )
+
+    # -----------------------------------------------------------------------------
+    # 1b. DOCUMENT INGESTION STATUS (UPLOADED / PROCESSING / READY / FAILED)
+    # -----------------------------------------------------------------------------
+
+    def _read_status_registry(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            with open(self._status_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _write_status_registry(self, registry: Dict[str, Dict[str, Any]]) -> None:
+        os.makedirs(os.path.dirname(self._status_path), exist_ok=True)
+        tmp_path = self._status_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(registry, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, self._status_path)
+
+    @staticmethod
+    def _camel_case(key: str) -> str:
+        parts = key.split("_")
+        return parts[0] + "".join(p.title() for p in parts[1:])
+
+    def _set_document_state(self, file_name: str, state: str, **fields: Any) -> None:
+        if not file_name:
+            return
+        try:
+            with self._status_lock:
+                registry = self._read_status_registry()
+                record = registry.get(file_name) or {}
+                # Writers pass snake_case kwargs; document_status() reads camelCase.
+                record.update({self._camel_case(k): v for k, v in fields.items() if v is not None})
+                record["state"] = state
+                record["updatedAt"] = datetime.now(timezone.utc).isoformat()
+                if state != "FAILED":
+                    record.pop("error", None)
+                registry[file_name] = record
+                self._write_status_registry(registry)
+        except OSError:
+            # Status bookkeeping must never break indexing itself.
+            logger.warning("Could not persist document status for %s.", file_name)
+
+    def document_status(self, file_name: str) -> Dict[str, Any]:
+        """Ingestion state + embedding metadata for one stored document.
+
+        A document with no status record but existing chunks is READY (indexed
+        before status bookkeeping existed). A document with neither is UPLOADED
+        (stored, not yet processed). `embeddingMismatch` tells the caller the
+        chunks were produced by a different embedding model and a re-index is
+        required before mixing them with new ones.
+        """
+        name = os.path.basename((file_name or "").strip())
+        if not name:
+            raise ValueError("file_name is required.")
+
+        record = self._read_status_registry().get(name)
+        try:
+            chunks = self.vector_store.count_source_file(name)
+        except Exception:
+            chunks = 0
+
+        state = (record or {}).get("state")
+        if state is None:
+            state = "READY" if chunks else "UPLOADED"
+
+        stored_model = (record or {}).get("embeddingModel")
+        active_model = getattr(self.vector_store, "embedding_model_name", None)
+        mismatch = bool(stored_model and active_model and stored_model != active_model)
+
+        return {
+            "fileName": name,
+            "state": state,
+            "chunksIndexed": chunks,
+            "pagesParsed": (record or {}).get("pagesParsed"),
+            "courseId": (record or {}).get("courseId"),
+            "moduleId": (record or {}).get("moduleId"),
+            "updatedAt": (record or {}).get("updatedAt"),
+            "embeddingProvider": (record or {}).get("embeddingProvider"),
+            "embeddingModel": stored_model,
+            "embeddingVersion": (record or {}).get("embeddingVersion"),
+            "activeEmbeddingModel": active_model,
+            "embeddingMismatch": mismatch,
+            "reindexRecommended": mismatch,
+            "error": (record or {}).get("error") if state == "FAILED" else None,
+        }
 
     # -------------------------------------------------------------------------
     # 2. GROUNDED CHAT & QUESTION ANSWERING (GEMINI / GROQ SWITCH)
@@ -301,7 +448,9 @@ class SimpleRagService:
                     ]
                     return RagChatResponse(
                         answer=fallback_text,
-                        citations=web_citations,
+                        # Slide excerpts stay first (grounding is real and was used for
+                        # the initial answer); supplementary web sources follow.
+                        citations=citations + web_citations,
                         source="tavily_web_search",
                         confidence_score=0.88
                     )

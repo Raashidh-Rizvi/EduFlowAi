@@ -56,6 +56,25 @@ export const quizService = {
     return response.data;
   },
 
+  // Per-provider configuration status (never contains secrets). Instructor/Admin only.
+  // Returns { providers: [{ provider, label, configured, missing, models, defaultModel, active }], requestId }.
+  async getAiProviders() {
+    const response = await api.get('/ai/providers');
+    return response.data;
+  },
+
+  // Ingestion state of a course document: UPLOADED | PROCESSING | READY | FAILED.
+  async getDocumentStatus(fileUrl) {
+    const response = await api.get('/ai/documents/status', { params: { fileUrl } });
+    return response.data;
+  },
+
+  // (Re-)index a module's document into the vector store (owner/admin only).
+  async indexDocument(moduleId, fileUrl) {
+    const response = await api.post('/ai/documents/index', { moduleId, fileUrl });
+    return response.data;
+  },
+
   async generateAiQuiz(data) {
     const response = await api.post('/quizzes/generate-ai', data);
     return response.data;

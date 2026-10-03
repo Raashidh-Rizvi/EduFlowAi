@@ -17,10 +17,13 @@ public interface IAiGatewayClient
     Task<AiProxyResponse> RagChatAsync(object requestPayload, CancellationToken ct = default);
     Task<AiProxyResponse> GetLearningSlideDecksAsync(CancellationToken ct = default);
     Task<string> GetAiStatusAsync(CancellationToken ct = default);
+    Task<AiProxyResponse> GetAiProvidersAsync(CancellationToken ct = default);
+    Task<AiProxyResponse> GetDocumentStatusAsync(string fileName, CancellationToken ct = default);
+    Task<AiProxyResponse> IndexDocumentAsync(object requestPayload, CancellationToken ct = default);
     Task<string> OrchestrateStudyPlanAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GenerateAdaptiveChallengeAsync(object requestPayload, CancellationToken ct = default);
-    Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default);
-    Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default);
+    Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default, string? requestId = null);
+    Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default, string? requestId = null);
     Task<string> AnalyzeRetentionAsync(object requestPayload, CancellationToken ct = default);
     Task<AiProxyResponse> ChatWithCoachAsync(object requestPayload, CancellationToken ct = default);
     Task<string> GetAgentsTopologyAsync(CancellationToken ct = default);
@@ -148,73 +151,195 @@ public class AiGatewayClient : IAiGatewayClient
         return FallbackAdaptiveChallengeJson();
     }
 
-    public async Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default)
+    public async Task<string> GenerateQuizAsync(object requestPayload, CancellationToken ct = default, string? requestId = null)
     {
         // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/slides/generate-quiz")
         var url = $"{_baseUrl}/api/v1/ai/slides/generate-quiz";
         try
         {
-            var response = await _httpClient.PostAsJsonAsync(url, requestPayload, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(requestPayload)
+            };
+            // Correlation: the same id appears in the AI service logs and error body.
+            if (!string.IsNullOrWhiteSpace(requestId))
+            {
+                request.Headers.TryAddWithoutValidation("X-Request-Id", requestId);
+            }
+            var response = await _httpClient.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode)
             {
                 return body;
             }
-            else
-            {
-                _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, body);
-                return JsonSerializer.Serialize(new
-                {
-                    status = "error",
-                    status_code = (int)response.StatusCode,
-                    message = !string.IsNullOrWhiteSpace(body) ? body : $"AI Microservice returned error status {(int)response.StatusCode}"
-                });
-            }
+
+            _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync non-success status: {StatusCode}, body: {Body}",
+                response.StatusCode, body.Length > 500 ? body[..500] : body);
+            return WrapUpstreamError(response.StatusCode, body,
+                $"AI Microservice returned error status {(int)response.StatusCode}");
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", url);
-            return JsonSerializer.Serialize(new
-            {
-                status = "error",
-                status_code = 503,
-                message = $"Unable to connect to AI Microservice at {_baseUrl}. Please verify Python service is running."
-            });
+            return WrapUpstreamError(System.Net.HttpStatusCode.ServiceUnavailable, null,
+                $"Unable to connect to the AI service at {_baseUrl}. Please verify the Python service is running.");
         }
     }
 
-    public async Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default)
+    public async Task<AiProxyResponse> GetAiProvidersAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _httpClient.GetAsync($"{_baseUrl}/api/v1/ai/providers", ct);
+            return new AiProxyResponse((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return AiError(504, "The AI provider status request timed out. Please retry.");
+        }
+        catch (HttpRequestException)
+        {
+            return AiError(503, "The AI service is unavailable. Provider status cannot be checked right now.");
+        }
+    }
+
+    public async Task<AiProxyResponse> GetDocumentStatusAsync(string fileName, CancellationToken ct = default)
+    {
+        var url = $"{_baseUrl}/api/v1/rag/document-status?file_name={Uri.EscapeDataString(fileName)}";
+        try
+        {
+            using var response = await _httpClient.GetAsync(url, ct);
+            return new AiProxyResponse((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return AiError(504, "The document status request timed out. Please retry.");
+        }
+        catch (HttpRequestException)
+        {
+            return AiError(503, "The AI service is unavailable. Document status cannot be checked right now.");
+        }
+    }
+
+    public async Task<AiProxyResponse> IndexDocumentAsync(object requestPayload, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/api/v1/rag/index-pdf", requestPayload, ct);
+            return new AiProxyResponse((int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return AiError(504, "Document indexing timed out. Please retry.");
+        }
+        catch (HttpRequestException)
+        {
+            return AiError(503, "The AI service is unavailable; the document could not be indexed right now.");
+        }
+    }
+
+    private static AiProxyResponse AiError(int statusCode, string message) =>
+        new(statusCode, JsonSerializer.Serialize(new
+        {
+            status = "error",
+            code = statusCode == 504 ? "AI_REQUEST_FAILED" : "AI_PROVIDER_UNAVAILABLE",
+            message,
+            detail = message
+        }));
+
+    /// <summary>
+    /// Converts a non-success AI-service response into a stable, structured error body:
+    /// { status, status_code, code, message, details, requestId }.
+    /// The upstream body is parsed, never forwarded raw (no HTML, no stack traces, no keys).
+    /// </summary>
+    private static string WrapUpstreamError(System.Net.HttpStatusCode statusCode, string? body, string fallbackMessage)
+    {
+        int status = (int)statusCode;
+        string? code = null;
+        string? message = null;
+        string? details = null;
+        string? requestId = null;
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            var trimmed = body.TrimStart();
+            if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(body);
+                    var root = doc.RootElement;
+                    if (root.ValueKind == JsonValueKind.Object)
+                    {
+                        if (root.TryGetProperty("code", out var c)) code = c.GetString();
+                        if (root.TryGetProperty("message", out var m)) message = m.GetString();
+                        if (string.IsNullOrWhiteSpace(message) && root.TryGetProperty("detail", out var d))
+                            message = d.GetString();
+                        if (root.TryGetProperty("details", out var de) && de.ValueKind == JsonValueKind.String)
+                            details = de.GetString();
+                        if (root.TryGetProperty("requestId", out var r)) requestId = r.GetString();
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Not our error shape; keep the generic message.
+                }
+            }
+        }
+
+        code ??= status switch
+        {
+            429 => "AI_RATE_LIMITED",
+            503 => "AI_PROVIDER_UNAVAILABLE",
+            504 => "AI_REQUEST_FAILED",
+            >= 500 => "AI_GENERATION_FAILED",
+            _ => "AI_REQUEST_FAILED"
+        };
+        message = string.IsNullOrWhiteSpace(message) ? fallbackMessage : message;
+
+        return JsonSerializer.Serialize(new
+        {
+            status = "error",
+            status_code = status,
+            code,
+            message,
+            detail = message,
+            details,
+            requestId
+        });
+    }
+
+    public async Task<string> RegenerateQuestionAsync(string questionId, object requestPayload, CancellationToken ct = default, string? requestId = null)
     {
         // Route confirmed against ai-agent/main.py: @app.post("/api/v1/ai/questions/{question_id}/regenerate")
         var url = $"{_baseUrl}/api/v1/ai/questions/{questionId}/regenerate";
         try
         {
-            var response = await _httpClient.PostAsJsonAsync(url, requestPayload, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(requestPayload)
+            };
+            if (!string.IsNullOrWhiteSpace(requestId))
+            {
+                request.Headers.TryAddWithoutValidation("X-Request-Id", requestId);
+            }
+            var response = await _httpClient.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode)
             {
                 return body;
             }
-            else
-            {
-                _logger?.LogWarning("[AiGatewayClient] RegenerateQuestionAsync non-success status: {StatusCode}, body: {Body}", response.StatusCode, body);
-                return JsonSerializer.Serialize(new
-                {
-                    status = "error",
-                    status_code = (int)response.StatusCode,
-                    message = !string.IsNullOrWhiteSpace(body) ? body : $"AI Microservice returned error status {(int)response.StatusCode}"
-                });
-            }
+
+            _logger?.LogWarning("[AiGatewayClient] RegenerateQuestionAsync non-success status: {StatusCode}, body: {Body}",
+                response.StatusCode, body.Length > 500 ? body[..500] : body);
+            return WrapUpstreamError(response.StatusCode, body,
+                $"AI Microservice returned error status {(int)response.StatusCode}");
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "[AiGatewayClient] RegenerateQuestionAsync error connecting to {Url}", url);
-            return JsonSerializer.Serialize(new
-            {
-                status = "error",
-                status_code = 503,
-                message = $"Unable to connect to AI Microservice at {_baseUrl}. Please verify Python service is running."
-            });
+            return WrapUpstreamError(System.Net.HttpStatusCode.ServiceUnavailable, null,
+                $"Unable to connect to the AI service at {_baseUrl}. Please verify the Python service is running.");
         }
     }
 

@@ -79,7 +79,11 @@ class ChromaVectorStore:
 
         # Step 1.1: Resolve embedding provider ("default" or "gemini")
         self.provider = (provider or os.environ.get("EMBEDDING_PROVIDER", "default")).lower().strip()
-        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        # GOOGLE_API_KEY accepted as a documented alias for GEMINI_API_KEY.
+        self.gemini_api_key = (
+            os.environ.get("GEMINI_API_KEY", "").strip()
+            or os.environ.get("GOOGLE_API_KEY", "").strip()
+        )
 
         # Step 1.2: Connect to ChromaDB with telemetry turned off
         self.client = chromadb.PersistentClient(
@@ -89,6 +93,18 @@ class ChromaVectorStore:
 
         # Step 1.3: Configure the selected embedding function
         self.embedding_function = self._resolve_embedding_function()
+
+        # Embedding provenance: stored with every chunk so a later model/version
+        # change can be detected (and the deck re-indexed) instead of silently
+        # mixing incompatible vectors.
+        if self.active_provider == "gemini" and self.embedding_function is not None:
+            self.embedding_model_name = getattr(
+                self.embedding_function, "model_name",
+                os.environ.get("EMBEDDING_MODEL", "models/gemini-embedding-001"),
+            )
+        else:
+            self.embedding_model_name = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        self.embedding_version = os.environ.get("EMBEDDING_VERSION") or "v1"
 
         # Step 1.4: Use distinct collection names to prevent dimension mismatch
         collection_name = f"eduflow_materials_{self.active_provider}"
@@ -112,7 +128,7 @@ class ChromaVectorStore:
                 try:
                     ef = DirectGeminiEmbeddingFunction(
                         api_key=self.gemini_api_key,
-                        model_name="models/gemini-embedding-001"
+                        model_name=os.environ.get("EMBEDDING_MODEL", "models/gemini-embedding-001")
                     )
                     # Quick validation test
                     ef(["test"])
@@ -141,11 +157,19 @@ class ChromaVectorStore:
         metadatas = []
         ids = []
 
+        # Embedding provenance travels with every chunk (see document_status).
+        # getattr: tests build bare stores via __new__ without running __init__.
+        provenance = {
+            "embedding_provider": getattr(self, "active_provider", "default"),
+            "embedding_model": getattr(self, "embedding_model_name", "all-MiniLM-L6-v2"),
+            "embedding_version": getattr(self, "embedding_version", "v1"),
+        }
+
         for c in chunks:
             # Deterministic unique ID to allow clean updates when slides are re-uploaded
             chunk_id = f"{c.course_id}_{c.module_id or 'nomod'}_{c.page_number}_{c.chunk_index}"
             documents.append(c.text)
-            metadatas.append(c.to_metadata())
+            metadatas.append({**c.to_metadata(), **provenance})
             ids.append(chunk_id)
 
         self.collection.upsert(
@@ -252,6 +276,13 @@ class ChromaVectorStore:
         if not course_id:
             return self.collection.count()
         results = self.collection.get(where={"course_id": course_id})
+        return len(results["ids"]) if results and "ids" in results else 0
+
+    def count_source_file(self, source_file: str) -> int:
+        """Number of indexed chunks for one stored document (its basename)."""
+        if not source_file:
+            return 0
+        results = self.collection.get(where={"source_file": source_file})
         return len(results["ids"]) if results and "ids" in results else 0
 
     def delete_module_chunks(self, module_id: str):

@@ -231,6 +231,20 @@ public class TeamService : ITeamService
             return new SquadActionResultDto(false, "Squad not found.", null);
         }
 
+        // Re-anchoring the quest to a real course — validated first so a bad id
+        // never leaves the squad half-updated.
+        Course? questCourse = null;
+        if (request.CourseId.HasValue)
+        {
+            questCourse = await _dbContext.Courses.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == request.CourseId.Value, ct);
+            if (questCourse == null)
+            {
+                return new SquadActionResultDto(false, "The selected course no longer exists.", null);
+            }
+            team.CourseId = questCourse.Id;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.Name))
             team.Name = request.Name.Trim();
         if (request.Description != null)
@@ -244,6 +258,16 @@ public class TeamService : ITeamService
         // The XP target is stored, never discarded — 0 keeps the course-derived value.
         if (request.TargetGoalXp > 0)
             team.TargetXp = request.TargetGoalXp;
+
+        if (questCourse != null)
+        {
+            // Bindings fill in whatever the caller left blank, so an instructor
+            // re-binding a legacy squad gets a real quest name and target.
+            if (string.IsNullOrWhiteSpace(team.QuestTitle))
+                team.QuestTitle = ResolveQuestTitle(null, questCourse);
+            if (request.TargetGoalXp <= 0)
+                team.TargetXp = await DeriveCourseTargetXpAsync(questCourse, ct);
+        }
 
         team.UpdatedAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
@@ -338,7 +362,10 @@ public class TeamService : ITeamService
             .Include(tm => tm.Team)
             .ToListAsync(ct);
 
-        var membershipMap = memberships.ToDictionary(m => m.StudentId, m => m.Team);
+        var membershipMap = memberships
+            .Where(m => m.Team != null)
+            .GroupBy(m => m.StudentId)
+            .ToDictionary(g => g.Key, g => g.First().Team!);
 
         return students.Select(s =>
         {

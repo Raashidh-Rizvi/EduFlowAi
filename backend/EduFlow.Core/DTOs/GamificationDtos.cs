@@ -292,7 +292,9 @@ public record UpdateSquadRequest(
     string? AvatarUrl,
     Guid? LeaderId,
     string? ActiveQuest,
-    int TargetGoalXp
+    int TargetGoalXp,
+    // Course the quest is (re)anchored to. Null = leave the current binding untouched.
+    Guid? CourseId = null
 );
 
 public record StudentTeamOptionDto(

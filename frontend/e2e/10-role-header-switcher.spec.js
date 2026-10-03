@@ -1,70 +1,47 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Header Direct Role Redirection Switcher', () => {
-  test('should switch login and redirect seamlessly between Student, Admin, and Instructor from header', async ({ page }) => {
-    // Start at base url
-    await page.goto('http://localhost:2174');
+// The P0 authentication hardening removed the header fast role-switcher
+// (#btn-switch-* buttons) — 02-auth asserts those elements stay gone because a
+// role change must always require a full credential login. This spec covers
+// that secure transition path across all three roles.
+test.describe('Secure Role Transitions (login-based)', () => {
+  const loginAs = async (page, email) => {
+    await page.goto('/login');
+    await page.getByLabel('Email Address').fill(email);
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
+    await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
+  };
 
-    // 1. If starting from Landing Page, verify role switcher buttons exist in header
-    const studentBtnLanding = page.locator('#btn-switch-student').first();
-    await expect(studentBtnLanding).toBeVisible();
+  const resetSession = async (page) => {
+    await page.evaluate(() => localStorage.clear());
+  };
 
-    // Click Student directly from landing header
-    await studentBtnLanding.click();
+  test('should switch roles only through full login: Student, Admin, Instructor, Student', async ({ page }) => {
+    await page.goto('/');
 
-    // Should redirect to Student Portal & update login
-    await expect(page.locator('text=Student Workspace')).toBeVisible({ timeout: 8000 });
-    
-    // Check localStorage user
-    const userRoleAfterStudentClick = await page.evaluate(() => {
-      const u = JSON.parse(localStorage.getItem('eduflow_user') || '{}');
-      return u.role;
-    });
-    expect(userRoleAfterStudentClick).toBe('Student');
+    // Security contract: no direct role-switch buttons anywhere in the header.
+    await expect(page.locator('[id^="btn-switch-"]')).toHaveCount(0);
 
-    // Verify Student button is marked as active in Student Top Bar
-    const studentActiveIndicator = page.locator('#btn-switch-student span').first();
-    await expect(studentActiveIndicator).toBeVisible();
-
+    // 1. Student login → Student Workspace
+    await loginAs(page, 'student@eduflow.ai');
+    await expect(page.locator('text=Student Workspace').first()).toBeVisible({ timeout: 15000 });
     await page.screenshot({ path: 'e2e/screenshots/10-student-portal-header.png' });
 
-    // 2. Click Admin button directly from Student Top Bar header
-    const adminBtnFromStudent = page.locator('#btn-switch-admin').first();
-    await expect(adminBtnFromStudent).toBeVisible();
-    await adminBtnFromStudent.click();
-
-    // Should redirect to Admin Management Console
-    await expect(page.locator('text=Platform Governance & Administration').first()).toBeVisible({ timeout: 8000 });
-
-    const userRoleAfterAdminClick = await page.evaluate(() => {
-      const u = JSON.parse(localStorage.getItem('eduflow_user') || '{}');
-      return u.role;
-    });
-    expect(userRoleAfterAdminClick).toBe('Admin');
-
+    // 2. Sign out (clear the session) and log in as Admin → Platform Summary
+    await resetSession(page);
+    await loginAs(page, 'admin@eduflow.ai');
+    await expect(page.getByRole('heading', { name: 'Platform Summary' })).toBeVisible({ timeout: 15000 });
     await page.screenshot({ path: 'e2e/screenshots/10-admin-console-header.png' });
 
-    // 3. Click Instructor button directly from Console Navbar header
-    const instructorBtnFromAdmin = page.locator('#btn-switch-instructor').first();
-    await expect(instructorBtnFromAdmin).toBeVisible();
-    await instructorBtnFromAdmin.click();
-
-    // Should redirect to Instructor Executive Overview
-    await expect(page.locator('text=Executive Overview')).toBeVisible({ timeout: 8000 });
-
-    const userRoleAfterInstructorClick = await page.evaluate(() => {
-      const u = JSON.parse(localStorage.getItem('eduflow_user') || '{}');
-      return u.role;
-    });
-    expect(userRoleAfterInstructorClick).toBe('Instructor');
-
+    // 3. Sign out and log in as Instructor → Executive Overview
+    await resetSession(page);
+    await loginAs(page, 'instructor@eduflow.ai');
+    await expect(page.getByRole('heading', { name: 'Executive Overview' })).toBeVisible({ timeout: 15000 });
     await page.screenshot({ path: 'e2e/screenshots/10-instructor-console-header.png' });
 
-    // 4. Click Student again from Instructor Console Navbar header
-    const studentBtnFromInstructor = page.locator('#btn-switch-student').first();
-    await studentBtnFromInstructor.click();
-
-    // Verify back in Student Portal
-    await expect(page.locator('text=Student Workspace')).toBeVisible({ timeout: 8000 });
+    // 4. Back to Student — every transition went through credentials.
+    await resetSession(page);
+    await loginAs(page, 'student@eduflow.ai');
+    await expect(page.locator('text=Student Workspace').first()).toBeVisible({ timeout: 15000 });
   });
 });

@@ -32,6 +32,8 @@ import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
 import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
+import { mapAiError } from '../../utils/aiErrors';
+import AiProviderPicker from '../../components/common/AiProviderPicker';
 
 // Quizzes saved on the server have GUID ids; local-only drafts use `q-<timestamp>` ids.
 const isServerQuizId = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || ''));
@@ -95,6 +97,9 @@ export default function Assessments({ currentUser }) {
   const [aiBlooms, setAiBlooms] = useState('Application');
   const [aiCount, setAiCount] = useState(3);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  // Empty strings mean "let the server use its configured default provider/model".
+  const [aiProvider, setAiProvider] = useState('');
+  const [aiModel, setAiModel] = useState('');
 
   // Scope & PDF Grounding State
   const [coursesList, setCoursesList] = useState([]);
@@ -350,8 +355,8 @@ export default function Assessments({ currentUser }) {
     // Pre-check status before launching call
     if (aiApiStatus.color === 'yellow') {
       setAiErrorDetails({
-        title: 'AI Token Usage Limit Reached (429 RateLimit)',
-        message: aiApiStatus.message || 'Token quota limit reached for the configured AI provider. Please upgrade your API plan or wait a few moments before retrying.',
+        title: 'AI rate limit reached',
+        message: aiApiStatus.message || 'The configured AI provider has reached its usage limit. Please wait a few moments before retrying.',
         color: 'yellow'
       });
       setShowAiErrorModal(true);
@@ -361,8 +366,8 @@ export default function Assessments({ currentUser }) {
 
     if (aiApiStatus.color === 'red') {
       setAiErrorDetails({
-        title: 'AI Microservice Unreachable / Offline',
-        message: aiApiStatus.message || 'Unable to connect to the EduFlow AI Microservice at http://localhost:8888. Please verify the Python service is active.',
+        title: 'AI service unavailable',
+        message: aiApiStatus.message || 'The AI service is unreachable right now. Please ask your administrator to start it and try again.',
         color: 'red'
       });
       setShowAiErrorModal(true);
@@ -392,7 +397,10 @@ export default function Assessments({ currentUser }) {
         pdfUrl: pdfUrl,
         slideUrl: pdfUrl,
         moduleTitle: moduleTitle,
-        questionTypes: qTypesList
+        questionTypes: qTypesList,
+        // Omitted when empty: the AI service falls back to QUIZ_LLM_PROVIDER.
+        provider: aiProvider || undefined,
+        model: aiModel || undefined
       });
 
       if (res) {
@@ -439,12 +447,14 @@ export default function Assessments({ currentUser }) {
       }
     } catch (err) {
       setAiGenToast(null);
-      const errMsg = err.response?.data?.message || err.message || 'AI Generation Failed: Unable to connect to AI Agent API microservice.';
-      const isRateLimit = errMsg.includes('429') || errMsg.toLowerCase().includes('token') || errMsg.toLowerCase().includes('quota');
+      // Structured AI errors ({ code, message, details, traceId }) become a
+      // clear title + actionable message with a support reference — never a
+      // stack trace or raw server payload.
+      const mapped = mapAiError(err);
       setAiErrorDetails({
-        title: isRateLimit ? 'AI Token Limit Reached (429 RateLimit)' : 'AI Generation Error',
-        message: errMsg,
-        color: isRateLimit ? 'yellow' : 'red'
+        title: mapped.title,
+        message: mapped.message,
+        color: mapped.color
       });
       setShowAiErrorModal(true);
     } finally {
@@ -1854,6 +1864,18 @@ export default function Assessments({ currentUser }) {
                     </div>
                   </div>
 
+                  {/* Provider / model selection — status comes from the server,
+                      never from secrets in the browser. */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <AiProviderPicker
+                      provider={aiProvider}
+                      model={aiModel}
+                      onProviderChange={setAiProvider}
+                      onModelChange={setAiModel}
+                      disabled={isAiGenerating}
+                    />
+                  </div>
+
                   <button
                     onClick={handleGenerateAiQuestions}
                     disabled={isAiGenerating}
@@ -2764,14 +2786,14 @@ export default function Assessments({ currentUser }) {
               </div>
               <div>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '700', color: 'var(--text-main)' }}>
-                  {aiErrorDetails.title || (aiErrorDetails.color === 'yellow' ? 'AI Token Limit Reached' : 'AI Microservice Unreachable')}
+                  {aiErrorDetails.title || 'AI Generation Error'}
                 </h3>
                 <span style={{
                   fontSize: '11px', fontWeight: '700', textTransform: 'uppercase',
                   color: aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444',
                   letterSpacing: '0.5px'
                 }}>
-                  {aiErrorDetails.color === 'yellow' ? '🟡 STATUS: YELLOW (TOKEN LIMIT REACHED)' : '🔴 STATUS: RED (UNREACHABLE)'}
+                  {aiErrorDetails.color === 'yellow' ? '⚠ Action needed' : '✕ Generation blocked'}
                 </span>
               </div>
             </div>
@@ -2796,7 +2818,7 @@ export default function Assessments({ currentUser }) {
               borderRadius: 'var(--radius-xs)',
               borderLeft: `3px solid ${aiErrorDetails.color === 'yellow' ? '#eab308' : '#ef4444'}`
             }}>
-              <strong>Strict Quality Policy:</strong> Fallback/garbage question generation has been prevented. No ungrounded or empty draft entries were created.
+              <strong>Nothing was saved.</strong> Your existing quiz draft is unchanged — resolve the issue above and try again.
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
@@ -2808,7 +2830,7 @@ export default function Assessments({ currentUser }) {
                 className="btn-secondary"
                 style={{ fontSize: '12.5px', padding: '7px 14px' }}
               >
-                Re-Check API Status
+                Re-check Provider Status
               </button>
               <button
                 onClick={() => setShowAiErrorModal(false)}

@@ -11,7 +11,8 @@ test('real IT3091 breakdown supports a scoped topic plan and explanation via ASP
   });
   await page.goto('/');
   await page.getByRole('button', { name: /Try Now|Get Started Free/i }).first().click();
-  await page.getByText('Alex Rivera', { exact: true }).click();
+  await page.getByLabel('Email Address').fill('student@eduflow.ai');
+  await page.getByLabel('Password', { exact: true }).fill('Password123!');
   const login = page.waitForResponse(r => r.url().includes('/api/auth/login'));
   await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
   expect((await login).status()).toBe(200);

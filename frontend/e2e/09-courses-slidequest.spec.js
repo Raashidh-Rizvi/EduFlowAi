@@ -9,29 +9,28 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     // Login as Instructor
     const tryNowBtn = page.getByRole('button', { name: /Try Now|Get Started Free/i }).first();
     await tryNowBtn.click();
-    await page.locator('text=Dr. Sarah Jenkins').click();
+    await page.getByLabel('Email Address').fill('instructor@eduflow.ai');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
     await page.getByRole('button', { name: /Authenticate & Continue/i }).click();
     await expect(page.locator('text=Executive Overview').or(page.locator('text=INSTRUCTOR CONSOLE')).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('should generate a SlideQuest assessment and publish it', async ({ page }) => {
-    test.setTimeout(90000); // 90 seconds timeout for this test
+    // Real Azure generation + publish round-trip; allow a generous budget.
+    test.setTimeout(180000);
     // 1. Navigate to Curriculum & Modules (opens the course directory)
     await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });
 
-    // Wait briefly for course data to load
-    await page.waitForTimeout(1000);
-
-    // 1b. Open the first course's dedicated page from the directory
+    // 1b. Wait for the directory to actually render (the course list is an
+    // API call), then open the first course's dedicated page.
     const courseCard = page.getByTestId('course-directory-card').first();
-    if (await courseCard.isVisible().catch(() => false)) {
-      await courseCard.click();
-      await page.waitForTimeout(1000);
-    }
+    await courseCard.waitFor({ state: 'visible', timeout: 20000 });
+    await courseCard.click();
 
-    // 2. Open Module AI Quiz Generator
+    // 2. Open Module AI Quiz Generator (appears once the hierarchy renders)
     const generateAiQuizBtn = page.locator('text=⚡ Module AI Quiz').first();
+    await generateAiQuizBtn.waitFor({ state: 'visible', timeout: 30000 });
     await generateAiQuizBtn.click();
 
     // 3. Wait for modal to open
@@ -47,15 +46,17 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     const approveBtn = page.locator('text=Approve & Publish to Curriculum').first();
     await expect(approveBtn).toBeVisible({ timeout: 60000 });
 
-    // 7. Approve & Publish - assert the backend persisted the assessment.
+    // 7. Approve & Publish - assert the backend published the persisted draft.
     //    Note: the "Take Quiz Quest" runner button is role-gated to learners, and learners
     //    get their own StudentPortal, so an instructor can publish but never run the draft.
+    //    Current contract: the draft already exists (created by generate-ai), so approval
+    //    PUTs edits then POSTs /api/quizzes/{id}/publish (200), it does not create a new quiz.
     const publishResponse = page.waitForResponse(
-      r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/quizzes'
+      r => r.request().method() === 'POST' && /\/api\/quizzes\/[0-9a-f-]+\/publish$/i.test(new URL(r.url()).pathname)
     );
     await approveBtn.click();
     const published = await publishResponse;
-    expect(published.status()).toBe(201);
+    expect(published.status()).toBe(200);
 
     // 8. The draft is streamed to the Assessments & Quizzes tab
     await page.getByRole('button', { name: /Assessments & Quizzes/i }).click();

@@ -184,7 +184,12 @@ public class LearningAgentGatewayTests
         Assert.Equal(status, root.GetProperty("status_code").GetInt32());
         Assert.False(root.TryGetProperty("question", out _),
             "An error response must never carry a canned 'question' payload.");
-        Assert.Contains(body, root.GetProperty("message").GetString());
+        // The upstream reason must reach the caller (parsed from the structured
+        // envelope), but the raw JSON body is not forwarded verbatim.
+        using var upstream = JsonDocument.Parse(body);
+        var reason = upstream.RootElement.GetProperty("detail").GetString()!;
+        Assert.Contains(reason, root.GetProperty("message").GetString());
+        Assert.DoesNotContain(body, root.GetProperty("message").GetString());
     }
 
     [Fact]

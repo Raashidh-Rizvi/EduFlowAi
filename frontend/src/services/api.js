@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getAuthenticationErrorMessage } from './authErrors';
+import { isAiErrorCode, mapAiError } from '../utils/aiErrors';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5204/api';
 
@@ -137,7 +138,13 @@ api.interceptors.response.use(
 
     if (error.response) {
       console.error(`[API Response Error] Status: ${error.response.status}`);
-      if (error.response.status === 401) {
+      // AI pipeline failures carry a stable code (AI_*, RAG_*, DOCUMENT_*, QUIZ_*)
+      // with user-facing copy and a correlation reference — map those first so
+      // components never render raw technical errors.
+      if (isAiErrorCode(error.response.data?.code)) {
+        error.aiError = mapAiError(error);
+        friendlyMessage = error.aiError.message;
+      } else if (error.response.status === 401) {
         friendlyMessage = "Your session has expired or is invalid. Please log in again.";
         // Clear stale credentials and let the React route guard handle sign-out.
         if (hasSession()) {

@@ -57,9 +57,13 @@ export default function LearnEntry() {
   }
 
   if (access?.hasAccess) {
-    // Enrolled (or owner/admin): open the student console's curriculum tab,
-    // which itself re-verifies every protected fetch server-side.
-    try { sessionStorage.setItem('eduflow_student_active_tab', 'curriculum'); } catch { /* ignore */ }
+    // Enrolled (or owner/admin): open the student console on the Enrollment
+    // workspace with this course's page on top (details, curriculum, quiz).
+    // The portal re-verifies the same access server-side before rendering it.
+    try {
+      sessionStorage.setItem('eduflow_student_active_tab', 'enrollments');
+      sessionStorage.setItem('eduflow_student_open_course', String(courseId));
+    } catch { /* ignore */ }
     return <Navigate to="/console" replace />;
   }
 
