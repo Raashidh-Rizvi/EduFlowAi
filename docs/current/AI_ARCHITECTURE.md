@@ -85,6 +85,7 @@ Codes live in `ai-agent/core/errors.py` (Python) and are mirrored by the fronten
 | `AI_MODEL_NOT_FOUND` | 400/502 | Model outside the server-side allowlist or rejected upstream |
 | `AI_AUTHENTICATION_FAILED` | 502 | Provider rejected its API key (never the user's session) |
 | `AI_RATE_LIMITED` | 429 | Provider quota / rate limit |
+| `AI_TIMEOUT` | 504 | No answer within `AiService:TimeoutSeconds` (default 120s) — the pipeline is slow, not down |
 | `AI_REQUEST_FAILED` | 502 | Transport or unclassified provider error |
 | `AI_GENERATION_FAILED` | 500+ | Generation failed after validation retries |
 | `AI_INVALID_RESPONSE` | 502 | Empty/unparseable model output |

@@ -1037,7 +1037,7 @@ public class QuizzesController : BaseApiController
             PassingScorePercent = request.PassingScorePercent,
             XpReward = request.XpReward > 0 ? request.XpReward : defaultXp,
             CoinReward = request.CoinReward,
-            Status = QuizStatus.Draft, // AI-generated quizzes start as Draft and require instructor review before publishing
+            Status = request.AutoPublish ? QuizStatus.Published : QuizStatus.Draft, // Immediately published when AutoPublish is true so students can take it
             GeneratedByAI = true,
             GenerationWorkflowId = workflowId,
             CreatedAt = DateTime.UtcNow
@@ -1196,17 +1196,43 @@ public class QuizzesController : BaseApiController
                     {
                         foreach (var opt in optionsArray.EnumerateArray())
                         {
-                            options.Add(opt.GetString() ?? "");
+                            var optStr = opt.GetString() ?? "";
+                            if (!string.IsNullOrWhiteSpace(optStr))
+                            {
+                                options.Add(optStr.Trim());
+                            }
                         }
                     }
 
-                    // ai-agent returns correct_index (0-based) instead of correct_answer text.
-                    if (!qToken.TryGetProperty("correct_answer", out _) && options.Count > 0
-                        && qToken.TryGetProperty("correct_index", out var correctIndexProp)
-                        && correctIndexProp.TryGetInt32(out var correctIndex)
-                        && correctIndex >= 0 && correctIndex < options.Count)
+                    if (qType == QuestionType.TrueFalse && options.Count == 0)
                     {
-                        correct = options[correctIndex];
+                        options = new List<string> { "TRUE", "FALSE" };
+                    }
+
+                    // Determine correct index or option text
+                    int resolvedCorrectIdx = -1;
+                    if (qToken.TryGetProperty("correct_index", out var correctIndexProp)
+                        && correctIndexProp.TryGetInt32(out var idxFromProp)
+                        && idxFromProp >= 0 && idxFromProp < options.Count)
+                    {
+                        resolvedCorrectIdx = idxFromProp;
+                    }
+
+                    if (resolvedCorrectIdx < 0 && !string.IsNullOrWhiteSpace(correct))
+                    {
+                        var trimmedCorrect = correct.Trim();
+                        if (int.TryParse(trimmedCorrect, out var parsedIdx) && parsedIdx >= 0 && parsedIdx < options.Count)
+                        {
+                            resolvedCorrectIdx = parsedIdx;
+                        }
+                        else if (trimmedCorrect.Length <= 3)
+                        {
+                            char letter = char.ToUpperInvariant(trimmedCorrect[0]);
+                            if (letter >= 'A' && letter <= 'Z' && (letter - 'A') < options.Count)
+                            {
+                                resolvedCorrectIdx = letter - 'A';
+                            }
+                        }
                     }
 
                     var metadataDict = new Dictionary<string, object>
@@ -1236,18 +1262,37 @@ public class QuizzesController : BaseApiController
                         Difficulty = quiz.Difficulty,
                         Points = questionPoints,
                         OrderIndex = i + 1,
-                        // Persist the AI-provided objective; fabricating LO-0x codes would
-                        // collapse skill mastery across every AI quiz in every course.
                         LearningObjective = string.IsNullOrWhiteSpace(aiLearningObjective) ? null : aiLearningObjective!.Trim(),
                         MetadataJson = JsonSerializer.Serialize(metadataDict)
                     };
 
+                    var matchedOptionTexts = new List<string>();
                     int optIdx = 1;
                     foreach (var opt in options)
                     {
-                        bool isCorrect = string.Equals(opt.Trim(), correct.Trim(), StringComparison.OrdinalIgnoreCase)
-                            || correct.Split(new[] { ',', ';' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                                      .Any(c => string.Equals(c, opt.Trim(), StringComparison.OrdinalIgnoreCase));
+                        bool isCorrect = false;
+
+                        if (resolvedCorrectIdx >= 0 && (optIdx - 1) == resolvedCorrectIdx)
+                        {
+                            isCorrect = true;
+                        }
+                        else
+                        {
+                            var cleanOpt = System.Text.RegularExpressions.Regex.Replace(opt, @"^[A-Da-d1-4][\.\)]\s*", "").Trim();
+                            var cleanCorrect = System.Text.RegularExpressions.Regex.Replace(correct, @"^[A-Da-d1-4][\.\)]\s*", "").Trim();
+
+                            isCorrect = string.Equals(opt, correct.Trim(), StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(cleanOpt, cleanCorrect, StringComparison.OrdinalIgnoreCase)
+                                || correct.Split(new[] { ',', ';' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                                          .Any(c => string.Equals(c, opt, StringComparison.OrdinalIgnoreCase)
+                                                 || string.Equals(c, cleanOpt, StringComparison.OrdinalIgnoreCase));
+                        }
+
+                        if (isCorrect)
+                        {
+                            matchedOptionTexts.Add(opt);
+                        }
+
                         question.Options.Add(new QuestionOption
                         {
                             OptionText = opt,
@@ -1255,6 +1300,21 @@ public class QuizzesController : BaseApiController
                             DisplayOrder = optIdx++
                         });
                     }
+
+                    // Fallback if no option was flagged isCorrect for single choice
+                    var optionsList = question.Options.ToList();
+                    if ((qType == QuestionType.MultipleChoice || qType == QuestionType.TrueFalse) && !optionsList.Any(o => o.IsCorrect) && optionsList.Count > 0)
+                    {
+                        int fallbackIdx = resolvedCorrectIdx >= 0 && resolvedCorrectIdx < optionsList.Count ? resolvedCorrectIdx : 0;
+                        optionsList[fallbackIdx].IsCorrect = true;
+                        matchedOptionTexts.Add(optionsList[fallbackIdx].OptionText);
+                    }
+
+                    if (matchedOptionTexts.Count > 0)
+                    {
+                        question.CorrectAnswer = string.Join(", ", matchedOptionTexts);
+                    }
+
                     quiz.Questions.Add(question);
                     i++;
                 }

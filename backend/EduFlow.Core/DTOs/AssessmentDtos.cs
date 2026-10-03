@@ -222,7 +222,9 @@ public record GenerateAiQuizRequest(
     /// <summary>Optional AI provider override for this generation (gemini|groq|azure).</summary>
     string? Provider = null,
     /// <summary>Optional model override; must be on the server-side allowlist for the provider.</summary>
-    string? Model = null
+    string? Model = null,
+    /// <summary>Whether the generated quiz is immediately published for student access. Defaults to true.</summary>
+    bool AutoPublish = true
 );
 
 public record UploadQuizRequest(

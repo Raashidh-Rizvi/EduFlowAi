@@ -215,5 +215,39 @@ public class LearningAgentGatewayTests
         Assert.Equal(body, response);
     }
 
+    [Fact]
+    public async Task GenerateQuiz_Timeout_ReportsAiTimeoutInsteadOfUnreachableService()
+    {
+        // HttpClient surfaces its own Timeout as a cancellation that the caller's
+        // token never requested. A slow-but-healthy LLM must not be reported as
+        // "the Python service is not running".
+        var gateway = Gateway(_ => throw new TaskCanceledException("timeout", new TimeoutException()));
+
+        var response = await gateway.GenerateQuizAsync(new { question_count = 10 }, CancellationToken.None, "trace-abc");
+        using var json = JsonDocument.Parse(response);
+        var root = json.RootElement;
+
+        Assert.Equal("error", root.GetProperty("status").GetString());
+        Assert.Equal(504, root.GetProperty("status_code").GetInt32());
+        Assert.Equal("AI_TIMEOUT", root.GetProperty("code").GetString());
+        Assert.DoesNotContain("Unable to connect", root.GetProperty("message").GetString());
+        // The correlation id is preserved so the slow upstream call stays traceable.
+        Assert.Equal("trace-abc", root.GetProperty("requestId").GetString());
+    }
+
+    [Fact]
+    public async Task RegenerateQuestion_Timeout_ReportsAiTimeoutInsteadOfUnreachableService()
+    {
+        var gateway = Gateway(_ => throw new TaskCanceledException("timeout", new TimeoutException()));
+
+        var response = await gateway.RegenerateQuestionAsync(_regenerateQuestionId.ToString(), new { }, CancellationToken.None, "trace-xyz");
+        using var json = JsonDocument.Parse(response);
+        var root = json.RootElement;
+
+        Assert.Equal(504, root.GetProperty("status_code").GetInt32());
+        Assert.Equal("AI_TIMEOUT", root.GetProperty("code").GetString());
+        Assert.False(root.TryGetProperty("question", out _));
+    }
+
     private static readonly Guid _regenerateQuestionId = Guid.NewGuid();
 }

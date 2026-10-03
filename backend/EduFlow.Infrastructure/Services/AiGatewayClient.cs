@@ -178,6 +178,13 @@ public class AiGatewayClient : IAiGatewayClient
             return WrapUpstreamError(response.StatusCode, body,
                 $"AI Microservice returned error status {(int)response.StatusCode}");
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger?.LogWarning("[AiGatewayClient] GenerateQuizAsync timed out after {Timeout}s for {Url} (requestId={RequestId})",
+                ConfigurationTimeoutSeconds(), url, requestId);
+            return WrapUpstreamError(System.Net.HttpStatusCode.GatewayTimeout, TimeoutBody(requestId),
+                "The AI provider took too long to generate this assessment. Please retry.");
+        }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "[AiGatewayClient] GenerateQuizAsync error connecting to {Url}", url);
@@ -185,6 +192,24 @@ public class AiGatewayClient : IAiGatewayClient
                 $"Unable to connect to the AI service at {_baseUrl}. Please verify the Python service is running.");
         }
     }
+
+    /// <summary>
+    /// A grounded LLM generation legitimately runs for tens of seconds. When the
+    /// client-side timeout (AiService:TimeoutSeconds) fires, the pipeline is slow —
+    /// not down — so report 504 / AI_TIMEOUT with the correlation id instead of
+    /// the misleading "verify the Python service is running" connection error.
+    /// </summary>
+    private string TimeoutBody(string? requestId)
+        => JsonSerializer.Serialize(new
+        {
+            code = "AI_TIMEOUT",
+            message = "The AI provider took too long to generate this assessment. Please retry, or reduce the number of questions.",
+            details = $"No answer within {ConfigurationTimeoutSeconds()}s. The generation may still be running upstream.",
+            requestId
+        });
+
+    private int ConfigurationTimeoutSeconds()
+        => _httpClient.Timeout == Timeout.InfiniteTimeSpan ? 30 : (int)_httpClient.Timeout.TotalSeconds;
 
     public async Task<AiProxyResponse> GetAiProvidersAsync(CancellationToken ct = default)
     {
@@ -334,6 +359,13 @@ public class AiGatewayClient : IAiGatewayClient
                 response.StatusCode, body.Length > 500 ? body[..500] : body);
             return WrapUpstreamError(response.StatusCode, body,
                 $"AI Microservice returned error status {(int)response.StatusCode}");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger?.LogWarning("[AiGatewayClient] RegenerateQuestionAsync timed out after {Timeout}s for {Url}",
+                ConfigurationTimeoutSeconds(), url);
+            return WrapUpstreamError(System.Net.HttpStatusCode.GatewayTimeout, TimeoutBody(requestId),
+                "The AI provider took too long to regenerate this question. Please retry.");
         }
         catch (Exception ex)
         {

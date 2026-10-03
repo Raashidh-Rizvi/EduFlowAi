@@ -57,6 +57,11 @@ const AI_ERROR_CATALOG = {
     color: 'red',
     fallback: 'The request to the AI service failed. Please try again.'
   },
+  AI_TIMEOUT: {
+    title: 'AI generation timed out',
+    color: 'yellow',
+    fallback: 'The AI provider took too long to answer. It may still be working — wait a moment and try again, or generate fewer questions.'
+  },
   AI_GENERATION_FAILED: {
     title: 'AI generation failed',
     color: 'red',

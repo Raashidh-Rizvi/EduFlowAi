@@ -349,7 +349,7 @@ export default function Assessments({ currentUser }) {
     const pdfUrl = aiSelectedPdfUrl || (selectedMod ? selectedMod.pdfUrl : null);
 
     const qTypesList = aiQuestionTypePref === 'MIXED'
-      ? ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'FILL_IN_THE_BLANK', 'MATCHING']
+      ? ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'TRUE_FALSE']
       : [aiQuestionTypePref];
 
     // Pre-check status before launching call
@@ -398,6 +398,7 @@ export default function Assessments({ currentUser }) {
         slideUrl: pdfUrl,
         moduleTitle: moduleTitle,
         questionTypes: qTypesList,
+        autoPublish: true,
         // Omitted when empty: the AI service falls back to QUIZ_LLM_PROVIDER.
         provider: aiProvider || undefined,
         model: aiModel || undefined

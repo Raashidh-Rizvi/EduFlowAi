@@ -92,5 +92,10 @@ Please configure the provider before generating a quiz.
   `QUIZ_LLM_MODEL=<default>`; per-request model must be in the allowlist.
 - **Check status**: open the provider selector (greyed-out entries list their missing
   variables) or `GET /api/ai/providers`.
+- **Generation is slow / `AI_TIMEOUT`**: a grounded 10-question generation routinely takes
+  30–90 s depending on the provider. The backend gateway budget is
+  `AiService:TimeoutSeconds` (default `120` in `backend/EduFlow.Api/appsettings.json`); past
+  it the request fails as **504 `AI_TIMEOUT`** (“the pipeline is slow”), never as
+  “service down”. Raise the budget for slower providers, or lower `questionCount`.
 - **Add a provider**: add an entry to `PROVIDERS` + one `_call_<name>_json` method; the
   registry, validation, status endpoint and UI picker pick it up automatically.

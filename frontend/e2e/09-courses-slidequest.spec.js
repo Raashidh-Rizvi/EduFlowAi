@@ -17,7 +17,7 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
 
   test('should generate a SlideQuest assessment and publish it', async ({ page }) => {
     // Real Azure generation + publish round-trip; allow a generous budget.
-    test.setTimeout(180000);
+    test.setTimeout(300000);
     // 1. Navigate to Curriculum & Modules (opens the course directory)
     await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });
@@ -36,15 +36,26 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     // 3. Wait for modal to open
     await expect(page.locator('text=AI Assessment Generator & Reviewer')).toBeVisible();
 
-    // 4. Click Synthesize SlideQuest Assessment Draft
-    await page.locator('text=Synthesize SlideQuest Assessment Draft').click();
-
-    // 5. The generator closes the modal for a non-blocking UX; open the draft from the notification
-    await page.getByRole('button', { name: /Review Draft & Publish/i }).click({ timeout: 60000 });
+    // 4-5. Generation is a live, grounded LLM call: it legitimately runs for tens
+    //      of seconds, and the provider can transiently return an unusable answer.
+    //      Drive the UI's own recovery control within a bounded budget, then
+    //      require a real draft: a persistent failure still fails this test.
+    const reviewDraftBtn = page.getByRole('button', { name: /Review Draft & Publish/i });
+    const retryGenerationBtn = page.getByRole('button', { name: /Reconfigure Provider \/ Retry/i });
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await page.locator('text=Synthesize SlideQuest Assessment Draft').click();
+      await expect(reviewDraftBtn.or(retryGenerationBtn).first()).toBeVisible({ timeout: 180000 });
+      if (await reviewDraftBtn.isVisible()) break;
+      console.log(`generation attempt ${attempt} failed at the provider; retrying through the UI`);
+      await retryGenerationBtn.click();
+      await expect(page.locator('text=Synthesize SlideQuest Assessment Draft')).toBeVisible();
+    }
+    await expect(reviewDraftBtn).toBeVisible();
+    await reviewDraftBtn.click();
 
     // 6. Wait for the generated draft
     const approveBtn = page.locator('text=Approve & Publish to Curriculum').first();
-    await expect(approveBtn).toBeVisible({ timeout: 60000 });
+    await expect(approveBtn).toBeVisible({ timeout: 30000 });
 
     // 7. Approve & Publish - assert the backend published the persisted draft.
     //    Note: the "Take Quiz Quest" runner button is role-gated to learners, and learners
