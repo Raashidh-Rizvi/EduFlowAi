@@ -124,7 +124,7 @@ public class GamificationController : ControllerBase
 
     // Phase 1A: Self-only guard — student can only claim their own mission reward
     [HttpPost("missions/claim-grand/{studentId:guid}")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<ActionResult<ClaimDailyGrandMissionResponseDto>> ClaimGrandReward(Guid studentId, CancellationToken ct)
     {
         var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -141,7 +141,7 @@ public class GamificationController : ControllerBase
 
     // Phase 1A: Self-only guard — student can only use their own streak freeze
     [HttpPost("streak/freeze/{studentId:guid}")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<ActionResult<bool>> UseStreakFreeze(Guid studentId, CancellationToken ct)
     {
         var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -196,7 +196,7 @@ public class GamificationController : ControllerBase
     }
 
     [HttpPost("focus-session")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<ActionResult<FocusSessionResponseDto>> RecordFocusSession([FromBody] FocusSessionRequestDto request, CancellationToken ct)
     {
         // XP always goes to the authenticated caller; any studentId in the body is ignored.

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getAuthenticationErrorMessage } from './authErrors';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5204/api';
 
@@ -29,6 +30,7 @@ export function clearSession() {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_KEY);
   localStorage.removeItem(USER_KEY);
+  window.dispatchEvent(new Event("eduflow-session-cleared"));
 }
 
 export function hasSession() {
@@ -104,6 +106,11 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const isAuthEndpoint = AUTH_ENDPOINTS.some((path) => original?.url?.includes(path));
 
+    if (isAuthEndpoint) {
+      error.friendlyMessage = getAuthenticationErrorMessage(error);
+      return Promise.reject(error);
+    }
+
     // 401 => access token missing/expired: try the refresh token before giving up.
     if (status === 401 && original && !original._retry && !isAuthEndpoint && hasSession()) {
       original._retry = true;
@@ -131,7 +138,7 @@ api.interceptors.response.use(
     }
 
     console.error('[API Response Error]', error.message);
-    let friendlyMessage = "An unexpected error occurred. Please check your connection and try again.";
+    let friendlyMessage = "The service is unavailable. We cannot reach the API. Please try again later.";
 
     if (error.response) {
       console.error(`[API Response Error] Status: ${error.response.status}`);

@@ -13,7 +13,7 @@ namespace EduFlow.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/ai")]
-[Authorize]
+[Authorize(Roles = "Student")]
 public class AiStudentController : ControllerBase
 {
     private readonly IAiGatewayClient? _aiGateway;

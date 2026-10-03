@@ -13,6 +13,9 @@ const USER_KEY = "eduflow_user";
 export function toUserProfile(payload) {
   if (!payload) return null;
   const id = payload.userId || payload.id;
+  if (!id || !["Student", "Instructor", "Admin"].includes(payload.role) || payload.isActive === false) {
+    throw new Error("Invalid authentication profile received.");
+  }
   return {
     userId: id,
     id,
@@ -25,7 +28,9 @@ export function toUserProfile(payload) {
 }
 
 function persistSession(authResponse) {
-  if (!authResponse?.token) return null;
+  if (!authResponse?.token) throw new Error("Authentication did not return an access token.");
+  const profile = toUserProfile(authResponse);
+  clearSession();
   localStorage.setItem(TOKEN_KEY, authResponse.token);
   if (authResponse.refreshToken) {
     localStorage.setItem(REFRESH_TOKEN_KEY, authResponse.refreshToken);
@@ -36,7 +41,6 @@ function persistSession(authResponse) {
       String(new Date(authResponse.expiresAt).getTime()),
     );
   }
-  const profile = toUserProfile(authResponse);
   localStorage.setItem(USER_KEY, JSON.stringify(profile));
   return profile;
 }
@@ -113,6 +117,7 @@ export const authService = {
       !localStorage.getItem(TOKEN_KEY) &&
       !localStorage.getItem(REFRESH_TOKEN_KEY)
     ) {
+      clearSession();
       return null;
     }
     try {

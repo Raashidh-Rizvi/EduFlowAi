@@ -1,4 +1,5 @@
 using System.Text;
+using EduFlow.Api.Security;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
 using EduFlow.Infrastructure;
@@ -63,6 +64,7 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
+    options.Events = new JwtBearerEvents { OnTokenValidated = AccountTokenValidation.ValidateAsync };
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
@@ -166,18 +168,13 @@ using (var scope = app.Services.CreateScope())
         throw;
     }
 
-    // Demo accounts and content exist only in Development; other environments get schema only.
-    if (app.Environment.IsDevelopment())
-    {
-        try
-        {
-            DbInitializer.SeedDevelopmentData(services.GetRequiredService<ApplicationDbContext>());
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Development demo data seeding failed; continuing without complete demo data.");
-        }
-    }
+    // Historical migrations also insert demo users. Enforce the current policy
+    // after migration, in every environment, before accepting any requests.
+    var demoEnabled = builder.Configuration.GetValue<bool>("DevelopmentDemo:Enabled");
+    var resetDemoCredentials = builder.Configuration.GetValue<bool>("DevelopmentDemo:ResetCredentials");
+    DbInitializer.ApplyDemoAccountPolicy(services.GetRequiredService<ApplicationDbContext>(),
+        app.Environment.IsDevelopment(), demoEnabled, resetDemoCredentials);
+
 }
 
 if (app.Environment.IsDevelopment())

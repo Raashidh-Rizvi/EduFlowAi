@@ -29,6 +29,10 @@ public class TeamsController : ControllerBase
     [HttpGet("{studentId:guid}")]
     public async Task<ActionResult<SquadDto?>> GetStudentSquad(Guid studentId, CancellationToken ct)
     {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        if (!Guid.TryParse(uidClaim, out var callerId)) return Unauthorized();
+        var isStaff = User.IsInRole("Instructor") || User.IsInRole("Admin");
+        if (!isStaff && (!User.IsInRole("Student") || callerId != studentId)) return Forbid();
         var squad = await _teamService.GetStudentSquadAsync(studentId, ct);
         return Ok(squad);
     }
@@ -41,7 +45,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<ActionResult<SquadActionResultDto>> CreateSquad([FromBody] CreateSquadRequest request, CancellationToken ct)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -60,6 +64,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<List<SquadDto>>> GetAllSquads(CancellationToken ct = default)
     {
         var squads = await _teamService.GetAllSquadsAsync(ct);
@@ -67,6 +72,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpGet("eligible-students")]
+    [Authorize(Roles = "Instructor,Admin")]
     public async Task<ActionResult<List<StudentTeamOptionDto>>> GetEligibleStudents(CancellationToken ct = default)
     {
         var students = await _teamService.GetStudentsForTeamsAsync(ct);
@@ -134,7 +140,7 @@ public class TeamsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/join")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<ActionResult<SquadActionResultDto>> JoinSquad(Guid id, CancellationToken ct)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");

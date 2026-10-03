@@ -137,7 +137,7 @@ public class ChallengesController : BaseApiController
     }
 
     [HttpPost("{id}/submit")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> SubmitChallenge(Guid id, [FromBody] SubmitChallengeRequest request)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");

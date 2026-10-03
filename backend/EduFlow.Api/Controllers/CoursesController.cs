@@ -1298,7 +1298,7 @@ public class CoursesController : BaseApiController
     /// index forces every attempt onto the single existing row.
     /// </summary>
     [HttpPost("{id:guid}/enroll")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> EnrollInCourse(Guid id)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -1399,7 +1399,7 @@ public class CoursesController : BaseApiController
     /// Pending requests become CANCELLED; approved enrollments become DROPPED (audit trail).
     /// </summary>
     [HttpDelete("{courseId:guid}/enroll")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> UnenrollFromCourse(Guid courseId)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -1467,7 +1467,7 @@ public class CoursesController : BaseApiController
     /// so their dashboard can show PENDING / APPROVED / REJECTED / CANCELLED accurately.
     /// </summary>
     [HttpGet("/api/students/me/enrollment-requests")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMyEnrollmentRequests()
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -1634,7 +1634,7 @@ public class CoursesController : BaseApiController
     /// with per-course progress and completion stats.
     /// </summary>
     [HttpGet("/api/students/me/courses")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> GetMyCourses()
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -1884,7 +1884,7 @@ public class CoursesController : BaseApiController
     // -------------------------------------------------------------------------
 
     [HttpPost("lessons/{lessonId:guid}/complete")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> CompleteLesson(Guid lessonId)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
