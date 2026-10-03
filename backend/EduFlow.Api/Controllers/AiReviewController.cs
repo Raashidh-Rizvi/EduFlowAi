@@ -402,6 +402,7 @@ public class AiReviewController : BaseApiController
     /// Returns the live topology, roles, and status of all 7 interconnected agents.
     /// </summary>
     [HttpGet("agents-topology")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAgentsTopology()
     {
         var topologyJson = await _aiGatewayClient.GetAgentsTopologyAsync();
@@ -412,6 +413,7 @@ public class AiReviewController : BaseApiController
     /// Returns the registered permitted tools list.
     /// </summary>
     [HttpGet("tools-registry")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetToolsRegistry()
     {
         var toolsJson = await _aiGatewayClient.GetToolRegistryAsync();
@@ -422,6 +424,7 @@ public class AiReviewController : BaseApiController
     /// Returns AI observability and performance metrics.
     /// </summary>
     [HttpGet("observability-metrics")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetObservabilityMetrics()
     {
         var metricsJson = await _aiGatewayClient.GetObservabilityMetricsAsync();

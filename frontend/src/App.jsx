@@ -37,15 +37,7 @@ import instructorService from "./services/instructorService";
 import api from "./services/api";
 import { AuthProvider } from "./context/AuthContext";
 import { ShieldAlert } from "lucide-react";
-
-function readStoredUser() {
-  try {
-    const stored = localStorage.getItem("eduflow_user");
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
+import ProtectedRoute from "./components/common/ProtectedRoute";
 
 function AppRoutes() {
   const navigate = useNavigate();
@@ -83,7 +75,7 @@ function AppRoutes() {
     return 0;
   });
 
-  const [currentUser, setCurrentUser] = useState(readStoredUser);
+  const [currentUser, setCurrentUser] = useState(null);
 
   // Instructor/Admin console: live badge count of enrollment requests still awaiting
   // a decision, refreshed whenever the console mounts and after every decision.
@@ -135,15 +127,9 @@ function AppRoutes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
-  // Session re-validation: the cached user in localStorage is only a rendering
-  // hint. Identity and role are re-fetched from the secure backend endpoint
-  // (GET /api/auth/me) on boot so a tampered or stale profile can never survive
-  // a page refresh, and the session stays valid until logout or expiry.
-  const [sessionChecked, setSessionChecked] = useState(
-    () =>
-      !localStorage.getItem("eduflow_token") &&
-      !localStorage.getItem("eduflow_refresh_token"),
-  );
+  // Stored metadata never establishes identity. Only a successful /auth/me
+  // response may restore a session on boot. No protected view renders meanwhile.
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     if (sessionChecked) return;
@@ -163,8 +149,15 @@ function AppRoutes() {
 
   const nextPath = useMemo(() => {
     const requested = new URLSearchParams(location.search).get("next");
-    return requested && requested.startsWith("/") ? requested : "/console";
+    return requested && requested.startsWith("/") && !requested.startsWith("//") && !requested.startsWith("/login")
+      ? requested : "/console";
   }, [location.search]);
+
+  useEffect(() => {
+    const invalidate = () => setCurrentUser(null);
+    window.addEventListener('eduflow-session-cleared', invalidate);
+    return () => window.removeEventListener('eduflow-session-cleared', invalidate);
+  }, []);
 
   const handleLogout = useCallback(async () => {
     // Revokes the refresh token server-side, then clears every local credential.
@@ -185,61 +178,13 @@ function AppRoutes() {
     [navigate, nextPath],
   );
 
-  const handleSwitchRole = useCallback(
-    async (targetRole) => {
-      // Demo personas are re-authenticated against the backend — switching portal
-      // means logging in as that real account. The id/role shown afterwards always
-      // come from the server response; nothing is fabricated client-side.
-      const personaAccounts = {
-        Student: {
-          email: "student@eduflow.ai",
-          password: "Password123!",
-          tab: null,
-        },
-        Instructor: {
-          email: "instructor@eduflow.ai",
-          password: "Password123!",
-          tab: "dashboard",
-        },
-        Admin: {
-          email: "admin@eduflow.ai",
-          password: "Password123!",
-          tab: "admin",
-        },
-      };
-
-      const config = personaAccounts[targetRole];
-      if (!config) return;
-      if (currentUser?.role === targetRole) return;
-
-      try {
-        const user = await authService.switchAccount({
-          email: config.email,
-          password: config.password,
-        });
-        setCurrentUser(user);
-        if (config.tab) setActiveTab(config.tab);
-        navigate("/console", { replace: true });
-      } catch (err) {
-        // Failed switch keeps the current session intact (switchAccount does not
-        // clear credentials on failure) and surfaces the backend's message.
-        console.error(
-          "[RoleSwitch] Portal switch failed:",
-          err?.response?.data?.message || err?.friendlyMessage || err?.message,
-        );
-      }
-    },
-    [currentUser, navigate],
-  );
-
   const authValue = useMemo(
     () => ({
       currentUser,
       onLogout: handleLogout,
-      onSwitchRole: handleSwitchRole,
       onLoginSuccess: handleLoginSuccess,
     }),
-    [currentUser, handleLogout, handleSwitchRole, handleLoginSuccess],
+    [currentUser, handleLogout, handleLoginSuccess],
   );
 
   // Render nothing but a shell until the stored session has been re-validated
@@ -257,7 +202,6 @@ function AppRoutes() {
         <StudentPortal
           user={currentUser}
           onLogout={handleLogout}
-          onSwitchRole={handleSwitchRole}
         />
       );
     }
@@ -267,7 +211,6 @@ function AppRoutes() {
         <InstructorPortal
           user={currentUser}
           onLogout={handleLogout}
-          onSwitchRole={handleSwitchRole}
           onLogoClick={() => navigate("/")}
         />
       );
@@ -324,7 +267,6 @@ function AppRoutes() {
               unreadNotifications={unreadNotifications}
               currentUser={currentUser}
               onLogout={handleLogout}
-              onSwitchRole={handleSwitchRole}
               onNavigate={setActiveTab}
             />
 
@@ -427,10 +369,13 @@ function AppRoutes() {
           </Route>
 
           {/* Learning portal entry: server-verified enrollment gate, then the student console. */}
-          <Route path="/learn/:courseId" element={<LearnEntry />} />
+          <Route path="/learn/:courseId" element={<ProtectedRoute roles={["Student"]}><LearnEntry /></ProtectedRoute>} />
 
           <Route path="/login" element={authView} />
-          <Route path="/console" element={consoleView} />
+          <Route path="/console" element={<ProtectedRoute roles={["Admin", "Instructor", "Student"]}>{consoleView}</ProtectedRoute>} />
+          <Route path="/console/admin" element={<ProtectedRoute roles={["Admin"]}>{consoleView}</ProtectedRoute>} />
+          <Route path="/console/instructor" element={<ProtectedRoute roles={["Instructor", "Admin"]}><InstructorPortal user={currentUser} onLogout={handleLogout} onLogoClick={() => navigate("/")} /></ProtectedRoute>} />
+          <Route path="/console/student" element={<ProtectedRoute roles={["Student"]}><StudentPortal user={currentUser} onLogout={handleLogout} /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

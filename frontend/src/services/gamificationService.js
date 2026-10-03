@@ -61,6 +61,11 @@ export const gamificationService = {
     return response.data;
   },
 
+  async getStudentSquad(studentId) {
+    const response = await api.get(`/gamification/squads/${encodeURIComponent(studentId)}`);
+    return response.data || null;
+  },
+
   // ── Team / Squad Management (Instructor & Admin) ────────────────────────────
   async getAllSquads() {
     const response = await api.get('/gamification/squads');

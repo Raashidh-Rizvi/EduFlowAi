@@ -51,7 +51,7 @@ namespace EduFlow.Tests;
 ///   * instructors cannot reach each other's data by manipulating ids
 ///   * logout revokes the refresh token (the session cannot be renewed)
 /// </summary>
-public class AuthSessionRbacTests
+public partial class AuthSessionRbacTests
 {
     private const string TestPassword = "Password123!";
 
@@ -97,6 +97,7 @@ public class AuthSessionRbacTests
             {
                 options.RequireHttpsMetadata = false;
                 options.SaveToken = true;
+                options.Events = new JwtBearerEvents { OnTokenValidated = EduFlow.Api.Security.AccountTokenValidation.ValidateAsync };
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,

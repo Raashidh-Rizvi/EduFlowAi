@@ -166,7 +166,7 @@ public class AuthService : IAuthService
             .Include(r => r.User)
             .FirstOrDefaultAsync(r => r.Token == request.RefreshToken && !r.IsRevoked, ct);
 
-        if (tokenEntity == null || tokenEntity.ExpiresAt < DateTime.UtcNow || tokenEntity.User == null)
+        if (tokenEntity == null || tokenEntity.ExpiresAt < DateTime.UtcNow || tokenEntity.User == null || !tokenEntity.User.IsActive)
         {
             throw new UnauthorizedAccessException("Invalid or expired refresh token.");
         }
@@ -197,6 +197,8 @@ public class AuthService : IAuthService
         {
             throw new KeyNotFoundException("User not found.");
         }
+
+        if (!user.IsActive) throw new UnauthorizedAccessException("This user account is inactive.");
 
         return new UserProfileDto(
             Id: user.Id,

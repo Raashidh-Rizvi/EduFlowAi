@@ -912,7 +912,7 @@ export default function Gamification() {
                             {st.fullName || st.name}
                           </h4>
                           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            {st.email || 'student@eduflow.ai'}
+                            {st.email || 'Email unavailable'}
                           </span>
                         </div>
                       </div>
