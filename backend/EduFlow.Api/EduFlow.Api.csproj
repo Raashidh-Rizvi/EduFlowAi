@@ -22,4 +22,9 @@
     <ProjectReference Include="..\EduFlow.Infrastructure\EduFlow.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="wwwroot\**" Watch="false" />
+    <Watch Remove="wwwroot\**" />
+  </ItemGroup>
+
 </Project>

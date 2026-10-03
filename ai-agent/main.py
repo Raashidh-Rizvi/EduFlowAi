@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Load local environment variables (.env)
-load_dotenv()
+load_dotenv(override=True)
 
 from models.schemas import (
     IndexPdfRequest,

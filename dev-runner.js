@@ -47,7 +47,7 @@ const services = [
     color: '\x1b[32m', // Green
     cwd: path.join(__dirname, 'backend', 'EduFlow.Api'),
     cmd: 'dotnet',
-    args: ['watch', 'run', '--non-interactive'],
+    args: ['watch', 'run', '--no-hot-reload', '--non-interactive'],
     url: 'http://localhost:5204 (Swagger: http://localhost:5204/swagger)'
   },
   {
