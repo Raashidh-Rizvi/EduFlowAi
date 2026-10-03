@@ -14,6 +14,7 @@ WHAT THIS FILE DOES:
 ===============================================================================
 """
 
+import logging
 import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
@@ -26,8 +27,14 @@ from chromadb.config import Settings
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from rag.chunker import DocumentChunk
 
+logger = logging.getLogger("EduFlow-VectorStore")
+
 # Default path where ChromaDB saves files on disk
 DEFAULT_CHROMA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "chroma_db")
+
+
+EMBEDDING_BATCH_SIZE = 100
+EMBEDDING_TIMEOUT_MS = 30_000
 
 
 class DirectGeminiEmbeddingFunction(EmbeddingFunction):
@@ -38,18 +45,21 @@ class DirectGeminiEmbeddingFunction(EmbeddingFunction):
     def __init__(self, api_key: str, model_name: str = "models/gemini-embedding-001"):
         self.api_key = api_key
         self.model_name = model_name
-        import google.generativeai as genai
-        genai.configure(api_key=self.api_key)
+        from google import genai
+        from google.genai import types
+        # Bounded timeout so a stalled embedding call cannot hang indexing or chat requests.
+        self._client = genai.Client(api_key=self.api_key, http_options=types.HttpOptions(timeout=EMBEDDING_TIMEOUT_MS))
 
     def __call__(self, input: Documents) -> Embeddings:
-        import google.generativeai as genai
+        # One request per batch instead of one per chunk (the API accepts up to 100 contents per call).
         embeddings = []
-        for text in input:
-            res = genai.embed_content(
+        texts = list(input)
+        for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            res = self._client.models.embed_content(
                 model=self.model_name,
-                content=text
+                contents=texts[start:start + EMBEDDING_BATCH_SIZE]
             )
-            embeddings.append(res["embedding"])
+            embeddings.extend(list(e.values) for e in res.embeddings)
         return embeddings
 
 
@@ -109,9 +119,11 @@ class ChromaVectorStore:
                     self.active_provider = "gemini"
                     return ef
                 except Exception as e:
-                    print(f"[VectorStore] Warning: Could not initialize Gemini embeddings ({e}). Falling back to local default.")
+                    # Loud on purpose: the local model uses a different collection, so slides indexed
+                    # with Gemini embeddings will not be found until Gemini embeddings work again.
+                    logger.error("Gemini embeddings unavailable (%s); falling back to the local ONNX model and its separate collection.", type(e).__name__)
             else:
-                print("[VectorStore] Notice: EMBEDDING_PROVIDER is 'gemini' but GEMINI_API_KEY is empty. Falling back to local default.")
+                logger.error("EMBEDDING_PROVIDER is 'gemini' but GEMINI_API_KEY is empty; falling back to the local ONNX model and its separate collection.")
 
         # 01. Default: Fast, local ONNX embedding (runs offline, zero extra RAM)
         self.active_provider = "default"

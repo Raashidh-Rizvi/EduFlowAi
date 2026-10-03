@@ -80,6 +80,13 @@ public class AiReviewController : BaseApiController
             query = query.Where(sp => sp.Status == status.Value);
         }
 
+        // Same scoping as pending-proposals: instructors see only their own courses' plans.
+        var (userId, role) = GetCurrentUser();
+        if (!role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(sp => DbContext.Courses.Any(c => c.Id == sp.CourseId && c.InstructorId == userId));
+        }
+
         var list = await query.OrderByDescending(sp => sp.CreatedAt).Take(50).ToListAsync();
         return Ok(list);
     }

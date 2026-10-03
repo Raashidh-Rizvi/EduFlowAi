@@ -14,7 +14,7 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ReportsController : ControllerBase
+public partial class ReportsController : ControllerBase
 {
     private readonly ApplicationDbContext _dbContext;
 
@@ -33,6 +33,13 @@ public class ReportsController : ControllerBase
         var query = _dbContext.Reports
             .Include(r => r.GeneratedBy)
             .AsQueryable();
+
+        // Instructors see only the reports they generated; admins see all.
+        if (!User.IsInRole("Admin"))
+        {
+            var callerId = GetCallerId();
+            query = query.Where(r => callerId != null && r.GeneratedById == callerId);
+        }
 
         if (!string.IsNullOrEmpty(type))
         {
@@ -69,7 +76,8 @@ public class ReportsController : ControllerBase
             .Include(r => r.GeneratedBy)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (report == null)
+        // Another instructor's report is reported as not found rather than forbidden so ids can't be probed.
+        if (report == null || (!User.IsInRole("Admin") && (report.GeneratedById == null || report.GeneratedById != GetCallerId())))
         {
             return NotFound(new { message = "Report not found." });
         }
@@ -94,8 +102,7 @@ public class ReportsController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GenerateReport([FromBody] GenerateReportRequest request)
     {
-        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        var generatedById = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed) ? parsed : (Guid?)null;
+        var generatedById = GetCallerId();
 
         // Dynamic aggregation based on report type
         object summaryData;
@@ -152,6 +159,15 @@ public class ReportsController : ControllerBase
             report.FileUrl,
             report.CreatedAt
         });
+    }
+}
+
+public partial class ReportsController
+{
+    private Guid? GetCallerId()
+    {
+        var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
+        return Guid.TryParse(uidClaim, out var parsed) ? parsed : null;
     }
 }
 

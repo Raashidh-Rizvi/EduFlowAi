@@ -8,6 +8,10 @@
 backend/EduFlow.Api/appsettings.Development.json
 backend/EduFlow.Api/appsettings.Local.json
 
+# User-uploaded course material (served only via the authorized UploadsController).
+# Files already tracked (DbInitializer seed PDFs, e2e fixtures) stay tracked; new uploads are not committed.
+backend/EduFlow.Api/wwwroot/uploads/
+
 # Stray ad-hoc API-testing output (use a local /scratch/ dir instead, also gitignored)
 /backend_response*.json
 /response.json

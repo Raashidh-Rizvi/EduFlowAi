@@ -28,7 +28,7 @@ import { courseService } from '../../services/courseService';
 import StarRating from '../../components/marketplace/StarRating';
 import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
-import { saveGeneratedQuiz } from '../../utils/quizStorageHelper';
+import { questionTypeName } from '../../constants/domain';
 import api from '../../services/api';
 
 export default function Dashboard({ onNavigateTo, currentUser }) {
@@ -130,6 +130,8 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
 
   const handleOpenRemediationModal = (alertItem) => {
     setRemediationScope({
+      courseId: alertItem.courseId,
+      moduleId: alertItem.moduleId,
       courseCode: alertItem.courseCode,
       courseTitle: alertItem.courseTitle,
       moduleTitle: alertItem.moduleTitle,
@@ -142,11 +144,16 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
   };
 
   const handleGenerateRemediationQuiz = async () => {
+    if (!remediationScope?.courseId) {
+      alert('This alert is not linked to a course, so a remediation quiz cannot be generated.');
+      return;
+    }
     setGeneratingRemediation(true);
     try {
-      // Call AI microservice to synthesize weak-topic recovery quiz
+      // The backend stores the generated quiz as a Draft (with the AI's answer key) and returns it.
       const res = await quizService.generateAiQuiz({
-        courseId: '44444444-4444-4444-4444-444444444444',
+        courseId: remediationScope.courseId,
+        moduleId: remediationScope.moduleId,
         topic: `${remediationScope.topicTitle} Remediation & Recovery`,
         moduleTitle: remediationScope.moduleTitle,
         difficulty: 'Medium',
@@ -158,20 +165,22 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
 
       if (res && res.questions && res.questions.length > 0) {
         setRemediationDraft({
-          title: `🎯 ${remediationScope.topicTitle} Recovery & Diagnostic Quiz`,
+          quizId: res.id,
+          title: res.title || `🎯 ${remediationScope.topicTitle} Recovery & Diagnostic Quiz`,
           scope: `${remediationScope.courseCode} → ${remediationScope.moduleTitle} → ${remediationScope.topicTitle}`,
-          targetWeakness: 'Base case evaluation, recursive call stacks, and termination invariants',
+          targetWeakness: remediationScope.topicTitle,
           questionsCount: res.questions.length,
           timeLimit: '15 mins',
           xpReward: 80,
           passMark: '70%',
+          // Instructor preview only: the answer key shown here is the one the AI produced and the server stored.
           questions: res.questions.map((q, idx) => ({
-            id: idx + 1,
+            id: q.id || idx + 1,
             prompt: q.prompt,
-            type: q.type === 2 ? 'CodeSnippet' : q.type === 1 ? 'TrueFalse' : 'MultipleChoice',
-            options: q.options || ['Base condition check', 'Stack frame overflow', 'Infinite loop', 'Scope mutation'],
-            correctAnswer: q.options?.[0] || 'Base condition check',
-            explanation: 'Calibrated diagnostic rationale specifically addressing student confusion on base case evaluation.'
+            type: questionTypeName(q.type),
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            explanation: q.explanation || ''
           }))
         });
       } else {
@@ -186,54 +195,20 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
   };
 
   const handleApproveAndPublishRemediation = async () => {
-    if (!remediationDraft) return;
-
-    const quizObj = {
-      id: `q-rem-${Date.now()}`,
-      courseId: '44444444-4444-4444-4444-444444444444',
-      courseCode: 'SE3090',
-      title: remediationDraft.title,
-      description: `Targeted remediation quiz for ${remediationScope?.topicTitle} to help students improve mastery.`,
-      questionsCount: remediationDraft.questions ? remediationDraft.questions.length : 4,
-      difficulty: 'Medium',
-      xpReward: 80,
-      coinReward: 25,
-      timeLimitMinutes: 15,
-      passPercentage: 70,
-      avgScore: 0,
-      status: 'Published',
-      questions: remediationDraft.questions
-    };
-
-    saveGeneratedQuiz(quizObj);
+    if (!remediationDraft?.quizId) return;
 
     try {
-      await quizService.createQuiz({
-        courseId: '44444444-4444-4444-4444-444444444444',
-        title: remediationDraft.title,
-        description: `Targeted remediation quiz for ${remediationScope?.topicTitle} to help students improve mastery.`,
-        timeLimitMinutes: 15,
-        passingScorePercent: 70,
-        xpReward: 80,
-        coinReward: 25,
-        questions: remediationDraft.questions.map((q, idx) => ({
-          prompt: q.prompt,
-          type: q.type === 'CodeSnippet' ? 2 : q.type === 'TrueFalse' ? 1 : 0,
-          options: q.options,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          points: 10,
-          orderIndex: idx + 1
-        }))
-      });
-    } catch {
-      // local sync via saveGeneratedQuiz
+      // Publish the server-side draft instead of creating a second copy of the quiz.
+      await quizService.publishQuiz(remediationDraft.quizId);
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'Publishing failed.';
+      alert(`Could not publish the remediation quiz: ${errMsg} It is saved as a draft in Assessments.`);
+      return;
     }
 
-    // Remove the alert from list
     setAtRiskAlerts(prev => prev.filter(a => a.topicTitle !== remediationScope?.topicTitle));
     setShowRemediationModal(false);
-    showToast(`🎉 Remediation Quiz "${remediationDraft.title}" published! Notification sent to ${remediationScope?.affectedStudents || 28} affected students.`);
+    showToast(`🎉 Remediation Quiz "${remediationDraft.title}" published.`);
   };
 
   if (loading) {
@@ -987,7 +962,7 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
                         Q{idx + 1}: {q.prompt}
                       </div>
                       <div style={{ color: 'var(--success)', fontWeight: '600', fontSize: '11.5px' }}>
-                        ✓ Correct: {q.correctAnswer}
+                        ✓ Correct: {q.correctAnswer || 'Not provided — review in Assessments before publishing'}
                       </div>
                     </div>
                   ))}

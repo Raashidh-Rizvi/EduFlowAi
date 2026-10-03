@@ -1,11 +1,15 @@
 """Process-local conversation memory: three complete pairs per identity and scope."""
-from collections import deque
+from collections import OrderedDict, deque
 from threading import RLock
+
+# Upper bound on remembered conversations; the least recently used one is evicted first.
+MAX_CONVERSATIONS = 2000
 
 
 class ShortTermMemory:
-    def __init__(self):
-        self._pairs = {}
+    def __init__(self, max_conversations=MAX_CONVERSATIONS):
+        self._pairs = OrderedDict()
+        self._max = max_conversations
         self._lock = RLock()
 
     @staticmethod
@@ -28,3 +32,6 @@ class ShortTermMemory:
             return
         with self._lock:
             self._pairs.setdefault(key, deque(maxlen=3)).append((user, assistant))
+            self._pairs.move_to_end(key)
+            while len(self._pairs) > self._max:
+                self._pairs.popitem(last=False)

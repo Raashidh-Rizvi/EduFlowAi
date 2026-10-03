@@ -8,7 +8,7 @@
  * 3. Python AI Multi-Agent Service (Uvicorn auto-reload on port 8888)
  */
 
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -18,6 +18,10 @@ const __dirname = path.dirname(__filename);
 
 const isWindows = process.platform === 'win32';
 const shellCmd = isWindows ? true : '/bin/sh';
+
+// Passing an args array together with `shell` is deprecated (DEP0190), so build one command line.
+const quoteArg = (arg) => (/[\s"]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg);
+const toCommandLine = (cmd, args) => [cmd, ...args].map(quoteArg).join(' ');
 
 function getPythonCommand() {
   const venvNames = ['.venv', 'venv'];
@@ -47,7 +51,7 @@ const services = [
     color: '\x1b[32m', // Green
     cwd: path.join(__dirname, 'backend', 'EduFlow.Api'),
     cmd: 'dotnet',
-    args: ['watch', 'run', '--non-interactive'],
+    args: ['watch', 'run', '--no-hot-reload', '--non-interactive'],
     url: 'http://localhost:5204 (Swagger: http://localhost:5204/swagger)'
   },
   {
@@ -55,7 +59,9 @@ const services = [
     color: '\x1b[35m', // Magenta
     cwd: path.join(__dirname, 'ai-agent'),
     cmd: pythonCmd,
-    args: ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', '8888'],
+    // dev_server.py = uvicorn --reload without the Windows console-wide Ctrl+C on reload
+    // (which used to stop every service whenever an ai-agent file changed).
+    args: ['dev_server.py'],
     url: 'http://localhost:8888 (API Docs: http://localhost:8888/docs)'
   }
 ];
@@ -72,7 +78,7 @@ console.log('  ⚡ \x1b[35mPython AI Engine\x1b[0m  : http://localhost:8888 (Int
 console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m\n');
 
 services.forEach((service) => {
-  const child = spawn(service.cmd, service.args, {
+  const child = spawn(toCommandLine(service.cmd, service.args), {
     cwd: service.cwd,
     shell: shellCmd,
     env: { ...process.env, FORCE_COLOR: 'true' }
@@ -107,12 +113,17 @@ services.forEach((service) => {
   });
 });
 
+let cleaningUp = false;
 function cleanup() {
+  if (cleaningUp) return;
+  cleaningUp = true;
   console.log('\n\x1b[33mStopping all EduFlow services...\x1b[0m');
   children.forEach((child) => {
     try {
       if (isWindows) {
-        spawn('taskkill', ['/pid', child.pid, '/f', '/t']);
+        // Must be synchronous: an async taskkill can be cut off by process.exit(),
+        // leaving orphaned dotnet/uvicorn processes holding ports 5204/8888.
+        spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], { stdio: 'ignore' });
       } else {
         child.kill('SIGINT');
       }
@@ -123,3 +134,4 @@ function cleanup() {
 
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
+process.on('SIGHUP', cleanup); // console window closed on Windows

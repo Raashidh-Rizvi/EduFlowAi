@@ -1,10 +1,14 @@
 """Single orchestration point for Learning Agent operations (no quiz workflow)."""
+import logging
+
 from models.schemas import LearningRequest, LearningResponse, RagChatResponse
 from tools.breakdown_tool import BreakdownTool
 from tools.planner_tool import StudyPlannerTool
 from tools.explainer_tool import ExplainerTool
 from tools.intent_router import IntentRouter
 from agents.short_term_memory import ShortTermMemory
+
+logger = logging.getLogger("EduFlow-LearningAgent")
 
 
 class LearningAgent:
@@ -48,7 +52,7 @@ class LearningAgent:
                             confidence_score=0.98
                         )
                 except Exception:
-                    pass
+                    logger.exception("Learning agent 'plan' intent failed; falling back to standard RAG.")
 
             # Intent 2: Student semantically asked for a chapter breakdown / outline
             elif intent == "breakdown":
@@ -72,7 +76,7 @@ class LearningAgent:
                             confidence_score=0.98
                         )
                 except Exception:
-                    pass
+                    logger.exception("Learning agent 'breakdown' intent failed; falling back to standard RAG.")
 
             # Intent 3: Student semantically asked for a deep concept explanation
             elif intent == "explain" and topic:
@@ -90,7 +94,7 @@ class LearningAgent:
                             confidence_score=0.98
                         )
                 except Exception:
-                    pass
+                    logger.exception("Learning agent 'explain' intent failed; falling back to standard RAG.")
 
         # Standard RAG Question-Answering (default for factual queries & global scope)
         result = self.rag.chat(

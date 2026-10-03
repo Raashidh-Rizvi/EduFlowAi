@@ -103,7 +103,7 @@ public class AdminAuditLogTests
         builder.Services.AddAuthentication("AuditTest")
             .AddScheme<AuthenticationSchemeOptions, AuditTestAuthHandler>("AuditTest", _ => { });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(AdminAuditLogsController).Assembly);
 

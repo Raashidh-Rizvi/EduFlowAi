@@ -63,7 +63,7 @@ public class InstructorDashboardScopingTests
 
         builder.Services.AddAuthentication("ScopingTest")
             .AddScheme<AuthenticationSchemeOptions, ScopingTestAuthHandler>("ScopingTest", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(CoursesController).Assembly);
 
         var app = builder.Build();

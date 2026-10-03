@@ -46,7 +46,9 @@ export function timeAgo(dateValue) {
   const days = Math.floor((Date.now() - then) / 86400000);
   if (days <= 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  if (days < 30) return `${days} days ago`;
-  if (days < 365) return `${Math.floor(days / 30)} months ago`;
-  return `${Math.floor(days / 365)} years ago`;
+  const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (days < 7) return plural(days, 'day');
+  if (days < 30) return plural(Math.floor(days / 7), 'week');
+  if (days < 365) return plural(Math.floor(days / 30), 'month');
+  return plural(Math.floor(days / 365), 'year');
 }

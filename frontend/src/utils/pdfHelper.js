@@ -2,9 +2,10 @@
  * Helper utility for handling PDF URL resolution, previewing, and downloading in EduFlow AI.
  */
 
+import api, { API_ORIGIN } from '../services/api';
+
 export function getBackendBaseUrl() {
-  const envUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5204/api';
-  return envUrl.replace(/\/api\/?$/, '');
+  return API_ORIGIN;
 }
 
 /**
@@ -24,12 +25,46 @@ export function resolvePdfUrl(rawUrl) {
 }
 
 /**
- * Generates a valid %PDF-1.4 spec-compliant Blob for dynamic fallback documents.
+ * Fetches a document as a Blob. Backend-hosted files (/uploads/...) require the
+ * signed-in user's bearer token, so they go through the shared API client (which
+ * also handles token refresh). External URLs are fetched without credentials.
+ * Throws when the document cannot be loaded.
  */
-export function createFallbackPdfBlob(title = 'Course Document', fileName = 'material.pdf') {
-  const safeTitle = (title || 'EduFlow Course Syllabus').replace(/[()\\]/g, '');
+export async function fetchDocumentBlob(rawUrl) {
+  const fullUrl = resolvePdfUrl(rawUrl);
+  if (!fullUrl) throw new Error('Document URL is missing.');
+  if (fullUrl.startsWith('blob:') || fullUrl.startsWith('data:')) {
+    const res = await fetch(fullUrl);
+    return res.blob();
+  }
+
+  const url = new URL(fullUrl, window.location.origin);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Invalid document URL.');
+
+  let blob;
+  if (url.origin === new URL(API_ORIGIN, window.location.origin).origin) {
+    const response = await api.get(url.href, { responseType: 'blob' });
+    blob = response.data;
+  } else {
+    const res = await fetch(url.href, { credentials: 'omit' });
+    if (!res.ok) throw new Error('Document unavailable.');
+    blob = await res.blob();
+  }
+
+  if (!blob || !blob.size || (blob.type || '').includes('text/html')) {
+    throw new Error('Document unavailable.');
+  }
+  return blob;
+}
+
+/**
+ * Generates a minimal %PDF-1.4 placeholder that clearly states the real document
+ * could not be loaded. It is never presented as the course material itself.
+ */
+export function createUnavailablePdfBlob(title = 'Course Document', fileName = 'material.pdf') {
+  const safeTitle = (title || 'Course Document').replace(/[()\\]/g, '');
   const safeFileName = (fileName || 'material.pdf').replace(/[()\\]/g, '');
-  
+
   const pdfString = `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -44,29 +79,19 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
 5 0 obj
-<< /Length 480 >>
+<< /Length 260 >>
 stream
 BT
 /F1 18 Tf
 50 720 Td
-(${safeTitle}) Tj
+(Document unavailable) Tj
 /F1 12 Tf
 0 -30 Td
-(Official EduFlow AI Curriculum Specification & Reading Material) Tj
+(${safeTitle}) Tj
 0 -25 Td
-(Generated for verified course module access) Tj
+(File: ${safeFileName}) Tj
 0 -30 Td
-(Filename: ${safeFileName}) Tj
-0 -40 Td
-(Course Topics & Materials Covered:) Tj
-0 -20 Td
-(1. High-Performance Indexing & Query Execution) Tj
-0 -20 Td
-(2. Transactional Integrity & Isolation Levels) Tj
-0 -20 Td
-(3. System Architecture & Relational Optimization) Tj
-0 -20 Td
-(4. Diagnostic Assessment & Progress Evaluation) Tj
+(The document could not be loaded. Check your access or try again later.) Tj
 ET
 endstream
 endobj
@@ -81,44 +106,30 @@ xref
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
-840
+620
 %%EOF`;
 
   return new Blob([pdfString], { type: 'application/pdf' });
 }
 
 /**
- * Triggers reliable PDF download as a Same-Origin Blob.
- * Prevents HTML 404 error downloads and cross-origin download attribute blocks.
+ * Downloads the document as a same-origin Blob (avoids cross-origin download
+ * attribute blocks). Returns true on success; on failure no file is saved and
+ * the user is told the document is unavailable.
  */
-export async function downloadPdf(rawUrl, fileName = 'material.pdf', title = 'Document') {
-  const fullUrl = resolvePdfUrl(rawUrl);
-  let blobToDownload = null;
-
-  if (fullUrl) {
-    try {
-      const res = await fetch(fullUrl);
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) {
-          const blob = await res.blob();
-          if (blob.size > 100) {
-            blobToDownload = blob;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('PDF download fetch error, generating clean fallback PDF:', e);
-    }
+export async function downloadPdf(rawUrl, fileName = 'material.pdf') {
+  let blob;
+  try {
+    blob = await fetchDocumentBlob(rawUrl);
+  } catch (e) {
+    console.warn('PDF download failed:', e?.friendlyMessage || e?.message);
+    window.alert('This document could not be downloaded. Check that you have access and try again.');
+    return false;
   }
 
-  if (!blobToDownload) {
-    blobToDownload = createFallbackPdfBlob(title, fileName);
-  }
-
-  const blobUrl = URL.createObjectURL(blobToDownload);
+  const blobUrl = URL.createObjectURL(blob);
   const targetFileName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
-  
+
   const a = document.createElement('a');
   a.href = blobUrl;
   a.download = targetFileName;
@@ -126,30 +137,24 @@ export async function downloadPdf(rawUrl, fileName = 'material.pdf', title = 'Do
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  return true;
 }
 
 /**
- * Prepares PDF document object for viewing inside an iframe modal.
+ * Prepares a PDF document object for viewing inside an iframe modal. When the
+ * document cannot be loaded, an explicit "Document unavailable" page is shown
+ * (isFallback: true) instead of the real material.
  */
 export async function preparePdfForViewing(rawUrl, title = 'Document', fileName = 'material.pdf') {
   const fullUrl = resolvePdfUrl(rawUrl);
-  if (fullUrl) {
-    try {
-      const res = await fetch(fullUrl, { method: 'GET' });
-      if (res.ok) {
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) {
-          const blob = await res.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          return { url: blobUrl, rawUrl: fullUrl, title, fileName, isFallback: false };
-        }
-      }
-    } catch (e) {
-      console.warn('PDF preview fetch error, using fallback preview:', e);
-    }
+  try {
+    const blob = await fetchDocumentBlob(rawUrl);
+    const blobUrl = URL.createObjectURL(new Blob([blob], { type: blob.type || 'application/pdf' }));
+    return { url: blobUrl, rawUrl: fullUrl, title, fileName, isFallback: false };
+  } catch (e) {
+    console.warn('PDF preview failed:', e?.friendlyMessage || e?.message);
   }
 
-  const fallbackBlob = createFallbackPdfBlob(title, fileName);
-  const blobUrl = URL.createObjectURL(fallbackBlob);
-  return { url: blobUrl, rawUrl, title, fileName, isFallback: true };
+  const blobUrl = URL.createObjectURL(createUnavailablePdfBlob(title, fileName));
+  return { url: blobUrl, rawUrl: fullUrl, title, fileName, isFallback: true };
 }

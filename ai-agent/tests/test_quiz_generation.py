@@ -11,6 +11,7 @@ Verifies that assessment generation:
    missing /api/v1/ai/questions/{id}/regenerate route.
 """
 
+import json
 import os
 import sys
 
@@ -52,6 +53,13 @@ def setup_test_files():
     yield
     if os.path.exists(TEST_DOC_PATH):
         os.remove(TEST_DOC_PATH)
+
+
+@pytest.fixture(autouse=True)
+def pin_gemini_provider(monkeypatch):
+    """Tests default to Gemini regardless of the developer's local .env."""
+    monkeypatch.setenv("QUIZ_LLM_PROVIDER", "gemini")
+    monkeypatch.delenv("QUIZ_LLM_MODEL", raising=False)
 
 
 def make_service() -> GeminiQuizGenerationService:
@@ -117,7 +125,7 @@ class TestQuizGeneration:
             import json
             return json.dumps(fake_quiz_payload(3))
 
-        monkeypatch.setattr(svc, "_call_gemini_json", fake_call)
+        monkeypatch.setattr(svc, "_call_llm_json", fake_call)
 
         response = svc.generate_quiz(GenerateSlideQuizRequest(
             slide_path=TEST_DOC_PATH,
@@ -145,7 +153,7 @@ class TestQuizGeneration:
         import json
         svc = make_service()
         monkeypatch.setattr(
-            svc, "_call_gemini_json",
+            svc, "_call_llm_json",
             lambda prompt, temperature=0.4: json.dumps(
                 fake_quiz_payload(2, ["FILL_IN_THE_BLANK", "TRUE_FALSE"])
             ),
@@ -172,7 +180,7 @@ class TestQuizGeneration:
             payload["questions"][0]["correct_answer"] = "Not An Option"
             return json.dumps(payload)
 
-        monkeypatch.setattr(svc, "_call_gemini_json", bad_payload)
+        monkeypatch.setattr(svc, "_call_llm_json", bad_payload)
         with pytest.raises(QuizGenerationValidationError) as exc_info:
             svc.generate_quiz(GenerateSlideQuizRequest(
                 slide_path=TEST_DOC_PATH, num_questions=2))
@@ -185,6 +193,94 @@ class TestQuizGeneration:
         with pytest.raises(QuizGenerationUnavailable):
             svc.generate_quiz(GenerateSlideQuizRequest(
                 slide_path=TEST_DOC_PATH, num_questions=2))
+
+    @pytest.mark.parametrize("code,status,expected", [
+        (429, "RESOURCE_EXHAUSTED", "quota"),
+        (403, "PERMISSION_DENIED", "API key was rejected"),
+        (404, "NOT_FOUND", "is not available"),
+        (503, "UNAVAILABLE", "temporarily overloaded"),
+    ])
+    def test_gemini_api_errors_become_readable_messages(self, monkeypatch, code, status, expected):
+        from google.genai import errors
+        svc = make_service()
+        monkeypatch.setattr(svc._rag, "gemini_api_key", "test-only")
+        err = errors.APIError(code, {"error": {"code": code, "status": status, "message": "boom"}})
+        monkeypatch.setattr("google.genai.Client", lambda *a, **k: (_ for _ in ()).throw(err))
+        with pytest.raises(QuizGenerationUnavailable) as exc_info:
+            svc._call_llm_json("prompt", 0.3)
+        assert expected in str(exc_info.value)
+        assert "ClientError" not in str(exc_info.value)
+
+    def test_unknown_provider_is_reported(self, monkeypatch):
+        monkeypatch.setenv("QUIZ_LLM_PROVIDER", "llama-local")
+        with pytest.raises(QuizGenerationUnavailable) as exc_info:
+            make_service()._call_llm_json("prompt", 0.3)
+        assert "QUIZ_LLM_PROVIDER" in str(exc_info.value)
+
+    def test_provider_aliases_and_model_override(self, monkeypatch):
+        svc = make_service()
+        monkeypatch.setenv("QUIZ_LLM_PROVIDER", "Grok")
+        monkeypatch.setattr(svc._rag, "groq_model_name", "groq-default")
+        assert svc.provider == "groq"
+        assert svc.model_name == "groq-default"
+        monkeypatch.setenv("QUIZ_LLM_MODEL", "llama-3.3-70b-versatile")
+        assert svc.model_name == "llama-3.3-70b-versatile"
+
+    def test_azure_missing_config_names_the_variables(self, monkeypatch):
+        monkeypatch.setenv("QUIZ_LLM_PROVIDER", "azure")
+        monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-only")
+        monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com/")
+        monkeypatch.setenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "")
+        svc = make_service()
+        svc._azure_deployments_seen = ["text-embedding-3-small"]
+        monkeypatch.setattr(svc, "_discover_azure_chat_deployment", lambda *a: "")
+        with pytest.raises(QuizGenerationUnavailable) as exc_info:
+            svc._call_llm_json("prompt", 0.3)
+        assert "no chat model deployed" in str(exc_info.value)
+        assert "text-embedding-3-small" in str(exc_info.value)
+        assert "AZURE_OPENAI_API_KEY" not in str(exc_info.value)
+
+    def test_azure_discovery_skips_embedding_deployments(self, monkeypatch):
+        import io
+        import urllib.request
+        payload = {"data": [
+            {"id": "text-embedding-3-small", "model": "text-embedding-3-small", "status": "succeeded"},
+            {"id": "my-chat", "model": "gpt-4o-mini", "status": "succeeded"},
+        ]}
+        monkeypatch.setattr(urllib.request, "urlopen",
+                            lambda *a, **k: io.BytesIO(json.dumps(payload).encode()))
+        svc = make_service()
+        assert svc._discover_azure_chat_deployment(
+            "test-only", "https://example.openai.azure.com/openai/v1") == "my-chat"
+
+    def test_groq_provider_is_dispatched_and_tagged(self, monkeypatch):
+        monkeypatch.setenv("QUIZ_LLM_PROVIDER", "groq")
+        svc = make_service()
+        monkeypatch.setattr(svc._rag, "gemini_api_key", "test-only")
+        monkeypatch.setattr(svc, "_call_groq_json",
+                            lambda prompt, temperature: json.dumps(fake_quiz_payload(2)))
+        monkeypatch.setattr(svc, "_call_gemini_json",
+                            lambda *a, **k: pytest.fail("Gemini must not be called"))
+        response = svc.generate_quiz(GenerateSlideQuizRequest(
+            slide_path=TEST_DOC_PATH, num_questions=2))
+        assert response.source == "groq"
+        assert len(response.questions) == 2
+
+    def test_groq_rate_limit_message_mentions_groq_key(self, monkeypatch):
+        monkeypatch.setenv("QUIZ_LLM_PROVIDER", "groq")
+        svc = make_service()
+
+        class FakeRateLimit(Exception):
+            status_code = 429
+
+        def boom(prompt, temperature):
+            raise FakeRateLimit("rate limited")
+
+        monkeypatch.setattr(svc, "_call_groq_json", boom)
+        with pytest.raises(QuizGenerationUnavailable) as exc_info:
+            svc._call_llm_json("prompt", 0.3)
+        assert "Groq quota" in str(exc_info.value)
+        assert "GROQ_API_KEY" in str(exc_info.value)
 
     def test_generate_quiz_without_any_course_material_fails(self, monkeypatch):
         svc = make_service()
@@ -217,7 +313,7 @@ class TestQuizGeneration:
                 }
             })
 
-        monkeypatch.setattr(svc, "_call_gemini_json", fake_call)
+        monkeypatch.setattr(svc, "_call_llm_json", fake_call)
         response = svc.regenerate_question(SingleQuestionRegenerateRequest(
             question_id="abc-123",
             focus_topic="Concurrency",
@@ -237,7 +333,7 @@ class TestQuizGenerationEndpoints:
         import json
         svc = main.quiz_generation_service
         monkeypatch.setattr(
-            svc, "_call_gemini_json",
+            svc, "_call_llm_json",
             lambda prompt, temperature=0.4: json.dumps(fake_quiz_payload(2)),
         )
         client = TestClient(main.app)
@@ -277,7 +373,7 @@ class TestQuizGenerationEndpoints:
         import json
         svc = main.quiz_generation_service
         monkeypatch.setattr(
-            svc, "_call_gemini_json",
+            svc, "_call_llm_json",
             lambda prompt, temperature=0.2: json.dumps({
                 "question": {
                     "question_text": "Regenerated question?",
@@ -320,7 +416,7 @@ class TestQuizGenerationEndpoints:
             }
             return json.dumps(payload)
 
-        monkeypatch.setattr(svc, "_call_gemini_json", bad_payload)
+        monkeypatch.setattr(svc, "_call_llm_json", bad_payload)
         client = TestClient(main.app)
         res = client.post("/api/v1/ai/questions/q-1/regenerate", json={
             "module_context": "B-Tree indexes speed up range queries.",

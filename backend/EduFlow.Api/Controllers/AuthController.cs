@@ -20,6 +20,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
+    [AllowAnonymous]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
         try
@@ -34,6 +35,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         try
@@ -48,6 +50,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh")]
+    [AllowAnonymous]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
     {
         try
@@ -66,6 +69,7 @@ public class AuthController : ControllerBase
     /// Idempotent — returns 200 even if the token was already revoked or not found.
     /// </summary>
     [HttpPost("logout")]
+    [AllowAnonymous]
     public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
     {
         await _authService.LogoutAsync(request.RefreshToken, HttpContext.RequestAborted);

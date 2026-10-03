@@ -110,7 +110,7 @@ public partial class AuthSessionRbacTests
                 };
             });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(AuthController).Assembly);
 
         var app = builder.Build();

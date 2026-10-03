@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EduFlow.Api.Controllers;
 
@@ -21,6 +24,17 @@ public abstract class BaseApiController : ControllerBase
     {
         DbContext = dbContext;
     }
+
+    private ILogger? _logger;
+
+    /// <summary>
+    /// Category logger for the concrete controller. Resolved lazily from the request services so
+    /// derived constructors stay unchanged; unit tests that build a bare DefaultHttpContext get a
+    /// no-op logger.
+    /// </summary>
+    protected ILogger Logger => _logger ??=
+        HttpContext?.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger(GetType())
+        ?? NullLogger.Instance;
 
     /// <summary>
     /// Extracts the current user's Guid and role from JWT claims.

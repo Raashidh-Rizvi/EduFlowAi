@@ -47,7 +47,7 @@ public class AdminPlatformSummaryTests
         builder.Services.AddAuthentication("SummaryTest")
             .AddScheme<AuthenticationSchemeOptions, SummaryTestAuthHandler>("SummaryTest", _ => { });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(AnalyticsController).Assembly);
 
