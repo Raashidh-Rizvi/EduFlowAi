@@ -1141,7 +1141,9 @@ public class QuizzesController : BaseApiController
                 var upstreamRequestId = aiResult.TryGetProperty("requestId", out var ridProp) && ridProp.ValueKind == JsonValueKind.String
                     ? ridProp.GetString()
                     : null;
-                var statusCode = aiResult.TryGetProperty("status_code", out var scProp) && scProp.TryGetInt32(out var sc)
+                var statusCode = aiResult.TryGetProperty("status_code", out var scProp)
+                    && scProp.ValueKind == JsonValueKind.Number
+                    && scProp.TryGetInt32(out var sc)
                     ? sc
                     : 502;
                 if (statusCode is < 400 or > 599) statusCode = 502;
@@ -1161,12 +1163,26 @@ public class QuizzesController : BaseApiController
                 });
             }
 
-            if (aiResult.TryGetProperty("questions", out var questionsArray))
+            if (aiResult.TryGetProperty("questions", out var questionsArray) && questionsArray.ValueKind == JsonValueKind.Array)
             {
                 int i = 0;
+                int skippedQuestions = 0;
                 foreach (var qToken in questionsArray.EnumerateArray())
                 {
-                    var prompt = qToken.GetProperty("question_text").GetString() ?? "Generated Question";
+                    try
+                    {
+                    // A malformed member must never discard an otherwise valid batch:
+                    // skip it, keep the rest, and report the count to the log.
+                    if (!qToken.TryGetProperty("question_text", out var promptProp)
+                        || promptProp.ValueKind != JsonValueKind.String
+                        || string.IsNullOrWhiteSpace(promptProp.GetString()))
+                    {
+                        skippedQuestions++;
+                        Logger.LogWarning("generate_ai_quiz status=question_skipped reason=missing_question_text requestId={RequestId} index={Index}", requestId, i);
+                        i++;
+                        continue;
+                    }
+                    var prompt = promptProp.GetString()!;
                     var qTypeStr = qToken.TryGetProperty("question_type", out var qt) ? qt.GetString() ?? "MULTIPLE_CHOICE" : "MULTIPLE_CHOICE";
                     var correct = qToken.TryGetProperty("correct_answer", out var ca) ? ca.GetString() ?? "A" : "A";
                     var explanation = qToken.TryGetProperty("explanation", out var exp) ? exp.GetString() ?? "AI Explanation" : "AI Explanation";
@@ -1177,7 +1193,9 @@ public class QuizzesController : BaseApiController
 
                     // Keep the AI's proposed mark value instead of a hardcoded 10.
                     int questionPoints = 10;
-                    if (qToken.TryGetProperty("points", out var pointsProp) && pointsProp.TryGetInt32(out var parsedPoints))
+                    if (qToken.TryGetProperty("points", out var pointsProp)
+                        && pointsProp.ValueKind == JsonValueKind.Number
+                        && pointsProp.TryGetInt32(out var parsedPoints))
                     {
                         questionPoints = Math.Clamp(parsedPoints, 1, 100);
                     }
@@ -1192,7 +1210,7 @@ public class QuizzesController : BaseApiController
                     else if (upperType.Contains("DROPDOWN")) qType = QuestionType.MultipleChoice;
 
                     var options = new List<string>();
-                    if (qToken.TryGetProperty("options", out var optionsArray))
+                    if (qToken.TryGetProperty("options", out var optionsArray) && optionsArray.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var opt in optionsArray.EnumerateArray())
                         {
@@ -1212,6 +1230,7 @@ public class QuizzesController : BaseApiController
                     // Determine correct index or option text
                     int resolvedCorrectIdx = -1;
                     if (qToken.TryGetProperty("correct_index", out var correctIndexProp)
+                        && correctIndexProp.ValueKind == JsonValueKind.Number
                         && correctIndexProp.TryGetInt32(out var idxFromProp)
                         && idxFromProp >= 0 && idxFromProp < options.Count)
                     {
@@ -1247,7 +1266,7 @@ public class QuizzesController : BaseApiController
                         metadataDict["bloomsTaxonomy"] = bloomsLevel;
                     }
 
-                    if (qToken.TryGetProperty("matching_pairs", out var pairsArray))
+                    if (qToken.TryGetProperty("matching_pairs", out var pairsArray) && pairsArray.ValueKind == JsonValueKind.Array)
                     {
                         metadataDict["matchingPairs"] = pairsArray.ToString();
                     }
@@ -1317,6 +1336,21 @@ public class QuizzesController : BaseApiController
 
                     quiz.Questions.Add(question);
                     i++;
+                    }
+                    catch (Exception parseEx)
+                    {
+                        skippedQuestions++;
+                        Logger.LogWarning(parseEx,
+                            "generate_ai_quiz status=question_parse_failed requestId={RequestId} index={Index}",
+                            requestId, i);
+                        i++;
+                    }
+                }
+                if (skippedQuestions > 0)
+                {
+                    Logger.LogWarning(
+                        "generate_ai_quiz status=questions_skipped requestId={RequestId} skipped={Skipped} kept={Kept}",
+                        requestId, skippedQuestions, quiz.Questions.Count);
                 }
                 aiSource = aiResult.TryGetProperty("source", out var srcProp) && srcProp.ValueKind == JsonValueKind.String
                     ? srcProp.GetString()
@@ -1324,7 +1358,7 @@ public class QuizzesController : BaseApiController
                 aiModel = aiResult.TryGetProperty("model", out var mdlProp) && mdlProp.ValueKind == JsonValueKind.String
                     ? mdlProp.GetString()
                     : null;
-                usedPython = true;
+                usedPython = quiz.Questions.Count > 0;
             }
         }
         catch (Exception ex)
@@ -2566,5 +2600,119 @@ public class QuizzesController : BaseApiController
         }
 
         return errors;
+    }
+
+
+
+    /// <summary>
+    /// Instructor view: Overall quiz analytics and student performance leaderboard for a course.
+    /// </summary>
+    [HttpGet("course/{courseId:guid}/performance")]
+    [Authorize(Roles = "Instructor,Admin")]
+    public async Task<IActionResult> GetCourseQuizPerformance(Guid courseId)
+    {
+        if (!await IsCourseOwnerOrAdmin(courseId))
+            return Forbid();
+
+        var quizzes = await DbContext.Assessments.AsNoTracking()
+            .Where(a => a.CourseId == courseId && a.Type == AssessmentType.Quiz)
+            .Select(a => new { a.Id, a.Title, a.XpReward, a.CoinReward })
+            .ToListAsync();
+
+        var quizIds = quizzes.Select(q => q.Id).ToList();
+
+        var submissions = await DbContext.Submissions.AsNoTracking()
+            .Include(s => s.Student)
+            .Include(s => s.Assessment)
+            .Where(s => quizIds.Contains(s.AssessmentId) && s.SubmittedAt != null)
+            .OrderByDescending(s => s.SubmittedAt)
+            .ToListAsync();
+
+        var topPerformers = submissions
+            .GroupBy(s => new { s.StudentId, Name = s.Student != null ? s.Student.FullName : "Student", Email = s.Student != null ? s.Student.Email : "" })
+            .Select(g => new
+            {
+                studentId = g.Key.StudentId,
+                studentName = g.Key.Name,
+                studentEmail = g.Key.Email,
+                quizzesTaken = g.Select(s => s.AssessmentId).Distinct().Count(),
+                totalAttempts = g.Count(),
+                averageScore = Math.Round(g.Average(s => s.PercentageScore), 1),
+                highestScore = Math.Round(g.Max(s => s.PercentageScore), 1),
+                passedCount = g.Count(s => s.Passed),
+                totalXpEarned = g.Where(s => s.Passed).Sum(s => s.Assessment != null ? s.Assessment.XpReward : 0)
+            })
+            .OrderByDescending(p => p.totalXpEarned)
+            .ThenByDescending(p => p.averageScore)
+            .Take(15)
+            .ToList();
+
+        var recentSubmissions = submissions
+            .Take(25)
+            .Select(s => new
+            {
+                submissionId = s.Id,
+                quizId = s.AssessmentId,
+                quizTitle = s.Assessment != null ? s.Assessment.Title : "Quiz",
+                studentId = s.StudentId,
+                studentName = s.Student != null ? s.Student.FullName : "Student",
+                percentageScore = Math.Round(s.PercentageScore, 1),
+                passed = s.Passed,
+                xpEarned = s.Passed && s.Assessment != null ? s.Assessment.XpReward : 0,
+                submittedAt = s.SubmittedAt
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            courseId,
+            totalQuizzes = quizzes.Count,
+            totalSubmissions = submissions.Count,
+            averageCourseQuizScore = submissions.Count > 0 ? Math.Round(submissions.Average(s => s.PercentageScore), 1) : 0,
+            passRatePercentage = submissions.Count > 0 ? Math.Round((double)submissions.Count(s => s.Passed) / submissions.Count * 100, 1) : 0,
+            topPerformers,
+            recentSubmissions
+        });
+    }
+
+    /// <summary>
+    /// Student/Learner view: Quiz attempt history for the student journey map and gamification progress.
+    /// </summary>
+    [HttpGet("student/history")]
+    [Authorize]
+    public async Task<IActionResult> GetStudentQuizHistory([FromQuery] Guid? studentId)
+    {
+        var (callerId, role) = GetCurrentUser();
+        var targetStudentId = studentId ?? callerId;
+
+        if (targetStudentId != callerId && !role.Equals("Instructor", StringComparison.OrdinalIgnoreCase) && !role.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return Forbid();
+        }
+
+        var history = await DbContext.Submissions.AsNoTracking()
+            .Include(s => s.Assessment)
+                .ThenInclude(a => a!.Course)
+            .Where(s => s.StudentId == targetStudentId && s.SubmittedAt != null)
+            .OrderByDescending(s => s.SubmittedAt)
+            .Select(s => new
+            {
+                submissionId = s.Id,
+                quizId = s.AssessmentId,
+                quizTitle = s.Assessment != null ? s.Assessment.Title : "Quiz",
+                courseId = s.Assessment != null ? s.Assessment.CourseId : Guid.Empty,
+                courseTitle = s.Assessment != null && s.Assessment.Course != null ? s.Assessment.Course.Title : "Course",
+                attemptNumber = s.AttemptNumber,
+                scoreObtained = s.ScoreObtained,
+                maxScore = s.MaxScore,
+                percentageScore = Math.Round(s.PercentageScore, 1),
+                passed = s.Passed,
+                xpEarned = s.Passed && s.Assessment != null ? s.Assessment.XpReward : 0,
+                coinEarned = s.Passed && s.Assessment != null ? s.Assessment.CoinReward : 0,
+                submittedAt = s.SubmittedAt
+            })
+            .ToListAsync();
+
+        return Ok(history);
     }
 }

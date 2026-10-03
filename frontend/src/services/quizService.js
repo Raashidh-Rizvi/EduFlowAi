@@ -125,5 +125,15 @@ export const quizService = {
   async sendSubmissionFeedback(submissionId, feedback) {
     const response = await api.post(`/quizzes/submissions/${submissionId}/feedback`, { feedback });
     return response.data;
+  },
+
+  async getCourseQuizPerformance(courseId) {
+    const response = await api.get(`/quizzes/course/${courseId}/performance`);
+    return response.data;
+  },
+
+  async getStudentQuizHistory(studentId) {
+    const response = await api.get('/quizzes/student/history', { params: studentId ? { studentId } : {} });
+    return response.data;
   }
 };

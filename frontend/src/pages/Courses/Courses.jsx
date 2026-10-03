@@ -1321,7 +1321,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         if (c.id === currentCourse.id) {
           return {
             ...c,
-            modules: [...(c.modules || []), newMod]
+            modules: [...(c.modules || []), newMod],
+            modulesCount: c.modules ? c.modules.length + 1 : ((c.modulesCount ?? 0) + 1)
           };
         }
         return c;
@@ -1502,7 +1503,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
       if (c.id === currentCourse.id) {
         return {
           ...c,
-          modules: (c.modules || []).filter(m => m.id !== moduleId)
+          modules: (c.modules || []).filter(m => m.id !== moduleId),
+          modulesCount: Math.max(0, c.modules ? c.modules.length - 1 : ((c.modulesCount ?? 1) - 1))
         };
       }
       return c;
@@ -1602,13 +1604,13 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: 'auto' }}>
                   <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                    <Layers size={12} /> {c.modules?.length ?? 0} Modules
+                    <Layers size={12} /> {c.modules ? c.modules.length : (c.modulesCount ?? 0)} Modules
                   </span>
                   <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                     <Users size={12} /> {c.studentsCount ?? 0} Students
                   </span>
                   <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-canvas)', border: '1px solid var(--border-subtle)', borderRadius: '12px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                    <HelpCircle size={12} /> {c.quizzes?.length ?? 0} Quizzes
+                    <HelpCircle size={12} /> {c.quizzes ? c.quizzes.length : ((c.quizzesCount ?? 0) + (getGeneratedQuizzes(c.id) || []).length)} Quizzes
                   </span>
                 </div>
               </button>

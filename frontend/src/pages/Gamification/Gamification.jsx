@@ -24,9 +24,14 @@ import {
   BookOpen,
   Compass,
   Layers,
-  ArrowUpRight
+  ArrowUpRight,
+  Eye,
+  HelpCircle,
+  XCircle,
+  BarChart2
 } from 'lucide-react';
 import gamificationService, { getLoggedInRole, isStaffRole } from '../../services/gamificationService';
+import { quizService } from '../../services/quizService';
 
 const THEME_PRESETS = [
   { icon: '🚀', label: 'Quantum Coders', color: '#3b82f6' },
@@ -111,7 +116,14 @@ const signedXp = (amount) => `${amount >= 0 ? '+' : '\u2212'}${Math.abs(Number(a
 const signedXpColor = (amount) => (amount >= 0 ? 'var(--success)' : 'var(--danger)');
 
 export default function Gamification() {
-  const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'leaderboard' | 'badges' | 'ledger'
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get('tab');
+      if (urlTab) return urlTab;
+    } catch {}
+    return isStaffRole() ? 'quiz-performance' : 'teams';
+  });
   const [leaderboardScope, setLeaderboardScope] = useState('cohort'); // 'cohort' | 'squads'
   const [xpMultiplier, setXpMultiplier] = useState(1.0);
   const [multiplierLoading, setMultiplierLoading] = useState(false);
@@ -133,6 +145,14 @@ export default function Gamification() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+
+  // Quiz Performance & Answers Audit States
+  const [quizPerfCourseId, setQuizPerfCourseId] = useState('');
+  const [quizPerfData, setQuizPerfData] = useState(null);
+  const [quizPerfLoading, setQuizPerfLoading] = useState(false);
+  const [selectedSubModal, setSelectedSubModal] = useState(null);
+  const [subModalLoading, setSubModalLoading] = useState(false);
+  const [subAnswersList, setSubAnswersList] = useState([]);
 
   // Guards overlapping refreshes (poll tick + focus tick can collide).
   const inFlight = useRef(false);
@@ -208,6 +228,17 @@ export default function Gamification() {
       setBadges(badgesData || []);
       if (multiplierVal !== undefined) setXpMultiplier(multiplierVal || 1.0);
       setQuestCourses(coursesData || []);
+
+      if (coursesData && coursesData.length > 0) {
+        const firstCId = coursesData[0].id;
+        setQuizPerfCourseId(prev => prev || firstCId);
+        try {
+          const perf = await quizService.getCourseQuizPerformance(firstCId);
+          setQuizPerfData(perf);
+        } catch (e) {
+          console.warn('Could not load course quiz performance:', e);
+        }
+      }
 
       await refreshLedger();
       setLastUpdated(new Date());
@@ -635,13 +666,21 @@ export default function Gamification() {
         borderBottom: '1px solid var(--border-subtle)',
         paddingBottom: '8px'
       }}>
-        {[
+        {(isStaffRole() ? [
+          { id: 'quiz-performance', label: 'Quiz Submissions & Answers', icon: CheckCircle2, count: quizPerfData?.recentSubmissions?.length || 0 },
           { id: 'teams', label: 'Student Teams & Squads', icon: Users, count: squads.length },
           { id: 'students', label: 'Learners Directory', icon: Compass, count: (students && students.length > 0 ? students.length : DEFAULT_FALLBACK_STUDENTS.length) },
           { id: 'leaderboard', label: 'Leaderboard Standings', icon: Trophy },
           { id: 'badges', label: 'Milestones & Badges', icon: Award, count: badges.length },
           { id: 'ledger', label: 'Points Ledger & Audit', icon: Layers }
-        ].map(tab => {
+        ] : [
+          { id: 'teams', label: 'Student Teams & Squads', icon: Users, count: squads.length },
+          { id: 'students', label: 'Learners Directory', icon: Compass, count: (students && students.length > 0 ? students.length : DEFAULT_FALLBACK_STUDENTS.length) },
+          { id: 'leaderboard', label: 'Leaderboard Standings', icon: Trophy },
+          { id: 'quiz-performance', label: 'Quiz Submissions & Answers', icon: CheckCircle2, count: quizPerfData?.recentSubmissions?.length || 0 },
+          { id: 'badges', label: 'Milestones & Badges', icon: Award, count: badges.length },
+          { id: 'ledger', label: 'Points Ledger & Audit', icon: Layers }
+        ]).map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -1393,6 +1432,463 @@ export default function Gamification() {
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* ── TAB: QUIZ SUBMISSIONS & ANSWERS PERFORMANCE ────────────────────────── */}
+      {activeTab === 'quiz-performance' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Header & Filter Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                Quiz Submissions & Student Performance Analytics
+              </h3>
+              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Inspect students who attempted questions, view exact answer submissions, score rankings, and XP/Reward standings.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-muted)' }}>Course Filter:</span>
+              <select
+                value={quizPerfCourseId}
+                onChange={async (e) => {
+                  const val = e.target.value;
+                  setQuizPerfCourseId(val);
+                  if (val) {
+                    setQuizPerfLoading(true);
+                    try {
+                      const res = await quizService.getCourseQuizPerformance(val);
+                      setQuizPerfData(res);
+                    } catch (err) {
+                      showToast('Could not load course performance data');
+                    } finally {
+                      setQuizPerfLoading(false);
+                    }
+                  }
+                }}
+                className="input-primary"
+                style={{ padding: '6px 12px', fontSize: '12.5px', borderRadius: 'var(--radius-sm)', minWidth: '220px' }}
+              >
+                <option value="">Select Course...</option>
+                {questCourses.map(c => (
+                  <option key={c.id} value={c.id}>{c.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Metric Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+            <div className="card-premium" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>
+                <BookOpen size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Submissions</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px' }}>
+                  {quizPerfData?.totalSubmissions || 0} Attempts
+                </div>
+              </div>
+            </div>
+
+            <div className="card-premium" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>
+                <TrendingUp size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Average Cohort Score</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px' }}>
+                  {quizPerfData?.averageCourseQuizScore || 0}%
+                </div>
+              </div>
+            </div>
+
+            <div className="card-premium" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
+                <Zap size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Quiz Pass Rate</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px' }}>
+                  {quizPerfData?.passRatePercentage || 0}%
+                </div>
+              </div>
+            </div>
+
+            <div className="card-premium" style={{ padding: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>
+                <Crown size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Top Performer</div>
+                <div style={{ fontSize: '14.5px', fontWeight: '800', color: 'var(--text-main)', marginTop: '2px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  {quizPerfData?.topPerformers?.[0]?.studentName || 'N/A'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Top Performing Students Leaderboard */}
+          <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Trophy size={18} color="var(--warning)" />
+              <h4 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                Top Performing Students Leaderboard (Ranked by Quiz Score & XP)
+              </h4>
+            </div>
+
+            {quizPerfLoading ? (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Loading course student performance...
+              </div>
+            ) : (!quizPerfData?.topPerformers || quizPerfData.topPerformers.length === 0) ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No quiz submissions recorded yet for this course selection. Students who attempt quizzes will be ranked here automatically.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 12px' }}>Rank</th>
+                      <th style={{ padding: '8px 12px' }}>Student</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Quizzes Taken</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Avg Score</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Highest Score</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Passes</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right' }}>Total XP Earned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quizPerfData.topPerformers.map((p, idx) => (
+                      <tr key={p.studentId || idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: '800' }}>
+                          {idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}
+                        </td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{p.studentName}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{p.studentEmail}</div>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '600' }}>{p.quizzesTaken}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '700', color: p.averageScore >= 70 ? 'var(--success)' : 'var(--warning)' }}>
+                          {p.averageScore}%
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '600' }}>{p.highestScore}%</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <span className="badge-pill badge-primary" style={{ fontSize: '11px' }}>
+                            {p.passedCount} Passed
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', color: 'var(--success)' }}>
+                          +{p.totalXpEarned} XP
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Recent Quiz Attempt Submissions & Answers Audit Log */}
+          <div className="card-premium" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <CheckCircle2 size={18} color="var(--primary)" />
+              <h4 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
+                Student Quiz Attempt Log & Answer Audits
+              </h4>
+            </div>
+
+            {(!quizPerfData?.recentSubmissions || quizPerfData.recentSubmissions.length === 0) ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                No quiz submissions recorded yet. When students take quizzes, their detailed attempt answers will be displayed here.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 12px' }}>Student</th>
+                      <th style={{ padding: '8px 12px' }}>Quiz Title</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Score</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>Status</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center' }}>XP Awarded</th>
+                      <th style={{ padding: '8px 12px' }}>Submitted At</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right' }}>Answers</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quizPerfData.recentSubmissions.map((sub, idx) => (
+                      <tr key={sub.submissionId || idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-main)' }}>
+                          {sub.studentName}
+                        </td>
+                        <td style={{ padding: '10px 12px', fontWeight: '600' }}>
+                          {sub.quizTitle}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '800', color: sub.percentageScore >= 70 ? 'var(--success)' : 'var(--danger)' }}>
+                          {sub.percentageScore}%
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                          <span className={`badge-pill ${sub.passed ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '10.5px' }}>
+                            {sub.passed ? 'PASSED' : 'NEEDS PRACTICE'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: '700', color: 'var(--success)' }}>
+                          +{sub.xpEarned} XP
+                        </td>
+                        <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: '11.5px' }}>
+                          {sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Just now'}
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                          <button
+                            onClick={async () => {
+                              setSelectedSubModal(sub);
+                              setSubModalLoading(true);
+                              setSubAnswersList([]);
+                              try {
+                                const details = await quizService.getQuizSubmissions(sub.quizId);
+                                const match = (details || []).find(d => d.submissionId === sub.submissionId || d.studentId === sub.studentId);
+                                if (match && match.answers) {
+                                  setSubAnswersList(match.answers);
+                                }
+                              } catch (err) {
+                                showToast('Could not load detailed question answers');
+                              } finally {
+                                setSubModalLoading(false);
+                              }
+                            }}
+                            className="btn-ghost"
+                            style={{ padding: '4px 10px', fontSize: '11.5px', fontWeight: '700', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <Eye size={13} /> View Answers
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: DETAILED SUBMISSION ANSWERS AUDIT & STUDENT JOURNEY ────────────────────────────── */}
+      {selectedSubModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="card-premium" style={{
+            width: '100%',
+            maxWidth: '820px',
+            maxHeight: '92vh',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '24px',
+            gap: '16px',
+            overflow: 'hidden'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Eye size={20} color="var(--primary)" />
+                  Student Quiz Attempt & Journey Audit
+                </h3>
+                <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Student: <strong style={{ color: 'var(--text-main)' }}>{selectedSubModal.studentName}</strong> &middot; Quiz: <strong style={{ color: 'var(--text-main)' }}>{selectedSubModal.quizTitle}</strong>
+                </p>
+              </div>
+              <button onClick={() => setSelectedSubModal(null)} className="btn-ghost" style={{ padding: '6px' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Score & Evaluation Banner */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: '12px',
+              padding: '14px',
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '13px'
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Score Achieved</div>
+                <div style={{ color: selectedSubModal.percentageScore >= 70 ? 'var(--success)' : 'var(--danger)', fontSize: '18px', fontWeight: '800', marginTop: '2px' }}>
+                  {selectedSubModal.percentageScore}%
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>XP Awarded</div>
+                <div style={{ color: 'var(--success)', fontSize: '18px', fontWeight: '800', marginTop: '2px' }}>
+                  +{selectedSubModal.xpEarned} XP
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Grading Result</div>
+                <div style={{ marginTop: '4px' }}>
+                  <span className={`badge-pill ${selectedSubModal.passed ? 'badge-success' : 'badge-danger'}`}>
+                    {selectedSubModal.passed ? 'PASSED' : 'NEEDS PRACTICE'}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Submission Date</div>
+                <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-main)', marginTop: '4px' }}>
+                  {selectedSubModal.submittedAt ? new Date(selectedSubModal.submittedAt).toLocaleString() : 'Just now'}
+                </div>
+              </div>
+            </div>
+
+            {/* Student Journey Step Map */}
+            <div style={{
+              padding: '12px 16px',
+              backgroundColor: 'var(--bg-canvas)',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <div style={{ fontSize: '11px', fontWeight: '800', color: 'var(--secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <TrendingUp size={13} /> Student Journey & Lifecycle Map
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px' }}>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '10px' }}>1</span>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Quiz Generated</span>
+                </div>
+                <div style={{ height: '2px', flex: 1, minWidth: '15px', backgroundColor: 'var(--primary-soft)' }}></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px' }}>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '10px' }}>2</span>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Attempt Submitted</span>
+                </div>
+                <div style={{ height: '2px', flex: 1, minWidth: '15px', backgroundColor: 'var(--primary-soft)' }}></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px' }}>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: selectedSubModal.passed ? 'var(--success)' : 'var(--warning)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '10px' }}>3</span>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Evaluated ({selectedSubModal.percentageScore}%)</span>
+                </div>
+                <div style={{ height: '2px', flex: 1, minWidth: '15px', backgroundColor: 'var(--primary-soft)' }}></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px' }}>
+                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', backgroundColor: 'var(--success)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '10px' }}>4</span>
+                  <span style={{ fontWeight: '700', color: 'var(--success)' }}>+{selectedSubModal.xpEarned} XP Ledger</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Question Breakdown & Fixes Needed */}
+            <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-main)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <HelpCircle size={16} color="var(--primary)" /> Detailed Answers & Identified Improvement Areas
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+              {subModalLoading ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Loading student question answers...
+                </div>
+              ) : subAnswersList.length === 0 ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  No question breakdowns available for this attempt.
+                </div>
+              ) : (
+                subAnswersList.map((ans, idx) => (
+                  <div key={ans.questionId || idx} style={{
+                    padding: '14px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--bg-canvas)',
+                    border: `1px solid ${ans.isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                      <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '13.5px', flex: 1 }}>
+                        Q{idx + 1}. {ans.prompt || 'Question'}
+                      </div>
+                      <span className={`badge-pill ${ans.isCorrect ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '11px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {ans.isCorrect ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                        {ans.isCorrect ? 'Correct (+10 pts)' : 'Incorrect (0 pts)'}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div style={{
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-xs)',
+                        backgroundColor: ans.isCorrect ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                        borderLeft: `3px solid ${ans.isCorrect ? 'var(--success)' : 'var(--danger)'}`,
+                        color: ans.isCorrect ? 'var(--success)' : 'var(--danger)',
+                        fontWeight: '600'
+                      }}>
+                        <strong>Student Answer:</strong> {ans.selectedAnswer || '(No answer provided)'}
+                      </div>
+
+                      {!ans.isCorrect && (
+                        <div style={{
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-xs)',
+                          backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                          borderLeft: '3px solid var(--success)',
+                          color: 'var(--success)',
+                          fontWeight: '600'
+                        }}>
+                          <strong>Correct Answer:</strong> {ans.correctAnswer}
+                        </div>
+                      )}
+
+                      {/* Identified Issues & Fix Action Items */}
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-xs)',
+                        backgroundColor: 'var(--bg-surface)',
+                        border: '1px solid var(--border-subtle)',
+                        fontSize: '12px'
+                      }}>
+                        {ans.isCorrect ? (
+                          <div style={{ color: 'var(--success)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <CheckCircle2 size={14} /> Concept Mastered! Student selected the correct option accurately.
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ color: 'var(--danger)', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <XCircle size={14} /> Concept Issue Identified: Student selected incorrect option "{ans.selectedAnswer || 'None'}".
+                            </div>
+                            <div style={{ color: 'var(--text-main)', fontWeight: '600', marginTop: '2px' }}>
+                              💡 <strong>Action / Fix Needed:</strong> Student should review the core topic covered in this question ({ans.prompt || 'Topic Concept'}).
+                            </div>
+                            {ans.feedback && (
+                              <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '2px' }}>
+                                Reference Note: {ans.feedback}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button onClick={() => setSelectedSubModal(null)} className="btn-secondary" style={{ padding: '8px 18px' }}>
+                Close Audit
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

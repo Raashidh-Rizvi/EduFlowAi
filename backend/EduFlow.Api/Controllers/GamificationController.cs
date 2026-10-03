@@ -37,33 +37,37 @@ public class GamificationController : ControllerBase
     public async Task<ActionResult<StudentGameDashboardDto>> GetDashboard(Guid studentId, CancellationToken ct)
     {
         var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? "";
+        bool isStaff = callerRole.Equals("Instructor", StringComparison.OrdinalIgnoreCase) || callerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) || User.IsInRole("Instructor") || User.IsInRole("Admin");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || (callerId != studentId && !isStaff))
             return Forbid();
 
         var dashboard = await _gamificationService.GetStudentDashboardAsync(studentId, ct);
         return Ok(dashboard);
     }
 
-    // Phase 1A: Self-only guard — student can only see their own profile
     [HttpGet("profile/{studentId:guid}")]
     [Authorize]
     public async Task<ActionResult<GamificationProfileDto>> GetProfile(Guid studentId, CancellationToken ct)
     {
         var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? "";
+        bool isStaff = callerRole.Equals("Instructor", StringComparison.OrdinalIgnoreCase) || callerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) || User.IsInRole("Instructor") || User.IsInRole("Admin");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || (callerId != studentId && !isStaff))
             return Forbid();
 
         var profile = await _gamificationService.GetStudentProfileAsync(studentId, ct);
         return Ok(profile);
     }
 
-    // Phase 1A: Self-only guard — student can only see their own XP ledger
     [HttpGet("ledger/{studentId:guid}")]
     [Authorize]
     public async Task<ActionResult<List<XpTransactionDto>>> GetLedger(Guid studentId, [FromQuery] int limit = 50, CancellationToken ct = default)
     {
         var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        if (!Guid.TryParse(callerIdStr, out var callerId) || callerId != studentId)
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? "";
+        bool isStaff = callerRole.Equals("Instructor", StringComparison.OrdinalIgnoreCase) || callerRole.Equals("Admin", StringComparison.OrdinalIgnoreCase) || User.IsInRole("Instructor") || User.IsInRole("Admin");
+        if (!Guid.TryParse(callerIdStr, out var callerId) || (callerId != studentId && !isStaff))
             return Forbid();
 
         var ledger = await _gamificationService.GetStudentXpLedgerAsync(studentId, limit, ct);

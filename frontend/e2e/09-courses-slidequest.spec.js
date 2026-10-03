@@ -20,11 +20,11 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     test.setTimeout(300000);
     // 1. Navigate to Curriculum & Modules (opens the course directory)
     await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
-    await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });
-
-    // 1b. Wait for the directory to actually render (the course list is an
-    // API call), then open the first course's dedicated page.
-    const courseCard = page.getByTestId('course-directory-card').first();
+    await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });// 1b. Wait for the directory to actually render (the course list is an
+    //     API call), then open the seeded course that owns the lecture deck.
+    //     Selecting it by code keeps the round-trip deterministic regardless of
+    //     courses other specs create.
+    const courseCard = page.getByTestId('course-directory-card').filter({ hasText: 'SE-302' }).first();
     await courseCard.waitFor({ state: 'visible', timeout: 20000 });
     await courseCard.click();
 

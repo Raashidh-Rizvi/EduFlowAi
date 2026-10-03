@@ -156,6 +156,10 @@ async function openStudentTab(page, tab) {
 
 test.describe.configure({ mode: 'serial' });
 
+// Each step drives two live browser consoles plus real API writes against the
+// running stack, so these scenarios legitimately need more than the 45s default.
+test.describe.configure({ timeout: 150000 });
+
 test.describe('LMS mandatory integration scenario', () => {
   test('01 - accounts, courses and baseline state are provisioned', async ({ request }) => {
     s.authA = await loginApi(request, INSTRUCTOR_A);

@@ -266,7 +266,7 @@ public class AiGenerationPipelineTests
             return (course, module);
         });
 
-    private static object GenerateBody(Course course, Module module, string? provider = null, string? model = null) => new
+    private static object GenerateBody(Course course, Module module, string? provider = null, string? model = null, bool autoPublish = false) => new
     {
         courseId = course.Id,
         topic = "Index Optimization",
@@ -277,7 +277,24 @@ public class AiGenerationPipelineTests
         scopeId = module.Id,
         moduleId = module.Id,
         provider,
-        model
+        model,
+        // Explicit here so this suite tests the draft path on purpose; the API
+        // default (auto-publish) is covered by its own test below.
+        autoPublish
+    };
+
+    /// <summary>Leaves <c>autoPublish</c> out of the payload so the API default applies.</summary>
+    private static object GenerateBodyWithApiDefaults(Course course, Module module, string? provider = null) => new
+    {
+        courseId = course.Id,
+        topic = "Index Optimization",
+        difficulty = "Medium",
+        questionCount = 3,
+        scopeType = (int)QuizScopeType.Module,
+        scopeId = module.Id,
+        moduleId = module.Id,
+        provider,
+        model = (string?)null
     };
 
     private static async Task<JsonElement> Json(HttpResponseMessage response)
@@ -552,6 +569,100 @@ public class AiGenerationPipelineTests
         var payloadJson = JsonSerializer.Serialize(gateway.GeneratedPayloads[0]);
         using var payload = JsonDocument.Parse(payloadJson);
         Assert.Equal("groq", payload.RootElement.GetProperty("provider").GetString());
+    }
+
+    [Fact]
+    public async Task GeneratedQuiz_IsAutoPublishedByDefault_SoStudentsCanTakeItImmediately()
+    {
+        var (app, gateway) = await StartApp();
+        await using var _ = app;
+        var instructor = await SeedInstructor(app);
+        var (course, module) = await SeedCourseWithModule(app, instructor);
+        using var client = await LoginAs(app, instructor);
+
+        var response = await client.PostAsJsonAsync("/api/quizzes/generate-ai",
+            GenerateBodyWithApiDefaults(course, module, provider: "groq"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Json(response);
+        Assert.Equal((int)QuizStatus.Published, result.GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public async Task NullCorrectIndexAndNullOptions_KeepTheRestOfTheBatch()
+    {
+        // LLM output regularly carries explicit JSON nulls for fields that do not
+        // apply ("correct_index": null on a fill-in-the-blank question). Those
+        // must not throw and discard an otherwise valid batch.
+        var (app, gateway) = await StartApp();
+        await using var _ = app;
+        var instructor = await SeedInstructor(app);
+        var (course, module) = await SeedCourseWithModule(app, instructor);
+        using var client = await LoginAs(app, instructor);
+
+        gateway.GenerateHandler = (_, _) => """
+        {"quiz_id":"q-2","title":"Null Field Assessment (Medium)","difficulty":"Medium",
+         "total_points":20,"validation_passed":true,"source":"groq",
+         "questions":[
+           {"question_id":1,"question_text":"Fill the blank: BFS uses a ____ queue.",
+            "question_type":"FILL_IN_BLANK","options":null,"correct_index":null,"points":null,
+            "correct_answer":"FIFO","explanation":"BFS pops the oldest node first.",
+            "marking_scheme":"Accept FIFO.","slide_citation":null},
+           {"question_id":2,"question_text":"Which structure guarantees the shallowest solution?",
+            "question_type":"MULTIPLE_CHOICE","options":["DFS","BFS","Random walk"],
+            "correct_index":1,"points":10,"correct_answer":"BFS",
+            "explanation":"BFS expands by depth.","marking_scheme":"BFS.","slide_citation":null}
+         ]}
+        """;
+
+        var response = await client.PostAsJsonAsync("/api/quizzes/generate-ai",
+            GenerateBody(course, module, provider: "groq"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Json(response);
+        var quizId = result.GetProperty("id").GetGuid();
+        var persisted = await WithDb(app, db => db.Assessments
+            .AsNoTracking().Include(a => a.Questions).FirstAsync(a => a.Id == quizId));
+
+        // The null-field question and the healthy one both survive.
+        Assert.Equal(2, persisted.Questions.Count);
+        Assert.Contains(persisted.Questions, q => q.Type == QuestionType.FillInBlank);
+        Assert.Contains(persisted.Questions, q => q.Type == QuestionType.MultipleChoice);
+        Assert.Equal(10, persisted.Questions.Single(q => q.Type == QuestionType.MultipleChoice).Points);
+    }
+
+    [Fact]
+    public async Task QuestionWithoutText_IsSkipped_WithoutFailingTheWholeQuiz()
+    {
+        var (app, gateway) = await StartApp();
+        await using var _ = app;
+        var instructor = await SeedInstructor(app);
+        var (course, module) = await SeedCourseWithModule(app, instructor);
+        using var client = await LoginAs(app, instructor);
+
+        gateway.GenerateHandler = (_, _) => """
+        {"quiz_id":"q-3","title":"Partial Assessment (Medium)","difficulty":"Medium",
+         "total_points":10,"validation_passed":true,"source":"groq",
+         "questions":[
+           {"question_id":1,"question_text":null,"question_type":"MULTIPLE_CHOICE"},
+           {"question_id":2,"question_text":"Which is a B-tree property?",
+            "question_type":"MULTIPLE_CHOICE","options":["Ordered keys","Random order"],
+            "correct_index":0,"points":10,"correct_answer":"Ordered keys",
+            "explanation":"B-trees keep keys sorted.","marking_scheme":"Ordered keys.","slide_citation":null}
+         ]}
+        """;
+
+        var response = await client.PostAsJsonAsync("/api/quizzes/generate-ai",
+            GenerateBody(course, module, provider: "groq"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await Json(response);
+        var quizId = result.GetProperty("id").GetGuid();
+        var persisted = await WithDb(app, db => db.Assessments
+            .AsNoTracking().Include(a => a.Questions).FirstAsync(a => a.Id == quizId));
+
+        Assert.Single(persisted.Questions);
+        Assert.Equal("Which is a B-tree property?", persisted.Questions.Single().Prompt);
     }
 
     [Fact]
