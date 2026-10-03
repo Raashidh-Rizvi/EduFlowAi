@@ -1,54 +1,19 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Sparkles, Shield, UserCheck, GraduationCap, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, ChevronLeft } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, Eye, EyeOff, ChevronLeft } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { authService } from '../../services/authService';
+import { getAuthenticationErrorMessage } from '../../services/authErrors';
 
 export default function Login({ onLoginSuccess, initialMode = 'login' }) {
-  const [email, setEmail] = useState('instructor@eduflow.ai');
-  const [password, setPassword] = useState('Password123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isRegister, setIsRegister] = useState(initialMode === 'register');
-  const [fullName, setFullName] = useState('Dr. Sarah Jenkins');
-  const [role, setRole] = useState('Instructor');
+  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-
-  const demoAccounts = [
-    {
-      role: 'Instructor',
-      name: 'Dr. Sarah Jenkins',
-      email: 'instructor@eduflow.ai',
-      badge: 'Course Lead',
-      icon: GraduationCap,
-      color: '#4F46E5'
-    },
-    {
-      role: 'Admin',
-      name: 'System Administrator',
-      email: 'admin@eduflow.ai',
-      badge: 'Full RBAC',
-      icon: Shield,
-      color: '#F43F5E'
-    },
-    {
-      role: 'Student',
-      name: 'Alex Rivera',
-      email: 'student@eduflow.ai',
-      badge: 'Level 2 • 1,250 XP',
-      icon: UserCheck,
-      color: '#0EA5E9'
-    }
-  ];
-
-  const handleFillDemo = (acc) => {
-    setEmail(acc.email);
-    setPassword('Password123!');
-    setFullName(acc.name);
-    setRole(acc.role);
-    setErrorMsg('');
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -57,7 +22,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
 
     try {
       if (isRegister) {
-        const res = await authService.register({ fullName, email, password, role });
+        const res = await authService.register({ fullName, email, password, role: 'Student' });
         onLoginSuccess(res);
       } else {
         const res = await authService.login({ email, password });
@@ -66,11 +31,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
     } catch (err) {
       // Never fabricate a local identity when authentication fails — the user id
       // and role must always come from the backend for the credentials submitted.
-      const message =
-        err?.response?.data?.message ||
-        err?.friendlyMessage ||
-        'Authentication failed. Verify your credentials and that the API is reachable.';
-      setErrorMsg(message);
+      setErrorMsg(getAuthenticationErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -118,7 +79,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
         gap: '24px',
         zIndex: 10
       }}>
-        {/* Left Side: Brand & Quick Demo Account Switcher */}
+        {/* Left Side: Brand */}
         <div className="card-premium" style={{
           padding: '36px',
           display: 'flex',
@@ -136,84 +97,9 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
               Enterprise learning orchestration with deterministic rewards, LangGraph multi-agent study plans, and instructor-verified safety guardrails.
             </p>
 
-            <div style={{
-              fontSize: '11px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              color: 'var(--text-muted)',
-              fontWeight: '700',
-              marginBottom: '12px'
-            }}>
-              Quick-Switch Demo Personas:
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {demoAccounts.map((acc, idx) => {
-                const Icon = acc.icon;
-                const isSelected = email.toLowerCase() === acc.email.toLowerCase();
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => handleFillDemo(acc)}
-                    style={{
-                      padding: '12px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: isSelected ? 'var(--primary-soft)' : 'var(--bg-surface)',
-                      border: isSelected ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: 'var(--radius-xs)',
-                        backgroundColor: 'var(--bg-card)',
-                        border: '1px solid var(--border-subtle)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: acc.color
-                      }}>
-                        <Icon size={16} />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-main)' }}>
-                          {acc.name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {acc.email}
-                        </div>
-                      </div>
-                    </div>
-
-                    <span className="badge-pill badge-neutral" style={{ fontSize: '10.5px' }}>
-                      {acc.badge}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{
-            marginTop: '24px',
-            padding: '10px 12px',
-            borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'var(--success-soft)',
-            border: '1px solid var(--success-border)',
-            fontSize: '12px',
-            color: 'var(--success)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            <CheckCircle2 size={16} />
-            <span>Master Password: <strong>Password123!</strong> (Pre-filled)</span>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
+              Sign in with your account. New learners can create a Student account.
+            </p>
           </div>
         </div>
 
@@ -230,7 +116,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
               {isRegister ? 'Create Account' : 'Sign in to Platform'}
             </h2>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-              {isRegister ? 'Register your instructor or student account' : 'Select a persona on the left or enter credentials'}
+              {isRegister ? 'Create your Student account' : 'Enter your email and password'}
             </p>
           </div>
 
@@ -256,42 +142,32 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
             {isRegister && (
               <>
                 <div>
-                  <label className="form-label">Full Name</label>
+                  <label className="form-label" htmlFor="auth-full-name">Full Name</label>
                   <input
+                    id="auth-full-name"
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Alex Rivera"
+                    placeholder="Your full name"
                     className="form-input"
                   />
                 </div>
 
-                <div>
-                  <label className="form-label">Role Scope</label>
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="form-select"
-                  >
-                    <option value="Instructor">Instructor</option>
-                    <option value="Student">Student</option>
-                    <option value="Admin">Administrator</option>
-                  </select>
-                </div>
               </>
             )}
 
             <div>
-              <label className="form-label">Email Address</label>
+              <label className="form-label" htmlFor="auth-email">Email Address</label>
               <div style={{ position: 'relative' }}>
                 <Mail size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
                 <input
+                  id="auth-email"
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@eduflow.ai"
+                  placeholder="you@example.com"
                   className="form-input"
                   style={{ paddingLeft: '36px' }}
                 />
@@ -299,10 +175,12 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
             </div>
 
             <div>
-              <label className="form-label">Password</label>
+              <label className="form-label" htmlFor="auth-password">Password</label>
               <div style={{ position: 'relative' }}>
                 <Lock size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
                 <input
+                  id="auth-password"
+                  autoComplete={isRegister ? "new-password" : "current-password"}
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}

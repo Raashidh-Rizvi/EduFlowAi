@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Search, Bell, ChevronDown, LogOut, GraduationCap, BookOpen, Shield } from 'lucide-react';
+import { Search, Bell, ChevronDown, LogOut } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import useApiHealth from '../../hooks/useApiHealth';
 
-export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUser, onLogout, onSwitchRole }) {
+export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUser, onLogout }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const health = useApiHealth();
 
@@ -15,12 +15,6 @@ export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUs
     const parts = name.split(' ').filter(Boolean);
     return parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : name.slice(0, 2).toUpperCase();
   };
-
-  const portalOptions = [
-    { role: 'Student',    icon: GraduationCap, label: 'Student' },
-    { role: 'Instructor', icon: BookOpen,       label: 'Instructor' },
-    { role: 'Admin',      icon: Shield,         label: 'Admin' },
-  ];
 
   return (
     <header className="v2-navbar" style={{ position: 'relative' }}>
@@ -56,23 +50,6 @@ export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUs
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
-
-      {/* Portal switcher */}
-      {onSwitchRole && (
-        <div className="v2-portal-tabs">
-          {portalOptions.map(({ role, icon: Icon, label }) => (
-            <button
-              key={role}
-              className={`v2-portal-tab${user.role === role ? ' active' : ''}`}
-              onClick={() => onSwitchRole(role)}
-              aria-label={`Switch to ${label} portal`}
-            >
-              <Icon size={13} />
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Theme toggle */}
       <ThemeToggle compact />
@@ -135,37 +112,6 @@ export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUs
             <span style={{ color: 'var(--v2-text-muted)' }}>Role:</span>
             <span style={{ fontWeight: 700, color: isAdmin ? 'var(--v2-danger-text)' : 'var(--v2-accent-text)' }}>{user.role}</span>
           </div>
-
-          {/* Switch portal */}
-          {onSwitchRole && (
-            <div>
-              <div style={{ fontSize: '10px', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--v2-text-muted)', marginBottom: '6px' }}>
-                Switch Portal
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '5px' }}>
-                {['Student', 'Instructor', 'Admin'].map(r => (
-                  <button
-                    key={r}
-                    onClick={() => { setShowProfileMenu(false); onSwitchRole(r); }}
-                    style={{
-                      padding: '5px 6px',
-                      fontSize: '11px',
-                      fontWeight: user.role === r ? 700 : 500,
-                      borderRadius: '7px',
-                      border: '1px solid',
-                      borderColor: user.role === r ? 'rgba(139,92,246,0.6)' : 'rgba(139,92,246,0.2)',
-                      background: user.role === r ? 'rgba(139,92,246,0.2)' : 'var(--v2-overlay-1)',
-                      color: user.role === r ? 'var(--v2-accent-text)' : 'var(--v2-text-muted)',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Sign out */}
           {onLogout && (

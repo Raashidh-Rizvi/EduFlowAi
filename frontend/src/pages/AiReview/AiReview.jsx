@@ -112,7 +112,7 @@ export default function AiReview() {
         // Map backend entities to UI schema
         const mapped = data.map(sp => ({
           id: sp.id || `wf-${Math.random().toString(36).substring(2, 8)}`,
-          studentId: sp.student?.email || sp.studentId || 'student@eduflow.ai',
+          studentId: sp.student?.email || sp.studentId || 'Unknown student',
           student: sp.student?.fullName || sp.studentName || 'Alex Rivera',
           avatar: (sp.student?.fullName || 'Alex Rivera').split(' ').map(n => n[0]).join('').toUpperCase(),
           courseId: sp.course?.code || 'CS-301',

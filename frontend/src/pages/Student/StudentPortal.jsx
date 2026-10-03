@@ -3930,7 +3930,7 @@ function FocusFlowTab({ profile, onSessionCompleted }) {
   );
 }
 
-function LeaderboardTab({ profile }) {
+function LeaderboardTab({ profile, studentId }) {
   const [standings, setStandings] = useState([]);
   const [squads, setSquads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3940,10 +3940,10 @@ function LeaderboardTab({ profile }) {
       try {
         const [lb, sq] = await Promise.all([
           gamificationService.getLeaderboard("weekly", 10),
-          gamificationService.getAllSquads(),
+          gamificationService.getStudentSquad(studentId),
         ]);
         setStandings(lb || []);
-        setSquads(sq || []);
+        setSquads(sq ? [sq] : []);
       } catch (err) {
         console.warn(err);
       } finally {
@@ -3951,18 +3951,9 @@ function LeaderboardTab({ profile }) {
       }
     }
     fetchRanks();
-  }, []);
+  }, [studentId]);
 
-  const mySquad =
-    squads.find(
-      (s) =>
-        s.members &&
-        s.members.some(
-          (m) =>
-            m.studentId === profile.studentId ||
-            m.studentName === profile.fullName,
-        ),
-    ) || squads[0];
+  const mySquad = squads[0] || null;
 
   const targetXp = 2500;
   const squadProgressPct = mySquad
@@ -4133,7 +4124,7 @@ function LeaderboardTab({ profile }) {
         {standings.map((s, idx) => {
           const isMe =
             s.studentName === profile.fullName ||
-            s.studentId === profile.studentId;
+            s.studentId === studentId;
           return (
             <div
               key={s.studentId || idx}
@@ -4847,7 +4838,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 }
               />
             )}
-            {activeTab === "ranks" && <LeaderboardTab profile={profile} />}
+            {activeTab === "ranks" && <LeaderboardTab profile={profile} studentId={user.id} />}
             {activeTab === "profile" && (
               <ProfileTab profile={profile} onLogout={onLogout} />
             )}

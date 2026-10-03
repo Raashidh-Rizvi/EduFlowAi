@@ -6,6 +6,44 @@ namespace EduFlow.Infrastructure.Data;
 
 public static class DbInitializer
 {
+    // Identify historical/demo rows by BOTH their reserved ID and email. Never
+    // delete them: course ownership, enrollments and submissions must survive.
+    private static readonly Dictionary<Guid, string> DemoIdentities = new()
+    {
+        [Guid.Parse("11111111-1111-1111-1111-111111111111")] = "admin@eduflow.ai",
+        [Guid.Parse("22222222-2222-2222-2222-222222222222")] = "instructor@eduflow.ai",
+        [Guid.Parse("22222222-2222-2222-2222-222222222223")] = "instructor.b@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333333")] = "student@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333334")] = "sarah.chen@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333335")] = "daniel.miller@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333336")] = "marcus.vance@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333337")] = "priya.patel@eduflow.ai",
+        [Guid.Parse("33333333-3333-3333-3333-333333333338")] = "elena.rostova@eduflow.ai",
+    };
+
+    public static void ApplyDemoAccountPolicy(ApplicationDbContext context, bool isDevelopment,
+        bool enabled, bool resetCredentials = false)
+    {
+        if (isDevelopment && enabled)
+        {
+            SeedDevelopmentData(context, resetCredentials);
+            return;
+        }
+
+        var ids = DemoIdentities.Keys.ToArray();
+        var demos = context.Users.Where(u => ids.Contains(u.Id)).ToList()
+            .Where(u => string.Equals(u.Email, DemoIdentities[u.Id], StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        foreach (var demo in demos) demo.IsActive = false;
+        var demoIds = demos.Select(u => u.Id).ToArray();
+        if (demoIds.Length > 0)
+        {
+            foreach (var token in context.RefreshTokens.Where(t => demoIds.Contains(t.UserId) && !t.IsRevoked))
+                token.IsRevoked = true;
+        }
+        context.SaveChanges();
+    }
+
     /// <summary>
     /// Applies any pending EF Core migrations, creating the database if it doesn't exist yet.
     /// Failure is NOT swallowed: the caller (Program.cs) rethrows so the application refuses
@@ -20,7 +58,7 @@ public static class DbInitializer
     /// Seeds demo accounts and demo course content. Development only: the caller must check
     /// the hosting environment, and exceptions propagate so the caller can log them.
     /// </summary>
-    public static void SeedDevelopmentData(ApplicationDbContext context)
+    private static void SeedDevelopmentData(ApplicationDbContext context, bool resetCredentials = false)
     {
         {
             var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -43,7 +81,7 @@ public static class DbInitializer
                     IsActive = true
                 });
             }
-            else
+            else if (resetCredentials)
             {
                 admin.PasswordHash = validPasswordHash;
                 admin.IsActive = true;
@@ -62,7 +100,7 @@ public static class DbInitializer
                     IsActive = true
                 });
             }
-            else
+            else if (resetCredentials)
             {
                 instructor.PasswordHash = validPasswordHash;
                 instructor.IsActive = true;
@@ -83,7 +121,7 @@ public static class DbInitializer
                 };
                 context.Users.Add(student);
             }
-            else
+            else if (resetCredentials)
             {
                 student.FullName = "Alex Rivera";
                 student.PasswordHash = validPasswordHash;
@@ -299,7 +337,7 @@ public static class DbInitializer
                 };
                 context.Users.Add(instructorB);
             }
-            else
+            else if (resetCredentials)
             {
                 instructorB.FullName = "Dr. Marcus Hale";
                 instructorB.PasswordHash = validPasswordHash;
