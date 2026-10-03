@@ -1,4 +1,5 @@
 using System.Text;
+using EduFlow.Api.Errors;
 using EduFlow.Api.Security;
 using EduFlow.Core.Interfaces;
 using EduFlow.Core.Options;
@@ -19,7 +20,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
         "ConnectionStrings:DefaultConnection is not configured. " +
-        "Set it via appsettings.json, environment variable ConnectionStrings__DefaultConnection, or user secrets.");
+        "Set it via user secrets (dotnet user-secrets set \"ConnectionStrings:DefaultConnection\" ...), " +
+        "environment variable ConnectionStrings__DefaultConnection, or a git-ignored appsettings.Development.json.");
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -27,6 +29,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString, npgsqlOptions =>
     {
         npgsqlOptions.EnableRetryOnFailure(3);
+        npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
     });
     // options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
@@ -51,7 +54,8 @@ if (string.IsNullOrWhiteSpace(jwtSecret))
 {
     throw new InvalidOperationException(
         "JwtSettings:Secret is not configured. " +
-        "Set it via appsettings.json, environment variable JwtSettings__Secret, or user secrets.");
+        "Set it via user secrets (dotnet user-secrets set \"JwtSettings:Secret\" ...), " +
+        "environment variable JwtSettings__Secret, or a git-ignored appsettings.Development.json.");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecret);
 
@@ -77,13 +81,7 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
-    options.AddPolicy("InstructorOnly", policy => policy.RequireRole("Instructor"));
-    options.AddPolicy("StudentOnly", policy => policy.RequireRole("Student"));
-    options.AddPolicy("InstructorOrAdmin", policy => policy.RequireRole("Instructor", "Admin"));
-});
+builder.Services.AddAuthorization(AuthorizationPolicies.Configure);
 
 // 4. CORS Policy for React Web Client & Mobile Dev
 builder.Services.AddCors(options =>
@@ -107,6 +105,7 @@ builder.Services.AddCors(options =>
 
 // 5. Controllers & JSON Options
 builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(ApiErrorHandling.ConfigureInvalidModelState)
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
@@ -186,40 +185,26 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
-        var exception = exceptionHandlerPathFeature?.Error;
-
-        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
-        logger.LogError(exception, "An unhandled exception occurred while processing the request.");
-
-        context.Response.StatusCode = 500;
-        context.Response.ContentType = "application/json";
-        await context.Response.WriteAsJsonAsync(new 
-        { 
-            message = "An unexpected server error occurred. Please try again later.",
-            error = app.Environment.IsDevelopment() ? exception?.Message : null
-        });
-    });
-});
+// Correlation id, contract-shaped 500s (no exception details in any environment) and
+// contract bodies for empty 4xx/5xx responses. See Errors/ApiErrorHandling.cs.
+app.UseApiErrorHandling();
 
 if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
 app.UseCors("EduFlowCorsPolicy");
-app.UseStaticFiles();
+// Uploaded course material is served only through UploadsController (authorization + enrollment
+// check); keep the static-file middleware from serving wwwroot/uploads anonymously.
+app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/uploads"), branch => branch.UseStaticFiles());
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
 // Lightweight health endpoints for system monitoring & dev auto-reload coordination
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow }));
-app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow })).AllowAnonymous();
+app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", service = "EduFlow.Api", timestamp = DateTime.UtcNow })).AllowAnonymous();
 
 app.Run();
 

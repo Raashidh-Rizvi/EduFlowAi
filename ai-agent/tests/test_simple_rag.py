@@ -212,7 +212,7 @@ class TestFastApiEndpoints:
                 ],
             })
 
-        monkeypatch.setattr(main_module.quiz_generation_service, "_call_gemini_json", fake_gemini_call)
+        monkeypatch.setattr(main_module.quiz_generation_service, "_call_llm_json", fake_gemini_call)
 
         # Test slide quiz generation endpoint
         quiz_res = client.post("/api/v1/ai/slides/generate-quiz", json={

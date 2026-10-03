@@ -68,7 +68,8 @@ public record MarketplaceCourseDto(
     string ShortDescription = "",
     string Language = "English",
     int XpReward = 0,
-    bool CertificateEnabled = false
+    bool CertificateEnabled = false,
+    int TotalMinutes = 0
 );
 
 /// <summary>Cursor page of marketplace courses plus the totals needed for pagination.</summary>
@@ -146,5 +147,6 @@ public record MarketplaceCourseDetailDto(
     IReadOnlyList<string>? Prerequisites = null,
     IReadOnlyList<string>? TargetAudience = null,
     int AssignmentCount = 0,
-    int QuizCount = 0
+    int QuizCount = 0,
+    int TotalMinutes = 0
 );

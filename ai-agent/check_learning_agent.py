@@ -111,9 +111,9 @@ load_dotenv()
 
 llm_provider = os.environ.get("LLM_PROVIDER", "gemini").lower().strip()
 groq_key     = os.environ.get("GROQ_API_KEY", "").strip()
-groq_model   = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant").strip()
+groq_model   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b").strip()
 gemini_key   = os.environ.get("GEMINI_API_KEY", "").strip()
-gemini_model = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash-latest").strip()
+gemini_model = os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest").strip()
 
 info(f"Active LLM Provider : {llm_provider.upper()}")
 

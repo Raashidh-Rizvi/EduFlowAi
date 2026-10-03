@@ -60,7 +60,7 @@ public class SupportDeskTests
         builder.Services.AddAuthentication("SupportTest")
             .AddScheme<AuthenticationSchemeOptions, SupportTestAuthHandler>("SupportTest", _ => { });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers()
             .AddApplicationPart(typeof(SupportController).Assembly);
 

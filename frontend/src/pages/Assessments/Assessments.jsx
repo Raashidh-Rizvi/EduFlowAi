@@ -30,8 +30,11 @@ import {
 } from 'lucide-react';
 import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
-import { toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
+import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
+
+// Quizzes saved on the server have GUID ids; local-only drafts use `q-<timestamp>` ids.
+const isServerQuizId = (id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(id || ''));
 
 export default function Assessments({ currentUser }) {
   const [activeSubTab, setActiveSubTab] = useState('quizzes'); // 'quizzes' | 'bosses' | 'rubrics'
@@ -408,9 +411,10 @@ export default function Assessments({ currentUser }) {
           questions: (res.questions && res.questions.length > 0) ? res.questions.map(q => ({
             id: q.id || `q-${Date.now()}`,
             prompt: q.prompt,
-            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-            explanation: q.explanation || 'Synthesized with deterministic RAG schema validation by EduFlow AI.',
+            type: questionTypeName(q.type),
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            explanation: q.explanation || '',
             points: q.points || 10
           })) : []
         };
@@ -421,10 +425,10 @@ export default function Assessments({ currentUser }) {
         if (res.questions && res.questions.length > 0) {
           setQuestions(res.questions.map(q => ({
             prompt: q.prompt,
-            type: q.type || 'MultipleChoice',
-            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-            explanation: q.explanation || 'Synthesized with deterministic RAG schema validation by EduFlow AI.',
+            type: questionTypeName(q.type),
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            explanation: q.explanation || '',
             points: q.points || 10,
             metadataJson: q.metadataJson || '{}'
           })));
@@ -466,9 +470,9 @@ export default function Assessments({ currentUser }) {
             setQuestions(parsed.questions.map(q => ({
               prompt: q.prompt || 'Imported Question',
               type: q.type || 'MultipleChoice',
-              options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-              correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-              explanation: q.explanation || 'Imported from syllabus sheet.',
+              options: q.options || [],
+              correctAnswer: q.correctAnswer || '',
+              explanation: q.explanation || '',
               points: q.points || 10
             })));
           }
@@ -479,23 +483,24 @@ export default function Assessments({ currentUser }) {
       };
       reader.readAsText(file);
     } else {
-      // PDF or text file
-      setQuizTitle(`Imported Quiz from ${file.name}`);
+      // DEMO: PDF/text extraction is not implemented. These are fixed sample questions, not content from the file.
+      alert('PDF/text extraction is a demo and is not implemented yet. Sample questions were loaded instead — replace them before saving, or import a JSON question bank.');
+      setQuizTitle(`[Demo sample] ${file.name}`);
       setQuestions([
         {
-          prompt: `Question 1 (Extracted from ${file.name}): Which pattern guarantees ACID transactions in EduFlow?`,
+          prompt: `[Demo sample — not extracted from ${file.name}] Which pattern guarantees ACID transactions in EduFlow?`,
           type: 'MultipleChoice',
           options: ['DbContext.SaveChangesAsync() with atomic transaction boundary', 'Raw text file writes', 'Uncommitted memory cache', 'Single-threaded locks'],
           correctAnswer: 'DbContext.SaveChangesAsync() with atomic transaction boundary',
-          explanation: 'Parsed from uploaded PDF assessment syllabus.',
+          explanation: 'Demo sample question.',
           points: 10
         },
         {
-          prompt: `Question 2 (Extracted from ${file.name}): What is the primary role of the immutable XP ledger?`,
+          prompt: `[Demo sample — not extracted from ${file.name}] What is the primary role of the immutable XP ledger?`,
           type: 'MultipleChoice',
           options: ['Prevent duplicate reward exploits and guarantee mathematical auditability', 'Format database logs', 'Render HTML tables', 'Generate random scores'],
           correctAnswer: 'Prevent duplicate reward exploits and guarantee mathematical auditability',
-          explanation: 'Immutable ledger maintains strict mathematical audit safety.',
+          explanation: 'Demo sample question.',
           points: 10
         }
       ]);
@@ -573,7 +578,9 @@ export default function Assessments({ currentUser }) {
         createdQuiz.id = res.id;
       }
     } catch (err) {
-      console.warn('Backend quiz creation fallback:', err);
+      console.error('Quiz creation failed:', err);
+      alert(`Quiz was not saved: ${err.friendlyMessage || err.response?.data?.message || err.message || 'the server rejected the request.'}`);
+      return;
     }
 
     saveGeneratedQuiz(createdQuiz);
@@ -589,12 +596,14 @@ export default function Assessments({ currentUser }) {
   // Edit Quiz Handler (Instructor)
   const handleOpenEditModal = async (quiz) => {
     let fullQuiz = { ...quiz };
-    if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
+    if (isServerQuizId(quiz.id)) {
       try {
         const detail = await quizService.getQuizById(quiz.id);
         if (detail && detail.questions) fullQuiz = detail;
       } catch (err) {
-        console.warn('Could not fetch quiz details for edit:', err);
+        console.error('Could not load quiz details for edit:', err);
+        alert(`Could not load this quiz for editing: ${err.friendlyMessage || err.response?.data?.message || err.message || 'please retry.'}`);
+        return;
       }
     }
     setEditQuizId(fullQuiz.id);
@@ -610,8 +619,9 @@ export default function Assessments({ currentUser }) {
       (fullQuiz.questions && fullQuiz.questions.length > 0)
         ? fullQuiz.questions.map(q => ({
             prompt: q.prompt || '',
-            options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            type: questionTypeName(q.type),
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
             explanation: q.explanation || '',
             points: q.points || 10
           }))
@@ -653,9 +663,9 @@ export default function Assessments({ currentUser }) {
         }))
       };
 
-      await quizService.updateQuiz(editQuizId, payload).catch(err => {
-        console.warn('Backend quiz update failed, updating locally:', err);
-      });
+      if (isServerQuizId(editQuizId)) {
+        await quizService.updateQuiz(editQuizId, payload);
+      }
 
       const updatedObj = {
         id: editQuizId,
@@ -681,7 +691,8 @@ export default function Assessments({ currentUser }) {
       setShowEditModal(false);
       alert(`✅ Quiz "${editTitle}" updated successfully!`);
     } catch (err) {
-      alert('Failed to update quiz: ' + err.message);
+      console.error('Quiz update failed:', err);
+      alert('Failed to update quiz: ' + (err.friendlyMessage || err.response?.data?.message || err.message));
     } finally {
       setIsSavingEdit(false);
     }
@@ -711,20 +722,18 @@ export default function Assessments({ currentUser }) {
 
   const handleInspectQuiz = async (quiz) => {
     let fullQuiz = { ...quiz };
+    if (isServerQuizId(quiz.id)) {
+      try {
+        const detail = await quizService.getQuizById(quiz.id);
+        if (detail && detail.questions) fullQuiz = detail;
+      } catch (err) {
+        console.warn('Could not load quiz inspection details:', err);
+      }
+    }
     if (!fullQuiz.questions || fullQuiz.questions.length === 0) {
-      const localMatches = getGeneratedQuizzes(quiz.courseId || quizCourseId);
-      const foundLocal = localMatches.find(q => q.id === quiz.id || q.title === quiz.title);
+      const foundLocal = getGeneratedQuizzes(quiz.courseId || quizCourseId).find(q => q.id === quiz.id);
       if (foundLocal && foundLocal.questions && foundLocal.questions.length > 0) {
         fullQuiz = { ...fullQuiz, ...foundLocal };
-      } else {
-        try {
-          const detail = await quizService.getQuizById(quiz.id);
-          if (detail && detail.questions && detail.questions.length > 0) {
-            fullQuiz = detail;
-          }
-        } catch (err) {
-          console.warn('Could not load quiz inspection details:', err);
-        }
       }
     }
     setInspectingQuiz(fullQuiz);
@@ -1657,7 +1666,7 @@ export default function Assessments({ currentUser }) {
                   <div>
                     <h4 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Upload Assessment Document or JSON</h4>
                     <p style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '400px', marginTop: '4px' }}>
-                      Upload a structured JSON question bank or PDF quiz sheet for automated extraction.
+                      Upload a structured JSON question bank. PDF extraction is a demo (not yet implemented): it loads fixed sample questions, not content from your file.
                     </p>
                   </div>
 

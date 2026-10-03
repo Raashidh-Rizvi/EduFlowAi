@@ -1163,8 +1163,8 @@ public class QuizzesController : BaseApiController
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AI Agent] Python service error: {ex.Message}");
-            aiErrorDetail = ex.Message;
+            // Transport/parse failures stay in the server log; the client gets the generic message below.
+            Logger.LogError(ex, "AI quiz generation call to the Python service failed.");
         }
 
         // -------------------------------------------------------------------------
@@ -1366,7 +1366,7 @@ public class QuizzesController : BaseApiController
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AI Agent] Python single-question regenerate error: {ex.Message}");
+            Logger.LogError(ex, "AI single-question regeneration call to the Python service failed.");
         }
 
         // Never substitute a canned question: an AI failure leaves the instructor's question untouched.
@@ -1591,7 +1591,7 @@ public class QuizzesController : BaseApiController
     [HttpPost("submit")]
     public async Task<IActionResult> SubmitQuiz([FromBody] SubmitQuizRequest request)
     {
-        var (studentId, _) = GetCurrentUser();
+        var (studentId, role) = GetCurrentUser();
         if (studentId == Guid.Empty)
         {
             // Fail closed: never attribute a submission to a seeded/fabricated account.
@@ -1639,7 +1639,9 @@ public class QuizzesController : BaseApiController
         bool isEvaluated = graded.Marks.IsFullyEvaluated;
         var breakdown = BuildBreakdown(quiz, graded.Outcomes.Select(o => new AnswerView(
             o.Question, o.StudentAnswer, o.Result.AwardedMarks, o.Result.IsCorrect, o.Result.Feedback,
-            o.Result.Status, o.Result.Method)), revealKeys: quiz.ShowCorrectAnswers);
+            o.Result.Status, o.Result.Method)),
+            revealKeys: await _accessService.CanManageCourseAsync(quiz.CourseId, studentId, role)
+                || await CanStudentSeeAnswerKeysAsync(quiz, studentId, isEvaluated));
 
         return Ok(new
         {
@@ -1719,8 +1721,26 @@ public class QuizzesController : BaseApiController
             pendingReviewCount = attempt.Answers.Count(a => a.EvaluationStatus != AnswerEvaluationStatus.Evaluated),
             instructorFeedback = attempt.InstructorFeedback,
             questionBreakdown = BuildBreakdown(attempt.Assessment, answerViews,
-                revealKeys: canManage || (attempt.Assessment.ShowCorrectAnswers && isEvaluated))
+                revealKeys: canManage || await CanStudentSeeAnswerKeysAsync(attempt.Assessment, attempt.StudentId, isEvaluated))
         });
+    }
+
+    /// <summary>
+    /// Students only see correct answers and explanations once they can no longer use them on
+    /// another attempt: the quiz must show answers, this attempt must be fully evaluated, the
+    /// student must have no open attempt, and the attempt limit is reached or the quiz is closed.
+    /// Unlimited-attempt quizzes that are still open never reveal keys to students.
+    /// </summary>
+    private async Task<bool> CanStudentSeeAnswerKeysAsync(Assessment quiz, Guid studentId, bool isEvaluated)
+    {
+        if (!quiz.ShowCorrectAnswers || !isEvaluated) return false;
+
+        bool hasOpenAttempt = await DbContext.Submissions.AnyAsync(s =>
+            s.AssessmentId == quiz.Id && s.StudentId == studentId && s.Status == AttemptStatus.InProgress);
+        if (hasOpenAttempt) return false;
+
+        var eligibility = await _accessService.CheckAttemptEligibilityAsync(quiz, studentId);
+        return eligibility.Reason is AttemptDenialReason.AttemptLimitReached or AttemptDenialReason.Closed;
     }
 
     /// <summary>

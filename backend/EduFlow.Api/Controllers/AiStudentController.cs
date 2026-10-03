@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Claims;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Services;
@@ -17,10 +19,12 @@ namespace EduFlow.Api.Controllers;
 public class AiStudentController : ControllerBase
 {
     private readonly IAiGatewayClient? _aiGateway;
+    private readonly ILogger<AiStudentController> _logger;
 
-    public AiStudentController(IAiGatewayClient? aiGateway = null)
+    public AiStudentController(IAiGatewayClient? aiGateway = null, ILogger<AiStudentController>? logger = null)
     {
         _aiGateway = aiGateway;
+        _logger = logger ?? NullLogger<AiStudentController>.Instance;
     }
 
     /// <summary>
@@ -47,7 +51,7 @@ public class AiStudentController : ControllerBase
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[AiStudentController] AI gateway error: {ex.Message}");
+                _logger.LogError(ex, "AI gateway next-best-action call failed; returning fallback recommendation.");
             }
         }
 

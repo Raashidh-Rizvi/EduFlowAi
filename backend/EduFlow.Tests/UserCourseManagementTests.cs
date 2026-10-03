@@ -56,7 +56,7 @@ public class UserCourseManagementTests
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddAuthentication("UserManagementTest")
             .AddScheme<AuthenticationSchemeOptions, UserManagementTestAuthHandler>("UserManagementTest", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(AdminController).Assembly);
         var app = builder.Build();
         app.UseAuthentication();

@@ -61,7 +61,7 @@ REQUIRED_PACKAGES = {
     "dotenv":              "python-dotenv",
     "pypdf":               "pypdf",
     "chromadb":            "chromadb",
-    "google.generativeai": "google-generativeai",
+    "google.genai": "google-genai",
     "groq":                "groq",
     "httpx":               "httpx",
 }

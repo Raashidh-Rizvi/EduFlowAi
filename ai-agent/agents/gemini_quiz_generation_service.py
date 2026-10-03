@@ -1,12 +1,17 @@
 """
-EduFlow AI - Gemini Quiz Generation Service
-===========================================
+EduFlow AI - Quiz Generation Service (Gemini / Groq / Azure OpenAI)
+====================================================================
+
+The LLM is chosen in ai-agent/.env:
+    QUIZ_LLM_PROVIDER = gemini | groq | azure   (default: gemini)
+    QUIZ_LLM_MODEL    = optional model/deployment override; otherwise
+                        GEMINI_MODEL, GROQ_MODEL or AZURE_OPENAI_CHAT_DEPLOYMENT.
 
 Grounded, schema-validated assessment generation for instructors.
 
 Design rules (LMS refactor, PR 7):
-- Generation ALWAYS calls Gemini with a strict JSON schema; template questions
-  are forbidden. If Gemini is unavailable or its output fails validation, the
+- Generation ALWAYS calls the configured LLM with a strict JSON schema; template questions
+  are forbidden. If the LLM is unavailable or its output fails validation, the
   call fails loudly (no canned fallback questions, no "correct index 0").
 - Questions must be grounded in real course material: parsed lecture slides
   and/or the module context (description, topics, content items) resolved from
@@ -18,7 +23,7 @@ Design rules (LMS refactor, PR 7):
 Pipeline:
     Instructor request
         -> content digest (slides + module context)
-        -> Gemini (strict JSON, response_mime_type=application/json)
+        -> Gemini / Groq / Azure OpenAI (JSON mode)
         -> Pydantic + domain validation (retry once with the error list)
         -> validated GenerateSlideQuizResponse / SingleQuestionRegenerateResponse
 """
@@ -57,11 +62,23 @@ BLOOMS_LEVELS = ("Remembering", "Understanding", "Applying", "Analyzing", "Evalu
 # Cap the grounding material so prompts stay focused (Gemini Flash handles
 # far more, but focused context measurably improves question quality).
 MAX_CONTENT_CHARS = 16000
+# Without slides, the module's DB text is the only grounding. Below this size it is
+# just a title/placeholder, and the model ends up writing questions *about the module
+# record* instead of the subject, so refuse rather than produce junk.
+MIN_CONTEXT_CHARS_WITHOUT_SLIDES = 400
 MAX_ATTEMPTS = 2  # initial attempt + one corrective retry with validation errors
+MAX_OUTPUT_TOKENS = 8192
+REQUEST_TIMEOUT_SECONDS = 60
+
+# QUIZ_LLM_PROVIDER values (a few common spellings are accepted).
+PROVIDER_ALIASES = {"google": "gemini", "grok": "groq", "azure_openai": "azure", "azure-openai": "azure"}
+PROVIDER_LABELS = {"gemini": "Gemini", "groq": "Groq", "azure": "Azure OpenAI"}
+PROVIDER_KEY_VARS = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "azure": "AZURE_OPENAI_API_KEY"}
+PROVIDER_MODEL_VARS = {"gemini": "GEMINI_MODEL", "groq": "GROQ_MODEL", "azure": "AZURE_OPENAI_CHAT_DEPLOYMENT"}
 
 
 class QuizGenerationUnavailable(Exception):
-    """Raised when Gemini is not configured or unreachable. Never fall back."""
+    """Raised when the quiz LLM is not configured or unreachable. Never fall back."""
 
 
 class QuizGenerationValidationError(Exception):
@@ -73,12 +90,14 @@ class QuizGenerationValidationError(Exception):
 
 
 class GeminiQuizGenerationService:
-    """Gemini-backed quiz generation grounded in real course content."""
+    """LLM-backed quiz generation grounded in real course content."""
 
     def __init__(self, rag_service):
         # Reuse the RAG service's slide parser and provider configuration so
         # generation stays consistent with the rest of the AI microservice.
         self._rag = rag_service
+        self._azure_deployment_cache: Optional[str] = None
+        self._azure_deployments_seen: List[str] = []
 
     # ------------------------------------------------------------------
     # Public API
@@ -100,6 +119,14 @@ class GeminiQuizGenerationService:
                 "No course material is available for this module. Upload lecture slides "
                 "or add topics/content items before generating an AI quiz."
             )
+        has_slides = self._count_slides(slide_path) > 0
+        logger.info("Quiz generation context: slides=%s, chars=%d", has_slides, len(content))
+        if not has_slides and len(content.strip()) < MIN_CONTEXT_CHARS_WITHOUT_SLIDES:
+            raise ValueError(
+                "This module has no lecture slides and too little written content to build a "
+                "meaningful quiz. Upload the lecture slides (PDF) for this module, or add "
+                "detailed topic descriptions/content items, then try again."
+            )
 
         prompt = self._build_quiz_prompt(
             content=content,
@@ -111,7 +138,7 @@ class GeminiQuizGenerationService:
             module_title=request.module_title or "Course Module",
             topic_title=request.topic_title,
             learning_objectives=request.learning_objectives,
-            has_slides=slide_path is not None,
+            has_slides=has_slides,
         )
 
         total_slides = self._count_slides(slide_path)
@@ -120,7 +147,7 @@ class GeminiQuizGenerationService:
             lambda p: self._validate_quiz_payload(p, num_questions=num_questions,
                                                   question_types=question_types,
                                                   total_slides=total_slides),
-            temperature=0.4,
+            temperature=0.3,
         )
         questions = [self._to_question_item(q, i + 1) for i, q in enumerate(payload["questions"])]
         title_topic = request.topic_title or request.module_title or "Course Module"
@@ -133,7 +160,7 @@ class GeminiQuizGenerationService:
             total_points=sum(q.points for q in questions),
             validation_passed=True,
             status="PendingInstructorApproval",
-            source="gemini",
+            source=self.provider,
             questions=questions,
         )
 
@@ -157,7 +184,7 @@ class GeminiQuizGenerationService:
             target_difficulty=request.target_difficulty,
             learning_objective=request.learning_objective,
             source_question_text=request.source_question_text,
-            has_slides=slide_path is not None,
+            has_slides=self._count_slides(slide_path) > 0,
         )
 
         payload = self._call_with_validation(
@@ -182,7 +209,7 @@ class GeminiQuizGenerationService:
                 slide_citation=payload["question"].get("slide_citation"),
             ),
             validation_passed=True,
-            source="gemini",
+            source=self.provider,
         )
 
     # ------------------------------------------------------------------
@@ -190,7 +217,7 @@ class GeminiQuizGenerationService:
     # ------------------------------------------------------------------
 
     def _call_with_validation(self, prompt: str, validator, temperature: float) -> Dict[str, Any]:
-        """Call Gemini, validate, and retry once feeding the errors back in."""
+        """Call the LLM, validate, and retry once feeding the errors back in."""
         errors: List[str] = []
         last_payload: Optional[Dict[str, Any]] = None
         for attempt in range(MAX_ATTEMPTS):
@@ -201,7 +228,7 @@ class GeminiQuizGenerationService:
                     + "\n".join(f"- {e}" for e in errors)
                     + "\n\nReturn corrected JSON that satisfies every requirement."
                 )
-            raw = self._call_gemini_json(attempt_prompt, temperature=temperature)
+            raw = self._call_llm_json(attempt_prompt, temperature=temperature)
             last_payload = self._parse_json_object(raw)
             if last_payload is None:
                 errors = ["The model did not return a JSON object."]
@@ -212,34 +239,264 @@ class GeminiQuizGenerationService:
 
         raise QuizGenerationValidationError(errors or ["The model returned an empty response."])
 
-    def _call_gemini_json(self, prompt: str, temperature: float) -> str:
-        """Single Gemini call that must answer with raw JSON."""
-        api_key = (self._rag.gemini_api_key or "").strip()
-        if not api_key:
+    # ------------------------------------------------------------------
+    # Provider selection (QUIZ_LLM_PROVIDER / QUIZ_LLM_MODEL in .env)
+    # ------------------------------------------------------------------
+
+    @property
+    def provider(self) -> str:
+        """Which LLM generates quizzes: "gemini", "groq" or "azure" (read live from .env)."""
+        raw = (os.environ.get("QUIZ_LLM_PROVIDER") or "gemini").strip().lower()
+        return PROVIDER_ALIASES.get(raw, raw)
+
+    @property
+    def model_name(self) -> str:
+        """QUIZ_LLM_MODEL overrides the provider's own model/deployment setting."""
+        override = (os.environ.get("QUIZ_LLM_MODEL") or "").strip()
+        if override:
+            return override
+        provider = self.provider
+        if provider == "groq":
+            return self._rag.groq_model_name or "openai/gpt-oss-120b"
+        if provider == "azure":
+            return (os.environ.get("AZURE_OPENAI_CHAT_DEPLOYMENT") or "").strip()
+        return self._rag.gemini_model_name or "models/gemini-flash-latest"
+
+    @property
+    def provider_label(self) -> str:
+        return PROVIDER_LABELS.get(self.provider, self.provider)
+
+    def _call_llm_json(self, prompt: str, temperature: float) -> str:
+        """Single call to the configured provider that must answer with raw JSON."""
+        provider = self.provider
+        callers = {
+            "gemini": self._call_gemini_json,
+            "groq": self._call_groq_json,
+            "azure": self._call_azure_json,
+        }
+        if provider not in callers:
             raise QuizGenerationUnavailable(
-                "GEMINI_API_KEY is not configured on the AI service; quiz generation is disabled."
+                f"Unknown QUIZ_LLM_PROVIDER '{provider}' in ai-agent/.env. "
+                "Use one of: gemini, groq, azure."
             )
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(self._rag.gemini_model_name or "models/gemini-flash-latest")
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": temperature,
-                    "max_output_tokens": 8192,
-                    "response_mime_type": "application/json",
-                },
-                request_options={"timeout": 60},
-            )
-            if not response or not response.text:
-                raise QuizGenerationUnavailable("Gemini returned an empty response.")
-            return response.text
+            text = callers[provider](prompt, temperature)
+            if not text or not text.strip():
+                raise QuizGenerationUnavailable(f"{self.provider_label} returned an empty response.")
+            return text
         except (QuizGenerationUnavailable, QuizGenerationValidationError):
             raise
         except Exception as exc:  # network, quota, safety-block, SDK errors
-            logger.warning("Gemini quiz generation call failed: %s", type(exc).__name__)
-            raise QuizGenerationUnavailable(f"Gemini call failed: {type(exc).__name__}") from exc
+            message = self._describe_provider_error(exc)
+            logger.warning(
+                "%s quiz generation call failed: %s (code=%s, status=%s): %s",
+                self.provider_label, type(exc).__name__, self._error_code(exc),
+                getattr(exc, "status", None), str(getattr(exc, "message", None) or exc)[:500],
+            )
+            raise QuizGenerationUnavailable(message) from exc
+
+    def _call_gemini_json(self, prompt: str, temperature: float) -> str:
+        api_key = (self._rag.gemini_api_key or "").strip()
+        if not api_key:
+            raise QuizGenerationUnavailable(
+                "GEMINI_API_KEY is not configured in ai-agent/.env, so the Gemini quiz generator is disabled. "
+                "Add the key or switch QUIZ_LLM_PROVIDER to groq/azure."
+            )
+        from google import genai
+        from google.genai import types
+        # Gemini Flash regularly returns 503 "high demand" spikes; retry those briefly.
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(
+            timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+            retry_options=types.HttpRetryOptions(
+                attempts=4, initial_delay=2.0, max_delay=12.0,
+                http_status_codes=[429, 500, 503, 504],
+            ),
+        ))
+        response = client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+                response_mime_type="application/json",
+            ),
+        )
+        return response.text if response else ""
+
+    def _call_groq_json(self, prompt: str, temperature: float) -> str:
+        api_key = (self._rag.groq_api_key or "").strip()
+        if not api_key:
+            raise QuizGenerationUnavailable(
+                "GROQ_API_KEY is not configured in ai-agent/.env, so the Groq quiz generator is disabled. "
+                "Add the key or switch QUIZ_LLM_PROVIDER to gemini/azure."
+            )
+        from groq import Groq
+        client = Groq(api_key=api_key, timeout=float(REQUEST_TIMEOUT_SECONDS), max_retries=2)
+        completion = client.chat.completions.create(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": "You are an assessment author. Reply with a single JSON object only."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=temperature,
+            max_completion_tokens=MAX_OUTPUT_TOKENS,
+            response_format={"type": "json_object"},
+        )
+        return completion.choices[0].message.content if completion.choices else ""
+
+    def _call_azure_json(self, prompt: str, temperature: float) -> str:
+        api_key = (os.environ.get("AZURE_OPENAI_API_KEY") or "").strip()
+        endpoint = (os.environ.get("AZURE_OPENAI_ENDPOINT") or "").strip()
+        base_url = (os.environ.get("AZURE_OPENAI_BASE_URL") or "").strip()
+        missing = [name for name, value in (
+            ("AZURE_OPENAI_API_KEY", api_key),
+            ("AZURE_OPENAI_ENDPOINT or AZURE_OPENAI_BASE_URL", endpoint or base_url),
+        ) if not value]
+        if missing:
+            raise QuizGenerationUnavailable(
+                "Azure OpenAI quiz generation is not fully configured. Set " + ", ".join(missing)
+                + " in ai-agent/.env (shown in Azure AI Foundry under Keys and Endpoint)."
+            )
+        deployment = self.model_name or self._discover_azure_chat_deployment(api_key, endpoint or base_url)
+        if not deployment:
+            raise QuizGenerationUnavailable(
+                "Azure OpenAI is connected, but this Azure resource has no chat model deployed "
+                f"(found only: {', '.join(self._azure_deployments_seen) or 'no deployments'}). "
+                "Embedding models cannot write quizzes. In Azure AI Foundry open Deployments -> Deploy model, "
+                "deploy a chat model (e.g. gpt-4o-mini), then try again - it is picked up automatically, "
+                "or set AZURE_OPENAI_CHAT_DEPLOYMENT in ai-agent/.env."
+            )
+        if endpoint:
+            from openai import AzureOpenAI
+            client = AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=endpoint,
+                api_version=(os.environ.get("AZURE_OPENAI_API_VERSION") or "2024-10-21").strip(),
+                timeout=float(REQUEST_TIMEOUT_SECONDS),
+                max_retries=2,
+            )
+        else:
+            # The /openai/v1 endpoint speaks the plain OpenAI protocol (no api-version).
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key, base_url=base_url,
+                            timeout=float(REQUEST_TIMEOUT_SECONDS), max_retries=2)
+        request = dict(
+            model=deployment,
+            messages=[
+                {"role": "system", "content": "You are an assessment author. Reply with a single JSON object only."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=MAX_OUTPUT_TOKENS,
+        )
+        try:
+            completion = client.chat.completions.create(temperature=temperature, **request)
+        except Exception as exc:
+            # Reasoning deployments (o-series, gpt-5) only accept the default temperature.
+            if self._error_code(exc) == 400 and "temperature" in str(exc).lower():
+                completion = client.chat.completions.create(**request)
+            else:
+                raise
+        return completion.choices[0].message.content if completion.choices else ""
+
+    def _discover_azure_chat_deployment(self, api_key: str, endpoint: str) -> str:
+        """Find a chat deployment on the Azure resource when none is configured.
+
+        Only a successful match is cached, so a model deployed later is picked
+        up on the next request without restarting the service.
+        """
+        if self._azure_deployment_cache:
+            return self._azure_deployment_cache
+        import urllib.request
+        root = re.sub(r"/openai(/v1)?/?$", "", endpoint.rstrip("/"))
+        url = f"{root}/openai/deployments?api-version=2022-12-01"
+        try:
+            with urllib.request.urlopen(
+                urllib.request.Request(url, headers={"api-key": api_key}), timeout=20
+            ) as resp:
+                data = json.load(resp).get("data", [])
+        except Exception as exc:
+            logger.warning("Could not list Azure OpenAI deployments: %s", exc)
+            return ""
+        non_chat = ("embedding", "whisper", "tts", "dall-e", "gpt-image", "sora")
+        self._azure_deployments_seen = [d.get("id", "") for d in data]
+        for d in data:
+            model = str(d.get("model", "")).lower()
+            if d.get("status") == "succeeded" and not any(tag in model for tag in non_chat):
+                self._azure_deployment_cache = d.get("id", "")
+                logger.info("Using Azure OpenAI chat deployment '%s' (%s)", d.get("id"), model)
+                return self._azure_deployment_cache
+        return ""
+
+    # ------------------------------------------------------------------
+    # Error messages an instructor can act on
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _error_code(exc: Exception) -> Optional[int]:
+        # google-genai uses .code; openai/groq SDKs use .status_code.
+        for attr in ("code", "status_code"):
+            value = getattr(exc, attr, None)
+            if isinstance(value, int):
+                return value
+        return None
+
+    def _describe_provider_error(self, exc: Exception) -> str:
+        """Turn an SDK/network exception into a message an instructor can act on."""
+        code = self._error_code(exc)
+        status = str(getattr(exc, "status", "") or "").upper()
+        detail = str(getattr(exc, "message", "") or "").strip()
+        label = self.provider_label
+        provider = self.provider
+        key_var = PROVIDER_KEY_VARS.get(provider, "the API key")
+        model_var = ("QUIZ_LLM_MODEL" if (os.environ.get("QUIZ_LLM_MODEL") or "").strip()
+                     else PROVIDER_MODEL_VARS.get(provider, "QUIZ_LLM_MODEL"))
+        model = self.model_name
+
+        if code == 429 or status == "RESOURCE_EXHAUSTED":
+            return (
+                f"The {label} quota for this API key has been used up (rate limit / daily limit reached). "
+                f"Wait a few minutes and try again, or set a {key_var} with available quota "
+                "(or switch QUIZ_LLM_PROVIDER) in ai-agent/.env."
+            )
+        if code in (401, 403) or status in ("UNAUTHENTICATED", "PERMISSION_DENIED"):
+            return (
+                f"The {label} API key was rejected (invalid, expired or missing permission). "
+                f"Check {key_var} in ai-agent/.env and restart the AI service."
+            )
+        if code == 404 or status == "NOT_FOUND":
+            what = "deployment" if provider == "azure" else "model"
+            return (
+                f"The configured {label} {what} '{model}' was not found or is not available for this key. "
+                f"Update {model_var} in ai-agent/.env."
+            )
+        if code == 413:
+            return (
+                f"The lecture material is too large for the {label} model '{model}'. "
+                "Choose a model with a larger context window."
+            )
+        if code in (400, 422) or status in ("INVALID_ARGUMENT", "FAILED_PRECONDITION"):
+            text = str(exc)
+            if "api key" in detail.lower() or "API_KEY" in detail:
+                return f"The {label} API key is invalid. Check {key_var} in ai-agent/.env and restart the AI service."
+            if "content_filter" in text or "content management policy" in text.lower():
+                return f"{label} blocked the request with its content filter. Try different slides or relax the content filter."
+            return f"{label} rejected the quiz request: {detail or text[:300] or status or 'bad request'}"
+        if isinstance(code, int) and code >= 500:
+            return (
+                f"{label} is temporarily overloaded or unavailable (server error {code}). "
+                "Please try again in a minute."
+            )
+
+        name = type(exc).__name__.lower()
+        if "timeout" in name or "timedout" in name:
+            return f"{label} did not respond in time. Please try again; large slide decks can take longer."
+        if "connect" in name or "network" in name:
+            return (
+                f"The AI service could not reach {label} (network/connection error). "
+                "Check the internet connection and the endpoint in ai-agent/.env."
+            )
+        return f"{label} call failed ({type(exc).__name__}): {detail or str(exc)[:200] or 'unknown error'}"
 
     @staticmethod
     def _parse_json_object(raw: str) -> Optional[Dict[str, Any]]:
@@ -479,6 +736,10 @@ Create a {difficulty} difficulty quiz for the module "{module_title}" covering: 
 
 STRICT RULES:
 1. Ground EVERY question in the COURSE MATERIAL below. Never invent facts that are not present there.
+   Questions must test the SUBJECT KNOWLEDGE taught in the material (concepts, definitions, methods,
+   formulas, worked examples, comparisons, applications). NEVER ask about the module, course, slides,
+   syllabus, descriptions, outlines, "artifacts", "entities" or how the course is organised, and never
+   quote headings like "Module description" or "Topic" as if they were subject matter.
 2. Produce EXACTLY {num_questions} questions, each with a distinct angle; do not repeat the same concept.
 3. Allowed question_type values: {", ".join(question_types)}.
 4. question_type MULTIPLE_CHOICE / MULTIPLE_SELECT: 3-5 unique options.
@@ -543,6 +804,10 @@ JSON:"""
 
 STRICT RULES:
 1. Ground the question in the COURSE MATERIAL below. Never invent facts that are not present there.
+   Questions must test the SUBJECT KNOWLEDGE taught in the material (concepts, definitions, methods,
+   formulas, worked examples, comparisons, applications). NEVER ask about the module, course, slides,
+   syllabus, descriptions, outlines, "artifacts", "entities" or how the course is organised, and never
+   quote headings like "Module description" or "Topic" as if they were subject matter.
 2. question_type must be {q_type}.
 3. question_type MULTIPLE_CHOICE / MULTIPLE_SELECT: 3-5 unique options.
    question_type TRUE_FALSE: options exactly ["TRUE", "FALSE"].

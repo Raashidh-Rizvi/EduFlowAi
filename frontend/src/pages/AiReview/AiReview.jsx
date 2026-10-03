@@ -170,7 +170,8 @@ export default function AiReview() {
         showToast(`Loaded ${mapped.length} proposals from database.`, 'info');
       }
     } catch (e) {
-      console.warn('Backend proposals fetch error, keeping dynamic state', e);
+      console.error('Loading AI proposals failed:', e);
+      showToast(`Could not load proposals from the server: ${e.friendlyMessage || e.response?.data?.message || e.message || 'please retry.'}`, 'warning');
     } finally {
       setLoading(false);
     }
@@ -208,10 +209,14 @@ export default function AiReview() {
   // Handlers for Decisions
   const handleApprove = async () => {
     if (!current) return;
-    try {
-      await aiService.approveProposal(current.id, 'Cryptographically signed & authorized by instructor.');
-    } catch (e) {
-      console.warn('Backend approval sync', e);
+    if (!current.isDemo) {
+      try {
+        await aiService.approveProposal(current.id, 'Approved by instructor.');
+      } catch (e) {
+        console.error('Proposal approval failed:', e);
+        showToast(`Approval was not saved: ${e.friendlyMessage || e.response?.data?.message || e.message || 'please retry.'}`, 'warning');
+        return;
+      }
     }
 
     const updated = proposals.map(p => {
@@ -219,16 +224,18 @@ export default function AiReview() {
         return {
           ...p,
           status: 'Approved',
-          approvedBy: 'Dr. Sarah Jenkins',
+          approvedBy: 'You',
           approvedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
-          instructorNotes: 'Authorized and published to student mobile app.'
+          instructorNotes: 'Approved by instructor.'
         };
       }
       return p;
     });
 
     setProposals(updated);
-    showToast(`✅ Study Plan for ${current.student} approved & dispatched!`, 'success');
+    showToast(current.isDemo
+      ? `Demo proposal for ${current.student} marked approved locally (not saved).`
+      : `✅ Study plan for ${current.student} approved.`, current.isDemo ? 'info' : 'success');
   };
 
   const handleRejectClick = () => {
@@ -239,10 +246,14 @@ export default function AiReview() {
   const confirmRejection = async () => {
     if (!current) return;
     const notes = feedbackText.trim() || 'Returned for Re-plan: Adjust milestones according to instructor feedback.';
-    try {
-      await aiService.rejectProposal(current.id, notes);
-    } catch (e) {
-      console.warn('Backend rejection sync', e);
+    if (!current.isDemo) {
+      try {
+        await aiService.rejectProposal(current.id, notes);
+      } catch (e) {
+        console.error('Proposal rejection failed:', e);
+        showToast(`Rejection was not saved: ${e.friendlyMessage || e.response?.data?.message || e.message || 'please retry.'}`, 'warning');
+        return;
+      }
     }
 
     const updated = proposals.map(p => {
@@ -262,21 +273,28 @@ export default function AiReview() {
   };
 
   // Batch Approval
-  const handleApproveAll = () => {
-    const updated = proposals.map(p => {
-      if (p.status === 'PendingInstructorApproval') {
-        return {
-          ...p,
-          status: 'Approved',
-          approvedBy: 'Dr. Sarah Jenkins',
-          approvedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
-          instructorNotes: 'Batch approved by instructor.'
-        };
-      }
-      return p;
+  const handleApproveAll = async () => {
+    const pending = proposals.filter(p => p.status === 'PendingInstructorApproval');
+    const results = await Promise.allSettled(pending.map(p =>
+      p.isDemo ? Promise.resolve() : aiService.approveProposal(p.id, 'Batch approved by instructor.')
+    ));
+    const approvedIds = new Set();
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') approvedIds.add(pending[i].id);
+      else console.error('Batch approval failed for a proposal:', r.reason);
     });
-    setProposals(updated);
-    showToast(`🎉 Successfully approved and dispatched all ${pendingCount} pending proposals!`, 'success');
+    setProposals(prev => prev.map(p => approvedIds.has(p.id) ? {
+      ...p,
+      status: 'Approved',
+      approvedBy: 'You',
+      approvedAt: new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+      instructorNotes: 'Batch approved by instructor.'
+    } : p));
+    const failed = pending.length - approvedIds.size;
+    showToast(failed === 0
+      ? `Approved ${approvedIds.size} pending proposals.`
+      : `Approved ${approvedIds.size} of ${pending.length} proposals; ${failed} could not be saved. Please retry.`,
+      failed === 0 ? 'success' : 'warning');
   };
 
   // Modify XP Multiplier
@@ -365,10 +383,10 @@ export default function AiReview() {
     showToast('New quest milestone added to roadmap.', 'success');
   };
 
-  // AI Re-plan simulation
+  // DEMO: client-side simulation only. No AI agent is called and nothing is saved.
   const handleRegeneratePlan = () => {
     if (!current) return;
-    showToast('🤖 AI LangGraph Agent re-optimizing quest roadmap...', 'info');
+    showToast('Demo: simulating an AI re-plan locally (no AI agent is called).', 'info');
     setTimeout(() => {
       const refreshedSchedule = [
         ...current.schedule.map((q) => ({
@@ -384,7 +402,7 @@ export default function AiReview() {
             schedule: refreshedSchedule,
             confidenceScore: 99.4,
             auditLogs: [
-              { agent: 'Planning Agent', action: 'Re-evaluated constraint graph based on instructor guidance', time: 'Just now', duration: '105ms', status: 'Passed' },
+              { agent: 'Demo simulation', action: 'Local re-plan preview (not produced by the AI agent)', time: 'Just now', duration: '-', status: 'Demo' },
               ...p.auditLogs
             ]
           };
@@ -392,7 +410,7 @@ export default function AiReview() {
         return p;
       });
       setProposals(updated);
-      showToast('✨ Study plan successfully re-orchestrated with enhanced pacing!', 'success');
+      showToast('Demo re-plan applied locally. It is not saved to the server.', 'info');
     }, 1200);
   };
 
@@ -417,6 +435,7 @@ export default function AiReview() {
       const newPlanId = `wf-${Math.random().toString(36).substring(2, 8)}`;
       const newProposal = {
         id: newPlanId,
+        isDemo: true,
         studentId: genStudentId || 'IT22109822',
         student: genStudentName || 'Liam Davies',
         avatar: (genStudentName || 'LD').split(' ').map(n => n[0]).join('').toUpperCase(),
@@ -484,7 +503,7 @@ export default function AiReview() {
       setIsOrchestrating(false);
       setShowGeneratorModal(false);
       setOrchestrationStep(0);
-      showToast(`🎉 4-Agent Orchestration complete! New proposal generated for ${genStudentName}.`, 'success');
+      showToast(`Demo proposal created locally for ${genStudentName}. It is not saved and no AI agent was called.`, 'info');
     }, 2800);
   };
 
@@ -532,6 +551,25 @@ export default function AiReview() {
           <span>{toastMessage.msg}</span>
         </div>
       )}
+
+      {/* DEMO notice: parts of this page are simulations (see handleRegeneratePlan / runAgenticOrchestration). */}
+      <div role="note" style={{
+        padding: '10px 14px',
+        borderRadius: 'var(--radius-sm)',
+        backgroundColor: 'var(--bg-input)',
+        border: '1px solid var(--border-subtle)',
+        color: 'var(--text-muted)',
+        fontSize: '12.5px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        <Info size={16} />
+        <span>
+          <strong>Demo features:</strong> "Generate proposal" and "AI re-plan" are local simulations — no AI agent runs and their results are not saved.
+          Approve and reject decisions on proposals loaded from the server are saved.
+        </span>
+      </div>
 
       {/* Top Banner & Control Station */}
       <div className="card-premium" style={{

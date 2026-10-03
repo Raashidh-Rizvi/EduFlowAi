@@ -271,16 +271,6 @@ public class MarketplaceController : BaseApiController
             query = query.Where(c => !c.IsFree && c.Price > 0);
         }
 
-        if (minDuration.HasValue)
-        {
-            query = query.Where(c => c.DurationHours >= minDuration.Value);
-        }
-
-        if (maxDuration.HasValue)
-        {
-            query = query.Where(c => c.DurationHours <= maxDuration.Value);
-        }
-
         if (Guid.TryParse(instructor, out var instructorId))
         {
             query = query.Where(c => c.InstructorId == instructorId);
@@ -294,6 +284,17 @@ public class MarketplaceController : BaseApiController
             .ToListAsync();
 
         var items = await ProjectAsync(courses);
+
+        // Duration is derived from the uploaded lessons, so it is filtered after projection.
+        if (minDuration.HasValue)
+        {
+            items = items.Where(c => c.DurationHours >= minDuration.Value).ToList();
+        }
+
+        if (maxDuration.HasValue)
+        {
+            items = items.Where(c => c.DurationHours <= maxDuration.Value).ToList();
+        }
 
         if (minRating.HasValue && minRating.Value > 0)
         {
@@ -411,7 +412,8 @@ public class MarketplaceController : BaseApiController
             ParseJsonList(course.PrerequisitesJson),
             ParseJsonList(course.TargetAudienceJson),
             quizCount,
-            quizCount
+            quizCount,
+            item.TotalMinutes
         ));
     }
 
@@ -472,7 +474,18 @@ public class MarketplaceController : BaseApiController
         {
             var rating = ratings.TryGetValue(c.Id, out var summary) ? summary : CourseRatingSummary.Empty;
             var moduleCount = c.Modules?.Count ?? 0;
-            var lessonCount = c.Modules?.Sum(m => m.ContentItems?.Count ?? 0) ?? 0;
+            var lessons = c.Modules?.SelectMany(m => m.ContentItems ?? Enumerable.Empty<ContentItem>()).ToList()
+                ?? new List<ContentItem>();
+            var lessonCount = lessons.Count;
+            // Duration and freshness come from the uploaded content, not the manual course fields.
+            var totalMinutes = lessons.Sum(l => Math.Max(0, l.EstimatedMinutes));
+            var durationHours = lessonCount > 0
+                ? (int)Math.Ceiling(totalMinutes / 60.0)
+                : c.DurationHours;
+            var lastUpdated = new[] { c.UpdatedAt }
+                .Concat(c.Modules?.Select(m => m.UpdatedAt) ?? Enumerable.Empty<DateTime>())
+                .Concat(lessons.Select(l => l.UpdatedAt))
+                .Max();
 
             return new MarketplaceCourseDto(
                 c.Id,
@@ -484,7 +497,7 @@ public class MarketplaceController : BaseApiController
                 c.Difficulty.ToString(),
                 string.IsNullOrWhiteSpace(c.Term) ? "Fall 2026" : c.Term,
                 c.IsPublished,
-                c.DurationHours,
+                durationHours,
                 c.Price,
                 c.IsFree,
                 rating.AverageRating,
@@ -496,11 +509,12 @@ public class MarketplaceController : BaseApiController
                 c.Instructor?.FullName ?? "Instructor",
                 c.Instructor?.AvatarUrl,
                 c.CreatedAt,
-                c.UpdatedAt,
+                lastUpdated,
                 c.ShortDescription,
                 string.IsNullOrWhiteSpace(c.Language) ? "English" : c.Language,
                 c.XpReward,
-                c.CertificateEnabled
+                c.CertificateEnabled,
+                totalMinutes
             );
         }).ToList();
     }

@@ -94,7 +94,7 @@ public class AssessmentIntegrityTests
                     ClockSkew = TimeSpan.Zero
                 };
             });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(QuizzesController).Assembly);
 
         var app = builder.Build();
@@ -239,6 +239,33 @@ public class AssessmentIntegrityTests
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync($"/api/quizzes/{f.Quiz.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync($"/api/quizzes/course/{f.Course.Id}")).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/leaderboard/global")]
+    [InlineData("/api/leaderboard/weekly")]
+    [InlineData("/api/gamification/leaderboard")]
+    public async Task FallbackPolicy_RejectsAnonymousCallsToEndpointsWithoutExplicitAuth(string path)
+    {
+        await using var app = await StartApp();
+        using var anonymous = CreateClient(app);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(path)).StatusCode);
+    }
+
+    [Fact]
+    public async Task FallbackPolicy_KeepsExplicitlyPublicEndpointsReachable()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var anonymous = CreateClient(app);
+
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync("/api/marketplace/courses")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await anonymous.GetAsync($"/api/courses/{f.Course.Id}/reviews")).StatusCode);
+        var login = await anonymous.PostAsJsonAsync("/api/auth/login", new LoginRequest(f.Student.Email, TestPassword));
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var badLogin = await anonymous.PostAsJsonAsync("/api/auth/login", new LoginRequest(f.Student.Email, "wrong-password"));
+        Assert.Equal(HttpStatusCode.Unauthorized, badLogin.StatusCode);
     }
 
     [Fact]
@@ -859,7 +886,8 @@ public class AssessmentIntegrityTests
     public async Task AttemptResult_IsReproducibleAfterTheQuestionChanges()
     {
         await using var app = await StartApp();
-        var f = await SeedCourseWithQuiz(app);
+        // Single attempt: keys are only revealed to students once no attempts remain.
+        var f = await SeedCourseWithQuiz(app, attemptsAllowed: 1);
         using var student = await LoginAs(app, f.Student);
         var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f))))
             .GetProperty("attemptId").GetGuid();
@@ -902,6 +930,99 @@ public class AssessmentIntegrityTests
         var raw = await (await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result")).Content.ReadAsStringAsync();
         Assert.DoesNotContain("B-tree", raw.Replace("Which index type", ""));
         Assert.DoesNotContain("B-trees keep keys ordered", raw);
+    }
+
+    private static JsonElement McqItem(JsonElement body, Fixture f)
+        => body.GetProperty("questionBreakdown").EnumerateArray()
+            .Single(q => q.GetProperty("questionId").GetGuid() == f.Mcq.Id);
+
+    private static void AssertKeysHidden(JsonElement body, Fixture f, string raw)
+    {
+        Assert.Equal("Hidden", McqItem(body, f).GetProperty("correctAnswer").GetString());
+        Assert.DoesNotContain("B-trees keep keys ordered", raw);
+        Assert.DoesNotContain("secret rubric", raw);
+    }
+
+    [Fact]
+    public async Task Submit_DoesNotRevealAnswerKeys_WhileAttemptsRemain()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, attemptsAllowed: 2);
+        using var student = await LoginAs(app, f.Student);
+
+        var firstResponse = await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"));
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        var firstRaw = await firstResponse.Content.ReadAsStringAsync();
+        var first = JsonDocument.Parse(firstRaw).RootElement;
+        AssertKeysHidden(first, f, firstRaw);
+
+        var resultResponse = await student.GetAsync($"/api/quizzes/attempts/{first.GetProperty("attemptId").GetGuid()}/result");
+        var resultRaw = await resultResponse.Content.ReadAsStringAsync();
+        AssertKeysHidden(JsonDocument.Parse(resultRaw).RootElement, f, resultRaw);
+
+        // Final attempt: nothing left to gain, so the configured answers are shown.
+        var last = await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash")));
+        Assert.Equal("B-tree", McqItem(last, f).GetProperty("correctAnswer").GetString());
+
+        // ...and the earlier attempt's result now reveals them too.
+        var earlier = await Json(await student.GetAsync($"/api/quizzes/attempts/{first.GetProperty("attemptId").GetGuid()}/result"));
+        Assert.Equal("B-tree", McqItem(earlier, f).GetProperty("correctAnswer").GetString());
+    }
+
+    [Fact]
+    public async Task UnlimitedAttemptQuiz_NeverRevealsAnswerKeysToStudents_WhileOpen()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        using var instructor = await LoginAs(app, f.Instructor);
+
+        var response = await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"));
+        var raw = await response.Content.ReadAsStringAsync();
+        var body = JsonDocument.Parse(raw).RootElement;
+        AssertKeysHidden(body, f, raw);
+
+        var url = $"/api/quizzes/attempts/{body.GetProperty("attemptId").GetGuid()}/result";
+        var resultRaw = await (await student.GetAsync(url)).Content.ReadAsStringAsync();
+        AssertKeysHidden(JsonDocument.Parse(resultRaw).RootElement, f, resultRaw);
+
+        // The course instructor always sees the key.
+        Assert.Equal("B-tree", McqItem(await Json(await instructor.GetAsync(url)), f).GetProperty("correctAnswer").GetString());
+    }
+
+    [Fact]
+    public async Task AttemptResult_RevealsAnswerKeys_AfterTheQuizCloses()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"))))
+            .GetProperty("attemptId").GetGuid();
+
+        await WithDb(app, async db =>
+        {
+            (await db.Assessments.SingleAsync(a => a.Id == f.Quiz.Id)).DueDate = DateTime.UtcNow.AddMinutes(-1);
+            return await db.SaveChangesAsync();
+        });
+
+        var result = await Json(await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result"));
+        Assert.Equal("B-tree", McqItem(result, f).GetProperty("correctAnswer").GetString());
+    }
+
+    [Fact]
+    public async Task AttemptResult_HidesAnswerKeys_WhileAnotherAttemptIsOpen()
+    {
+        await using var app = await StartApp();
+        var f = await SeedCourseWithQuiz(app, attemptsAllowed: 2);
+        using var student = await LoginAs(app, f.Student);
+        var attemptId = (await Json(await student.PostAsJsonAsync("/api/quizzes/submit", SubmitBody(f, mcqAnswer: "Hash"))))
+            .GetProperty("attemptId").GetGuid();
+
+        // Starting the last attempt uses up the limit but must not unlock the key mid-attempt.
+        Assert.Equal(HttpStatusCode.OK, (await student.PostAsync($"/api/quizzes/{f.Quiz.Id}/start", null)).StatusCode);
+
+        var raw = await (await student.GetAsync($"/api/quizzes/attempts/{attemptId}/result")).Content.ReadAsStringAsync();
+        AssertKeysHidden(JsonDocument.Parse(raw).RootElement, f, raw);
     }
 
     // =========================================================================

@@ -45,7 +45,7 @@ STEP 3 — Create your .env file (REQUIRED - this file is NOT in GitHub)
     Set these values in .env:
       LLM_PROVIDER=groq
       GROQ_API_KEY=gsk_your_key_here
-      GROQ_MODEL=llama-3.3-70b-versatile
+      GROQ_MODEL=openai/gpt-oss-120b
 
   OPTION B - Use Google Gemini:
     Get your free key at: https://aistudio.google.com/app/apikey
@@ -53,12 +53,12 @@ STEP 3 — Create your .env file (REQUIRED - this file is NOT in GitHub)
     Set these values in .env:
       LLM_PROVIDER=gemini
       GEMINI_API_KEY=AIza_your_key_here
-      GEMINI_MODEL=gemini-1.5-flash
+      GEMINI_MODEL=models/gemini-flash-latest
 
   Also make sure these lines are in your .env (copy from .env.example if missing):
       EMBEDDING_PROVIDER=default
       CHROMA_PERSIST_DIR=./data/chroma_db
-      INTERNAL_SERVICE_TOKEN=eduflow-local-dev-internal-token-2026
+      INTERNAL_SERVICE_TOKEN=<generate-a-random-token; must match backend AiService:ApiKey>
 
 
 --------------------------------------------------------------------------------

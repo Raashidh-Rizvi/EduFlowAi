@@ -4,7 +4,28 @@
  * so all components (e.g. Courses, Dashboard, Assessments & Quizzes tab) have instant access to generated quizzes.
  */
 
-const STORAGE_KEY = 'eduflow_generated_quizzes';
+// Display-only mirror of instructor quizzes. The server is the source of truth and
+// grades every attempt, so answer keys, explanations and marking schemes are never
+// written here (localStorage is readable by any script on the page and by anyone
+// using the browser).
+const STORAGE_KEY = 'eduflow_generated_quizzes_v2';
+// The previous key stored full answer keys; drop it once.
+const LEGACY_STORAGE_KEY = 'eduflow_generated_quizzes';
+
+try {
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
+} catch (err) {
+  console.warn('Could not remove legacy quiz cache from localStorage:', err);
+}
+
+const sanitizeQuestion = (q, idx) => ({
+  id: q.id || `q-item-${idx + 1}`,
+  prompt: q.prompt || `Question ${idx + 1}`,
+  type: q.type || 'MultipleChoice',
+  options: Array.isArray(q.options) ? q.options : [],
+  points: q.points || 10,
+  slideCitation: q.slideCitation || null
+});
 
 export const saveGeneratedQuiz = (quizObj) => {
   if (!quizObj || !quizObj.title) return null;
@@ -15,10 +36,10 @@ export const saveGeneratedQuiz = (quizObj) => {
 
     const formattedQuiz = {
       id: quizObj.id || `q-gen-${Date.now()}`,
-      courseId: quizObj.courseId || '44444444-4444-4444-4444-444444444444',
-      courseCode: quizObj.courseCode || 'SE3090',
+      courseId: quizObj.courseId || null,
+      courseCode: quizObj.courseCode || '',
       title: quizObj.title,
-      description: quizObj.description || 'AI Synthesized RAG Assessment',
+      description: quizObj.description || '',
       questionsCount: quizObj.questionsCount || (quizObj.questions ? quizObj.questions.length : 5),
       difficulty: quizObj.difficulty || 'Medium',
       xpReward: quizObj.xpReward || 100,
@@ -37,17 +58,7 @@ export const saveGeneratedQuiz = (quizObj) => {
       moduleId: quizObj.moduleId || null,
       topicId: quizObj.topicId || null,
       isBossBattle: Boolean(quizObj.isBossBattle),
-      questions: (quizObj.questions || []).map((q, idx) => ({
-        id: q.id || `q-item-${idx + 1}`,
-        prompt: q.prompt || `Question ${idx + 1}`,
-        type: q.type || 'MultipleChoice',
-        options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-        correctAnswer: q.correctAnswer || (q.options ? q.options[0] : 'Option A'),
-        explanation: q.explanation || 'Verified with Bloom taxonomy analysis and SlideQuest Strict RAG Grounding.',
-        points: q.points || 10,
-        slideCitation: q.slideCitation || null,
-        markingScheme: q.markingScheme || null
-      }))
+      questions: (quizObj.questions || []).map(sanitizeQuestion)
     };
 
     // Prepend and deduplicate by id or title
@@ -85,6 +96,7 @@ export const updateGeneratedQuiz = (quizId, updates = {}, matchTitle = null) => 
       updatedQuiz = {
         ...q,
         ...updates,
+        ...(updates.questions ? { questions: updates.questions.map(sanitizeQuestion) } : {}),
         questionsCount: updates.questionsCount
           ?? (updates.questions ? updates.questions.length : q.questionsCount),
         // Keep mirrored legacy fields in sync after a rename
@@ -112,7 +124,7 @@ export const getGeneratedQuizzes = (courseId = null) => {
     if (!courseId || courseId === 'ALL') {
       return list;
     }
-    return list.filter(q => !q.courseId || q.courseId === courseId || q.courseId === 'ALL' || courseId === '44444444-4444-4444-4444-444444444444' || q.courseId === '44444444-4444-4444-4444-444444444444');
+    return list.filter(q => !q.courseId || q.courseId === courseId || q.courseId === 'ALL');
   } catch (err) {
     console.warn('Failed to read generated quizzes from localStorage:', err);
     return [];

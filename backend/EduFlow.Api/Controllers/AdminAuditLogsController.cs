@@ -59,7 +59,10 @@ public class AdminAuditLogsController : BaseApiController
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { message = ex.Message, code = "validation_failed" });
+            // Messages come from AdminAuditLogService's curated query validation; strip the
+            // framework "(Parameter '...')" suffix so internal parameter names are not echoed.
+            var message = ex.ParamName == null ? ex.Message : ex.Message.Replace($" (Parameter '{ex.ParamName}')", string.Empty);
+            return BadRequest(new { success = false, message, code = "validation_failed", errors = (object?)null, traceId = HttpContext?.TraceIdentifier });
         }
     }
 

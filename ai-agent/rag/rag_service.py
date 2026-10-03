@@ -249,7 +249,7 @@ class SimpleRagService:
         for res in search_results[:max_citations]:
             meta = res.get("metadata", {})
             page_num = meta.get("page_number", 1)
-            source_file = meta.get("source_file", "Lecture Slides")
+            chunk_source = meta.get("source_file", "Lecture Slides")
             raw_text = res.get("text", "")
             
             preview = raw_text.replace("\n", " ").strip()
@@ -258,11 +258,11 @@ class SimpleRagService:
 
             citations.append(SlideCitation(
                 page_number=page_num,
-                source_file=source_file,
+                source_file=chunk_source,
                 preview_text=preview,
                 relevance_score=res.get("relevance_score", 0.9)
             ))
-            context_snippets.append(f"[Source: {source_file} - Slide/Page {page_num}]\n{raw_text}")
+            context_snippets.append(f"[Source: {chunk_source} - Slide/Page {page_num}]\n{raw_text}")
 
         context_text = "\n\n---\n\n".join(context_snippets)
 
@@ -450,9 +450,9 @@ class SimpleRagService:
 
         elif self.gemini_api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.gemini_api_key)
-                model = genai.GenerativeModel(self.gemini_model_name)
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=self.gemini_api_key, http_options=types.HttpOptions(timeout=4_000))
                 recent_history = conversation_history[-3:]
                 history_text = "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')[:160]}" for m in recent_history])
                 prompt = (
@@ -463,7 +463,11 @@ class SimpleRagService:
                     f"Follow-up: {clean_q}\n\n"
                     "Query:"
                 )
-                response = model.generate_content(prompt, generation_config={"max_output_tokens": 25, "temperature": 0.0})
+                response = client.models.generate_content(
+                    model=self.gemini_model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(max_output_tokens=25, temperature=0.0),
+                )
                 if response and response.text:
                     rewritten = response.text.strip().strip('"\'`\n')
                     rewritten = re.sub(r'^(Standalone Search Query:|\bQuery:\b)', '', rewritten, flags=re.IGNORECASE).strip()
@@ -553,16 +557,16 @@ class SimpleRagService:
         # ---------------------------------------------------------------------
         if self.gemini_api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.gemini_api_key)
-                model = genai.GenerativeModel(self.gemini_model_name)
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=self.gemini_api_key, http_options=types.HttpOptions(timeout=30_000))
 
                 history_text = json.dumps(conversation_history or [], ensure_ascii=False)
                 full_prompt = f"{system_instructions}\n\nPREVIOUS CONVERSATION (context only):\n{history_text}\n\n{user_prompt}"
-                response = model.generate_content(
-                    full_prompt,
-                    generation_config={"max_output_tokens": max_tokens},
-                    request_options={"timeout": 30}
+                response = client.models.generate_content(
+                    model=self.gemini_model_name,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(max_output_tokens=max_tokens),
                 )
                 if response and response.text:
                     return self._clean_text_artifacts(response.text), "gemini"
@@ -657,7 +661,7 @@ class SimpleRagService:
         if self.llm_provider == "groq" and self.groq_api_key:
             try:
                 from groq import Groq
-                client = Groq(api_key=self.groq_api_key)
+                client = Groq(api_key=self.groq_api_key, timeout=30.0, max_retries=0)
                 messages = [{"role": "system", "content": system_instructions}]
                 for msg in (conversation_history or [])[-4:]:
                     messages.append({"role": msg["role"], "content": msg["content"]})
@@ -677,12 +681,9 @@ class SimpleRagService:
         # 4.2: Gemini Fallback Inference
         if self.gemini_api_key:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.gemini_api_key)
-                model = genai.GenerativeModel(
-                    model_name=self.gemini_model_name,
-                    system_instruction=system_instructions
-                )
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=self.gemini_api_key, http_options=types.HttpOptions(timeout=30_000))
                 history_snippets = []
                 if conversation_history:
                     for m in conversation_history[-4:]:
@@ -691,9 +692,11 @@ class SimpleRagService:
                     f"CONVERSATION HISTORY:\n{chr(10).join(history_snippets)}\n\n{user_prompt}"
                     if history_snippets else user_prompt
                 )
-                response = model.generate_content(
-                    gemini_prompt,
-                    generation_config=genai.types.GenerationConfig(
+                response = client.models.generate_content(
+                    model=self.gemini_model_name,
+                    contents=gemini_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instructions,
                         temperature=0.2,
                         max_output_tokens=max_tokens
                     )

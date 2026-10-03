@@ -61,7 +61,7 @@ public class MandatoryScenarioTests
 
         builder.Services.AddAuthentication("MandatoryScenario")
             .AddScheme<AuthenticationSchemeOptions, MandatoryScenarioAuthHandler>("MandatoryScenario", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(CoursesController).Assembly);
 
         var app = builder.Build();

@@ -62,6 +62,7 @@ public class CoursesController : BaseApiController
     // -------------------------------------------------------------------------
 
     [HttpGet]
+    [AllowAnonymous] // Public catalog: anonymous visitors only receive published courses.
     public async Task<IActionResult> GetCourses()
     {
         // SECURITY: identity and role come exclusively from the JWT, never from the
@@ -193,6 +194,7 @@ public class CoursesController : BaseApiController
     }
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous] // Public course detail: drafts return 404 to anyone but the owner/admin.
     public async Task<IActionResult> GetCourseById(Guid id)
     {
         var course = await DbContext.Courses
@@ -643,6 +645,7 @@ public class CoursesController : BaseApiController
     /// (GET /api/instructor/reviews) and to administrators (GET /api/admin/reviews).
     /// </summary>
     [HttpGet("{id:guid}/reviews")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetCourseReviews(Guid id)
     {
         var courseExists = await DbContext.Courses.AsNoTracking().AnyAsync(c => c.Id == id);
@@ -1028,9 +1031,9 @@ public class CoursesController : BaseApiController
     }
 
     /// <summary>
-    /// Server-computed XP summary for a published course. The course's configured
-    /// XpReward is the headline figure; the breakdown sums real lesson XpReward values
-    /// and live quiz XpReward values, so the storefront can never show fabricated totals.
+    /// Server-computed XP summary for a published course. The headline figure is the sum
+    /// of real lesson XpReward values and published quiz XpReward values, so the storefront
+    /// can never show fabricated totals.
     /// </summary>
     [HttpGet("{id:guid}/xp-summary")]
     [AllowAnonymous]
@@ -1048,7 +1051,7 @@ public class CoursesController : BaseApiController
             .SumAsync(l => (int?)l.XpReward) ?? 0;
 
         var quizXp = await DbContext.Assessments.AsNoTracking()
-            .Where(a => a.CourseId == id)
+            .Where(a => a.CourseId == id && a.Status == QuizStatus.Published)
             .SumAsync(a => (int?)a.XpReward) ?? 0;
 
         return Ok(new
@@ -1058,9 +1061,9 @@ public class CoursesController : BaseApiController
             lessonXp,
             quizXp,
             earnedFromLessonsAndQuizzes = lessonXp + quizXp,
-            // The headline shown on the course page: instructor-configured total when
-            // present, otherwise the live sum of lesson + quiz rewards.
-            displayTotal = course.XpReward > 0 ? course.XpReward : lessonXp + quizXp
+            // The headline shown on the course page: the live sum of uploaded lesson and
+            // published quiz rewards; the configured figure is only a fallback for empty courses.
+            displayTotal = lessonXp + quizXp > 0 ? lessonXp + quizXp : course.XpReward
         });
     }
 
@@ -1258,7 +1261,7 @@ public class CoursesController : BaseApiController
 
         if (!System.IO.File.Exists(physicalPath))
         {
-            return BadRequest(new { message = $"Slide file not found on disk at: {physicalPath}" });
+            return BadRequest(new { message = "The slide file for this module was not found. Please re-upload it." });
         }
 
         var payload = new

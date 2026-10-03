@@ -297,6 +297,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   const [generatedDraft, setGeneratedDraft] = useState(null);
   const [validationReport, setValidationReport] = useState(null);
+  // Set when slide topic discovery fails or returns nothing, so the UI does not claim there are no slides.
+  const [topicDiscoveryUnavailable, setTopicDiscoveryUnavailable] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [quizNotification, setQuizNotification] = useState(null);
 
@@ -467,6 +469,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
     setShowAiQuizModal(true);
 
     // If lecture slides exist, invoke SlideQuest Agent for topic discovery
+    setTopicDiscoveryUnavailable(false);
     if (mod.pdfUrl) {
       setIsAnalyzingTopics(true);
       setAnalyzedSlideDeckName(mod.attachmentFileName || 'Lecture Slides');
@@ -479,28 +482,17 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           setAnalyzedSlideDeckName(catRes.slideDeckName || mod.attachmentFileName || 'Lecture Slides');
           showToast(`⚡ SlideQuest AI extracted ${catRes.topics.length} topics from lecture slides!`);
         } else {
-          // Generate realistic default topics for this module
-          const fallbackTopics = [
-            { id: 'top-1', title: `${mod.title}: Architectural Foundations`, slide_range: 'Slides 1-4', summary: 'Core system principles, invariants and domain boundaries.', key_concepts: ['Architecture', 'Boundaries', 'Invariants'] },
-            { id: 'top-2', title: `${mod.title}: Core Protocols & Mechanics`, slide_range: 'Slides 5-9', summary: 'Execution lifecycle, message routing and operational workflows.', key_concepts: ['Protocols', 'Pipelines', 'Flows'] },
-            { id: 'top-3', title: `${mod.title}: Fault Tolerance & Resilience`, slide_range: 'Slides 10-14', summary: 'Partition recovery, state verification and fallback handling.', key_concepts: ['Resilience', 'Quorum', 'Recovery'] },
-            { id: 'top-4', title: `${mod.title}: Performance & Trade-offs`, slide_range: 'Slides 15-18', summary: 'Latency analysis, consistency benchmarks and tuning.', key_concepts: ['Latency', 'Throughput', 'Consistency'] }
-          ];
-          setDetectedSlideTopics(fallbackTopics);
-          setSelectedTopicIds(fallbackTopics.map(t => t.id));
-          setSelectAllTopics(true);
+          setDetectedSlideTopics([]);
+          setSelectedTopicIds([]);
+          setTopicDiscoveryUnavailable(true);
+          showToast('SlideQuest could not find topics in these slides. The quiz will use the whole module.');
         }
       } catch (err) {
-        console.warn('SlideQuest topic discovery fallback:', err);
-        const fallbackTopics = [
-          { id: 'top-1', title: `${mod.title}: Architectural Foundations`, slide_range: 'Slides 1-4', summary: 'Core system principles, invariants and domain boundaries.', key_concepts: ['Architecture', 'Boundaries', 'Invariants'] },
-          { id: 'top-2', title: `${mod.title}: Core Protocols & Mechanics`, slide_range: 'Slides 5-9', summary: 'Execution lifecycle, message routing and operational workflows.', key_concepts: ['Protocols', 'Pipelines', 'Flows'] },
-          { id: 'top-3', title: `${mod.title}: Fault Tolerance & Resilience`, slide_range: 'Slides 10-14', summary: 'Partition recovery, state verification and fallback handling.', key_concepts: ['Resilience', 'Quorum', 'Recovery'] },
-          { id: 'top-4', title: `${mod.title}: Performance & Trade-offs`, slide_range: 'Slides 15-18', summary: 'Latency analysis, consistency benchmarks and tuning.', key_concepts: ['Latency', 'Throughput', 'Consistency'] }
-        ];
-        setDetectedSlideTopics(fallbackTopics);
-        setSelectedTopicIds(fallbackTopics.map(t => t.id));
-        setSelectAllTopics(true);
+        console.error('SlideQuest topic discovery failed:', err);
+        setDetectedSlideTopics([]);
+        setSelectedTopicIds([]);
+        setTopicDiscoveryUnavailable(true);
+        showToast(`Slide topic discovery is unavailable: ${err.friendlyMessage || err.response?.data?.message || err.message || 'please retry.'}`);
       } finally {
         setIsAnalyzingTopics(false);
       }
@@ -625,9 +617,11 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         newPdfUrl = uploadRes.fileUrl;
         newFileName = uploadRes.fileName;
       } catch (uploadErr) {
-        console.warn('Upload fallback:', uploadErr);
-        newPdfUrl = `/uploads/slides/${editModuleFile.name}`;
-        newFileName = editModuleFile.name;
+        // Do not save a guessed URL: the server stores files under a generated name,
+        // so a client-made path would point at a file that does not exist.
+        console.warn('Module file upload failed:', uploadErr?.friendlyMessage || uploadErr?.message);
+        alert(uploadErr?.friendlyMessage || 'The file could not be uploaded. The module was not saved.');
+        return;
       } finally {
         setIsUploadingEditSlide(false);
       }
@@ -708,16 +702,21 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
 
       let questions = [];
       if (res && res.questions && res.questions.length > 0) {
+        // metadataJson arrives as a serialized JSON string from the API.
+        const readMeta = (q) => {
+          if (q.metadataJson && typeof q.metadataJson === 'object') return q.metadataJson;
+          try { return JSON.parse(q.metadataJson || '{}') || {}; } catch { return {}; }
+        };
         questions = res.questions.map((q, idx) => ({
           id: q.id || `q-item-${idx + 1}`,
           prompt: q.prompt,
           type: questionTypeName(q.type),
-          options: q.options || ['Option A', 'Option B', 'Option C', 'Option D'],
-          correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
-          explanation: q.explanation || 'Verified with Bloom taxonomy analysis and SlideQuest Strict RAG Grounding.',
+          options: q.options || [],
+          correctAnswer: q.correctAnswer || '',
+          explanation: q.explanation || '',
           points: q.points || 10,
-          slideCitation: q.metadataJson?.slideCitation || q.slideCitation || `Slide ${Math.min(idx * 2 + 1, 16)}-${Math.min(idx * 2 + 3, 18)}: ${aiQuizScope.moduleTitle}`,
-          markingScheme: q.metadataJson?.markingScheme || q.markingScheme || 'Full Marks (10 pts): Accurate explanation citing core slide invariants. Partial Marks (5 pts): Correct concept with minor omission. 0 pts: Contradictory.'
+          slideCitation: readMeta(q).slideCitation || q.slideCitation || null,
+          markingScheme: readMeta(q).markingScheme || q.markingScheme || ''
         }));
 
         setGeneratedDraft({
@@ -727,14 +726,6 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           // instructor review). Approval must publish THIS quiz, not create a new one.
           serverQuizId: res.id || res.quizId || null,
           questions
-        });
-
-        setValidationReport({
-          scopeVerified: true,
-          difficultyValid: true,
-          duplicatesFound: 0,
-          safetyPassed: true,
-          sourceGrounding: `${aiQuizScope.courseTitle} → ${aiQuizScope.moduleTitle} (Slide RAG Grounded)`
         });
 
         setQuizNotification({
@@ -973,21 +964,16 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
     );
 
     // Backend quizzes store questions server-side — hydrate the full detail if needed
-    if ((!quizItem.questions || quizItem.questions.length === 0) && quizItem.id && quizItem.id.length === 36) {
+    if (quizItem.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(quizItem.id))) {
       try {
         const detail = await quizService.getQuizById(quizItem.id);
         if (detail && detail.questions && detail.questions.length > 0) {
-          const typeLabel = (t) => {
-            const map = { 0: 'MultipleChoice', 1: 'MultipleSelect', 2: 'FillInBlank', 3: 'ShortAnswer', 4: 'Matching', 5: 'TrueFalse', 6: 'Dropdown' };
-            const metaType = (() => { try { return detail.metadataJson ? JSON.parse(detail.metadataJson).questionType : null; } catch { return null; } })();
-            return typeof t === 'number' ? (map[t] || 'MultipleChoice') : (metaType || t || 'MultipleChoice');
-          };
           setEditQuizQuestions(detail.questions.map(q => ({
             id: q.id,
             prompt: q.prompt || '',
-            type: typeLabel(q.type),
-            options: q.options && q.options.length > 0 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D'],
-            correctAnswer: q.correctAnswer || q.options?.[0] || 'Option A',
+            type: questionTypeName(q.type),
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
             explanation: q.explanation || '',
             points: q.points || 10,
             slideCitation: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).slideCitation : null; } catch { return null; } })(),
@@ -995,7 +981,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           })));
         }
       } catch (err) {
-        console.warn('Could not hydrate quiz details for review:', err);
+        console.error('Could not load quiz details for review:', err);
+        showToast(`Could not load the saved quiz questions: ${err.friendlyMessage || err.response?.data?.message || err.message || 'please retry.'}`);
       }
     }
   };
@@ -1271,9 +1258,11 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         const uploadRes = await courseService.uploadSlide(modulePdfFile);
         uploadedPdfUrl = uploadRes.fileUrl;
         uploadedPdfName = uploadRes.fileName;
-      } catch {
-        uploadedPdfUrl = `/uploads/slides/${modulePdfFile.name}`;
-        uploadedPdfName = modulePdfFile.name;
+      } catch (uploadErr) {
+        // Do not save a guessed URL: the server stores files under a generated name.
+        console.warn('Module file upload failed:', uploadErr?.friendlyMessage || uploadErr?.message);
+        alert(uploadErr?.friendlyMessage || 'The file could not be uploaded. The module was not created.');
+        return;
       } finally {
         setModulePdfUploading(false);
       }
@@ -2997,7 +2986,9 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                       }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
                           <FileText size={16} color="var(--primary)" />
-                          <span>No slides attached yet. Uploading a PDF or PowerPoint deck allows SlideQuest to categorize subtopics and strictly ground questions via RAG.</span>
+                          <span>{topicDiscoveryUnavailable
+                            ? 'Slide topic discovery is unavailable for this deck right now. You can still generate a quiz for the whole module, or reopen this dialog to retry.'
+                            : 'No slides attached yet. Uploading a PDF or PowerPoint deck allows SlideQuest to categorize subtopics and strictly ground questions via RAG.'}</span>
                         </div>
                       </div>
                     )

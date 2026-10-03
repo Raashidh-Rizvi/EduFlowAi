@@ -67,7 +67,17 @@ public class NotificationsController : ControllerBase
     public async Task<IActionResult> BroadcastAnnouncement([FromBody] BroadcastRequest request)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
-        var authorId = !string.IsNullOrEmpty(uidClaim) && Guid.TryParse(uidClaim, out var parsed) ? parsed : Guid.NewGuid();
+        if (!Guid.TryParse(uidClaim, out var authorId))
+        {
+            return Unauthorized();
+        }
+
+        // A course-scoped announcement may only target a course the instructor owns.
+        if (request.CourseId is { } courseId && !User.IsInRole("Admin")
+            && !await _dbContext.Courses.AnyAsync(c => c.Id == courseId && c.InstructorId == authorId))
+        {
+            return Forbid();
+        }
 
         var announcement = new Announcement
         {

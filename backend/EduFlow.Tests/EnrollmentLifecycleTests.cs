@@ -74,7 +74,7 @@ public class EnrollmentLifecycleTests
 
         builder.Services.AddAuthentication("EnrollmentTest")
             .AddScheme<AuthenticationSchemeOptions, EnrollmentTestAuthHandler>("EnrollmentTest", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(CoursesController).Assembly);
 
         var app = builder.Build();

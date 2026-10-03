@@ -294,8 +294,7 @@ def test_provider_failures_and_closed_stdout_still_return_extractive_chat(enviro
     rag.groq_api_key = "test-only"
     rag.gemini_api_key = "test-only"
     monkeypatch.setattr("groq.Groq", Mock(side_effect=RuntimeError("provider failed")))
-    monkeypatch.setattr("google.generativeai.configure", Mock())
-    monkeypatch.setattr("google.generativeai.GenerativeModel", Mock(side_effect=RuntimeError("provider failed")))
+    monkeypatch.setattr("google.genai.Client", Mock(side_effect=RuntimeError("provider failed")))
     monkeypatch.setattr(rag, "_generate_llm_answer", SimpleRagService._generate_llm_answer.__get__(rag))
     with monkeypatch.context() as ctx:
         ctx.setattr("builtins.print", Mock(side_effect=OSError(22, "Invalid argument")))
@@ -313,9 +312,8 @@ def test_existing_gemini_fallback_is_used_if_groq_fails(environment, monkeypatch
     rag.groq_api_key = "test-only"
     rag.gemini_api_key = "test-only"
     monkeypatch.setattr("groq.Groq", Mock(side_effect=RuntimeError("primary unavailable")))
-    monkeypatch.setattr("google.generativeai.configure", Mock())
-    model = Mock()
-    model.generate_content.return_value.text = "Grounded secondary answer"
-    monkeypatch.setattr("google.generativeai.GenerativeModel", Mock(return_value=model))
+    client = Mock()
+    client.models.generate_content.return_value.text = "Grounded secondary answer"
+    monkeypatch.setattr("google.genai.Client", Mock(return_value=client))
     text, provider = SimpleRagService._generate_llm_answer(rag, "question", "slide excerpt")
     assert (text, provider) == ("Grounded secondary answer", "gemini")

@@ -58,7 +58,7 @@ public class MarketplaceDiscoveryTests : IDisposable
         builder.Services.AddAuthentication("DiscoveryTest")
             .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, DiscoveryAuthHandler>(
                 "DiscoveryTest", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(EduFlow.Api.Controllers.CoursesController).Assembly);
 
         _app = builder.Build();

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Clock, BarChart3, Users, BookOpen, Layers, ArrowRight } from 'lucide-react';
 import StarRating from './StarRating';
 import Avatar from './Avatar';
-import { formatDurationHours, formatPrice, formatCount, levelLabel } from '../../utils/marketplaceFormat';
+import { formatDurationHours, formatMinutes, formatPrice, formatCount, levelLabel } from '../../utils/marketplaceFormat';
 
 const THUMB_FALLBACKS = [
   'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)',
@@ -27,7 +27,10 @@ export default function CourseCard({ course, style = {}, className = '' }) {
   const [thumbFailed, setThumbFailed] = React.useState(false);
   if (!course) return null;
 
-  const duration = formatDurationHours(course.durationHours);
+  // Prefer the live sum of uploaded lesson minutes; durationHours is only a fallback.
+  const duration = Number(course.totalMinutes) > 0
+    ? formatMinutes(course.totalMinutes)
+    : formatDurationHours(course.durationHours);
   const price = formatPrice(course);
   const isFree = price === 'Free';
   const instructorName = course.instructorName || 'EduFlow Instructor';

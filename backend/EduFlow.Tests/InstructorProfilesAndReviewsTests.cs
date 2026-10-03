@@ -74,7 +74,7 @@ public class InstructorProfilesAndReviewsTests
         }
         builder.Services.AddAuthentication("InstructorReviewsTest")
             .AddScheme<AuthenticationSchemeOptions, InstructorReviewsTestAuthHandler>("InstructorReviewsTest", _ => { });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(EduFlow.Api.Security.AuthorizationPolicies.Configure);
         builder.Services.AddControllers().AddApplicationPart(typeof(AdminController).Assembly);
         var app = builder.Build();
         app.UseAuthentication();

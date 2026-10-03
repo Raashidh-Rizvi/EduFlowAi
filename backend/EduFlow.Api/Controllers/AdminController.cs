@@ -70,7 +70,9 @@ public class AdminController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { message = ex.Message });
+            // AuthService.CreateUserAsync signals validation/duplicate-email failures with curated
+            // InvalidOperationException messages that are safe to show to an administrator.
+            return BadRequest(new { success = false, message = ex.Message, code = "USER_CREATE_FAILED", errors = (object?)null, traceId = HttpContext?.TraceIdentifier });
         }
     }
 

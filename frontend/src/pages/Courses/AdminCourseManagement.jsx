@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { BookOpen, Download, Edit3, Eye, Plus, RefreshCw, Users, X } from 'lucide-react';
 import { courseService } from '../../services/courseService';
-import { resolvePdfUrl } from '../../utils/pdfHelper';
+import { fetchDocumentBlob, resolvePdfUrl } from '../../utils/pdfHelper';
 
 const row = { display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
 const stack = { display: 'grid', gap: 16 };
@@ -244,13 +244,7 @@ function StudentsDialog({ course, onClose, onChanged }) {
 }
 
 async function fetchDocument(module) {
-  const url = new URL(resolvePdfUrl(module.pdfUrl), window.location.origin);
-  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Invalid document URL.');
-  const response = await fetch(url.href);
-  if (!response.ok || response.headers.get('content-type')?.includes('text/html')) throw new Error('Document unavailable.');
-  const blob = await response.blob();
-  if (!blob.size) throw new Error('Document is empty.');
-  return blob;
+  return fetchDocumentBlob(module.pdfUrl);
 }
 
 function DocumentPreview({ module, onClose }) {
