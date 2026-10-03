@@ -21,6 +21,52 @@ public static class DbInitializer
         [Guid.Parse("33333333-3333-3333-3333-333333333338")] = "elena.rostova@eduflow.ai",
     };
 
+    // Reserved identity lets us retire this known weak credential safely outside demo mode.
+    public static readonly Guid DevelopmentAdminId = Guid.Parse("11111111-1111-1111-1111-111111111112");
+
+    public static void EnsureDevelopmentAdmin(ApplicationDbContext context, bool isDevelopment,
+        bool enabled, bool resetCredentials = false)
+    {
+        const string email = "admin@gmail.com";
+        if (!isDevelopment || !enabled)
+        {
+            var demo = context.Users.Find(DevelopmentAdminId);
+            if (demo != null && string.Equals(demo.Email, email, StringComparison.OrdinalIgnoreCase))
+            {
+                demo.IsActive = false;
+                foreach (var token in context.RefreshTokens.Where(t => t.UserId == demo.Id && !t.IsRevoked))
+                    token.IsRevoked = true;
+                context.SaveChanges();
+            }
+            return;
+        }
+
+        var existing = context.Users.FirstOrDefault(u => u.Email.ToLower() == email);
+        if (existing == null)
+        {
+            if (context.Users.Any(u => u.Id == DevelopmentAdminId))
+                throw new InvalidOperationException("The reserved development admin identity is already in use.");
+            context.Users.Add(new User
+            {
+                Id = DevelopmentAdminId, FullName = "Development Administrator", Email = email,
+                Role = UserRole.Admin, IsActive = true,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123", workFactor: 12)
+            });
+            context.SaveChanges();
+        }
+        else if (resetCredentials && existing.Id == DevelopmentAdminId && existing.Role == UserRole.Admin)
+        {
+            existing.Email = email;
+            existing.PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123", workFactor: 12);
+            existing.IsActive = true;
+            existing.UpdatedAt = DateTime.UtcNow;
+            foreach (var token in context.RefreshTokens.Where(t => t.UserId == existing.Id && !t.IsRevoked))
+                token.IsRevoked = true;
+            context.SaveChanges();
+        }
+        // Any independently created account at this email is preserved without alteration.
+    }
+
     public static void ApplyDemoAccountPolicy(ApplicationDbContext context, bool isDevelopment,
         bool enabled, bool resetCredentials = false)
     {

@@ -159,6 +159,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<RefreshToken>(entity =>
         {
             entity.HasIndex(r => r.Token).IsUnique();
+            entity.Property(r => r.IsRevoked).IsConcurrencyToken();
             entity.HasOne(r => r.User)
                   .WithMany(u => u.RefreshTokens)
                   .HasForeignKey(r => r.UserId)

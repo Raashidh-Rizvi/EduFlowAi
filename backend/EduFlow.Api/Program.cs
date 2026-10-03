@@ -58,6 +58,7 @@ if (string.IsNullOrWhiteSpace(jwtSecret))
         "environment variable JwtSettings__Secret, or a git-ignored appsettings.Development.json.");
 }
 var key = Encoding.UTF8.GetBytes(jwtSecret);
+if (key.Length < 32) throw new InvalidOperationException("JwtSettings:Secret must contain at least 32 UTF-8 bytes.");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -71,6 +72,8 @@ builder.Services.AddAuthentication(options =>
     options.Events = new JwtBearerEvents { OnTokenValidated = AccountTokenValidation.ValidateAsync };
     options.TokenValidationParameters = new TokenValidationParameters
     {
+        ValidateLifetime = true,
+        RequireExpirationTime = true,
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(key),
         ValidateIssuer = true,
@@ -167,6 +170,11 @@ using (var scope = app.Services.CreateScope())
         throw;
     }
 
+    // This separate flag provisions only the requested local auth account, no LMS demo content.
+    DbInitializer.EnsureDevelopmentAdmin(services.GetRequiredService<ApplicationDbContext>(),
+        app.Environment.IsDevelopment(), builder.Configuration.GetValue<bool>("DemoAccounts:Enabled"),
+        builder.Configuration.GetValue<bool>("DemoAccounts:ResetCredentials"));
+
     // Historical migrations also insert demo users. Enforce the current policy
     // after migration, in every environment, before accepting any requests.
     var demoEnabled = builder.Configuration.GetValue<bool>("DevelopmentDemo:Enabled");
@@ -185,9 +193,24 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Correlation id, contract-shaped 500s (no exception details in any environment) and
-// contract bodies for empty 4xx/5xx responses. See Errors/ApiErrorHandling.cs.
-app.UseApiErrorHandling();
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
+        var exception = exceptionHandlerPathFeature?.Error;
+
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(exception, "An unhandled exception occurred while processing the request.");
+
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            message = "An unexpected server error occurred. Please try again later."
+        });
+    });
+});
 
 if (!app.Environment.IsDevelopment())
 {

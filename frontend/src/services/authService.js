@@ -1,4 +1,4 @@
-import api, { clearSession } from "./api";
+import api, { clearSession, getSessionVersion } from "./api";
 
 const TOKEN_KEY = "eduflow_token";
 const REFRESH_TOKEN_KEY = "eduflow_refresh_token";
@@ -13,7 +13,7 @@ const USER_KEY = "eduflow_user";
 export function toUserProfile(payload) {
   if (!payload) return null;
   const id = payload.userId || payload.id;
-  if (!id || !["Student", "Instructor", "Admin"].includes(payload.role) || payload.isActive === false) {
+  if (typeof id !== "string" || !id || !["Student", "Instructor", "Admin"].includes(payload.role) || payload.isActive === false) {
     throw new Error("Invalid authentication profile received.");
   }
   return {
@@ -28,7 +28,7 @@ export function toUserProfile(payload) {
 }
 
 function persistSession(authResponse) {
-  if (!authResponse?.token) throw new Error("Authentication did not return an access token.");
+  if (!authResponse?.token || !authResponse.refreshToken) throw new Error("Authentication did not return an access token.");
   const profile = toUserProfile(authResponse);
   clearSession();
   localStorage.setItem(TOKEN_KEY, authResponse.token);
@@ -44,6 +44,9 @@ function persistSession(authResponse) {
   localStorage.setItem(USER_KEY, JSON.stringify(profile));
   return profile;
 }
+
+let restorePromise = null;
+let restoreVersion = null;
 
 export const authService = {
   async register(data) {
@@ -61,7 +64,10 @@ export const authService = {
    * endpoint. This is the single source of truth for identity in the UI.
    */
   async getProfile() {
+    const version = getSessionVersion();
     const response = await api.get("/auth/me");
+    if (version !== getSessionVersion() || !localStorage.getItem(TOKEN_KEY) || response.data?.isActive !== true)
+      throw new Error("Invalid authentication session.");
     const profile = toUserProfile(response.data);
     localStorage.setItem(USER_KEY, JSON.stringify(profile));
     return profile;
@@ -112,20 +118,22 @@ export const authService = {
    * Returns the server-authoritative profile, or null when the session is
    * absent/expired (in which case all local credentials are cleared).
    */
-  async restoreSession() {
-    if (
-      !localStorage.getItem(TOKEN_KEY) &&
-      !localStorage.getItem(REFRESH_TOKEN_KEY)
-    ) {
+  restoreSession() {
+    if (!localStorage.getItem(TOKEN_KEY) && !localStorage.getItem(REFRESH_TOKEN_KEY)) {
       clearSession();
-      return null;
+      return Promise.resolve(null);
     }
-    try {
-      return await this.getProfile();
-    } catch {
-      clearSession();
+    const version = getSessionVersion();
+    if (restorePromise && restoreVersion === version) return restorePromise;
+    restoreVersion = version;
+    const pending = this.getProfile().catch(() => {
+      if (version === getSessionVersion()) clearSession();
       return null;
-    }
+    }).finally(() => {
+      if (restorePromise === pending) restorePromise = null;
+    });
+    restorePromise = pending;
+    return pending;
   },
 
   /**
@@ -156,6 +164,7 @@ export const authService = {
    */
   async logout() {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+    clearSession();
     if (refreshToken) {
       try {
         await api.post("/auth/logout", { refreshToken });
@@ -164,7 +173,6 @@ export const authService = {
         // expires server-side on its own schedule.
       }
     }
-    clearSession();
   },
 
   clearSession,

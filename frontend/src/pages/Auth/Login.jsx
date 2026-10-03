@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock, Mail, ArrowRight, AlertCircle, Eye, EyeOff, ChevronLeft } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { authService } from '../../services/authService';
 import { getAuthenticationErrorMessage } from '../../services/authErrors';
+import { normalizeEmail, validateAuthentication, AUTH_MESSAGES } from '../../services/authValidation';
 
 export default function Login({ onLoginSuccess, initialMode = 'login' }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const submitting = useRef(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isRegister, setIsRegister] = useState(initialMode === 'register');
   const [fullName, setFullName] = useState('');
@@ -17,15 +20,19 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting.current) return;
+    const validation = validateAuthentication({ fullName, email, password, confirmPassword }, isRegister);
+    setErrorMsg(validation || '');
+    if (validation) return;
+    submitting.current = true;
     setLoading(true);
-    setErrorMsg('');
 
     try {
       if (isRegister) {
-        const res = await authService.register({ fullName, email, password, role: 'Student' });
+        const res = await authService.register({ fullName: fullName.trim(), email: normalizeEmail(email), password, role: 'Student' });
         onLoginSuccess(res);
       } else {
-        const res = await authService.login({ email, password });
+        const res = await authService.login({ email: normalizeEmail(email), password });
         onLoginSuccess(res);
       }
     } catch (err) {
@@ -33,6 +40,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
       // and role must always come from the backend for the credentials submitted.
       setErrorMsg(getAuthenticationErrorMessage(err));
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
@@ -121,7 +129,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
           </div>
 
           {errorMsg && (
-            <div style={{
+            <div role="alert" style={{
               padding: '10px 14px',
               borderRadius: 'var(--radius-sm)',
               backgroundColor: 'var(--accent-soft)',
@@ -138,13 +146,15 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <form noValidate onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {isRegister && (
               <>
                 <div>
                   <label className="form-label" htmlFor="auth-full-name">Full Name</label>
                   <input
                     id="auth-full-name"
+                    autoComplete="name"
+                    maxLength={200}
                     type="text"
                     required
                     value={fullName}
@@ -163,6 +173,8 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
                 <Mail size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '12px' }} />
                 <input
                   id="auth-email"
+                  autoComplete="email"
+                  maxLength={254}
                   type="email"
                   required
                   value={email}
@@ -181,6 +193,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
                 <input
                   id="auth-password"
                   autoComplete={isRegister ? "new-password" : "current-password"}
+                  aria-describedby={isRegister ? "auth-password-policy" : undefined}
                   type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
@@ -205,6 +218,17 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
               </div>
             </div>
 
+            {isRegister && (
+              <>
+                <p id="auth-password-policy" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{AUTH_MESSAGES.password}</p>
+                <div>
+                  <label className="form-label" htmlFor="auth-confirm-password">Confirm Password</label>
+                  <input id="auth-confirm-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password"
+                    required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="form-input" />
+                </div>
+              </>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -224,7 +248,8 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
           <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '12.5px', color: 'var(--text-muted)' }}>
             {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
-              onClick={() => setIsRegister(!isRegister)}
+              disabled={loading}
+              onClick={() => { setIsRegister(!isRegister); setErrorMsg(''); setConfirmPassword(''); }}
               style={{
                 color: 'var(--primary)',
                 fontWeight: '600',

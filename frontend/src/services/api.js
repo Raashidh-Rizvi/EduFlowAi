@@ -25,7 +25,11 @@ const api = axios.create({
   }
 });
 
+let sessionVersion = 0;
+export const getSessionVersion = () => sessionVersion;
+
 export function clearSession() {
+  sessionVersion++;
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(EXPIRES_KEY);
@@ -46,6 +50,7 @@ let refreshPromise = null;
 async function refreshAccessToken() {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!refreshToken) return null;
+  const version = getSessionVersion();
 
   try {
     const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
@@ -53,7 +58,8 @@ async function refreshAccessToken() {
       refreshToken
     });
     const data = response.data;
-    if (!data?.token) return null;
+    if (version !== getSessionVersion() || localStorage.getItem(REFRESH_TOKEN_KEY) !== refreshToken) return null;
+    if (!data?.token || !data.refreshToken || !data.userId || !['Student', 'Instructor', 'Admin'].includes(data.role)) return null;
 
     localStorage.setItem(TOKEN_KEY, data.token);
     if (data.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
@@ -61,22 +67,9 @@ async function refreshAccessToken() {
       localStorage.setItem(EXPIRES_KEY, String(new Date(data.expiresAt).getTime()));
     }
 
-    // Keep the cached profile consistent with the server-issued identity.
-    try {
-      const stored = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
-      if (stored) {
-        localStorage.setItem(USER_KEY, JSON.stringify({
-          ...stored,
-          userId: data.userId,
-          id: data.userId,
-          fullName: data.fullName,
-          email: data.email,
-          role: data.role
-        }));
-      }
-    } catch {
-      // Ignore malformed cached profile — it will be re-fetched from /auth/me.
-    }
+    const profile = { userId: data.userId, id: data.userId, fullName: data.fullName, email: data.email, role: data.role, isActive: true };
+    localStorage.setItem(USER_KEY, JSON.stringify(profile));
+    window.dispatchEvent(new CustomEvent('eduflow-session-updated', { detail: profile }));
 
     return data.token;
   } catch {
@@ -86,8 +79,9 @@ async function refreshAccessToken() {
 
 // Request interceptor for JWT injection
 api.interceptors.request.use((config) => {
+  config._sessionVersion = getSessionVersion();
   const token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
+  if (token && !AUTH_ENDPOINTS.some(path => config.url?.includes(path))) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -105,6 +99,8 @@ api.interceptors.response.use(
     const original = error.config;
     const status = error.response?.status;
     const isAuthEndpoint = AUTH_ENDPOINTS.some((path) => original?.url?.includes(path));
+
+    if (!isAuthEndpoint && original?._sessionVersion !== getSessionVersion()) return Promise.reject(error);
 
     if (isAuthEndpoint) {
       error.friendlyMessage = getAuthenticationErrorMessage(error);
@@ -127,11 +123,10 @@ api.interceptors.response.use(
         return api(original);
       }
 
+      if (original._sessionVersion !== getSessionVersion()) return Promise.reject(error);
+
       // Refresh token revoked/expired => the session is over. Invalidate locally.
       clearSession();
-      if (window.location.pathname !== '/') {
-        window.location.reload();
-      }
       const sessionEnded = new Error('Your session has expired. Please log in again.');
       sessionEnded.friendlyMessage = 'Your session has expired or is invalid. Please log in again.';
       return Promise.reject(sessionEnded);
@@ -144,12 +139,9 @@ api.interceptors.response.use(
       console.error(`[API Response Error] Status: ${error.response.status}`);
       if (error.response.status === 401) {
         friendlyMessage = "Your session has expired or is invalid. Please log in again.";
-        // Clear stale credentials; do not reload when there was never a session.
+        // Clear stale credentials and let the React route guard handle sign-out.
         if (hasSession()) {
           clearSession();
-          if (window.location.pathname !== '/') {
-            window.location.reload();
-          }
         }
       } else if (error.response.status === 403) {
         // Server-side eligibility denials (not enrolled, not published, closed) carry their reason.
