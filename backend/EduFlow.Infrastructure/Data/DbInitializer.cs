@@ -68,7 +68,7 @@ public static class DbInitializer
     }
 
     public static void ApplyDemoAccountPolicy(ApplicationDbContext context, bool isDevelopment,
-        bool enabled, bool resetCredentials = false)
+        bool enabled, bool resetCredentials = false, bool allowOutsideDevelopment = false)
     {
         if (isDevelopment && enabled)
         {
@@ -80,6 +80,16 @@ public static class DbInitializer
         var demos = context.Users.Where(u => ids.Contains(u.Id)).ToList()
             .Where(u => string.Equals(u.Email, DemoIdentities[u.Id], StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        // Explicit opt-in for a hosted demo: keep (and re-enable) the existing demo accounts so the
+        // quick-login buttons work. No content is seeded and no credentials are reset.
+        if (allowOutsideDevelopment)
+        {
+            foreach (var demo in demos) demo.IsActive = true;
+            context.SaveChanges();
+            return;
+        }
+
         foreach (var demo in demos) demo.IsActive = false;
         var demoIds = demos.Select(u => u.Id).ToArray();
         if (demoIds.Length > 0)

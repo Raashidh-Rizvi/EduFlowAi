@@ -21,6 +21,8 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
 
   const handleQuickLogin = async (demoEmail) => {
     if (submitting.current) return;
+    setEmail(demoEmail);
+    setPassword('Password123!');
     submitting.current = true;
     setLoading(true);
     setErrorMsg('');

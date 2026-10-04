@@ -211,4 +211,18 @@ public class P0DemoAccountPolicyTests
         Assert.NotEqual("unchanged", demo.PasswordHash);
         Assert.NotEqual("also-unchanged", instructor.PasswordHash);
     }
+
+    [Fact]
+    public void AllowInProduction_ReactivatesExistingDemoAccountsWithoutSeedingOrResetting()
+    {
+        using var db = CreateDb();
+        var demo = new User { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Email = "admin@eduflow.ai", FullName = "Demo", Role = UserRole.Admin, IsActive = false, PasswordHash = "unchanged" };
+        db.Add(demo);
+        db.SaveChanges();
+        DbInitializer.ApplyDemoAccountPolicy(db, false, false, allowOutsideDevelopment: true);
+        Assert.True(demo.IsActive);
+        Assert.Equal("unchanged", demo.PasswordHash);
+        Assert.Single(db.Users);
+    }
 }

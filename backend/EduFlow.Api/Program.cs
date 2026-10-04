@@ -212,7 +212,8 @@ try
         var demoEnabled = builder.Configuration.GetValue<bool>("DevelopmentDemo:Enabled");
         var resetDemoCredentials = builder.Configuration.GetValue<bool>("DevelopmentDemo:ResetCredentials");
         DbInitializer.ApplyDemoAccountPolicy(services.GetRequiredService<ApplicationDbContext>(),
-            app.Environment.IsDevelopment(), demoEnabled, resetDemoCredentials);
+            app.Environment.IsDevelopment(), demoEnabled, resetDemoCredentials,
+            allowOutsideDevelopment: builder.Configuration.GetValue<bool>("DevelopmentDemo:AllowInProduction"));
 
     }
 
