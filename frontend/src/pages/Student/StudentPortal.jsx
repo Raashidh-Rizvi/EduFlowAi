@@ -5860,11 +5860,14 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           maxWidth: activeTab === "coach" ? "1040px" : "720px",
           transition: "max-width 0.2s ease",
           background: "var(--bg-surface)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
           borderTop: "1px solid var(--border-subtle)",
+          boxShadow: "0 -4px 20px rgba(0, 0, 0, 0.2)",
           display: "flex",
           justifyContent: "space-around",
-          padding: "8px 0 10px",
-          zIndex: 100,
+          padding: "8px 0 calc(10px + env(safe-area-inset-bottom, 0px))",
+          zIndex: 1000,
         }}
       >
         {TABS.map((tab) => {

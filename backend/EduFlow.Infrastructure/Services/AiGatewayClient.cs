@@ -96,6 +96,26 @@ public class AiGatewayClient : IAiGatewayClient
             {
                 return await response.Content.ReadAsStringAsync(ct);
             }
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    status = "unauthorized",
+                    status_color = "red",
+                    message = "AI Microservice rejected the backend's credentials (AiService:ApiKey must equal the agent's INTERNAL_SERVICE_TOKEN).",
+                    can_generate = false
+                });
+            }
+            if (response.StatusCode != System.Net.HttpStatusCode.TooManyRequests)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    status = "error",
+                    status_color = "red",
+                    message = $"AI Microservice returned HTTP {(int)response.StatusCode}.",
+                    can_generate = false
+                });
+            }
             return JsonSerializer.Serialize(new
             {
                 status = "rate_limited",
