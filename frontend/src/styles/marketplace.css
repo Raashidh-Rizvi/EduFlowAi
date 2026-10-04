@@ -3158,6 +3158,20 @@
     justify-content: flex-start;
   }
 
+  .mk-filters__panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+
+  .mk-filters__group + .mk-filters__group {
+    margin-top: 0;
+  }
+
+  .mk-filters__clear {
+    grid-column: 1 / -1;
+  }
+
   .mk-footer__inner {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3274,5 +3288,51 @@
   .mk-card__thumb img,
   .mk-section-head__link {
     transition: none;
+  }
+}
+
+/* Small phones: two-up categories, full-width catalog controls */
+@media (max-width: 560px) {
+  .mk-cat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .mk-catalog__tools > * {
+    flex: 1 1 auto;
+  }
+}
+
+/* Signed-in nav on phones: avatar-only profile button */
+@media (max-width: 640px) {
+  .mk-nav__inner {
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  .mk-nav__actions {
+    gap: 6px;
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .mk-nav__profile-name,
+  .mk-nav__profile-btn > svg {
+    display: none;
+  }
+
+  .mk-nav__profile-btn {
+    padding: 2px;
+  }
+
+  /* Anchor the menu to the sticky nav's right edge instead of the button */
+  .mk-nav__profile {
+    position: static;
+  }
+
+  .mk-nav__menu {
+    top: calc(100% + 6px);
+    right: 12px;
+    width: min(250px, calc(100vw - 24px));
   }
 }

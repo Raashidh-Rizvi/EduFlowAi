@@ -17,6 +17,7 @@ import {
   LifeBuoy,
 } from "lucide-react";
 import { BrandLogo } from "../../components/common/BrandLogo";
+import MobileNavToggle from "../../components/layout/MobileNavToggle";
 import { useUIVersion } from "../../context/UIVersionContext";
 
 const NAV_SECTIONS = [
@@ -82,7 +83,9 @@ export default function InstructorSidebarV2({
   };
 
   return (
-    <aside className="v2-sidebar">
+    <>
+    <MobileNavToggle />
+    <aside className="v2-sidebar portal-sidebar">
       {/* Brand */}
       <div className="v2-sidebar-brand">
         <BrandLogo
@@ -296,5 +299,6 @@ export default function InstructorSidebarV2({
         </button>
       </div>
     </aside>
+    </>
   );
 }

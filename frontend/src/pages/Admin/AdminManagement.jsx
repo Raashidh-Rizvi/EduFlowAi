@@ -563,7 +563,7 @@ export default function AdminManagement() {
       {activeSubTab === 'users' && (
         <div className="card-premium" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' }}>
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -572,7 +572,8 @@ export default function AdminManagement() {
                 borderRadius: 'var(--radius-sm)',
                 backgroundColor: 'var(--bg-input)',
                 border: '1px solid var(--border-card)',
-                width: '280px'
+                width: '280px',
+                maxWidth: '100%'
               }}>
                 <Search size={14} color="var(--text-muted)" />
                 <input

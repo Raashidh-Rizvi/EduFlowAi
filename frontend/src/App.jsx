@@ -248,6 +248,7 @@ function AppRoutes() {
         />
 
         <main
+          className="portal-main"
           style={{
             flex: 1,
             padding: "24px 32px",

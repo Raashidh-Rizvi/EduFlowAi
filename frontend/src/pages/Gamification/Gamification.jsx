@@ -664,7 +664,8 @@ export default function Gamification() {
         display: 'flex',
         gap: '8px',
         borderBottom: '1px solid var(--border-subtle)',
-        paddingBottom: '8px'
+        paddingBottom: '8px',
+        overflowX: 'auto'
       }}>
         {(isStaffRole() ? [
           { id: 'quiz-performance', label: 'Quiz Submissions & Answers', icon: CheckCircle2, count: quizPerfData?.recentSubmissions?.length || 0 },

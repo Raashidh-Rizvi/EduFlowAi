@@ -67,51 +67,20 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      width: '100vw',
-      backgroundColor: 'var(--bg-canvas)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '24px',
-      position: 'relative'
-    }}>
+    <div className="auth-page">
       {/* Header Bar Actions */}
-      <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50, display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="auth-page__actions">
         <RoleSwitcher onSwitchRole={onLoginSuccess} />
         <ThemeToggle showLabel />
       </div>
 
-      <Link
-        to="/"
-        style={{
-          position: 'absolute',
-          top: '28px',
-          left: '28px',
-          zIndex: 50,
-          fontSize: '13px',
-          color: 'var(--text-muted)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          textDecoration: 'none'
-        }}
-      >
+      <Link to="/" className="auth-page__back">
         <ChevronLeft size={15} aria-hidden="true" /> Back to course catalog
       </Link>
 
-      <div style={{
-        width: '100%',
-        maxWidth: '960px',
-        display: 'grid',
-        gridTemplateColumns: '1.05fr 1fr',
-        gap: '24px',
-        zIndex: 10
-      }}>
+      <div className="auth-page__grid">
         {/* Left Side: Brand & Quick Demo Logins */}
-        <div className="card-premium" style={{
-          padding: '36px',
+        <div className="card-premium auth-page__card" style={{
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
@@ -232,8 +201,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
         </div>
 
         {/* Right Side: Authentication Form Card */}
-        <div className="card-premium" style={{
-          padding: '36px',
+        <div className="card-premium auth-page__card" style={{
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',

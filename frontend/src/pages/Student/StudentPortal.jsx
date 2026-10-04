@@ -5102,6 +5102,12 @@ function ProfileTab({ profile, onLogout }) {
 }
 
 // ─── Main StudentPortal Component ─────────────────────────────────────────────
+/** Mirrors the backend's EnrollmentStatus.GrantsAccess (Active/Completed, exposed as APPROVED). */
+const enrollmentGrantsAccess = (status) => {
+  const value = String(status || "Active").toUpperCase();
+  return value === "ACTIVE" || value === "COMPLETED" || value === "APPROVED";
+};
+
 export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   const [activeTab, setActiveTabState] = useState(() => {
     try {
@@ -5302,9 +5308,12 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             // detailed progress arrive right after and merge into the same list.
             setCourses(mapped);
             loadedCourses = mapped;
+            // Grades and progress exist only for enrollments that grant access; asking
+            // for pending/rejected/dropped ones just returns 403.
+            const enriches = (c) => enrollmentGrantsAccess(c.enrollmentStatus);
             Promise.all([
-              Promise.all(mapped.map((c) => gradingService.getGrade(c.id).catch(() => null))),
-              Promise.all(mapped.map((c) => courseService.getProgress(c.id).catch(() => null))),
+              Promise.all(mapped.map((c) => (enriches(c) ? gradingService.getGrade(c.id).catch(() => null) : null))),
+              Promise.all(mapped.map((c) => (enriches(c) ? courseService.getProgress(c.id).catch(() => null) : null))),
             ])
               .then(([grades, progress]) => {
                 setCourses((prev) =>
@@ -5327,7 +5336,9 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       // 2. The next quiz comes from the student's own courses; the API only returns
       //    published quizzes for courses the student is enrolled in.
       try {
-        const courseIds = (Array.isArray(loadedCourses) ? loadedCourses : []).map((c) => c.id);
+        const courseIds = (Array.isArray(loadedCourses) ? loadedCourses : [])
+          .filter((c) => enrollmentGrantsAccess(c.enrollmentStatus))
+          .map((c) => c.id);
         for (const courseId of courseIds) {
           const qList = await quizService.getQuizzes(courseId).catch(() => []);
           if (Array.isArray(qList) && qList.length > 0) {
@@ -5886,7 +5897,9 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 flexDirection: "column",
                 alignItems: "center",
                 gap: "3px",
-                padding: "0 12px",
+                flex: "1 1 0",
+                minWidth: 0,
+                padding: "0 4px",
                 background: "transparent",
                 border: "none",
                 cursor: "pointer",
@@ -5898,6 +5911,10 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 style={{
                   fontSize: "10px",
                   fontWeight: isActive ? "700" : "500",
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {tab.label}

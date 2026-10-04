@@ -19,6 +19,7 @@ import {
   LifeBuoy,
 } from "lucide-react";
 import { BrandLogo } from "../common/BrandLogo";
+import MobileNavToggle from "../layout/MobileNavToggle";
 
 export default function Sidebar({
   activeTab,
@@ -170,7 +171,10 @@ export default function Sidebar({
   };
 
   return (
+    <>
+    <MobileNavToggle />
     <div
+      className="portal-sidebar"
       style={{
         padding: "24px 0 24px 24px",
         display: "flex",
@@ -305,5 +309,6 @@ export default function Sidebar({
         </div>
       </nav>
     </div>
+    </>
   );
 }

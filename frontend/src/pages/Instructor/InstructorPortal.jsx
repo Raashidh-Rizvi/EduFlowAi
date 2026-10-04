@@ -175,6 +175,7 @@ function InstructorPortalV1({ user, onLogout, onSwitchRole, onLogoClick }) {
 
       <main
         id="instructor-main"
+        className="portal-main"
         style={{
           flex: 1,
           padding: "24px 32px",

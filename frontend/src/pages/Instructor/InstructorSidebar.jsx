@@ -17,6 +17,7 @@ import {
   LifeBuoy,
 } from "lucide-react";
 import { BrandLogo } from "../../components/common/BrandLogo";
+import MobileNavToggle from "../../components/layout/MobileNavToggle";
 import { useUIVersion } from "../../context/UIVersionContext";
 
 export const INSTRUCTOR_SECTIONS = [
@@ -102,7 +103,10 @@ export default function InstructorSidebar({
   };
 
   return (
+    <>
+    <MobileNavToggle />
     <div
+      className="portal-sidebar"
       style={{
         padding: "24px 0 24px 24px",
         display: "flex",
@@ -384,5 +388,6 @@ export default function InstructorSidebar({
         </div>
       </nav>
     </div>
+    </>
   );
 }

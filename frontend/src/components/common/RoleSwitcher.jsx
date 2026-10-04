@@ -52,6 +52,7 @@ export default function RoleSwitcher({ currentRole, onSwitchRole, compact = fals
   const [isOpen, setIsOpen] = useState(false);
   const [switchingRole, setSwitchingRole] = useState(null);
   const [error, setError] = useState(null);
+  const [menuShift, setMenuShift] = useState(0);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
 
@@ -112,7 +113,15 @@ export default function RoleSwitcher({ currentRole, onSwitchRole, compact = fals
     <div ref={dropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen && dropdownRef.current) {
+            // Keep the 310px menu inside the viewport on narrow screens.
+            const rect = dropdownRef.current.getBoundingClientRect();
+            const menuWidth = Math.min(310, window.innerWidth - 24);
+            setMenuShift(Math.max(0, 12 - (rect.right - menuWidth)));
+          }
+          setIsOpen(!isOpen);
+        }}
         className="hover-scale"
         aria-haspopup="true"
         aria-expanded={isOpen}
@@ -164,8 +173,9 @@ export default function RoleSwitcher({ currentRole, onSwitchRole, compact = fals
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
-            right: 0,
+            right: -menuShift,
             width: '310px',
+            maxWidth: 'calc(100vw - 24px)',
             backgroundColor: 'var(--bg-card, #1E293B)',
             border: '1px solid var(--border-card, rgba(255, 255, 255, 0.15))',
             borderRadius: 'var(--radius-lg, 16px)',

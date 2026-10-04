@@ -180,10 +180,10 @@ export default function Navbar({
         <RoleSwitcher currentRole={user.role} onSwitchRole={onSwitchRole} />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+      <div className="navbar-tools" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         {/* Search Bar with Keyboard Hint */}
         <div
-          className="glass-badge"
+          className="glass-badge navbar-search"
           style={{
             display: "flex",
             alignItems: "center",
@@ -225,7 +225,7 @@ export default function Navbar({
 
         {/* Live Backend Telemetry Indicator — real round trip to GET /health */}
         <div
-          className="glass-badge"
+          className="glass-badge navbar-health"
           title={
             health
               ? `Last checked ${new Date(health.checkedAt).toLocaleTimeString()}`
