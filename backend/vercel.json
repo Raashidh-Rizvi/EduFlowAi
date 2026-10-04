@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "EduFlow.Api/EduFlow.Api.csproj",
+      "use": "@vercel/dotnet"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "EduFlow.Api/EduFlow.Api.csproj"
+    }
+  ]
+}

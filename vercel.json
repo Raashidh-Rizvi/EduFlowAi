@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    },
+    {
+      "src": "ai-agent/api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/v1/ai/(.*)",
+      "dest": "ai-agent/api/index.py"
+    },
+    {
+      "src": "/health",
+      "dest": "ai-agent/api/index.py"
+    },
+    {
+      "src": "/assets/(.*)",
+      "dest": "frontend/dist/assets/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "frontend/index.html"
+    }
+  ]
+}
