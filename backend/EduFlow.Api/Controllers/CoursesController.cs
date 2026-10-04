@@ -27,6 +27,7 @@ public class CoursesController : BaseApiController
     private readonly IGamificationService _gamificationService;
     private readonly IRatingService _ratingService;
     private readonly IWebHostEnvironment? _environment;
+    private readonly IUploadStorage _uploadStorage;
     private readonly IAiGatewayClient? _aiGatewayClient;
     private readonly IPaymentVerificationService? _paymentVerificationService;
     private readonly IProgressService _progressService;
@@ -41,9 +42,12 @@ public class CoursesController : BaseApiController
         IPaymentVerificationService? paymentVerificationService = null,
         IAuditLogWriter? auditLogWriter = null,
         IProgressService? progressService = null,
-        IDomainEventDispatcher? events = null)
+        IDomainEventDispatcher? events = null,
+        IUploadStorage? uploadStorage = null)
         : base(dbContext)
     {
+        _uploadStorage = uploadStorage ?? new LocalUploadStorage(
+            environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"));
         _events = events;
         _progressService = progressService ?? new ProgressService(dbContext, events);
         _auditLogWriter = auditLogWriter ?? new AuditLogWriter(dbContext);
@@ -939,21 +943,22 @@ public class CoursesController : BaseApiController
             return;
         }
 
-        var webRoot = Path.GetFullPath(_environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"));
-        var physicalPath = Path.GetFullPath(Path.Combine(webRoot, module.PdfUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-        var rootWithSeparator = webRoot.EndsWith(Path.DirectorySeparatorChar) ? webRoot : webRoot + Path.DirectorySeparatorChar;
-        if (!physicalPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase) || !System.IO.File.Exists(physicalPath))
-        {
-            return;
-        }
-
         var gateway = _aiGatewayClient;
+        var storage = _uploadStorage;
+        var pdfUrl = module.PdfUrl;
         var courseId = module.CourseId;
         var moduleId = module.Id;
         _ = Task.Run(async () =>
         {
             try
             {
+                // Disk path locally, private Blob URL on Vercel; null when the file is missing.
+                var physicalPath = await storage.ResolveForAiAsync(pdfUrl);
+                if (physicalPath == null)
+                {
+                    return;
+                }
+
                 var result = await gateway.IndexDocumentAsync(new
                 {
                     file_path = physicalPath,
@@ -1242,31 +1247,20 @@ public class CoursesController : BaseApiController
             return BadRequest(new { message = "File name contains invalid characters." });
         }
 
-        var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
         var folderName = (ext == ".pptx" || ext == ".ppt") ? "slides" : (ext == ".docx" || ext == ".doc") ? "docs" : "pdfs";
-        var uploadDir = Path.Combine(webRoot, "uploads", folderName);
-        if (!Directory.Exists(uploadDir))
-        {
-            Directory.CreateDirectory(uploadDir);
-        }
-
         var safeFileName = $"{Guid.NewGuid()}_{Path.GetFileName(sanitizedFileName)}";
-        var filePath = Path.Combine(uploadDir, safeFileName);
 
-        // Security: Verify the resolved path is within the upload directory
-        var resolvedPath = Path.GetFullPath(filePath);
-        var resolvedUploadDir = Path.GetFullPath(uploadDir);
-        if (!resolvedPath.StartsWith(resolvedUploadDir, StringComparison.OrdinalIgnoreCase))
+        string fileUrl;
+        try
+        {
+            await using var upload = file.OpenReadStream();
+            fileUrl = await _uploadStorage.SaveAsync(folderName, safeFileName, upload, file.ContentType);
+        }
+        catch (ArgumentException)
         {
             return BadRequest(new { message = "Invalid file path." });
         }
 
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream);
-        }
-
-        var fileUrl = $"/uploads/{folderName}/{safeFileName}";
         return Ok(new PdfUploadResultDto(
             FileUrl: fileUrl,
             FileName: rawFileName,
@@ -1298,18 +1292,9 @@ public class CoursesController : BaseApiController
             return BadRequest(new { message = "Module does not have an attached lecture slide or document." });
         }
 
-        var webRoot = _environment?.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var physicalPath = Path.Combine(webRoot, module.PdfUrl.TrimStart('/'));
-
-        // Security: Verify resolved path is within webroot to prevent path traversal
-        var resolvedPhysicalPath = Path.GetFullPath(physicalPath);
-        var resolvedWebRoot = Path.GetFullPath(webRoot);
-        if (!resolvedPhysicalPath.StartsWith(resolvedWebRoot, StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new { message = "Invalid file path." });
-        }
-
-        if (!System.IO.File.Exists(physicalPath))
+        // Disk path or private Blob URL; null when missing or outside the uploads/web root.
+        var physicalPath = await _uploadStorage.ResolveForAiAsync(module.PdfUrl);
+        if (physicalPath == null)
         {
             return BadRequest(new { message = "The slide file for this module was not found. Please re-upload it." });
         }

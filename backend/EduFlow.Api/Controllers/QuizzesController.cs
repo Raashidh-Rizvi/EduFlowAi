@@ -34,6 +34,7 @@ public class QuizzesController : BaseApiController
     private readonly IEvaluationService _evaluationService;
     private readonly IAuditLogWriter _auditLogWriter;
     private readonly IWebHostEnvironment? _environment;
+    private readonly IUploadStorage _uploadStorage;
 
     /// <summary>Keys of generations currently running, so a double click cannot create two quizzes.</summary>
     private static readonly ConcurrentDictionary<string, byte> GenerationInFlight = new();
@@ -47,9 +48,12 @@ public class QuizzesController : BaseApiController
         IAttemptGradingService gradingService,
         IEvaluationService evaluationService,
         IAuditLogWriter auditLogWriter,
-        IWebHostEnvironment? environment = null)
+        IWebHostEnvironment? environment = null,
+        IUploadStorage? uploadStorage = null)
         : base(dbContext)
     {
+        _uploadStorage = uploadStorage ?? new LocalUploadStorage(
+            environment?.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
         _gamificationService = gamificationService;
         _aiGatewayClient = aiGatewayClient;
         _accessService = accessService;
@@ -1050,7 +1054,7 @@ public class QuizzesController : BaseApiController
 
         // Map relative PdfUrl or SlideUrl to physical path for the python service
         // Client-supplied slide URLs are only honoured inside wwwroot (no path traversal).
-        string? physicalSlidePath = ResolveWebRootFile(request.SlideUrl ?? request.PdfUrl);
+        string? physicalSlidePath = await ResolveWebRootFile(request.SlideUrl ?? request.PdfUrl);
 
         // Fallback: if slide not found in request, check module in database
         Module? dbModule;
@@ -1060,7 +1064,7 @@ public class QuizzesController : BaseApiController
                 .Include(m => m.Topics)
                 .Include(m => m.ContentItems)
                 .FirstOrDefaultAsync(m => m.Id == placement.ModuleId);
-            physicalSlidePath = ResolveWebRootFile(dbModule?.PdfUrl);
+            physicalSlidePath = await ResolveWebRootFile(dbModule?.PdfUrl);
         }
         else
         {
@@ -1496,7 +1500,7 @@ public class QuizzesController : BaseApiController
                 .Include(m => m.Topics)
                 .Include(m => m.ContentItems)
                 .FirstOrDefaultAsync(m => m.Id == question.Assessment.ModuleId);
-        var regenSlidePath = ResolveWebRootFile(regenModule?.PdfUrl);
+        var regenSlidePath = await ResolveWebRootFile(regenModule?.PdfUrl);
         var regenCourse = await DbContext.Courses.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == question.Assessment!.CourseId);
 
@@ -1784,12 +1788,14 @@ public class QuizzesController : BaseApiController
     /// </summary>
     private async Task<IActionResult?> CheckDocumentProcessingGateAsync(string? physicalPath, Guid courseId, Guid? moduleId)
     {
-        if (string.IsNullOrWhiteSpace(physicalPath) || !System.IO.File.Exists(physicalPath))
+        // physicalPath was resolved through IUploadStorage, so it already exists (disk path or Blob URL).
+        if (string.IsNullOrWhiteSpace(physicalPath))
         {
             return null; // No attached document: generation falls back to module context text.
         }
 
-        var fileName = System.IO.Path.GetFileName(physicalPath);
+        // Blob URLs are percent-encoded; the agent keys document status by the decoded basename.
+        var fileName = Uri.UnescapeDataString(System.IO.Path.GetFileName(physicalPath));
         var status = await _aiGatewayClient.GetDocumentStatusAsync(fileName);
         if (status.StatusCode < 200 || status.StatusCode > 299 || string.IsNullOrWhiteSpace(status.Body))
         {
@@ -2498,25 +2504,11 @@ public class QuizzesController : BaseApiController
         quiz.ScopeId = placement.ScopeId;
     }
 
-    /// <summary>Resolves a site-relative URL to a file inside wwwroot, or null if it escapes it or is missing.</summary>
-    private string? ResolveWebRootFile(string? relativeUrl)
-    {
-        if (string.IsNullOrWhiteSpace(relativeUrl))
-        {
-            return null;
-        }
-
-        var webRoot = Path.GetFullPath(_environment?.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
-        var candidate = Path.GetFullPath(Path.Combine(webRoot, relativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-
-        var rootWithSeparator = webRoot.EndsWith(Path.DirectorySeparatorChar) ? webRoot : webRoot + Path.DirectorySeparatorChar;
-        if (!candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return System.IO.File.Exists(candidate) ? candidate : null;
-    }
+    /// <summary>
+    /// Where the AI agent can read an uploaded file: a disk path (local storage) or a private
+    /// Blob URL (Vercel). Null when missing or outside the uploads/web root (no path traversal).
+    /// </summary>
+    private Task<string?> ResolveWebRootFile(string? relativeUrl) => _uploadStorage.ResolveForAiAsync(relativeUrl);
 
     /// <summary>
     /// The single publication gate used by create, update, validate and publish. Answer keys

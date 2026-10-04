@@ -114,7 +114,35 @@ if (flutterCmd) {
 } else {
   console.log('  📱 \x1b[33mFlutter Mobile App\x1b[0m: \x1b[90mSkipped (Flutter SDK not found in PATH)\x1b[0m');
 }
-console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m\n');
+function killPortProcesses(ports) {
+  if (!isWindows) return;
+  try {
+    const res = spawnSync('cmd.exe', ['/c', 'netstat -ano'], { encoding: 'utf8' });
+    if (res.stdout) {
+      const lines = res.stdout.split('\n');
+      const pidsToKill = new Set();
+      for (const line of lines) {
+        if (!line.includes('LISTENING')) continue;
+        for (const port of ports) {
+          if (line.includes(`:${port} `) || line.includes(`:${port}\t`)) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && pid !== '0' && pid !== String(process.pid)) {
+              pidsToKill.add(pid);
+            }
+          }
+        }
+      }
+      pidsToKill.forEach((pid) => {
+        try {
+          spawnSync('taskkill', ['/pid', pid, '/f', '/t'], { stdio: 'ignore' });
+        } catch {}
+      });
+    }
+  } catch {}
+}
+
+killPortProcesses([2174, 5204, 8888]);
 
 services.forEach((service) => {
   const child = spawn(toCommandLine(service.cmd, service.args), {

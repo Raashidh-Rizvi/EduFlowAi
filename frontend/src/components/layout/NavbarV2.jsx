@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Bell, ChevronDown, LogOut } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
+import RoleSwitcher from '../../components/common/RoleSwitcher';
 import useApiHealth from '../../hooks/useApiHealth';
 
 export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUser, onLogout }) {
@@ -50,6 +51,9 @@ export default function NavbarV2({ activeTab, unreadNotifications = 0, currentUs
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
+
+      {/* Role / Persona Quick Switcher */}
+      <RoleSwitcher currentRole={user.role} compact />
 
       {/* Theme toggle */}
       <ThemeToggle compact />

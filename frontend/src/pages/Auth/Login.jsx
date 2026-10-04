@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock, Mail, ArrowRight, AlertCircle, Eye, EyeOff, ChevronLeft } from 'lucide-react';
+import { Lock, Mail, ArrowRight, AlertCircle, Eye, EyeOff, ChevronLeft, GraduationCap, Presentation, ShieldCheck, Zap } from 'lucide-react';
 import ThemeToggle from '../../components/common/ThemeToggle';
+import RoleSwitcher from '../../components/common/RoleSwitcher';
 import { BrandLogo } from '../../components/common/BrandLogo';
 import { authService } from '../../services/authService';
 import { getAuthenticationErrorMessage } from '../../services/authErrors';
@@ -17,6 +18,24 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  const handleQuickLogin = async (demoEmail) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      const res = await authService.login({ email: demoEmail, password: 'Password123!' });
+      window.dispatchEvent(new CustomEvent('eduflow-session-updated', { detail: res }));
+      onLoginSuccess(res);
+    } catch (err) {
+      setErrorMsg(getAuthenticationErrorMessage(err));
+    } finally {
+      submitting.current = false;
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -56,8 +75,9 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
       padding: '24px',
       position: 'relative'
     }}>
-      {/* Theme Toggle Button */}
-      <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50 }}>
+      {/* Header Bar Actions */}
+      <div style={{ position: 'absolute', top: '24px', right: '28px', zIndex: 50, display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <RoleSwitcher onSwitchRole={onLoginSuccess} />
         <ThemeToggle showLabel />
       </div>
 
@@ -87,7 +107,7 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
         gap: '24px',
         zIndex: 10
       }}>
-        {/* Left Side: Brand */}
+        {/* Left Side: Brand & Quick Demo Logins */}
         <div className="card-premium" style={{
           padding: '36px',
           display: 'flex',
@@ -97,17 +117,115 @@ export default function Login({ onLoginSuccess, initialMode = 'login' }) {
         }}>
           <div>
             {/* Logo */}
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '20px' }}>
               <BrandLogo size="lg" subtitle="Adaptive Enterprise Learning Platform" />
             </div>
 
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '24px' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '20px' }}>
               Enterprise learning orchestration with deterministic rewards, LangGraph multi-agent study plans, and instructor-verified safety guardrails.
             </p>
 
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.6' }}>
-              Sign in with your account. New learners can create a Student account.
-            </p>
+            {/* Quick Demo Accounts */}
+            <div style={{
+              marginTop: '16px',
+              padding: '16px',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'var(--bg-surface)',
+              border: '1px solid var(--border-subtle)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                <Zap size={14} color="#F59E0B" fill="#F59E0B" />
+                <span style={{ fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                  Quick Demo Links
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('student@eduflow.ai')}
+                  className="hover-scale"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    color: 'var(--text-main)',
+                    fontSize: '12.5px',
+                    fontWeight: '600',
+                    cursor: loading ? 'wait' : 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <GraduationCap size={16} color="#3B82F6" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#3B82F6' }}>Login as Student</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Alex Rivera</div>
+                  </div>
+                  <ArrowRight size={13} color="#3B82F6" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('instructor@eduflow.ai')}
+                  className="hover-scale"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    border: '1px solid rgba(139, 92, 246, 0.25)',
+                    color: 'var(--text-main)',
+                    fontSize: '12.5px',
+                    fontWeight: '600',
+                    cursor: loading ? 'wait' : 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <Presentation size={16} color="#8B5CF6" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#8B5CF6' }}>Login as Instructor</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Dr. Sarah Jenkins</div>
+                  </div>
+                  <ArrowRight size={13} color="#8B5CF6" />
+                </button>
+
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('admin@eduflow.ai')}
+                  className="hover-scale"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                    border: '1px solid rgba(236, 72, 153, 0.25)',
+                    color: 'var(--text-main)',
+                    fontSize: '12.5px',
+                    fontWeight: '600',
+                    cursor: loading ? 'wait' : 'pointer',
+                    textAlign: 'left'
+                  }}
+                >
+                  <ShieldCheck size={16} color="#EC4899" />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#EC4899' }}>Login as Administrator</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>System Administrator</div>
+                  </div>
+                  <ArrowRight size={13} color="#EC4899" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

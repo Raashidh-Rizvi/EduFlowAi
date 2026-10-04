@@ -36,6 +36,23 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // 2. Register Domain & Infrastructure Services
 builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
+// Uploads: private Vercel Blob when a store is connected (container disk is ephemeral and
+// not shared with the AI agent there), otherwise wwwroot/uploads on local disk.
+var blobToken = builder.Configuration["BLOB_READ_WRITE_TOKEN"];
+if (!string.IsNullOrWhiteSpace(blobToken))
+{
+    builder.Services.AddHttpClient(nameof(VercelBlobUploadStorage));
+    builder.Services.AddSingleton<IUploadStorage>(sp => new VercelBlobUploadStorage(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(VercelBlobUploadStorage)),
+        blobToken,
+        sp.GetRequiredService<ILogger<VercelBlobUploadStorage>>()));
+}
+else
+{
+    builder.Services.AddSingleton<IUploadStorage>(sp =>
+        new LocalUploadStorage(sp.GetRequiredService<IWebHostEnvironment>().WebRootPath
+            ?? Path.Combine(AppContext.BaseDirectory, "wwwroot")));
+}
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddLmsDomainServices();
 builder.Services.AddScoped<ITeamService, TeamService>();
@@ -96,7 +113,12 @@ builder.Services.AddCors(options =>
                   if (string.IsNullOrWhiteSpace(origin)) return false;
                   if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
                   {
-                      return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+                      if (builder.Environment.IsDevelopment()) return true;
+                      return uri.Host == "localhost" ||
+                             uri.Host == "127.0.0.1" ||
+                             uri.Host.StartsWith("172.") ||
+                             uri.Host.StartsWith("192.168.") ||
+                             uri.Host.StartsWith("10.");
                   }
                   return false;
               })

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import 'home/home_screen.dart';
+import 'explore/explore_screen.dart';
 import 'journey/journey_screen.dart';
 import 'quiz/quiz_screen.dart';
 import 'ai_coach/ai_coach_screen.dart';
@@ -30,7 +31,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     _studentProfile = {
-      'studentName': widget.user['name'] ?? 'Alex Rivera',
+      'studentName': widget.user['name'] ?? widget.user['fullName'] ?? 'Alex Rivera',
       'email': widget.user['email'] ?? 'student@eduflow.ai',
       'totalXp': 1250,
       'currentLevel': 2,
@@ -102,6 +103,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
+  void _handleCourseEnrolled(String courseId) {
+    setState(() {
+      _studentProfile['totalXp'] += 50;
+      _studentProfile['xpProgressInLevel'] += 50;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
@@ -110,10 +118,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         onClaimDailyMission: _claimDailyMission,
         onUseStreakFreeze: _useStreakFreeze,
         onNavigate: (route) {
-          if (route == 'coach') {
-            setState(() => _currentIndex = 2); // Switch to AI Coach tab
+          if (route == 'explore') {
+            setState(() => _currentIndex = 1); // Switch to Explore tab
+          } else if (route == 'coach') {
+            setState(() => _currentIndex = 3); // Switch to AI Coach tab
           }
         },
+      ),
+      ExploreScreen(
+        onCourseEnrolled: _handleCourseEnrolled,
       ),
       JourneyScreen(
         onSelectNode: _openQuizOrBoss,
@@ -144,6 +157,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           unselectedFontSize: 11,
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Explore'),
             BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Journey'),
             BottomNavigationBarItem(icon: Icon(Icons.smart_toy_outlined), label: 'AI Coach'),
             BottomNavigationBarItem(icon: Icon(Icons.leaderboard_outlined), label: 'Ranks'),

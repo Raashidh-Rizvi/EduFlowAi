@@ -78,7 +78,6 @@ class ChromaVectorStore:
         STEP 1: INITIALIZE CHROMADB & EMBEDDING FUNCTION
         """
         self.persist_dir = persist_dir or os.environ.get("CHROMA_PERSIST_DIR", DEFAULT_CHROMA_DIR)
-        os.makedirs(self.persist_dir, exist_ok=True)
 
         # Step 1.1: Resolve embedding provider ("default" or "gemini")
         self.provider = (provider or os.environ.get("EMBEDDING_PROVIDER", "default")).lower().strip()
@@ -89,10 +88,7 @@ class ChromaVectorStore:
         )
 
         # Step 1.2: Connect to ChromaDB with telemetry turned off
-        self.client = chromadb.PersistentClient(
-            path=self.persist_dir,
-            settings=Settings(anonymized_telemetry=False)
-        )
+        self.client = self._connect(persist_dir is not None)
 
         # Step 1.3: Configure the selected embedding function
         self.embedding_function = self._resolve_embedding_function()
@@ -117,6 +113,34 @@ class ChromaVectorStore:
             embedding_function=self.embedding_function,
             metadata={"hnsw:space": "cosine"}
         )
+
+    def _connect(self, explicit_dir: bool):
+        """
+        Chroma Cloud when CHROMA_API_KEY is set (serverless hosts such as Vercel, whose disk is
+        ephemeral), a Chroma server when CHROMA_HOST is set, else an on-disk store. An explicit
+        persist_dir (tests) always means on-disk.
+        """
+        settings = Settings(anonymized_telemetry=False)
+        if not explicit_dir and os.environ.get("CHROMA_API_KEY", "").strip():
+            # tenant/database fall back to CHROMA_TENANT / CHROMA_DATABASE inside the client.
+            self.mode = "cloud"
+            return chromadb.CloudClient(
+                tenant=os.environ.get("CHROMA_TENANT") or None,
+                database=os.environ.get("CHROMA_DATABASE") or None,
+                api_key=os.environ["CHROMA_API_KEY"].strip(),
+                settings=settings,
+            )
+        if not explicit_dir and os.environ.get("CHROMA_HOST", "").strip():
+            self.mode = "http"
+            return chromadb.HttpClient(
+                host=os.environ["CHROMA_HOST"].strip(),
+                port=int(os.environ.get("CHROMA_PORT", "8000")),
+                ssl=os.environ.get("CHROMA_SSL", "").lower() in ("1", "true", "yes"),
+                settings=settings,
+            )
+        self.mode = "persistent"
+        os.makedirs(self.persist_dir, exist_ok=True)
+        return chromadb.PersistentClient(path=self.persist_dir, settings=settings)
 
     def _resolve_embedding_function(self):
         """

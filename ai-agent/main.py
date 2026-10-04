@@ -8,8 +8,12 @@ Grounded Student Q&A with Slide Citations, and Course Assessments.
 import hmac
 import logging
 import os
+import tempfile
 import time
 from typing import List, Optional
+from urllib.parse import unquote, urlparse
+
+import httpx
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,10 +88,86 @@ def _allowed_upload_roots() -> List[str]:
     return [os.path.realpath(r.strip()) for r in raw.split(",") if r.strip()]
 
 
+_BLOB_MAX_BYTES = 60 * 1024 * 1024  # backend caps uploads at 50 MB
+
+
+def _blob_store_host() -> Optional[str]:
+    """Private store host derived from BLOB_READ_WRITE_TOKEN (vercel_blob_rw_{storeId}_{secret})."""
+    parts = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip().split("_")
+    if len(parts) < 5 or not parts[3]:
+        return None
+    return f"{parts[3].lower()}.private.blob.vercel-storage.com"
+
+
+def _download_blob(url: str) -> str:
+    """
+    Downloads a private Vercel Blob upload to local temp storage and returns the local path.
+    The backend sends Blob URLs on Vercel, where it does not share a disk with this service.
+    Only this project's own store is fetched (the token never goes to any other host), and the
+    decoded basename is kept so document-status keys match what the backend asks about.
+    """
+    parsed = urlparse(url)
+    store_host = _blob_store_host()
+    if (
+        parsed.scheme != "https"
+        or not store_host
+        or (parsed.hostname or "").lower() != store_host
+        or not parsed.path.startswith("/uploads/")
+        or ".." in parsed.path.split("/")
+    ):
+        logger.warning("Rejected file URL outside the configured Blob store.")
+        raise HTTPException(status_code=400, detail="The requested file is not in an allowed location.")
+
+    file_name = os.path.basename(unquote(parsed.path))
+    if not file_name or file_name in (".", ".."):
+        raise HTTPException(status_code=400, detail="The requested file is not in an allowed location.")
+
+    cache_dir = os.getenv("BLOB_CACHE_DIR", "").strip() or os.path.join(tempfile.gettempdir(), "eduflow-blob")
+    os.makedirs(cache_dir, exist_ok=True)
+    local_path = os.path.join(cache_dir, file_name)
+    if os.path.exists(local_path):
+        return local_path  # upload names carry a GUID, so a cached copy is the same file
+
+    token = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip()
+    tmp_path = f"{local_path}.{os.getpid()}.part"
+    try:
+        with httpx.stream(
+            "GET",
+            f"https://{store_host}{parsed.path}",
+            params={"cache": "0"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            follow_redirects=False,
+        ) as response:
+            if response.status_code == 404:
+                raise HTTPException(status_code=404, detail="The requested file was not found.")
+            response.raise_for_status()
+            written = 0
+            with open(tmp_path, "wb") as out:
+                for chunk in response.iter_bytes():
+                    written += len(chunk)
+                    if written > _BLOB_MAX_BYTES:
+                        raise HTTPException(status_code=413, detail="The requested file is too large.")
+                    out.write(chunk)
+        os.replace(tmp_path, local_path)
+    except httpx.HTTPError as exc:
+        logger.error("Blob download failed: %s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="The course document could not be fetched from storage.")
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    return local_path
+
+
 def require_upload_path(path: Optional[str]) -> Optional[str]:
-    """Rejects file paths outside UPLOADS_ROOT so callers cannot make the service read arbitrary files."""
+    """
+    Rejects file paths outside UPLOADS_ROOT so callers cannot make the service read arbitrary files.
+    Private Blob URLs from the project's own store are downloaded and their local path returned.
+    """
     if not path:
         return path
+    if path.lower().startswith(("http://", "https://")):
+        return _download_blob(path)
     resolved = os.path.normcase(os.path.realpath(path))
     for root in _allowed_upload_roots():
         root = os.path.normcase(root)

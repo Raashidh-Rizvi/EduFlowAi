@@ -114,3 +114,50 @@ def test_internal_failure_does_not_leak_exception_text(monkeypatch):
     assert res.status_code == 500
     assert "hunter2" not in res.text
     assert "secret" not in res.text
+
+
+def test_blob_url_from_another_host_is_rejected(monkeypatch):
+    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_mystore_secretpart")
+    client = TestClient(app)
+    for url in (
+        "https://evil.example.com/uploads/pdfs/a.pdf",
+        "https://otherstore.private.blob.vercel-storage.com/uploads/pdfs/a.pdf",
+        "http://mystore.private.blob.vercel-storage.com/uploads/pdfs/a.pdf",
+        "https://mystore.private.blob.vercel-storage.com/secrets/a.pdf",
+    ):
+        res = client.post("/api/v1/ai/slides/categorize-topics", json={"slide_path": url})
+        assert res.status_code == 400, url
+
+
+def test_blob_url_without_configured_store_is_rejected(monkeypatch):
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+    res = TestClient(app).post("/api/v1/ai/slides/categorize-topics",
+                               json={"slide_path": "https://mystore.private.blob.vercel-storage.com/uploads/pdfs/a.pdf"})
+    assert res.status_code == 400
+
+
+def test_blob_url_is_downloaded_with_store_token(monkeypatch, tmp_path):
+    import main
+
+    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_mystore_secretpart")
+    monkeypatch.setenv("BLOB_CACHE_DIR", str(tmp_path))
+    seen = {}
+
+    class FakeResponse:
+        status_code = 200
+        def raise_for_status(self): pass
+        def iter_bytes(self): yield b"%PDF-1.4 test"
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    def fake_stream(method, url, params=None, headers=None, **kwargs):
+        seen.update(url=url, auth=headers.get("Authorization"))
+        return FakeResponse()
+
+    monkeypatch.setattr(main.httpx, "stream", fake_stream)
+    local = main.require_upload_path(
+        "https://mystore.private.blob.vercel-storage.com/uploads/pdfs/abc_Week%201.pdf")
+    assert os.path.basename(local) == "abc_Week 1.pdf"
+    assert open(local, "rb").read() == b"%PDF-1.4 test"
+    assert seen["url"] == "https://mystore.private.blob.vercel-storage.com/uploads/pdfs/abc_Week%201.pdf"
+    assert seen["auth"] == "Bearer vercel_blob_rw_mystore_secretpart"

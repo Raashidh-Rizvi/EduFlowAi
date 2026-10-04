@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using EduFlow.Core.Enums;
 using EduFlow.Infrastructure.Data;
+using EduFlow.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +14,7 @@ using Microsoft.EntityFrameworkCore;
 namespace EduFlow.Api.Controllers;
 
 /// <summary>
-/// Serves uploaded course material (wwwroot/uploads) behind authorization. Program.cs excludes
+/// Serves uploaded course material (IUploadStorage: wwwroot/uploads or Vercel Blob) behind authorization. Program.cs excludes
 /// /uploads from the static-file middleware so these files are only reachable through here.
 ///
 /// Access rule for a file referenced by a Module or ContentItem PdfUrl (the legacy Lesson table is not read):
@@ -26,36 +27,41 @@ namespace EduFlow.Api.Controllers;
 public class UploadsController : BaseApiController
 {
     private static readonly FileExtensionContentTypeProvider ContentTypes = new();
-    private readonly IWebHostEnvironment _environment;
+    private readonly IUploadStorage _storage;
 
-    public UploadsController(ApplicationDbContext dbContext, IWebHostEnvironment environment) : base(dbContext)
+    public UploadsController(ApplicationDbContext dbContext, IWebHostEnvironment environment, IUploadStorage? storage = null)
+        : base(dbContext)
     {
-        _environment = environment;
+        _storage = storage ?? new LocalUploadStorage(environment.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
     }
 
     [HttpGet("{**path}")]
     public async Task<IActionResult> Get(string path)
     {
-        var physicalPath = ResolveUploadFile(path);
-        if (physicalPath == null)
-        {
-            return NotFound(new { success = false, message = "File not found.", code = "FILE_NOT_FOUND" });
-        }
+        var notFound = NotFound(new { success = false, message = "File not found.", code = "FILE_NOT_FOUND" });
+        if (string.IsNullOrWhiteSpace(path)) return notFound;
 
         var url = "/uploads/" + path.TrimStart('/');
-        if (!await CanReadAsync(url))
-        {
-            // 404 rather than 403 so the endpoint does not confirm which files exist.
-            return NotFound(new { success = false, message = "File not found.", code = "FILE_NOT_FOUND" });
-        }
-
-        if (!ContentTypes.TryGetContentType(physicalPath, out var contentType))
-        {
-            contentType = "application/octet-stream";
-        }
+        // 404 rather than 403 so the endpoint does not confirm which files exist.
+        if (!await CanReadAsync(url)) return notFound;
 
         Response.Headers.CacheControl = "private, no-store";
-        return PhysicalFile(physicalPath, contentType, enableRangeProcessing: true);
+
+        if (_storage is LocalUploadStorage local)
+        {
+            var physicalPath = local.ResolveUploadsFile(url);
+            if (physicalPath == null) return notFound;
+            if (!ContentTypes.TryGetContentType(physicalPath, out var contentType))
+            {
+                contentType = "application/octet-stream";
+            }
+            return PhysicalFile(physicalPath, contentType, enableRangeProcessing: true);
+        }
+
+        var stored = await _storage.OpenAsync(url, HttpContext.RequestAborted);
+        if (stored == null) return notFound;
+        // FileStreamResult disposes the stream (and the underlying Blob response) when done.
+        return File(stored.Content, stored.ContentType);
     }
 
     private async Task<bool> CanReadAsync(string url)
@@ -87,20 +93,5 @@ public class UploadsController : BaseApiController
             e.StudentId == userId &&
             courseIds.Contains(e.CourseId) &&
             (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed));
-    }
-
-    private string? ResolveUploadFile(string? relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(relativePath)) return null;
-
-        var webRoot = _environment.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot");
-        var uploadsRoot = Path.GetFullPath(Path.Combine(webRoot, "uploads"));
-        var candidate = Path.GetFullPath(Path.Combine(uploadsRoot,
-            relativePath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-
-        var rootWithSeparator = uploadsRoot.EndsWith(Path.DirectorySeparatorChar) ? uploadsRoot : uploadsRoot + Path.DirectorySeparatorChar;
-        if (!candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase)) return null;
-
-        return System.IO.File.Exists(candidate) ? candidate : null;
     }
 }

@@ -22,13 +22,17 @@ public class AiController : BaseApiController
 {
     private readonly IAiGatewayClient _aiGatewayClient;
     private readonly IWebHostEnvironment? _environment;
+    private readonly IUploadStorage _uploadStorage;
 
     public AiController(
         ApplicationDbContext dbContext,
         IAiGatewayClient aiGatewayClient,
-        IWebHostEnvironment? environment = null)
+        IWebHostEnvironment? environment = null,
+        IUploadStorage? uploadStorage = null)
         : base(dbContext)
     {
+        _uploadStorage = uploadStorage ?? new LocalUploadStorage(
+            environment?.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
         _aiGatewayClient = aiGatewayClient;
         _environment = environment;
     }
@@ -124,7 +128,7 @@ public class AiController : BaseApiController
             return BadRequest(new { code = "BAD_REQUEST", message = "The fileUrl field is required." });
         }
 
-        var physicalPath = ResolveWebRootFile(request.FileUrl);
+        var physicalPath = await ResolveWebRootFile(request.FileUrl);
         if (physicalPath == null)
         {
             return NotFound(new
@@ -156,30 +160,11 @@ public class AiController : BaseApiController
         return Content(result.Body, "application/json");
     }
 
-    /// <summary>Resolves a site-relative URL to a file inside wwwroot (no path traversal).</summary>
-    private string? ResolveWebRootFile(string? relativeUrl)
-    {
-        if (string.IsNullOrWhiteSpace(relativeUrl))
-        {
-            return null;
-        }
-
-        var webRoot = Path.GetFullPath(_environment?.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"));
-        var candidate = Path.GetFullPath(Path.Combine(webRoot,
-            relativeUrl.Replace("uploads/", "uploads" + Path.DirectorySeparatorChar)
-                       .TrimStart('/')
-                       .Replace('/', Path.DirectorySeparatorChar)));
-
-        var rootWithSeparator = webRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? webRoot
-            : webRoot + Path.DirectorySeparatorChar;
-        if (!candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return System.IO.File.Exists(candidate) ? candidate : null;
-    }
+    /// <summary>
+    /// Where the AI agent can read an uploaded file: a disk path (local storage) or a private
+    /// Blob URL (Vercel). Null when missing or outside the uploads/web root (no path traversal).
+    /// </summary>
+    private Task<string?> ResolveWebRootFile(string? relativeUrl) => _uploadStorage.ResolveForAiAsync(relativeUrl);
 }
 
 /// <param name="ModuleId">Module whose stored document should be (re-)indexed.</param>
