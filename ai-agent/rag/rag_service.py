@@ -60,8 +60,10 @@ class SimpleRagService:
         # Document ingestion states (UPLOADED/PROCESSING/READY/FAILED) are
         # persisted next to the vector index so the .NET gateway can refuse to
         # generate from a document that has not finished processing.
-        self._status_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                                         "data", "document_status.json")
+        # On Vercel only /tmp is writable.
+        data_dir = ("/tmp/eduflow" if os.environ.get("VERCEL")
+                    else os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+        self._status_path = os.path.join(data_dir, "document_status.json")
         self._status_lock = threading.Lock()
 
         # LLM Provider Switch: "gemini" or "groq"

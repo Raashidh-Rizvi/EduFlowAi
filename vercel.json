@@ -1,32 +1,34 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "buildCommand": "VITE_API_BASE_URL=/api npm run build",
+      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
     },
-    {
-      "src": "ai-agent/api/index.py",
-      "use": "@vercel/python"
+    "backend": {
+      "root": "backend",
+      "entrypoint": "Dockerfile",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "ai-agent",
+          "format": "url",
+          "env": "AiService__BaseUrl"
+        }
+      ]
+    },
+    "ai-agent": {
+      "root": "ai-agent",
+      "framework": "fastapi",
+      "entrypoint": "main:app"
     }
-  ],
-  "routes": [
-    {
-      "src": "/api/v1/ai/(.*)",
-      "dest": "ai-agent/api/index.py"
-    },
-    {
-      "src": "/health",
-      "dest": "ai-agent/api/index.py"
-    },
-    {
-      "src": "/assets/(.*)",
-      "dest": "frontend/dist/assets/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/index.html"
-    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/uploads/(.*)", "destination": { "service": "backend" } },
+    { "source": "/health", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
   ]
 }

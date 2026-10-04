@@ -48,7 +48,8 @@ public class AiGatewayClient : IAiGatewayClient
         var timeoutRaw = configuration["AiService:TimeoutSeconds"];
         var timeoutSeconds = int.TryParse(timeoutRaw, out var ts) && ts > 0 ? ts : 30;
         _httpClient.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        _baseUrl = configuration["AiService:BaseUrl"] ?? "http://localhost:8888";
+        // Paths are appended with a leading slash; a Vercel service binding URL may end in one.
+        _baseUrl = (configuration["AiService:BaseUrl"] ?? "http://localhost:8888").TrimEnd('/');
         _logger = logger;
 
         var apiKey = configuration["AiService:ApiKey"];

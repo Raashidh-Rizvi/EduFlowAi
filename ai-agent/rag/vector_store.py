@@ -29,8 +29,11 @@ from rag.chunker import DocumentChunk
 
 logger = logging.getLogger("EduFlow-VectorStore")
 
-# Default path where ChromaDB saves files on disk
-DEFAULT_CHROMA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "chroma_db")
+# Default path where ChromaDB saves files on disk (Vercel Functions can only write to /tmp)
+DEFAULT_CHROMA_DIR = (
+    "/tmp/eduflow/chroma_db" if os.environ.get("VERCEL")
+    else os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "chroma_db")
+)
 
 
 EMBEDDING_BATCH_SIZE = 100
