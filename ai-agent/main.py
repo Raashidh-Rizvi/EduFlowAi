@@ -91,9 +91,15 @@ def _allowed_upload_roots() -> List[str]:
 _BLOB_MAX_BYTES = 60 * 1024 * 1024  # backend caps uploads at 50 MB
 
 
+def _blob_token() -> str:
+    """BLOB_READ_WRITE_TOKEN, treating an unfilled "<...>" template placeholder as unset."""
+    token = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip()
+    return "" if token.startswith("<") else token
+
+
 def _blob_store_host() -> Optional[str]:
     """Private store host derived from BLOB_READ_WRITE_TOKEN (vercel_blob_rw_{storeId}_{secret})."""
-    parts = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip().split("_")
+    parts = _blob_token().split("_")
     if len(parts) < 5 or not parts[3]:
         return None
     return f"{parts[3].lower()}.private.blob.vercel-storage.com"
@@ -128,7 +134,7 @@ def _download_blob(url: str) -> str:
     if os.path.exists(local_path):
         return local_path  # upload names carry a GUID, so a cached copy is the same file
 
-    token = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip()
+    token = _blob_token()
     tmp_path = f"{local_path}.{os.getpid()}.part"
     try:
         with httpx.stream(

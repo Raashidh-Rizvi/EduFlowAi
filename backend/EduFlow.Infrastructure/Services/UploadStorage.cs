@@ -127,15 +127,21 @@ public class VercelBlobUploadStorage : IUploadStorage
         _logger = logger;
     }
 
+    public static bool IsValidToken(string token)
+    {
+        var parts = token.Split('_');
+        return parts.Length >= 5 && token.StartsWith("vercel_blob_rw_", StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(parts[3]);
+    }
+
     /// <summary>BLOB_READ_WRITE_TOKEN is vercel_blob_rw_{storeId}_{secret}.</summary>
     public static string StoreIdFromToken(string token)
     {
-        var parts = token.Split('_');
-        if (parts.Length < 5 || string.IsNullOrWhiteSpace(parts[3]))
+        if (!IsValidToken(token))
         {
             throw new ArgumentException("BLOB_READ_WRITE_TOKEN is not a valid Vercel Blob read-write token.");
         }
-        return parts[3];
+        return token.Split('_')[3];
     }
 
     public async Task<string> SaveAsync(string folder, string fileName, Stream content, string contentType, CancellationToken ct = default)

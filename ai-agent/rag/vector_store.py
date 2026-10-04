@@ -36,6 +36,12 @@ DEFAULT_CHROMA_DIR = (
 )
 
 
+def _env(name: str) -> str:
+    """Env value, treating an unfilled "<...>" template placeholder as unset."""
+    value = os.environ.get(name, "").strip()
+    return "" if value.startswith("<") else value
+
+
 EMBEDDING_BATCH_SIZE = 100
 EMBEDDING_TIMEOUT_MS = 30_000
 
@@ -121,19 +127,18 @@ class ChromaVectorStore:
         persist_dir (tests) always means on-disk.
         """
         settings = Settings(anonymized_telemetry=False)
-        if not explicit_dir and os.environ.get("CHROMA_API_KEY", "").strip():
-            # tenant/database fall back to CHROMA_TENANT / CHROMA_DATABASE inside the client.
+        if not explicit_dir and _env("CHROMA_API_KEY"):
             self.mode = "cloud"
             return chromadb.CloudClient(
-                tenant=os.environ.get("CHROMA_TENANT") or None,
-                database=os.environ.get("CHROMA_DATABASE") or None,
-                api_key=os.environ["CHROMA_API_KEY"].strip(),
+                tenant=_env("CHROMA_TENANT") or None,
+                database=_env("CHROMA_DATABASE") or None,
+                api_key=_env("CHROMA_API_KEY"),
                 settings=settings,
             )
-        if not explicit_dir and os.environ.get("CHROMA_HOST", "").strip():
+        if not explicit_dir and _env("CHROMA_HOST"):
             self.mode = "http"
             return chromadb.HttpClient(
-                host=os.environ["CHROMA_HOST"].strip(),
+                host=_env("CHROMA_HOST"),
                 port=int(os.environ.get("CHROMA_PORT", "8000")),
                 ssl=os.environ.get("CHROMA_SSL", "").lower() in ("1", "true", "yes"),
                 settings=settings,

@@ -41,7 +41,14 @@ try
     builder.Services.AddHttpClient<IAiGatewayClient, AiGatewayClient>();
     // Uploads: private Vercel Blob when a store is connected (container disk is ephemeral and
     // not shared with the AI agent there), otherwise wwwroot/uploads on local disk.
+    // A malformed token (e.g. an unfilled "<...>" placeholder) would make every controller that
+    // depends on IUploadStorage throw, so it falls back to local disk with a startup warning.
     var blobToken = builder.Configuration["BLOB_READ_WRITE_TOKEN"];
+    if (!string.IsNullOrWhiteSpace(blobToken) && !VercelBlobUploadStorage.IsValidToken(blobToken))
+    {
+        Console.Error.WriteLine("WARNING: BLOB_READ_WRITE_TOKEN is set but is not a valid Vercel Blob read-write token; using local upload storage.");
+        blobToken = null;
+    }
     if (!string.IsNullOrWhiteSpace(blobToken))
     {
         builder.Services.AddHttpClient(nameof(VercelBlobUploadStorage));
