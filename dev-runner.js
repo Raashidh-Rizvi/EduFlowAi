@@ -117,6 +117,10 @@ if (flutterCmd) {
 function killPortProcesses(ports) {
   if (!isWindows) return;
   try {
+    // Kill Roslyn compiler daemon if it's holding locks on DLL files
+    spawnSync('taskkill', ['/im', 'VBCSCompiler.exe', '/f'], { stdio: 'ignore' });
+  } catch {}
+  try {
     const res = spawnSync('cmd.exe', ['/c', 'netstat -ano'], { encoding: 'utf8' });
     if (res.stdout) {
       const lines = res.stdout.split('\n');
@@ -176,6 +180,10 @@ services.forEach((service) => {
   child.on('close', (code) => {
     if (code !== 0 && code !== null) {
       console.log(`${prefix}\x1b[33mProcess exited with code ${code}\x1b[0m`);
+      if (service.name.trim() === 'Mobile') {
+        console.log(`${prefix}\x1b[36m💡 Tip: Windows Developer Mode is required for Flutter Windows plugins.\x1b[0m`);
+        console.log(`${prefix}\x1b[36m   Turn ON Developer Mode in Windows Settings (or run 'start ms-settings:developers').\x1b[0m`);
+      }
     }
   });
 });
