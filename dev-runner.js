@@ -36,6 +36,28 @@ function getPythonCommand() {
 }
 const pythonCmd = getPythonCommand();
 
+function getFlutterCommand() {
+  const possiblePaths = [
+    isWindows ? 'C:\\src\\flutter\\bin\\flutter.bat' : '/src/flutter/bin/flutter',
+    isWindows ? 'C:\\flutter\\bin\\flutter.bat' : '/flutter/bin/flutter',
+    path.join(process.env.USERPROFILE || '', 'flutter', 'bin', isWindows ? 'flutter.bat' : 'flutter'),
+    path.join(process.env.LOCALAPPDATA || '', 'flutter', 'bin', isWindows ? 'flutter.bat' : 'flutter'),
+  ];
+  for (const fpath of possiblePaths) {
+    if (fs.existsSync(fpath)) {
+      return fpath;
+    }
+  }
+  try {
+    const res = spawnSync(isWindows ? 'where.exe' : 'which', ['flutter'], { stdio: 'ignore' });
+    if (res.status === 0) {
+      return 'flutter';
+    }
+  } catch {}
+  return null;
+}
+const flutterCmd = getFlutterCommand();
+
 
 const services = [
   {
@@ -63,7 +85,19 @@ const services = [
     // (which used to stop every service whenever an ai-agent file changed).
     args: ['dev_server.py'],
     url: 'http://localhost:8888 (API Docs: http://localhost:8888/docs)'
-  }
+  },
+  ...(flutterCmd
+    ? [
+        {
+          name: 'Mobile  ',
+          color: '\x1b[33m', // Yellow
+          cwd: path.join(__dirname, 'mobile'),
+          cmd: flutterCmd,
+          args: ['run'],
+          url: 'Flutter Mobile/Desktop Application'
+        }
+      ]
+    : [])
 ];
 
 const children = [];
@@ -75,6 +109,11 @@ console.log('\x1b[1mService URLs:\x1b[0m');
 console.log('  🌐 \x1b[36mFrontend Web App\x1b[0m  : http://localhost:2174');
 console.log('  ⚙️  \x1b[32m.NET Backend API\x1b[0m  : http://localhost:5204 (Swagger: http://localhost:5204/swagger)');
 console.log('  ⚡ \x1b[35mPython AI Engine\x1b[0m  : http://localhost:8888 (Interactive Docs: http://localhost:8888/docs)');
+if (flutterCmd) {
+  console.log('  📱 \x1b[33mFlutter Mobile App\x1b[0m: Flutter CLI (mobile/)');
+} else {
+  console.log('  📱 \x1b[33mFlutter Mobile App\x1b[0m: \x1b[90mSkipped (Flutter SDK not found in PATH)\x1b[0m');
+}
 console.log('\x1b[1m\x1b[34m==============================================================\x1b[0m\n');
 
 services.forEach((service) => {

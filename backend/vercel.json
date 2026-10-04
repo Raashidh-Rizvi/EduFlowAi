@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "EduFlow.Api/EduFlow.Api.csproj",
-      "use": "@vercel/dotnet"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "EduFlow.Api/EduFlow.Api.csproj"
+      "source": "/(.*)",
+      "destination": "http://159.13.63.98/$1"
     }
   ]
 }

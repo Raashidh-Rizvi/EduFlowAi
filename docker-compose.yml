@@ -1,0 +1,73 @@
+# EduFlow AI - full stack in one command:
+#   cp .env.docker.example .env   (fill in the secrets)
+#   docker compose up -d --build
+# Only the frontend (Nginx) is published; backend, AI agent and Postgres stay on the private network.
+
+name: eduflow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-EduFlowDb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ai-agent:
+    build: ./ai-agent
+    restart: unless-stopped
+    # Provider keys (GEMINI_API_KEY, GROQ_API_KEY, AZURE_OPENAI_*, ...) come from ai-agent/.env.
+    # Values under `environment` override that file.
+    env_file:
+      - path: ./ai-agent/.env
+        required: false
+    environment:
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
+      INTERNAL_AUTH_FAIL_OPEN: "false"
+      UPLOADS_ROOT: /app/wwwroot/uploads
+      CHROMA_PERSIST_DIR: /srv/ai-agent/data/chroma_db
+      EDUFLOW_BACKEND_URL: http://backend:8080
+      ALLOWED_ORIGINS: http://backend:8080
+    volumes:
+      # Same path as in the backend container: the backend sends absolute file paths
+      - uploads:/app/wwwroot/uploads
+      - agent_data:/srv/ai-agent/data   # Chroma vectors + document_status.json
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-agent:
+        condition: service_started
+    environment:
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-EduFlowDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}
+      JwtSettings__Secret: ${JWT_SECRET:?Set JWT_SECRET in .env (32+ characters)}
+      AiService__BaseUrl: http://ai-agent:8888
+      AiService__ApiKey: ${INTERNAL_SERVICE_TOKEN}
+      DemoAccounts__Enabled: ${DEMO_ACCOUNTS_ENABLED:-false}
+    volumes:
+      - uploads:/app/wwwroot/uploads
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+
+volumes:
+  postgres_data:
+  uploads:
+  agent_data:
