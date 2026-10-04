@@ -43,7 +43,16 @@ try
     // not shared with the AI agent there), otherwise wwwroot/uploads on local disk.
     // A malformed token (e.g. an unfilled "<...>" placeholder) would make every controller that
     // depends on IUploadStorage throw, so it falls back to local disk with a startup warning.
+    // A store connected with a custom env prefix exposes {PREFIX}_READ_WRITE_TOKEN instead.
     var blobToken = builder.Configuration["BLOB_READ_WRITE_TOKEN"];
+    if (string.IsNullOrWhiteSpace(blobToken))
+    {
+        blobToken = builder.Configuration.AsEnumerable()
+            .Where(kv => kv.Key.EndsWith("_READ_WRITE_TOKEN", StringComparison.OrdinalIgnoreCase)
+                && kv.Value?.StartsWith("vercel_blob_rw_", StringComparison.Ordinal) == true)
+            .Select(kv => kv.Value)
+            .FirstOrDefault();
+    }
     if (!string.IsNullOrWhiteSpace(blobToken) && !VercelBlobUploadStorage.IsValidToken(blobToken))
     {
         Console.Error.WriteLine("WARNING: BLOB_READ_WRITE_TOKEN is set but is not a valid Vercel Blob read-write token; using local upload storage.");

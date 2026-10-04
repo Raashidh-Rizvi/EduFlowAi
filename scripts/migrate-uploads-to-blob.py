@@ -26,8 +26,12 @@ def load_token() -> str:
     if not token and os.path.exists(env_file):
         with open(env_file, encoding="utf-8") as f:
             for line in f:
-                if line.startswith("BLOB_READ_WRITE_TOKEN="):
-                    token = line.split("=", 1)[1].strip().strip('"')
+                key, _, value = line.partition("=")
+                value = value.strip().strip('"')
+                # Also accepts {PREFIX}_READ_WRITE_TOKEN from a store connected with a custom prefix.
+                if key.strip().endswith("_READ_WRITE_TOKEN") and value.startswith("vercel_blob_rw_"):
+                    token = value
+                    break
     parts = token.split("_")
     if not token.startswith("vercel_blob_rw_") or len(parts) < 5 or not parts[3]:
         sys.exit("BLOB_READ_WRITE_TOKEN is missing or not a valid Vercel Blob read-write token.")

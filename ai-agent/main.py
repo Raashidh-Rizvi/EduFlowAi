@@ -94,6 +94,10 @@ _BLOB_MAX_BYTES = 60 * 1024 * 1024  # backend caps uploads at 50 MB
 def _blob_token() -> str:
     """BLOB_READ_WRITE_TOKEN, treating an unfilled "<...>" template placeholder as unset."""
     token = os.getenv("BLOB_READ_WRITE_TOKEN", "").strip()
+    if not token:
+        # A store connected with a custom env prefix exposes {PREFIX}_READ_WRITE_TOKEN instead.
+        token = next((v.strip() for k, v in os.environ.items()
+                      if k.upper().endswith("_READ_WRITE_TOKEN") and v.strip().startswith("vercel_blob_rw_")), "")
     return "" if token.startswith("<") else token
 
 
