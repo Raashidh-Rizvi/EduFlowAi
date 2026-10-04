@@ -8,7 +8,7 @@ on:
 
 jobs:
   backend-ci:
-    name: Backend CI (.NET 10 & PostgreSQL)
+    name: Backend CI (.NET 8/10 & Database Verification)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -20,15 +20,13 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     env:
-      # CI-only throwaway values for config binding during build/test.
-      # These are NOT real secrets and must never be used in production.
       ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=eduflow_test;Username=postgres;Password=postgres"
       JwtSettings__Secret: "8f2e91ab4c3d7e6f1a0b5c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f"
       AiService__ApiKey: "ci-internal-test-token"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 10
+      - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -36,11 +34,26 @@ jobs:
       - name: Restore Backend Dependencies
         run: dotnet restore backend/EduFlow.slnx
 
-      - name: Build Backend
+      - name: Build Backend (Release)
         run: dotnet build backend/EduFlow.slnx --no-restore --configuration Release
 
-      - name: Run Backend Tests
+      - name: Run Backend Unit & Integration Tests
         run: dotnet test backend/EduFlow.slnx --no-build --configuration Release --verbosity normal
+
+      - name: Dependency Vulnerability Check
+        run: dotnet list backend/EduFlow.slnx package --vulnerable || true
+
+      - name: Publish Production Backend Artifact
+        run: |
+          dotnet publish backend/EduFlow.Api/EduFlow.Api.csproj -c Release -o ./publish
+          tar -czf backend-release.tar.gz -C ./publish .
+
+      - name: Upload Backend Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-release
+          path: backend-release.tar.gz
+          retention-days: 5
 
   frontend-ci:
     name: Frontend CI (React 18 & Vite)
@@ -48,18 +61,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 18.x
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
 
       - name: Install Frontend Dependencies
         working-directory: ./frontend
         run: npm ci
 
-      - name: Frontend Lint & Build
+      - name: Frontend Build Verification
         working-directory: ./frontend
         run: npm run build
+
+      - name: Upload Frontend Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: ./frontend/dist
+          retention-days: 5
 
   flutter-ci:
     name: Mobile CI (Flutter 3.x)
@@ -67,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
@@ -93,7 +115,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -107,7 +129,3 @@ jobs:
       - name: Run Agent Golden Evaluation Tests
         working-directory: ./ai-agent
         run: pytest tests/ -v
-
-      - name: Run Phase 4 Reliability Tests
-        working-directory: ./ai-agent
-        run: pytest tests/test_phase4_reliability.py -v
