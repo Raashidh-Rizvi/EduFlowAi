@@ -137,10 +137,13 @@ public static class DbInitializer
                     IsActive = true
                 });
             }
-            else if (resetCredentials)
+            else
             {
-                admin.PasswordHash = validPasswordHash;
                 admin.IsActive = true;
+                if (resetCredentials)
+                {
+                    admin.PasswordHash = validPasswordHash;
+                }
             }
 
             var instructor = existingUsers.FirstOrDefault(u => u.Email.ToLower() == "instructor@eduflow.ai");
@@ -156,10 +159,13 @@ public static class DbInitializer
                     IsActive = true
                 });
             }
-            else if (resetCredentials)
+            else
             {
-                instructor.PasswordHash = validPasswordHash;
                 instructor.IsActive = true;
+                if (resetCredentials)
+                {
+                    instructor.PasswordHash = validPasswordHash;
+                }
             }
 
             var student = existingUsers.FirstOrDefault(u => u.Email.ToLower() == "student@eduflow.ai");
@@ -177,14 +183,17 @@ public static class DbInitializer
                 };
                 context.Users.Add(student);
             }
-            else if (resetCredentials)
+            else
             {
-                student.FullName = "Alex Rivera";
-                student.PasswordHash = validPasswordHash;
                 student.IsActive = true;
-                if (string.IsNullOrEmpty(student.AvatarUrl))
+                if (resetCredentials)
                 {
-                    student.AvatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150";
+                    student.FullName = "Alex Rivera";
+                    student.PasswordHash = validPasswordHash;
+                    if (string.IsNullOrEmpty(student.AvatarUrl))
+                    {
+                        student.AvatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150";
+                    }
                 }
             }
 
@@ -205,7 +214,8 @@ public static class DbInitializer
 
             foreach (var cs in cohortSeedData)
             {
-                if (!context.Users.Any(u => u.Email.ToLower() == cs.Email.ToLower()))
+                var existingCs = context.Users.FirstOrDefault(u => u.Email.ToLower() == cs.Email.ToLower());
+                if (existingCs == null)
                 {
                     context.Users.Add(new User
                     {
@@ -216,6 +226,10 @@ public static class DbInitializer
                         Role = UserRole.Student,
                         IsActive = true
                     });
+                }
+                else
+                {
+                    existingCs.IsActive = true;
                 }
             }
             context.SaveChanges();
