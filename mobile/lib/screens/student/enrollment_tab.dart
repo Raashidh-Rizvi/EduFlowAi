@@ -54,10 +54,11 @@ class EnrollmentRequestsTab extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader(
+        SectionHeader(
           title: 'My Courses',
           subtitle:
               'Open an approved course to see its details, continue learning and take its quiz — the curriculum and syllabus live inside.',
+          trailing: browseButton,
         ),
         if (myCourses.isEmpty)
           const PortalCard(

@@ -61,6 +61,7 @@ class _TabDef {
 
 const _tabs = [
   _TabDef('enrollments', 'Enrollment', Icons.how_to_reg_outlined),
+  _TabDef('browse', 'Browse', Icons.explore_outlined),
   _TabDef('home', 'Dashboard', Icons.home_outlined),
   _TabDef('focus', 'Focus & Flow', Icons.bolt_outlined),
   _TabDef('coach', 'AI Assistant', Icons.smart_toy_outlined),
@@ -425,18 +426,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (mounted) setState(() => _busyCourseId = null);
   }
 
-  Future<void> _browseCourses() async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => Scaffold(
-        backgroundColor: AppTheme.bgMain,
-        appBar: AppBar(
-          backgroundColor: AppTheme.bgSurface,
-          title: const Text('Browse Courses'),
-        ),
-        body: ExploreScreen(onCourseEnrolled: (_) => _refreshRequests()),
-      ),
-    ));
-    await _refreshRequests();
+  void _browseCourses() {
+    _setActiveTab('browse');
   }
 
   String _friendly(Object e, String fallback) =>
@@ -698,6 +689,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ));
     }
     switch (_activeTab) {
+      case 'browse':
+        return ExploreScreen(onCourseEnrolled: (_) => _refreshRequests());
       case 'home':
         return _scroll(HomeTab(
           profile: _profile,

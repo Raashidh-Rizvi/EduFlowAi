@@ -84,8 +84,9 @@ SUPPORTED_QUESTION_TYPES = (
     "FILL_IN_THE_BLANK",
     "SHORT_ANSWER",
     "MATCHING",
+    "DROPDOWN",
 )
-CHOICE_TYPES = {"MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"}
+CHOICE_TYPES = {"MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE", "DROPDOWN"}
 BLOOMS_LEVELS = ("Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating")
 
 # Cap the grounding material so prompts stay focused (Gemini Flash handles
@@ -1067,6 +1068,7 @@ STRICT RULES:
 2. Produce EXACTLY {num_questions} questions, each with a distinct angle; do not repeat the same concept.
 3. Allowed question_type values: {", ".join(question_types)}.
 4. question_type MULTIPLE_CHOICE / MULTIPLE_SELECT: 3-5 unique options.
+   question_type DROPDOWN: 3-5 unique options for dropdown selection, correct_answer = exact option.
    question_type TRUE_FALSE: options exactly ["TRUE", "FALSE"].
    question_type FILL_IN_THE_BLANK: question_text contains '___', correct_answer = the exact missing term/concept, options = 3-5 candidate terms (including correct_answer) for drag-and-drop word bank selection.
    question_type SHORT_ANSWER: options = [] and correct_answer = the ideal model answer.

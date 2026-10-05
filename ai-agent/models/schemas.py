@@ -387,11 +387,36 @@ class GenerateSlideQuizRequest(BaseModel):
         return self.slide_path or self.pdf_path
 
     def effective_question_types(self) -> List[str]:
-        """Allowed question formats; defaults to the three objective formats."""
+        """Allowed question formats; defaults to the requested objective & subjective formats."""
         allowed = {"MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE",
-                   "FILL_IN_THE_BLANK", "SHORT_ANSWER", "MATCHING"}
-        requested = [t.strip().upper() for t in (self.question_types or []) if t and t.strip()]
-        usable = [t for t in requested if t in allowed]
+                   "FILL_IN_THE_BLANK", "SHORT_ANSWER", "MATCHING", "DROPDOWN"}
+        alias_map = {
+            "DROPDOWN": "DROPDOWN",
+            "DROPDOWN_SELECTION": "DROPDOWN",
+            "DROPDOWN_SELECT": "DROPDOWN",
+            "FILLINBLANK": "FILL_IN_THE_BLANK",
+            "FILL_IN_BLANK": "FILL_IN_THE_BLANK",
+            "FILL_IN_BLANKS": "FILL_IN_THE_BLANK",
+            "FILL_IN_THE_BLANKS": "FILL_IN_THE_BLANK",
+            "MATCHING_CONCEPTS": "MATCHING",
+            "MATCH": "MATCHING",
+            "SHORTANSWER": "SHORT_ANSWER",
+            "SHORT_ANSWERS": "SHORT_ANSWER",
+            "TYPING": "SHORT_ANSWER",
+            "TYPING_SHORT_ANSWER": "SHORT_ANSWER",
+            "TYPING_SHORT_ANSWERS": "SHORT_ANSWER",
+            "MULTIPLECHOICE": "MULTIPLE_CHOICE",
+            "MULTIPLESELECT": "MULTIPLE_SELECT",
+            "TRUEFALSE": "TRUE_FALSE",
+        }
+        usable = []
+        for raw in (self.question_types or []):
+            if not raw or not raw.strip():
+                continue
+            clean = raw.strip().upper().replace(" ", "_")
+            mapped = alias_map.get(clean, clean)
+            if mapped in allowed and mapped not in usable:
+                usable.append(mapped)
         return usable or ["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TRUE_FALSE"]
 
 

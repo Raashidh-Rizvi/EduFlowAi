@@ -349,7 +349,7 @@ export default function Assessments({ currentUser }) {
     const pdfUrl = aiSelectedPdfUrl || (selectedMod ? selectedMod.pdfUrl : null);
 
     const qTypesList = aiQuestionTypePref === 'MIXED'
-      ? ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'TRUE_FALSE']
+      ? ['MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'DROPDOWN', 'FILL_IN_THE_BLANK', 'MATCHING', 'SHORT_ANSWER']
       : [aiQuestionTypePref];
 
     // Pre-check status before launching call
@@ -1802,11 +1802,13 @@ export default function Assessments({ currentUser }) {
                         onChange={(e) => setAiQuestionTypePref(e.target.value)}
                         className="form-select"
                       >
-                        <option value="MIXED">🔀 Mixed (Radio, Checkbox, Dropdown, Drag-and-Drop)</option>
+                        <option value="MIXED">🔀 Multi-Format Mixed (Choice, Dropdown, Fill-in, Matching, Typing)</option>
                         <option value="MULTIPLE_CHOICE">🔘 Multiple Choice (Single Answer Radio)</option>
                         <option value="MULTIPLE_SELECT">☑️ Multiple Answer (Multi-Checkboxes)</option>
-                        <option value="FILL_IN_THE_BLANK">🔽 Dropdown Select Questions</option>
-                        <option value="MATCHING">🧩 Drag & Drop Matching Pairs</option>
+                        <option value="DROPDOWN">🔽 Dropdown Selection</option>
+                        <option value="FILL_IN_THE_BLANK">✍️ Fill in the Blanks</option>
+                        <option value="MATCHING">🧩 Matching Concepts (Drag & Drop Pairs)</option>
+                        <option value="SHORT_ANSWER">💬 Typing / Short Answer</option>
                       </select>
                     </div>
 
@@ -2184,7 +2186,65 @@ export default function Assessments({ currentUser }) {
                         })}
                       </div>
                     );
-                  } else if (qTypeStr.includes('FILL') || qTypeStr.includes('BLANK') || qTypeStr.includes('DROPDOWN')) {
+                  } else if (qTypeStr.includes('SHORT') || qTypeStr.includes('TYPING') || qTypeStr.includes('ESSAY')) {
+                    // Typing / Short Answer Question
+                    const typedVal = runnerAnswers[runnerStep] || '';
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: '600', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>💬 Short Answer / Typing — Type your explanation in the box below:</span>
+                          <span>🤖 AI Evaluator will mark response</span>
+                        </div>
+                        <textarea
+                          rows={4}
+                          value={typedVal}
+                          onChange={(e) => handleSelectRunnerAnswer(runnerStep, e.target.value)}
+                          placeholder="Type your detailed answer or concept explanation..."
+                          className="form-input"
+                          style={{ width: '100%', padding: '12px 14px', fontSize: '14px', borderRadius: 'var(--radius-md)' }}
+                        />
+                      </div>
+                    );
+                  } else if (qTypeStr.includes('FILL') || qTypeStr.includes('BLANK')) {
+                    // Fill in the Blank Question
+                    const currentVal = runnerAnswers[runnerStep] || '';
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--primary)', fontWeight: '600' }}>
+                          ✍️ Fill in the Blank — Type the missing term or select from the word bank:
+                        </div>
+                        <input
+                          type="text"
+                          value={currentVal}
+                          onChange={(e) => handleSelectRunnerAnswer(runnerStep, e.target.value)}
+                          placeholder="Type missing term..."
+                          className="form-input"
+                          style={{ width: '100%', padding: '12px 14px', fontSize: '14px', fontWeight: '700' }}
+                        />
+                        {currentQ.options && currentQ.options.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', width: '100%' }}>Word Bank (Click to fill):</span>
+                            {currentQ.options.map((opt, oIdx) => (
+                              <button
+                                key={oIdx}
+                                type="button"
+                                onClick={() => handleSelectRunnerAnswer(runnerStep, opt)}
+                                className="btn-ghost"
+                                style={{
+                                  fontSize: '12px', padding: '4px 10px', borderRadius: 'var(--radius-sm)',
+                                  backgroundColor: currentVal === opt ? 'var(--primary)' : 'var(--bg-surface)',
+                                  color: currentVal === opt ? '#fff' : 'var(--text-main)',
+                                  border: '1px solid var(--border-subtle)'
+                                }}
+                              >
+                                {opt}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } else if (qTypeStr.includes('DROPDOWN')) {
                     // Dropdown Select Question
                     const selectedVal = runnerAnswers[runnerStep] || '';
                     return (

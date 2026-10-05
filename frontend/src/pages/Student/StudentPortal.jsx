@@ -41,15 +41,16 @@ import {
   Copy,
   Check,
   ArrowLeft,
+  Compass,
 } from "lucide-react";
 import HelpSupportDialog from "../../components/support/HelpSupportDialog";
-import { useNavigate } from "react-router-dom";
 import { downloadPdf, preparePdfForViewing } from "../../utils/pdfHelper";
 import ThemeToggle from "../../components/common/ThemeToggle";
 import { BrandLogo } from "../../components/common/BrandLogo";
 import RoleSwitcher from "../../components/common/RoleSwitcher";
 import StarRating from "../../components/marketplace/StarRating";
 import CourseReviews from "../../components/reviews/CourseReviews";
+import BrowseCoursesTab from "./BrowseCoursesTab";
 import { aiService } from "../../services/aiService";
 import { courseService } from "../../services/courseService";
 import { enrollmentService } from "../../services/enrollmentService";
@@ -604,22 +605,51 @@ function EnrollmentRequestsTab({
     <div>
       <div
         style={{
-          fontSize: "18px",
-          fontWeight: "800",
-          color: "var(--text-main)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "10px",
+          flexWrap: "wrap",
+          marginBottom: "10px",
         }}
       >
-        My Courses
-      </div>
-      <div
-        style={{
-          fontSize: "12px",
-          color: "var(--text-muted)",
-          marginTop: "2px",
-        }}
-      >
-        Open an approved course to see its details, continue learning and take
-        its quiz — the curriculum and syllabus live inside.
+        <div>
+          <div
+            style={{
+              fontSize: "18px",
+              fontWeight: "800",
+              color: "var(--text-main)",
+            }}
+          >
+            My Courses
+          </div>
+          <div
+            style={{
+              fontSize: "12px",
+              color: "var(--text-muted)",
+              marginTop: "2px",
+            }}
+          >
+            Open an approved course to see its details, continue learning and take
+            its quiz — the curriculum and syllabus live inside.
+          </div>
+        </div>
+        <button
+          className="btn-primary hover-scale"
+          onClick={onBrowse}
+          style={{
+            fontSize: "12.5px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "8px 14px",
+            borderRadius: "var(--radius-full)",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <Compass size={14} /> Browse Courses
+        </button>
       </div>
       {enrolled.length === 0 ? (
         <div
@@ -5135,7 +5165,6 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
   const [requests, setRequests] = useState([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [busyCourseId, setBusyCourseId] = useState(null);
-  const navigate = useNavigate();
 
   // The course page opened from an Enrollment card (also set by /learn/:courseId).
   const [openCourseId, setOpenCourseIdState] = useState(() => {
@@ -5569,6 +5598,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
 
   const TABS = [
     { id: "enrollments", label: "Enrollment", icon: UserCheck },
+    { id: "browse", label: "Browse", icon: Compass },
     { id: "home", label: "Dashboard", icon: Home },
     { id: "focus", label: "Focus & Flow", icon: Zap },
     { id: "coach", label: "AI Assistant", icon: Bot },
@@ -5705,11 +5735,18 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
                 busyCourseId={busyCourseId}
                 onCancel={handleCancelRequest}
                 onReRequest={handleReRequest}
-                onBrowse={() => navigate("/courses")}
+                onBrowse={() => setActiveTab("browse")}
                 onGoToCourse={(courseId) => {
                   setActiveTab("enrollments");
                   setOpenCourseId(courseId);
                 }}
+                onOpenCourse={(courseId) => setOpenCourseId(courseId)}
+              />
+            )}
+            {activeTab === "browse" && (
+              <BrowseCoursesTab
+                requests={requests}
+                onEnrolled={refreshRequests}
                 onOpenCourse={(courseId) => setOpenCourseId(courseId)}
               />
             )}
