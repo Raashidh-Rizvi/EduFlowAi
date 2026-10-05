@@ -11,6 +11,9 @@ WHAT THIS FILE DOES:
 2. Persists vectors locally on disk in data/chroma_db/.
 3. Enforces strict COURSE-SCOPED FILTERING (where={"course_id": ...}).
 4. Easily switches between embedding types via EMBEDDING_PROVIDER in .env.
+5. Chroma Cloud mode (CHROMA_API_KEY set): one collection per course, each with a
+   Schema holding dense (Chroma Cloud Qwen) + sparse (Chroma Cloud Splade) indexes,
+   searched with hybrid Reciprocal Rank Fusion (RRF).
 ===============================================================================
 """
 
@@ -25,6 +28,8 @@ load_dotenv()
 import chromadb
 from chromadb.config import Settings
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+from chromadb import Schema, SparseVectorIndexConfig, VectorIndexConfig
+from chromadb.execution.expression import GroupBy, K, Knn, MinK, Rrf, Search
 from rag.chunker import DocumentChunk
 
 logger = logging.getLogger("EduFlow-VectorStore")
@@ -44,6 +49,72 @@ def _env(name: str) -> str:
 
 EMBEDDING_BATCH_SIZE = 100
 EMBEDDING_TIMEOUT_MS = 30_000
+
+# Chroma Cloud: one collection per course (courses never share chunks), hybrid dense + sparse.
+CLOUD_COLLECTION_PREFIX = "eduflow_course_"
+CLOUD_SHARED_COURSE = "shared"          # chunks indexed without a course_id
+CLOUD_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+SPARSE_KEY = "sparse_embedding"
+CLOUD_GET_PAGE = 250                    # page size for full-collection reads
+CLOUD_KNN_LIMIT = 64                    # candidates per dense/sparse ranking before fusion
+MAX_CHUNKS_PER_SLIDE = 2                # GroupBy: overlapping chunks of one slide are near-duplicates
+MAX_DOCUMENT_BYTES = 16 * 1024 - 512    # Chroma's 16 KiB document limit, with headroom
+QWEN_TASK = "lecture_qa"
+
+
+def cloud_collection_name(course_id: Optional[str]) -> str:
+    """Collection names allow [a-zA-Z0-9._-] and must start/end alphanumeric."""
+    raw = (course_id or "").strip() or CLOUD_SHARED_COURSE
+    safe = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in raw).strip("._-")
+    return f"{CLOUD_COLLECTION_PREFIX}{safe or CLOUD_SHARED_COURSE}"[:200]
+
+
+def build_cloud_schema() -> Schema:
+    """Dense Qwen embeddings (cosine) on the default embedding key + Splade sparse index."""
+    from chromadb.utils.embedding_functions import (
+        ChromaCloudQwenEmbeddingFunction, ChromaCloudSpladeEmbeddingFunction,
+    )
+    from chromadb.utils.embedding_functions.chroma_cloud_qwen_embedding_function import (
+        ChromaCloudQwenEmbeddingModel, ChromaCloudQwenEmbeddingTarget,
+    )
+    dense_ef = ChromaCloudQwenEmbeddingFunction(
+        model=ChromaCloudQwenEmbeddingModel.QWEN3_EMBEDDING_0p6B,
+        task=QWEN_TASK,
+        instructions={QWEN_TASK: {
+            ChromaCloudQwenEmbeddingTarget.DOCUMENTS: "",
+            ChromaCloudQwenEmbeddingTarget.QUERY:
+                "Given a student's question, retrieve lecture slide passages that answer it",
+        }},
+    )
+    schema = Schema()
+    schema.create_index(config=VectorIndexConfig(space="cosine", embedding_function=dense_ef))
+    schema.create_index(
+        config=SparseVectorIndexConfig(source_key=K.DOCUMENT, embedding_function=ChromaCloudSpladeEmbeddingFunction()),
+        key=SPARSE_KEY,
+    )
+    return schema
+
+
+def split_oversized(text: str, limit: int = MAX_DOCUMENT_BYTES) -> List[str]:
+    """Line-based split of text over Chroma's per-document size limit (chunker output is ~1.8 KB)."""
+    if len(text.encode("utf-8")) <= limit:
+        return [text]
+    parts, current = [], ""
+    for line in text.splitlines(keepends=True):
+        while len(line.encode("utf-8")) > limit:          # a single giant line: hard cut
+            head = line.encode("utf-8")[:limit].decode("utf-8", "ignore")
+            if current:
+                parts.append(current)
+                current = ""
+            parts.append(head)
+            line = line[len(head):]
+        if len((current + line).encode("utf-8")) > limit:
+            parts.append(current)
+            current = ""
+        current += line
+    if current:
+        parts.append(current)
+    return [part for part in parts if part.strip()]
 
 
 class DirectGeminiEmbeddingFunction(EmbeddingFunction):
@@ -95,6 +166,17 @@ class ChromaVectorStore:
 
         # Step 1.2: Connect to ChromaDB with telemetry turned off
         self.client = self._connect(persist_dir is not None)
+
+        if self.mode == "cloud":
+            # Embeddings are computed server-side by Chroma Cloud (Qwen dense + Splade sparse).
+            self.active_provider = "chroma-cloud"
+            self.embedding_function = None
+            self.embedding_model_name = CLOUD_EMBEDDING_MODEL
+            self.embedding_version = os.environ.get("EMBEDDING_VERSION") or "v1"
+            self._schema = build_cloud_schema()
+            self._cloud_collections: Dict[str, Any] = {}
+            self.collection = None
+            return
 
         # Step 1.3: Configure the selected embedding function
         self.embedding_function = self._resolve_embedding_function()
@@ -177,6 +259,48 @@ class ChromaVectorStore:
         self.active_provider = "default"
         return None  # Passing None instructs ChromaDB to use its built-in local ONNX model
 
+    # ------------------------------------------------------------------
+    # Collection routing: local mode has one collection, cloud mode one per course.
+    # getattr defaults: tests build bare stores via __new__ without running __init__.
+    # ------------------------------------------------------------------
+    def _is_cloud(self) -> bool:
+        return getattr(self, "mode", "persistent") == "cloud"
+
+    def _course_collection(self, course_id: Optional[str]):
+        if not self._is_cloud():
+            return self.collection
+        name = cloud_collection_name(course_id)
+        if name not in self._cloud_collections:
+            self._cloud_collections[name] = self.client.get_or_create_collection(name=name, schema=self._schema)
+        return self._cloud_collections[name]
+
+    def _collections(self, course_id: Optional[str] = None) -> List[Any]:
+        """The course's collection, or every course collection when no course is given."""
+        if not self._is_cloud():
+            return [self.collection]
+        if course_id:
+            return [self._course_collection(course_id)]
+        names = [c.name for c in self.client.list_collections() if c.name.startswith(CLOUD_COLLECTION_PREFIX)]
+        for name in names:
+            if name not in self._cloud_collections:
+                self._cloud_collections[name] = self.client.get_collection(name)
+        return [self._cloud_collections[name] for name in names]
+
+    def _get_all(self, collection, where=None, include=("documents", "metadatas")) -> Dict[str, list]:
+        """collection.get, paged in cloud mode (Chroma Cloud caps rows per request)."""
+        out: Dict[str, list] = {"ids": [], "documents": [], "metadatas": []}
+        offset = 0
+        while True:
+            page_kwargs = {"limit": CLOUD_GET_PAGE, "offset": offset} if self._is_cloud() else {}
+            page = collection.get(where=where, include=list(include), **page_kwargs)
+            n = len(page["ids"])
+            out["ids"].extend(page["ids"])
+            out["documents"].extend(page.get("documents") or [None] * n)
+            out["metadatas"].extend(page.get("metadatas") or [{}] * n)
+            if not page_kwargs or n < CLOUD_GET_PAGE:
+                return out
+            offset += n
+
     def add_chunks(self, chunks: List[DocumentChunk]) -> int:
         """
         STEP 2: VECTORIZE & STORE CHUNKS
@@ -184,10 +308,6 @@ class ChromaVectorStore:
         """
         if not chunks:
             return 0
-
-        documents = []
-        metadatas = []
-        ids = []
 
         # Embedding provenance travels with every chunk (see document_status).
         # getattr: tests build bare stores via __new__ without running __init__.
@@ -197,19 +317,30 @@ class ChromaVectorStore:
             "embedding_version": getattr(self, "embedding_version", "v1"),
         }
 
+        by_course: Dict[str, Dict[str, list]] = {}
         for c in chunks:
             # Deterministic unique ID to allow clean updates when slides are re-uploaded
             chunk_id = f"{c.course_id}_{c.module_id or 'nomod'}_{c.page_number}_{c.chunk_index}"
-            documents.append(c.text)
-            metadatas.append({**c.to_metadata(), **provenance})
-            ids.append(chunk_id)
+            parts = split_oversized(c.text)
+            batch = by_course.setdefault(c.course_id or "", {"ids": [], "documents": [], "metadatas": []})
+            for part_no, part in enumerate(parts):
+                batch["ids"].append(chunk_id if len(parts) == 1 else f"{chunk_id}_p{part_no}")
+                batch["documents"].append(part)
+                # source_file + page_number + chunk_index identify the source chunk (GroupBy dedup).
+                batch["metadatas"].append({**c.to_metadata(), **provenance})
 
-        self.collection.upsert(
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
-        return len(documents)
+        total = 0
+        for course_id, batch in by_course.items():
+            collection = self._course_collection(course_id)
+            for start in range(0, len(batch["ids"]), EMBEDDING_BATCH_SIZE):
+                end = start + EMBEDDING_BATCH_SIZE
+                collection.upsert(
+                    ids=batch["ids"][start:end],
+                    documents=batch["documents"][start:end],
+                    metadatas=batch["metadatas"][start:end],
+                )
+            total += len(batch["ids"])
+        return total
 
     def search(
         self,
@@ -249,6 +380,14 @@ class ChromaVectorStore:
         elif len(conditions) == 1:
             where_filter = conditions[0]
 
+        if self._is_cloud():
+            # Course shards: course_id picks the collection; the filter stays as a guard.
+            output: List[Dict[str, Any]] = []
+            for collection in self._collections(course_id):
+                output.extend(self._hybrid_search(collection, query, where_filter, top_k))
+            output.sort(key=lambda r: r["relevance_score"], reverse=True)
+            return output[:top_k]
+
         kwargs = {
             "query_texts": [query],
             "n_results": min(top_k, max(1, self.collection.count() or 1))
@@ -276,17 +415,56 @@ class ChromaVectorStore:
 
         return output
 
+    def _hybrid_search(self, collection, query: str, where_filter, top_k: int) -> List[Dict[str, Any]]:
+        """
+        Dense (Qwen) + sparse (Splade) rankings fused with RRF, at most MAX_CHUNKS_PER_SLIDE
+        chunks per slide (GroupBy). RRF scores are rank-based, so the cosine similarity from a
+        dense search of the same scope is reported as relevance_score (RAG_RELEVANCE_THRESHOLD).
+        """
+        limit = max(top_k * 4, CLOUD_KNN_LIMIT)
+        fused = Search().rank(Rrf(
+            ranks=[
+                Knn(query=query, return_rank=True, limit=limit),
+                Knn(query=query, key=SPARSE_KEY, return_rank=True, limit=limit),
+            ],
+            weights=[0.7, 0.3],
+            k=60,
+        )).group_by(GroupBy(
+            keys=[K("source_file"), K("page_number")],
+            aggregate=MinK(keys=K.SCORE, k=MAX_CHUNKS_PER_SLIDE),
+        )).limit(top_k).select(K.DOCUMENT, K.METADATA, K.SCORE)
+        dense = Search().rank(Knn(query=query, limit=limit)).limit(limit).select(K.SCORE)
+        if where_filter:
+            fused = fused.where(where_filter)
+            dense = dense.where(where_filter)
+
+        fused_rows, dense_rows = collection.search([fused, dense]).rows()
+        similarity = {r["id"]: max(0.0, min(1.0, 1.0 - float(r["score"]))) for r in dense_rows}
+        # Sparse-only matches fall outside the dense top-`limit`: no closer than its worst hit.
+        floor = min(similarity.values(), default=0.0)
+        return [
+            {
+                "text": r.get("document") or "",
+                "metadata": r.get("metadata") or {},
+                "relevance_score": round(similarity.get(r["id"], floor), 4),
+            }
+            for r in fused_rows
+            if (r.get("document") or "").strip()
+        ]
+
     def get_lecture_chunks(self, source_file: str, course_id: Optional[str] = None):
         conditions = [{"source_file": {"$eq": source_file}}]
         if course_id:
             conditions.append({"course_id": {"$eq": course_id}})
         where = {"$and": conditions} if len(conditions) > 1 else conditions[0]
-        data = self.collection.get(where=where, include=["documents", "metadatas"])
-        chunks = [
-            {"id": cid, "text": doc, "metadata": meta}
-            for cid, doc, meta in zip(data["ids"], data["documents"], data["metadatas"])
-            if doc and doc.strip()
-        ]
+        chunks = []
+        for collection in self._collections(course_id):
+            data = self._get_all(collection, where=where)
+            chunks.extend(
+                {"id": cid, "text": doc, "metadata": meta}
+                for cid, doc, meta in zip(data["ids"], data["documents"], data["metadatas"])
+                if doc and doc.strip()
+            )
         return sorted(chunks, key=lambda c: (
             c["metadata"]["page_number"], c["metadata"].get("chunk_index", 0), c["id"]
         ))
@@ -301,10 +479,18 @@ class ChromaVectorStore:
                 **chunk["metadata"], "sub_lecture_id": section.id,
                 "learning_section": section.model_dump_json(), "learning_fingerprint": fingerprint,
             })
-        self.collection.update(ids=[c["id"] for c in chunks], metadatas=metadatas)
+        by_course: Dict[str, Dict[str, list]] = {}
+        for chunk, meta in zip(chunks, metadatas):
+            batch = by_course.setdefault(meta.get("course_id") or "", {"ids": [], "metadatas": []})
+            batch["ids"].append(chunk["id"])
+            batch["metadatas"].append(meta)
+        for course_id, batch in by_course.items():
+            self._course_collection(course_id).update(ids=batch["ids"], metadatas=batch["metadatas"])
 
     def count(self, course_id: Optional[str] = None) -> int:
         """Returns the total number of chunks currently stored in ChromaDB."""
+        if self._is_cloud():
+            return sum(c.count() for c in self._collections(course_id))
         if not course_id:
             return self.collection.count()
         results = self.collection.get(where={"course_id": course_id})
@@ -314,13 +500,16 @@ class ChromaVectorStore:
         """Number of indexed chunks for one stored document (its basename)."""
         if not source_file:
             return 0
-        results = self.collection.get(where={"source_file": source_file})
-        return len(results["ids"]) if results and "ids" in results else 0
+        return sum(
+            len(self._get_all(c, where={"source_file": source_file}, include=())["ids"])
+            for c in self._collections()
+        )
 
     def delete_module_chunks(self, module_id: str):
         """Deletes all chunks belonging to a specific module when replaced."""
         try:
-            self.collection.delete(where={"module_id": module_id})
+            for collection in self._collections():
+                collection.delete(where={"module_id": module_id})
         except Exception as e:
             print(f"[ChromaVectorStore] Error deleting module chunks: {e}")
 
@@ -330,12 +519,15 @@ class ChromaVectorStore:
         Used by the UI to populate the Lecture Scope dropdown dynamically.
         """
         try:
-            all_data = self.collection.get()
-            if not all_data or not all_data.get("metadatas"):
+            metadatas = [
+                meta for c in self._collections()
+                for meta in self._get_all(c, include=("metadatas",))["metadatas"]
+            ]
+            if not metadatas:
                 return []
 
             decks_map: Dict[str, Dict[str, Any]] = {}
-            for meta in all_data["metadatas"]:
+            for meta in metadatas:
                 sfile = meta.get("source_file")
                 if not sfile or sfile.endswith(".txt") or sfile.startswith("mock_"):
                     continue

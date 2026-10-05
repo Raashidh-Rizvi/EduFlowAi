@@ -9,7 +9,7 @@ import {
   SectionHeading, LoadingBlock, EmptyState, ErrorBanner, StarRating, Avatar, fmtDate, fmtNumber
 } from '../shared';
 
-function KpiCard({ icon: Icon, label, value, hint, tone = 'primary' }) {
+function KpiCard({ icon: Icon, label, value, hint, tone = 'primary', onClick }) {
   const palette = {
     primary: ['var(--primary-soft)', 'var(--primary-border)', 'var(--primary)'],
     secondary: ['var(--secondary-soft)', 'var(--secondary-border)', 'var(--secondary)'],
@@ -19,7 +19,18 @@ function KpiCard({ icon: Icon, label, value, hint, tone = 'primary' }) {
   }[tone] || ['var(--primary-soft)', 'var(--primary-border)', 'var(--primary)'];
 
   return (
-    <div className="metric-card">
+    <div
+      className="metric-card"
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      style={{
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none',
+        transition: 'all 0.2s ease'
+      }}
+    >
       <div>
         <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.03em', textTransform: 'uppercase' }}>
           {label}
@@ -152,12 +163,20 @@ export default function DashboardView({ user, onNavigate }) {
             </p>
             <div style={{ display: 'flex', gap: '26px', marginTop: '20px', flexWrap: 'wrap' }}>
               {[
-                { label: 'Courses', value: stats.totalCourses ?? 0 },
-                { label: 'Students', value: stats.enrolledStudents ?? stats.totalStudents ?? 0 },
-                { label: 'Avg Rating', value: fmtNumber(stats.averageRating, 1) },
-                { label: 'Pending', value: stats.pendingEnrollmentRequests ?? 0 }
+                { label: 'Courses', value: stats.totalCourses ?? 0, target: 'my-courses' },
+                { label: 'Students', value: stats.enrolledStudents ?? stats.totalStudents ?? 0, target: 'my-students' },
+                { label: 'Avg Rating', value: fmtNumber(stats.averageRating, 1), target: 'reviews' },
+                { label: 'Pending', value: stats.pendingEnrollmentRequests ?? 0, target: 'enrollment-requests' }
               ].map(s => (
-                <div key={s.label}>
+                <div
+                  key={s.label}
+                  onClick={() => onNavigate(s.target)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(s.target); } }}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  title={`View ${s.label}`}
+                >
                   <div style={{ fontSize: '24px', fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-0.02em' }}>{s.value}</div>
                   <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '5px', fontWeight: 700 }}>
                     {s.label}
@@ -168,10 +187,10 @@ export default function DashboardView({ user, onNavigate }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: '190px' }}>
-            <button className="btn-secondary" onClick={() => onNavigate('create-course')} style={{ background: 'rgba(255,255,255,0.94)', border: 'none', color: '#4F46E5', fontWeight: 700 }}>
+            <button className="btn-secondary" onClick={() => onNavigate('create-course')} style={{ background: 'rgba(255,255,255,0.94)', border: 'none', color: '#4F46E5', fontWeight: 700, cursor: 'pointer' }}>
               <PlusCircle size={15} /> Create Course
             </button>
-            <button className="btn-secondary" onClick={() => onNavigate('enrollment-requests')} style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.42)', color: '#fff', fontWeight: 700 }}>
+            <button className="btn-secondary" onClick={() => onNavigate('enrollment-requests')} style={{ background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.42)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
               <BadgeCheck size={15} /> Review Requests
             </button>
           </div>
@@ -179,12 +198,12 @@ export default function DashboardView({ user, onNavigate }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-        <KpiCard icon={BookOpen} label="Total Courses" value={stats.totalCourses ?? 0} hint={`${stats.publishedCourses ?? 0} published · ${stats.draftCourses ?? 0} draft`} tone="primary" />
-        <KpiCard icon={Users} label="Enrolled Students" value={stats.enrolledStudents ?? stats.totalStudents ?? 0} hint="Active enrollments only" tone="secondary" />
-        <KpiCard icon={Clock3} label="Pending Requests" value={stats.pendingEnrollmentRequests ?? 0} hint="Awaiting your approval" tone="warning" />
-        <KpiCard icon={Star} label="Average Rating" value={fmtNumber(stats.averageRating, 1)} hint={`${stats.totalReviews ?? 0} reviews`} tone="accent" />
-        <KpiCard icon={Layers} label="Modules" value={stats.totalModules ?? 0} hint={`${stats.totalLessons ?? 0} lessons`} tone="success" />
-        <KpiCard icon={GraduationCap} label="Teaching Since" value={instructor.memberSince ? fmtDate(instructor.memberSince) : '—'} hint={instructor.email || ''} tone="primary" />
+        <KpiCard icon={BookOpen} label="Total Courses" value={stats.totalCourses ?? 0} hint={`${stats.publishedCourses ?? 0} published · ${stats.draftCourses ?? 0} draft`} tone="primary" onClick={() => onNavigate('my-courses')} />
+        <KpiCard icon={Users} label="Enrolled Students" value={stats.enrolledStudents ?? stats.totalStudents ?? 0} hint="Active enrollments only" tone="secondary" onClick={() => onNavigate('my-students')} />
+        <KpiCard icon={Clock3} label="Pending Requests" value={stats.pendingEnrollmentRequests ?? 0} hint="Awaiting your approval" tone="warning" onClick={() => onNavigate('enrollment-requests')} />
+        <KpiCard icon={Star} label="Average Rating" value={fmtNumber(stats.averageRating, 1)} hint={`${stats.totalReviews ?? 0} reviews`} tone="accent" onClick={() => onNavigate('reviews')} />
+        <KpiCard icon={Layers} label="Modules" value={stats.totalModules ?? 0} hint={`${stats.totalLessons ?? 0} lessons`} tone="success" onClick={() => onNavigate('courses')} />
+        <KpiCard icon={GraduationCap} label="Teaching Since" value={instructor.memberSince ? fmtDate(instructor.memberSince) : '—'} hint={instructor.email || ''} tone="primary" onClick={() => onNavigate('profile')} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.55fr) minmax(0, 1fr)', gap: '20px', alignItems: 'start' }}>
@@ -193,7 +212,7 @@ export default function DashboardView({ user, onNavigate }) {
             title="Your Courses"
             subtitle="Only courses owned by your account appear here."
             actions={
-              <button className="btn-ghost" onClick={() => onNavigate('my-courses')} style={{ fontSize: '12.5px', padding: '6px 12px' }}>
+              <button className="btn-ghost" onClick={() => onNavigate('my-courses')} style={{ fontSize: '12.5px', padding: '6px 12px', cursor: 'pointer' }}>
                 Manage all <ArrowRight size={14} />
               </button>
             }
@@ -209,11 +228,19 @@ export default function DashboardView({ user, onNavigate }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {courses.slice(0, 6).map(c => (
-                <div key={c.id} className="glass-card-interactive" style={{
-                  display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 15px',
-                  border: '1px solid var(--border-card)', borderRadius: 'var(--radius-md)',
-                  background: 'var(--bg-surface)'
-                }}>
+                <div
+                  key={c.id}
+                  className="glass-card-interactive"
+                  onClick={() => onNavigate('courses', { courseId: c.id })}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('courses', { courseId: c.id }); } }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 15px',
+                    border: '1px solid var(--border-card)', borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-surface)', cursor: 'pointer'
+                  }}
+                >
                   <div style={{
                     width: '42px', height: '42px', borderRadius: 'var(--radius-sm)', flexShrink: 0,
                     background: 'linear-gradient(135deg, var(--primary-soft), var(--secondary-soft))',
@@ -243,16 +270,16 @@ export default function DashboardView({ user, onNavigate }) {
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                     <button
                       className="btn-ghost"
-                      onClick={() => togglePublish(c)}
+                      onClick={(e) => { e.stopPropagation(); togglePublish(c); }}
                       disabled={busyId === c.id}
-                      style={{ fontSize: '11.5px', padding: '6px 11px' }}
+                      style={{ fontSize: '11.5px', padding: '6px 11px', cursor: 'pointer' }}
                     >
                       {c.isPublished ? 'Unpublish' : 'Publish'}
                     </button>
                     <button
                       className="btn-secondary"
-                      onClick={() => onNavigate('courses', { courseId: c.id })}
-                      style={{ fontSize: '11.5px', padding: '6px 11px' }}
+                      onClick={(e) => { e.stopPropagation(); onNavigate('courses', { courseId: c.id }); }}
+                      style={{ fontSize: '11.5px', padding: '6px 11px', cursor: 'pointer' }}
                     >
                       Curriculum
                     </button>
@@ -269,7 +296,7 @@ export default function DashboardView({ user, onNavigate }) {
               title="Pending Requests"
               subtitle="Approve or decline student access."
               actions={
-                <button className="btn-ghost" onClick={() => onNavigate('enrollment-requests')} style={{ fontSize: '12.5px', padding: '6px 12px' }}>
+                <button className="btn-ghost" onClick={() => onNavigate('enrollment-requests')} style={{ fontSize: '12.5px', padding: '6px 12px', cursor: 'pointer' }}>
                   All <ArrowRight size={14} />
                 </button>
               }
@@ -282,10 +309,15 @@ export default function DashboardView({ user, onNavigate }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {requests.slice(0, 4).map(r => (
-                  <div key={r.enrollmentId} style={{
-                    display: 'flex', alignItems: 'center', gap: '11px', padding: '11px 12px',
-                    borderRadius: 'var(--radius-md)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)'
-                  }}>
+                  <div
+                    key={r.enrollmentId}
+                    onClick={() => onNavigate('enrollment-requests')}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '11px', padding: '11px 12px',
+                      borderRadius: 'var(--radius-md)', background: 'var(--bg-surface)', border: '1px solid var(--border-card)',
+                      cursor: 'pointer'
+                    }}
+                  >
                     <Avatar name={r.studentName} url={r.studentAvatarUrl} size={34} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -296,10 +328,10 @@ export default function DashboardView({ user, onNavigate }) {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '5px' }}>
-                      <button className="btn-success" onClick={() => decide(r.enrollmentId, 'approve')} disabled={busyId === r.enrollmentId} style={{ fontSize: '11.5px', padding: '5px 10px' }}>
+                      <button className="btn-success" onClick={(e) => { e.stopPropagation(); decide(r.enrollmentId, 'approve'); }} disabled={busyId === r.enrollmentId} style={{ fontSize: '11.5px', padding: '5px 10px', cursor: 'pointer' }}>
                         Approve
                       </button>
-                      <button className="btn-danger" onClick={() => decide(r.enrollmentId, 'decline')} disabled={busyId === r.enrollmentId} style={{ fontSize: '11.5px', padding: '5px 10px' }}>
+                      <button className="btn-danger" onClick={(e) => { e.stopPropagation(); decide(r.enrollmentId, 'decline'); }} disabled={busyId === r.enrollmentId} style={{ fontSize: '11.5px', padding: '5px 10px', cursor: 'pointer' }}>
                         Decline
                       </button>
                     </div>
@@ -314,7 +346,7 @@ export default function DashboardView({ user, onNavigate }) {
               title="Recent Reviews"
               subtitle="What students say about your teaching."
               actions={
-                <button className="btn-ghost" onClick={() => onNavigate('reviews')} style={{ fontSize: '12.5px', padding: '6px 12px' }}>
+                <button className="btn-ghost" onClick={() => onNavigate('reviews')} style={{ fontSize: '12.5px', padding: '6px 12px', cursor: 'pointer' }}>
                   All <ArrowRight size={14} />
                 </button>
               }
@@ -327,7 +359,12 @@ export default function DashboardView({ user, onNavigate }) {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '13px' }}>
                 {reviews.slice(0, 4).map(r => (
-                  <div key={r.id} style={{ display: 'flex', gap: '11px', alignItems: 'flex-start' }}>
+                  <div
+                    key={r.id}
+                    onClick={() => onNavigate('reviews')}
+                    className="glass-card-interactive"
+                    style={{ display: 'flex', gap: '11px', alignItems: 'flex-start', cursor: 'pointer', padding: '6px 8px', borderRadius: 'var(--radius-sm)' }}
+                  >
                     <Avatar name={r.studentName} size={32} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
@@ -347,11 +384,18 @@ export default function DashboardView({ user, onNavigate }) {
             )}
           </section>
 
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '9px', padding: '13px 15px',
-            borderRadius: 'var(--radius-md)', background: 'var(--success-soft)',
-            border: '1px solid var(--success-border)', fontSize: '12.5px', fontWeight: 600, color: 'var(--success)'
-          }}>
+          <div
+            onClick={() => onNavigate('my-courses')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('my-courses'); } }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '9px', padding: '13px 15px',
+              borderRadius: 'var(--radius-md)', background: 'var(--success-soft)',
+              border: '1px solid var(--success-border)', fontSize: '12.5px', fontWeight: 600, color: 'var(--success)',
+              cursor: 'pointer'
+            }}
+          >
             <TrendingUp size={15} />
             {stats.publishedCourses ?? 0} of {stats.totalCourses ?? 0} courses published
           </div>
