@@ -3081,7 +3081,7 @@ function CoachTab({ studentId, courseId }) {
                 padding: "3px 8px",
                 borderRadius: "var(--radius-sm)",
                 border: "1px solid var(--border-subtle)",
-                background: "var(--bg-main)",
+                background: "var(--bg-surface)",
                 color: "var(--text-main)",
                 fontSize: "11.5px",
                 outline: "none",
@@ -3091,11 +3091,11 @@ function CoachTab({ studentId, courseId }) {
                 textOverflow: "ellipsis",
               }}
             >
-              <option value="">
+              <option value="" style={{ backgroundColor: "var(--bg-surface)", color: "var(--text-main)" }}>
                 🌐 All Enrolled Lectures (Global Course Scope)
               </option>
               {slideDecks.map((d, i) => (
-                <option key={i} value={d.source_file}>
+                <option key={i} value={d.source_file} style={{ backgroundColor: "var(--bg-surface)", color: "var(--text-main)" }}>
                   📑 {d.display_title} ({d.total_chunks} slides)
                 </option>
               ))}
@@ -3161,7 +3161,7 @@ function CoachTab({ studentId, courseId }) {
                   : "1px solid var(--border-subtle)",
                 background: isToolsExpanded
                   ? "var(--primary-soft)"
-                  : "var(--bg-main)",
+                  : "var(--bg-surface)",
                 color: isToolsExpanded ? "var(--primary)" : "var(--text-muted)",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
@@ -3261,7 +3261,7 @@ function CoachTab({ studentId, courseId }) {
                 fontSize: "11px",
                 borderRadius: "var(--radius-sm)",
                 border: "1px solid var(--border-subtle)",
-                background: "var(--bg-main)",
+                background: "var(--bg-surface)",
                 fontWeight: "600",
                 cursor: "pointer",
               }}
@@ -3280,7 +3280,7 @@ function CoachTab({ studentId, courseId }) {
                 fontSize: "11px",
                 borderRadius: "var(--radius-sm)",
                 border: "1px solid var(--border-subtle)",
-                background: "var(--bg-main)",
+                background: "var(--bg-surface)",
                 fontWeight: "600",
                 cursor: "pointer",
               }}

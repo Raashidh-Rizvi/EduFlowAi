@@ -1,10 +1,21 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiService {
-  // Android Emulator: use 10.0.2.2 (not localhost)
-  // Windows Desktop: use localhost
-  static const String baseUrl = 'http://10.0.2.2:5204/api';
+  /// Override with `--dart-define=API_BASE_URL=http://<host>:5204/api`
+  /// (e.g. your PC's LAN IP when running on a physical phone).
+  static const String _override = String.fromEnvironment('API_BASE_URL');
+
+  /// Web / Windows / iOS simulator reach the API on localhost; the Android
+  /// emulator reaches the host machine through 10.0.2.2.
+  static String get baseUrl {
+    if (_override.isNotEmpty) return _override;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://10.0.2.2:5204/api';
+    }
+    return 'http://localhost:5204/api';
+  }
 
   static const _storage = FlutterSecureStorage();
 
@@ -12,8 +23,8 @@ class ApiService {
   static Dio createDio() {
     final dio = Dio(BaseOptions(
       baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 120),
+      receiveTimeout: const Duration(seconds: 120),
       headers: {'Content-Type': 'application/json'},
     ));
 
@@ -27,7 +38,7 @@ class ApiService {
         return handler.next(options);
       },
       onError: (DioException e, handler) {
-        print('[ApiService] Error on ${e.requestOptions.path}: ${e.message}');
+        debugPrint('[ApiService] Error on ${e.requestOptions.path}: ${e.message}');
         return handler.next(e);
       },
     ));

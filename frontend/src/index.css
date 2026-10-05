@@ -257,6 +257,11 @@ input, select, textarea {
   font-size: inherit;
 }
 
+select option {
+  background-color: var(--bg-surface, #121226);
+  color: var(--text-main, #ffffff);
+}
+
 /* Animations */
 @keyframes fadeInUp {
   from {
