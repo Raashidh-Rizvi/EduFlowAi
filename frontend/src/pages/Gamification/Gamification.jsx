@@ -115,6 +115,264 @@ const xpSourceLabel = (sourceType) => XP_SOURCE_LABELS[sourceType] ?? 'XP event'
 const signedXp = (amount) => `${amount >= 0 ? '+' : '\u2212'}${Math.abs(Number(amount) || 0).toLocaleString()} XP`;
 const signedXpColor = (amount) => (amount >= 0 ? 'var(--success)' : 'var(--danger)');
 
+const COMING_SOON_TAB_DETAILS = {
+  teams: {
+    title: 'Student Teams & Squads',
+    badge: 'Squad System 2.0',
+    description: 'Collaborative team quests, squad XP multipliers, and real-time cohort peer challenges are currently under active development.',
+    icon: Users,
+    highlights: [
+      { title: 'Real-Time Squad Quests', desc: 'Join forces with classmates to tackle course milestones together.' },
+      { title: 'Collective XP Pooling', desc: 'Pool XP to unlock cohort-wide multipliers and rewards.' },
+      { title: 'Peer Accountability', desc: 'Track team sprint velocity and peer contributions.' }
+    ]
+  },
+  students: {
+    title: 'Learners Directory',
+    badge: 'Directory & Roster',
+    description: 'Complete visibility of enrolled students, interactive skill matrices, and engagement rosters will be available soon.',
+    icon: Compass,
+    highlights: [
+      { title: 'Learner Skill Matrix', desc: 'Comprehensive breakdown of student mastery across topics.' },
+      { title: 'Streak Analytics', desc: 'Monitor study cadence and streak velocity across cohorts.' },
+      { title: 'Roster Management', desc: 'Seamlessly filter, search, and organize student cohorts.' }
+    ]
+  },
+  leaderboard: {
+    title: 'Leaderboard Standings',
+    badge: 'Competitive XP Arena',
+    description: 'Real-time live leaderboard rankings, weekly division promotions, and seasonal XP leagues are launching soon.',
+    icon: Trophy,
+    highlights: [
+      { title: 'Weekly XP Divisions', desc: 'Compete in weekly leagues to earn promotion to higher tiers.' },
+      { title: 'Cohort & Squad Rankings', desc: 'Toggle between individual standings and squad leaderboards.' },
+      { title: 'Seasonal Rewards', desc: 'Earn exclusive badges and recognition at the end of each sprint.' }
+    ]
+  },
+  badges: {
+    title: 'Milestones & Badges',
+    badge: 'Credential Registry',
+    description: 'Automated milestone credentials, custom achievement badges, and verifiable skill certificates are arriving in an upcoming update.',
+    icon: Award,
+    highlights: [
+      { title: 'Automated Award Engine', desc: 'Earn badges automatically upon completing technical evaluations.' },
+      { title: 'Verifiable Credentials', desc: 'Showcase verified achievements and technical mastery.' },
+      { title: 'Custom Milestone Paths', desc: 'Unlock unique badge series based on your learning trajectory.' }
+    ]
+  },
+  ledger: {
+    title: 'Points Ledger & Audit',
+    badge: 'Transparent Ledger',
+    description: 'Immutable point ledgers, detailed transaction breakdown reports, and audit trails are currently being enhanced.',
+    icon: Layers,
+    highlights: [
+      { title: 'Append-Only XP History', desc: 'Transparent tracking of every point earned or spent.' },
+      { title: 'Audit Trail Reports', desc: 'Detailed log breakdown of quiz rewards and streak bonuses.' },
+      { title: 'Deterministic Accounting', desc: 'Zero-drift points tracking directly backed by database logs.' }
+    ]
+  }
+};
+
+function ComingSoonTab({ tabId, onNotify }) {
+  const [notified, setNotified] = useState(false);
+  const details = COMING_SOON_TAB_DETAILS[tabId] || {
+    title: 'Coming Soon',
+    badge: 'In Development',
+    description: 'This feature is currently being crafted and will be available soon.',
+    icon: Sparkles,
+    highlights: []
+  };
+
+  const Icon = details.icon;
+
+  const handleNotifyClick = () => {
+    setNotified(true);
+    if (onNotify) onNotify(`You will be notified when ${details.title} goes live!`);
+  };
+
+  return (
+    <div className="card-premium" style={{
+      padding: '48px 32px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      textAlign: 'center',
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: 'var(--bg-surface)',
+      border: '1px solid var(--border-card)',
+      borderRadius: 'var(--radius-md)',
+      boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.3)'
+    }}>
+      {/* Background Decorative Glow */}
+      <div style={{
+        position: 'absolute',
+        top: '-100px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '400px',
+        height: '300px',
+        background: 'radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, rgba(168, 85, 247, 0.08) 50%, transparent 70%)',
+        pointerEvents: 'none',
+        filter: 'blur(40px)'
+      }} />
+
+      {/* Floating Animated Icon Badge */}
+      <div style={{
+        position: 'relative',
+        marginBottom: '24px'
+      }}>
+        <div style={{
+          width: '76px',
+          height: '76px',
+          borderRadius: '20px',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%)',
+          border: '1px solid rgba(168, 85, 247, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--primary)',
+          boxShadow: '0 8px 24px -6px rgba(99, 102, 241, 0.4)',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <Icon size={36} color="var(--primary)" />
+        </div>
+        <div style={{
+          position: 'absolute',
+          bottom: '-6px',
+          right: '-6px',
+          backgroundColor: 'var(--bg-card)',
+          borderRadius: '50%',
+          padding: '4px',
+          border: '1px solid var(--border-card)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Sparkles size={14} color="var(--warning)" />
+        </div>
+      </div>
+
+      {/* Status Badge */}
+      <span className="badge-pill badge-primary" style={{
+        fontSize: '11px',
+        fontWeight: '700',
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        padding: '4px 12px',
+        marginBottom: '14px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px'
+      }}>
+        <Clock size={12} /> {details.badge} • Coming Soon
+      </span>
+
+      {/* Main Title & Description */}
+      <h3 style={{
+        fontSize: '24px',
+        fontWeight: '800',
+        color: 'var(--text-main)',
+        margin: '0 0 10px 0',
+        letterSpacing: '-0.02em'
+      }}>
+        {details.title}
+      </h3>
+
+      <p style={{
+        fontSize: '14px',
+        color: 'var(--text-muted)',
+        maxWidth: '520px',
+        margin: '0 auto 28px',
+        lineHeight: '1.6'
+      }}>
+        {details.description}
+      </p>
+
+      {/* Action Button */}
+      <button
+        onClick={handleNotifyClick}
+        disabled={notified}
+        className="btn-primary"
+        style={{
+          padding: '10px 24px',
+          fontSize: '13.5px',
+          fontWeight: '700',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          borderRadius: 'var(--radius-sm)',
+          cursor: notified ? 'default' : 'pointer',
+          opacity: notified ? 0.85 : 1,
+          transition: 'all 0.2s ease',
+          marginBottom: '36px'
+        }}
+      >
+        {notified ? (
+          <>
+            <CheckCircle2 size={16} /> Notification Saved!
+          </>
+        ) : (
+          <>
+            <Sparkles size={16} /> Notify Me When Ready
+          </>
+        )}
+      </button>
+
+      {/* Highlights Grid */}
+      {details.highlights && details.highlights.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '16px',
+          width: '100%',
+          maxWidth: '800px',
+          textAlign: 'left',
+          marginTop: '12px',
+          borderTop: '1px solid var(--border-subtle)',
+          paddingTop: '28px'
+        }}>
+          {details.highlights.map((h, i) => (
+            <div key={i} style={{
+              padding: '16px',
+              borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div style={{
+                fontSize: '13px',
+                fontWeight: '700',
+                color: 'var(--text-main)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <div style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--primary)'
+                }} />
+                {h.title}
+              </div>
+              <div style={{
+                fontSize: '11.5px',
+                color: 'var(--text-muted)',
+                lineHeight: '1.4'
+              }}>
+                {h.desc}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Gamification() {
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -714,726 +972,9 @@ export default function Gamification() {
         })}
       </div>
 
-      {/* ── TAB 1: STUDENT TEAMS & ROSTERS ────────────────────────────────────── */}
-      {activeTab === 'teams' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                Instructor Team Roster & Collaborative Quests
-              </h3>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Organize students into squads, assign custom names & theme symbols, and track their collective sprint velocity.
-              </p>
-            </div>
-            {canManageSquads && (
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="btn-primary"
-                style={{ padding: '8px 16px', fontSize: '12.5px', display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Plus size={15} /> Assemble New Team
-              </button>
-            )}
-          </div>
-
-          {squads.length === 0 ? (
-            <div className="card-premium" style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <Users size={36} color="var(--primary)" style={{ opacity: 0.6, marginBottom: '12px' }} />
-              <h4 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-main)' }}>No Teams Assembled Yet</h4>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '440px', margin: '6px auto 16px' }}>
-                {canManageSquads
-                  ? 'Create your first student squad and bind it to a course to unlock collaborative quests, collective XP pooling, and peer accountability.'
-                  : 'No squads have been assembled for this cohort yet.'}
-              </p>
-              {canManageSquads && (
-                <button onClick={() => setShowCreateModal(true)} className="btn-primary">
-                  <Plus size={15} /> Create Team Now
-                </button>
-              )}
-            </div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' }}>
-              {squads.map((sq) => {
-                // Real quest target from the bound course (0 = squad is unbound).
-                const targetXp = sq.targetXp || 0;
-                const progressPct = targetXp > 0
-                  ? Math.min(100, Math.round(((sq.combinedXp || 0) / targetXp) * 100))
-                  : 0;
-                const questLabel = sq.questTitle || sq.description || 'Unbound quest — pick a course';
-                const learningPct = Math.round(sq.learningProgressPercent || 0);
-
-                return (
-                  <div key={sq.id} className="card-premium glass-card-hover" style={{
-                    padding: '20px',
-                    backgroundColor: 'var(--bg-surface)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '16px'
-                  }}>
-                    {/* Squad Header */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: 'var(--radius-sm)',
-                          backgroundColor: 'var(--bg-card)',
-                          border: '1px solid var(--border-card)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '20px'
-                        }}>
-                          {sq.avatarUrl || '⚔️'}
-                        </div>
-                        <div>
-                          <h4 style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                            {sq.name}
-                          </h4>
-                          <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                            Leader: <strong style={{ color: 'var(--warning)' }}>{sq.leaderName}</strong> • {sq.memberCount || sq.members?.length || 0} Members
-                          </span>
-                        </div>
-                      </div>
-
-                      {canManageSquads && (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={() => { setAddMemberSquad(sq); setStudentToAddId(''); }}
-                            title="Add student to squad"
-                            className="btn-ghost"
-                            style={{ padding: '6px', color: 'var(--primary)' }}
-                          >
-                            <UserPlus size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSquad(sq.id, sq.name)}
-                            title="Disband squad"
-                            className="btn-ghost"
-                            style={{ padding: '6px', color: 'var(--danger)' }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Quest Progress Tracker */}
-                    <div style={{
-                      padding: '12px',
-                      borderRadius: 'var(--radius-xs)',
-                      backgroundColor: 'var(--bg-card)',
-                      border: '1px solid var(--border-subtle)'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px' }}>
-                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--secondary)', display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-                          <Target size={12} /> {questLabel}
-                        </span>
-                        <span style={{ fontSize: '11.5px', fontWeight: '700', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
-                          {sq.courseTitle
-                            ? `${learningPct}% complete`
-                            : targetXp > 0
-                              ? `${progressPct}% of ${targetXp.toLocaleString()} XP`
-                              : 'No target set'}
-                        </span>
-                      </div>
-                      {/* Bound quests advance on real enrollment/lesson progress;
-                          unbound ones fall back to the XP ratio against their target. */}
-                      <div style={{
-                        width: '100%',
-                        height: '6px',
-                        backgroundColor: 'var(--bg-canvas)',
-                        borderRadius: 'var(--radius-full)',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${sq.courseTitle ? learningPct : progressPct}%`,
-                          height: '100%',
-                          background: 'linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%)',
-                          borderRadius: 'var(--radius-full)',
-                          transition: 'width 0.4s ease'
-                        }} />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', gap: '8px' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-                          <BookOpen size={11} />
-                          {sq.courseTitle ? sq.courseTitle : 'No course bound'}
-                        </span>
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--primary)', whiteSpace: 'nowrap' }}>
-                          {sq.courseTitle
-                            ? (sq.totalLessons > 0
-                              ? `${sq.completedLessons || 0}/${sq.totalLessons} lessons done`
-                              : 'Enrollment progress')
-                            : 'Bind a course to track learning'}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                        Squad lifetime XP {(sq.combinedXp || 0).toLocaleString()}
-                        {targetXp > 0
-                          ? ` \u00b7 ${sq.courseTitle ? 'course reward' : 'quest target'} ${targetXp.toLocaleString()} XP`
-                          : ''}
-                      </div>
-                    </div>
-
-                    {/* Member Roster List */}
-                    <div>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.04em' }}>
-                        Assigned Students ({sq.members?.length || 0})
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {(sq.members || []).map((m) => {
-                          const isLeader = m.role === 0 || m.role === 'Leader' || m.studentId === sq.leaderId;
-                          return (
-                            <div key={m.studentId} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              padding: '6px 10px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--bg-input)',
-                              border: '1px solid var(--border-subtle)',
-                              fontSize: '12px'
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{
-                                  width: '24px',
-                                  height: '24px',
-                                  borderRadius: 'var(--radius-full)',
-                                  backgroundColor: isLeader ? 'var(--warning-soft)' : 'var(--primary-soft)',
-                                  color: isLeader ? 'var(--warning)' : 'var(--primary)',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontWeight: '800',
-                                  fontSize: '10.5px'
-                                }}>
-                                  {m.studentName ? m.studentName[0] : 'S'}
-                                </div>
-                                <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>
-                                  {m.studentName}
-                                </span>
-                                {isLeader && (
-                                  <span className="badge-pill badge-warning" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                                    LEADER
-                                  </span>
-                                )}
-                              </div>
-
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontWeight: '700', color: 'var(--secondary)' }}>
-                                  {m.totalXp?.toLocaleString() || 0} XP
-                                </span>
-                                {canManageSquads && (
-                                  <button
-                                    onClick={() => handleRemoveMember(sq.id, m.studentId, m.studentName)}
-                                    title="Remove from squad"
-                                    className="btn-ghost"
-                                    style={{ padding: '3px', color: 'var(--text-muted)' }}
-                                  >
-                                    <X size={13} />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── TAB 1.5: LEARNERS & ROSTER DIRECTORY FOR INSTRUCTORS & ADMINS ───── */}
-      {activeTab === 'students' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                Instructor & Admin Learner Directory
-              </h3>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Complete visibility of all enrolled students, current XP stats, streak velocity, and squad assignments.
-              </p>
-            </div>
-          </div>
-
-          {/* Filters & Search */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {[
-                { id: 'all', label: 'All Learners' },
-                { id: 'free', label: 'Free Agents (Unassigned)' },
-                { id: 'squad', label: 'Assigned to Squads' }
-              ].map(f => (
-                <button
-                  key={f.id}
-                  onClick={() => setStudentFilterTab(f.id)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: 'var(--radius-xs)',
-                    backgroundColor: studentFilterTab === f.id ? 'var(--primary-soft)' : 'var(--bg-surface)',
-                    color: studentFilterTab === f.id ? 'var(--primary)' : 'var(--text-muted)',
-                    border: studentFilterTab === f.id ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
-                    fontSize: '12px',
-                    fontWeight: studentFilterTab === f.id ? '700' : '500',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ position: 'relative', width: '280px' }}>
-              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                type="text"
-                placeholder="Search by name, email, level..."
-                value={rosterSearchQuery}
-                onChange={(e) => setRosterSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 12px 7px 32px',
-                  borderRadius: 'var(--radius-xs)',
-                  backgroundColor: 'var(--bg-input)',
-                  border: '1px solid var(--border-card)',
-                  color: 'var(--text-main)',
-                  fontSize: '12px'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Roster Directory Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-            {(() => {
-              const effective = students || [];
-              const filtered = effective.filter(st => {
-                const sId = st.studentId || st.id || st.userId;
-                const squad = squads.find(sq => (sq.members || []).some(m => (m.studentId || m.id) === sId));
-                const inSquadName = squad ? squad.name : st.currentSquadName;
-
-                if (studentFilterTab === 'free' && inSquadName) return false;
-                if (studentFilterTab === 'squad' && !inSquadName) return false;
-
-                const q = rosterSearchQuery.toLowerCase();
-                const name = (st.fullName || st.name || '').toLowerCase();
-                const email = (st.email || '').toLowerCase();
-                return name.includes(q) || email.includes(q);
-              });
-
-              if (filtered.length === 0) {
-                return (
-                  <div className="card-premium" style={{ gridColumn: '1 / -1', padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No learners match your search query.
-                  </div>
-                );
-              }
-
-              return filtered.map(st => {
-                const sId = st.studentId || st.id || st.userId;
-                const squad = squads.find(sq => (sq.members || []).some(m => (m.studentId || m.id) === sId));
-                const inSquadName = squad ? squad.name : st.currentSquadName;
-
-                return (
-                  <div key={sId} className="card-premium glass-card-hover" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: 'var(--radius-full)',
-                          backgroundColor: 'var(--primary-soft)',
-                          color: 'var(--primary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontWeight: '800',
-                          fontSize: '15px'
-                        }}>
-                          {(st.fullName || st.name || 'S')[0]}
-                        </div>
-                        <div>
-                          <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                            {st.fullName || st.name}
-                          </h4>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            {st.email || 'Email unavailable'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {inSquadName ? (
-                        <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>
-                          Squad: {inSquadName}
-                        </span>
-                      ) : (
-                        <span className="badge-pill badge-neutral" style={{ fontSize: '10px' }}>
-                          Free Agent
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '10px', backgroundColor: 'var(--bg-card)', borderRadius: 'var(--radius-xs)' }}>
-                      <div>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>LEVEL</span>
-                        <strong style={{ fontSize: '13px', color: 'var(--primary)' }}>Lvl {st.currentLevel ?? st.level ?? 1}</strong>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>TOTAL XP</span>
-                        <strong style={{ fontSize: '13px', color: 'var(--secondary)' }}>{(st.totalXp ?? st.totalXP ?? 0).toLocaleString()} XP</strong>
-                      </div>
-                      <div>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>STREAK</span>
-                        <strong style={{ fontSize: '13px', color: 'var(--warning)' }}>🔥 {st.currentStreak ?? st.streak ?? 0}d</strong>
-                      </div>
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB 2: LEADERBOARD STANDINGS ──────────────────────────────────────── */}
-      {activeTab === 'leaderboard' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Trophy size={18} color="var(--warning)" />
-              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                {leaderboardScope === 'cohort' ? 'Cohort Individual Standings' : 'Squad & Team Rankings'}
-              </h3>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              backgroundColor: 'var(--bg-canvas)',
-              borderRadius: 'var(--radius-sm)',
-              padding: '3px',
-              border: '1px solid var(--border-subtle)',
-              gap: '4px'
-            }}>
-              <button
-                onClick={() => setLeaderboardScope('cohort')}
-                style={{
-                  padding: '5px 14px',
-                  borderRadius: 'var(--radius-xs)',
-                  backgroundColor: leaderboardScope === 'cohort' ? 'var(--bg-card)' : 'transparent',
-                  color: leaderboardScope === 'cohort' ? 'var(--text-main)' : 'var(--text-muted)',
-                  fontSize: '12.5px',
-                  fontWeight: '600',
-                  border: leaderboardScope === 'cohort' ? '1px solid var(--border-card)' : '1px solid transparent',
-                  cursor: 'pointer'
-                }}
-              >
-                Individual Learners
-              </button>
-              <button
-                onClick={() => setLeaderboardScope('squads')}
-                style={{
-                  padding: '5px 14px',
-                  borderRadius: 'var(--radius-xs)',
-                  backgroundColor: leaderboardScope === 'squads' ? 'var(--bg-card)' : 'transparent',
-                  color: leaderboardScope === 'squads' ? 'var(--text-main)' : 'var(--text-muted)',
-                  fontSize: '12.5px',
-                  fontWeight: '600',
-                  border: leaderboardScope === 'squads' ? '1px solid var(--border-card)' : '1px solid transparent',
-                  cursor: 'pointer'
-                }}
-              >
-                Squads & Teams
-              </button>
-            </div>
-          </div>
-
-          {leaderboardScope === 'cohort' ? (
-            <div className="card-premium" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {leaderboard.map((item, idx) => (
-                <div key={item.studentId || idx} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: idx === 0 ? 'var(--warning-soft)' : 'var(--bg-surface)',
-                  border: idx === 0 ? '1px solid var(--warning-border)' : '1px solid var(--border-subtle)'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <span style={{
-                      fontSize: '14px',
-                      fontWeight: '800',
-                      fontFamily: 'var(--font-mono)',
-                      color: idx === 0 ? 'var(--warning)' : (idx === 1 ? 'var(--text-main)' : (idx === 2 ? 'var(--secondary)' : 'var(--text-muted)')),
-                      width: '24px'
-                    }}>
-                      {idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : `#${idx + 1}`))}
-                    </span>
-                    <div style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: 'var(--bg-card)',
-                      border: '1px solid var(--border-card)',
-                      color: idx === 0 ? 'var(--warning)' : 'var(--text-main)',
-                      fontWeight: '800',
-                      fontSize: '13px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      {item.studentName ? item.studentName.slice(0, 2).toUpperCase() : 'ST'}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13.5px', fontWeight: '700', color: 'var(--text-main)' }}>
-                        {item.studentName}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        Level {item.level || 1} • {item.streak || 0}d streak
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <span style={{ fontSize: '11.5px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Flame size={13} color="var(--warning)" /> {item.streak || 0}d
-                    </span>
-                    <span style={{
-                      fontSize: '14px',
-                      fontWeight: '800',
-                      color: 'var(--secondary)',
-                      minWidth: '80px',
-                      textAlign: 'right'
-                    }}>
-                      {(item.scoreXp || 0).toLocaleString()} XP
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="card-premium" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {squadLeaderboard.length === 0 ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                  No squads formed yet. Assemble teams to see squad rankings!
-                </div>
-              ) : (
-                squadLeaderboard.map((sq, idx) => (
-                  <div key={sq.squadId || idx} style={{
-                    padding: '14px 18px',
-                    borderRadius: 'var(--radius-sm)',
-                    backgroundColor: idx === 0 ? 'var(--primary-soft)' : 'var(--bg-surface)',
-                    border: idx === 0 ? '1px solid var(--primary-border)' : '1px solid var(--border-subtle)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                      <span style={{
-                        fontSize: '15px',
-                        fontWeight: '800',
-                        width: '28px',
-                        color: idx === 0 ? 'var(--primary)' : 'var(--text-muted)'
-                      }}>
-                        {idx === 0 ? '🏆' : `#${idx + 1}`}
-                      </span>
-                      <span style={{ fontSize: '24px' }}>{sq.avatarUrl || '🚀'}</span>
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)' }}>
-                          {sq.name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {sq.memberCount} active learners
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--secondary)' }}>
-                        {(sq.combinedXp || 0).toLocaleString()} XP
-                      </div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Combined Squad XP</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── TAB 3: MILESTONES & BADGES ────────────────────────────────────────── */}
-      {activeTab === 'badges' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-              Milestone & Credential Registry
-            </h3>
-            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Badges awarded for verified technical evaluations, study streaks, and collaborative team participation.
-            </p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-            {badges.map((b) => (
-              <div key={b.id} className="card-premium" style={{
-                padding: '16px',
-                display: 'flex',
-                gap: '14px',
-                alignItems: 'flex-start',
-                backgroundColor: 'var(--bg-surface)'
-              }}>
-                <div style={{
-                  fontSize: '28px',
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: 'var(--bg-card)',
-                  border: '1px solid var(--border-card)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  {b.iconUrl || '🏅'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>{b.title}</h4>
-                    <span className="badge-pill badge-primary" style={{ fontSize: '10px' }}>
-                      +{b.xpBonus} XP
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: '3px' }}>
-                    {badgeCategoryLabel(b.category)}
-                  </div>
-                  <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: '1.4' }}>{b.description}</p>
-                  <div style={{
-                    fontSize: '10.5px',
-                    marginTop: '6px',
-                    fontWeight: '600',
-                    color: b.isUnlocked ? 'var(--success)' : 'var(--primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px'
-                  }}>
-                    <CheckCircle2 size={12} />
-                    {b.isUnlocked
-                      ? `Unlocked ${b.unlockedAt ? new Date(b.unlockedAt).toLocaleDateString() : ''}`.trim()
-                      : `Criterion: ${b.criteriaLabel || 'Awarded automatically by the reward engine'}`}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB 4: XP POINTS LEDGER & AUDIT ──────────────────────────────────── */}
-      {activeTab === 'ledger' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h3 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-main)', margin: 0 }}>
-                Deterministic Points Ledger & Audit Trail
-              </h3>
-              <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Append-only record of every XP mutation across the cohort, straight from the database.
-              </p>
-            </div>
-
-            {isStaffRole() && (
-              <div style={{
-                display: 'flex',
-                backgroundColor: 'var(--bg-canvas)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '3px',
-                border: '1px solid var(--border-subtle)',
-                gap: '4px'
-              }}>
-                {[{ id: 'cohort', label: 'Cohort ledger' }, { id: 'mine', label: 'My XP' }].map((opt) => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setLedgerScope(opt.id)}
-                    style={{
-                      padding: '5px 14px',
-                      borderRadius: 'var(--radius-xs)',
-                      backgroundColor: ledgerScope === opt.id ? 'var(--bg-card)' : 'transparent',
-                      color: ledgerScope === opt.id ? 'var(--text-main)' : 'var(--text-muted)',
-                      fontSize: '12.5px',
-                      fontWeight: '600',
-                      border: ledgerScope === opt.id ? '1px solid var(--border-card)' : '1px solid transparent',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {(() => {
-            const rows = isStaffRole() && ledgerScope === 'cohort' ? cohortLedger : ledger;
-
-            if (rows.length === 0) {
-              return (
-                <div className="card-premium" style={{ padding: '40px 24px', textAlign: 'center' }}>
-                  <Layers size={32} color="var(--primary)" style={{ opacity: 0.6, marginBottom: '10px' }} />
-                  <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>
-                    No XP transactions recorded yet
-                  </div>
-                  <div style={{ fontSize: '12.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Points appear here the moment a lesson, assessment, challenge or focus session is credited.
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div className="card-premium" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {rows.map((tx) => {
-                  const isCredit = (tx.xpAmount || 0) >= 0;
-                  return (
-                    <div key={tx.id} style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-xs)',
-                      backgroundColor: 'var(--bg-surface)',
-                      border: '1px solid var(--border-subtle)',
-                      fontSize: '12.5px',
-                      gap: '12px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                        <CheckCircle2 size={16} color={isCredit ? 'var(--success)' : 'var(--danger)'} />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{tx.description}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            {tx.studentName ? `${tx.studentName} \u00b7 ` : ''}
-                            {xpSourceLabel(tx.sourceType)}
-                            {' \u00b7 '}
-                            {new Date(tx.createdAt).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: '800', color: signedXpColor(tx.xpAmount), fontSize: '13px', whiteSpace: 'nowrap' }}>
-                        {signedXp(tx.xpAmount)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        </div>
+      {/* ── COMING SOON VIEW FOR HIGHLIGHTED TABS ─────────────────────────────── */}
+      {['teams', 'students', 'leaderboard', 'badges', 'ledger'].includes(activeTab) && (
+        <ComingSoonTab tabId={activeTab} onNotify={showToast} />
       )}
 
       {/* ── TAB: QUIZ SUBMISSIONS & ANSWERS PERFORMANCE ────────────────────────── */}

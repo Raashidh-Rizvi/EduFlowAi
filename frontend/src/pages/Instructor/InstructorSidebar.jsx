@@ -44,24 +44,6 @@ export const INSTRUCTOR_SECTIONS = [
   { id: "reviews", label: "Reviews & Ratings", icon: Star, group: "Workspace" },
   { id: "profile", label: "Profile", icon: UserCog, group: "Workspace" },
   {
-    id: "courses",
-    label: "Curriculum & Modules",
-    icon: BookOpen,
-    group: "Course Studio",
-  },
-  {
-    id: "assessments",
-    label: "Assessments & Quizzes",
-    icon: CheckCircle2,
-    group: "Course Studio",
-  },
-  {
-    id: "ai-review",
-    label: "AI Review & Approvals",
-    icon: Sparkles,
-    group: "Course Studio",
-  },
-  {
     id: "gamification",
     label: "Gamification & XP",
     icon: Trophy,

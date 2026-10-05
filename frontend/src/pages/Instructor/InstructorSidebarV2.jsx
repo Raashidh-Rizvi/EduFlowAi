@@ -38,14 +38,6 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Course Studio",
-    items: [
-      { id: "courses", label: "Curriculum & Modules", icon: BookOpen },
-      { id: "assessments", label: "Assessments & Quizzes", icon: CheckCircle2 },
-      { id: "ai-review", label: "AI Review & Analytics", icon: Sparkles },
-    ],
-  },
-  {
     label: "Instructor Console",
     items: [
       { id: "gamification", label: "Gamification & XP", icon: Trophy },
