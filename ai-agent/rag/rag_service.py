@@ -277,6 +277,14 @@ class SimpleRagService:
     # 2. GROUNDED CHAT & QUESTION ANSWERING (GEMINI / GROQ SWITCH)
     # -------------------------------------------------------------------------
 
+    def _safe_search(self, **kwargs):
+        """Vector search that never fails the chat: on a store outage the answer falls back to web/LLM."""
+        try:
+            return self.vector_store.search(**kwargs)
+        except Exception:
+            logger.exception("Vector search failed; answering without slide context.")
+            return []
+
     def chat(
         self,
         question: str,
@@ -296,7 +304,7 @@ class SimpleRagService:
         search_query = self._contextualize_query(question, conversation_history)
         retrieval_question = f"{search_query}\n{question}" if search_query != question else question
 
-        search_results = self.vector_store.search(
+        search_results = self._safe_search(
             query=retrieval_question,
             course_id=course_id,
             module_id=module_id,
@@ -307,7 +315,7 @@ class SimpleRagService:
         # Step 1.1: Smart fallback if no chunks were found:
         # If source_file was specified, retry searching by source_file alone (in case course_id/module_id restricted it)
         if not search_results and source_file:
-            search_results = self.vector_store.search(
+            search_results = self._safe_search(
                 query=retrieval_question,
                 course_id=None,
                 module_id=None,
@@ -317,7 +325,7 @@ class SimpleRagService:
 
         # If still no chunks and global course_id/module_id filter was used, search across all indexed materials
         if not search_results and not source_file and (course_id or module_id):
-            search_results = self.vector_store.search(
+            search_results = self._safe_search(
                 query=retrieval_question,
                 course_id=None,
                 module_id=None,

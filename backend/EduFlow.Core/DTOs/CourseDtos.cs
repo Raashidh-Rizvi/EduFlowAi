@@ -51,7 +51,8 @@ public record CourseDetailDto(
     List<QuizDto>? Quizzes = null,
     string Term = "Fall 2026",
     double AverageRating = 0.0,
-    int RatingCount = 0
+    int RatingCount = 0,
+    bool CanAccessMaterials = false
 );
 
 public record ModuleDto(

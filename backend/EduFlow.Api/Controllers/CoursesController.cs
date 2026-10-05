@@ -343,7 +343,8 @@ public class CoursesController : BaseApiController
             courseLevelQuizzes,
             string.IsNullOrWhiteSpace(course.Term) ? "Fall 2026" : course.Term,
             ratingSummary.AverageRating,
-            ratingSummary.ReviewCount
+            ratingSummary.ReviewCount,
+            canAccessMaterials
         );
 
         return Ok(result);

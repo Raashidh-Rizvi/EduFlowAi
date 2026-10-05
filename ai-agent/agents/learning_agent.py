@@ -26,7 +26,11 @@ class LearningAgent:
 
         # Meaning-based intent matching when scoped to a lecture deck
         if source_file:
-            intent, topic = self.router.classify(question)
+            try:
+                intent, topic = self.router.classify(question)
+            except Exception:
+                logger.exception("Intent routing failed; using standard RAG.")
+                intent, topic = None, None
 
             # Intent 1: Student semantically asked for a study schedule / roadmap
             if intent == "plan":

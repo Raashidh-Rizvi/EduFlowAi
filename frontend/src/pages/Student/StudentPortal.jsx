@@ -5276,6 +5276,8 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
 
           const mapped = fullCoursesDetails.map((c) => ({
             id: c.id || c.courseId,
+            // False for priced courses until payment is verified; the API then 403s grades/quizzes.
+            canAccess: c.canAccessMaterials !== false,
             enrollmentStatus:
               statusByCourse.get(c.id || c.courseId) || c.status || "Active",
             code: c.code || c.courseCode || "CS-301",
@@ -5310,7 +5312,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
             loadedCourses = mapped;
             // Grades and progress exist only for enrollments that grant access; asking
             // for pending/rejected/dropped ones just returns 403.
-            const enriches = (c) => enrollmentGrantsAccess(c.enrollmentStatus);
+            const enriches = (c) => c.canAccess && enrollmentGrantsAccess(c.enrollmentStatus);
             Promise.all([
               Promise.all(mapped.map((c) => (enriches(c) ? gradingService.getGrade(c.id).catch(() => null) : null))),
               Promise.all(mapped.map((c) => (enriches(c) ? courseService.getProgress(c.id).catch(() => null) : null))),
@@ -5337,7 +5339,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       //    published quizzes for courses the student is enrolled in.
       try {
         const courseIds = (Array.isArray(loadedCourses) ? loadedCourses : [])
-          .filter((c) => enrollmentGrantsAccess(c.enrollmentStatus))
+          .filter((c) => c.canAccess && enrollmentGrantsAccess(c.enrollmentStatus))
           .map((c) => c.id);
         for (const courseId of courseIds) {
           const qList = await quizService.getQuizzes(courseId).catch(() => []);

@@ -140,6 +140,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           if (fullCourse) {
             setCoursesList(current => current.map(c => c.id === selectedCourseId ? mapBackendCourseToFrontend(fullCourse) : c));
           }
+        }).catch(() => {
+          // Course was removed or unpublished; keep the current card.
         });
       } else {
         loadCourses();
