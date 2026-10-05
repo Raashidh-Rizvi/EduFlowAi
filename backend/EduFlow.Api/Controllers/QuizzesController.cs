@@ -953,7 +953,15 @@ public class QuizzesController : BaseApiController
         var (placement, placementError) = await ResolvePlacementAsync(course.Id, request.ScopeType, request.ScopeId, request.ModuleId);
         if (placement == null)
         {
-            return BadRequest(new { message = placementError, code = "INVALID_SCOPE" });
+            var firstMod = await DbContext.Modules.AsNoTracking().FirstOrDefaultAsync(m => m.CourseId == course.Id);
+            if (firstMod != null)
+            {
+                placement = new AssessmentPlacement(firstMod.Id, null, null, QuizScopeType.Module, firstMod.Id);
+            }
+            else
+            {
+                return BadRequest(new { message = placementError, code = "INVALID_SCOPE" });
+            }
         }
 
         // IDEMPOTENCY: one in-flight generation per user + target. A repeated submit
@@ -2546,19 +2554,11 @@ public class QuizzesController : BaseApiController
                 var targetModuleId = scopeType == QuizScopeType.Module ? scopeId ?? moduleId : moduleId;
                 if (!targetModuleId.HasValue || targetModuleId.Value == Guid.Empty)
                 {
-                    var firstMod = await DbContext.Modules.AsNoTracking().FirstOrDefaultAsync(m => m.CourseId == courseId);
-                    if (firstMod != null)
-                    {
-                        targetModuleId = firstMod.Id;
-                    }
-                    else
-                    {
-                        return (null, "Select the module this assessment belongs to.");
-                    }
+                    return (null, "Select the module this assessment belongs to.");
                 }
                 bool inCourse = await DbContext.Modules.AnyAsync(m => m.Id == targetModuleId.Value && m.CourseId == courseId);
                 return inCourse
-                    ? (new AssessmentPlacement(targetModuleId.Value, null, null, scopeType == QuizScopeType.Course ? QuizScopeType.Course : QuizScopeType.Module, targetModuleId.Value), null)
+                    ? (new AssessmentPlacement(targetModuleId.Value, null, null, QuizScopeType.Module, targetModuleId.Value), null)
                     : (null, $"The selected module (ID: {targetModuleId}) does not belong to the selected Course.");
             }
 

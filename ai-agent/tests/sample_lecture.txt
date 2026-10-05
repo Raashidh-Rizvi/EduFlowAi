@@ -1,3 +1,0 @@
-Concurrency & ACID
-ACID guarantees atomicity, consistency, isolation, and durability.
-Two-phase locking prevents dirty reads and lost updates.

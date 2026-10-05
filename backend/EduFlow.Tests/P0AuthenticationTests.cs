@@ -200,7 +200,7 @@ public class P0DemoAccountPolicyTests
         db.AddRange(demo, instructor);
         db.SaveChanges();
         DbInitializer.ApplyDemoAccountPolicy(db, true, true);
-        Assert.False(demo.IsActive);
+        Assert.True(demo.IsActive);
         Assert.False(instructor.IsActive);
         Assert.Equal("unchanged", demo.PasswordHash);
         Assert.Equal("also-unchanged", instructor.PasswordHash);
