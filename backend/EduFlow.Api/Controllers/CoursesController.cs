@@ -924,7 +924,7 @@ public class CoursesController : BaseApiController
         module.UpdatedAt = DateTime.UtcNow;
 
         await DbContext.SaveChangesAsync();
-        if (!string.Equals(previousPdfUrl, module.PdfUrl, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(module.PdfUrl))
         {
             ScheduleModuleIndexing(module);
         }
@@ -939,16 +939,18 @@ public class CoursesController : BaseApiController
     /// </summary>
     private void ScheduleModuleIndexing(Module module)
     {
-        if (_aiGatewayClient == null || string.IsNullOrWhiteSpace(module.PdfUrl))
+        ScheduleDocumentIndexing(module.PdfUrl, module.CourseId, module.Id);
+    }
+
+    private void ScheduleDocumentIndexing(string? pdfUrl, Guid courseId, Guid moduleId)
+    {
+        if (_aiGatewayClient == null || string.IsNullOrWhiteSpace(pdfUrl))
         {
             return;
         }
 
         var gateway = _aiGatewayClient;
         var storage = _uploadStorage;
-        var pdfUrl = module.PdfUrl;
-        var courseId = module.CourseId;
-        var moduleId = module.Id;
         _ = Task.Run(async () =>
         {
             try
@@ -966,12 +968,12 @@ public class CoursesController : BaseApiController
                     course_id = courseId.ToString(),
                     module_id = moduleId.ToString()
                 });
-                Logger.LogInformation("module_document_index module={ModuleId} file={File} status={Status}",
+                Logger.LogInformation("document_index module={ModuleId} file={File} status={Status}",
                     moduleId, Path.GetFileName(physicalPath), result.StatusCode);
             }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "module_document_index failed for module {ModuleId}", moduleId);
+                Logger.LogWarning(ex, "document_index failed for module {ModuleId}", moduleId);
             }
         });
     }
@@ -2241,6 +2243,11 @@ public class CoursesController : BaseApiController
         await DbContext.ContentItems.AddAsync(contentItem);
         await DbContext.SaveChangesAsync();
 
+        if (!string.IsNullOrWhiteSpace(contentItem.PdfUrl) && topic.Module != null)
+        {
+            ScheduleDocumentIndexing(contentItem.PdfUrl, topic.Module.CourseId, topic.ModuleId);
+        }
+
         return Ok(contentItem);
     }
 
@@ -2272,6 +2279,16 @@ public class CoursesController : BaseApiController
         item.UpdatedAt = DateTime.UtcNow;
 
         await DbContext.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(item.PdfUrl))
+        {
+            var mod = await DbContext.Modules.AsNoTracking().FirstOrDefaultAsync(m => m.Id == item.ModuleId);
+            if (mod != null)
+            {
+                ScheduleDocumentIndexing(item.PdfUrl, mod.CourseId, mod.Id);
+            }
+        }
+
         return Ok(item);
     }
 

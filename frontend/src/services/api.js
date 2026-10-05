@@ -169,8 +169,10 @@ api.interceptors.response.use(
     // Attach the friendly message to the error object so components can use it directly
     error.friendlyMessage = friendlyMessage;
 
-    // Trigger the global white-background red-text error pop-up
-    if (typeof window !== 'undefined') {
+    // Only trigger the global error pop-up if explicitly requested by caller (showGlobalError: true)
+    // and not explicitly suppressed. Handled errors and standard 404s will not trigger unwanted pop-ups,
+    // while unhandled promise rejections are caught cleanly by App.jsx.
+    if (typeof window !== 'undefined' && original?.showGlobalError && !original?.skipGlobalError && !original?.suppressGlobalError) {
       window.dispatchEvent(new CustomEvent('eduflow-global-error', {
         detail: {
           title: error.response?.status ? `Request Error (${error.response.status})` : 'Network Error',
