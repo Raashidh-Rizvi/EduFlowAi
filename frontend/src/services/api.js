@@ -168,6 +168,19 @@ api.interceptors.response.use(
 
     // Attach the friendly message to the error object so components can use it directly
     error.friendlyMessage = friendlyMessage;
+
+    // Trigger the global white-background red-text error pop-up
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('eduflow-global-error', {
+        detail: {
+          title: error.response?.status ? `Request Error (${error.response.status})` : 'Network Error',
+          message: friendlyMessage,
+          code: error.response?.data?.code || error.code || `HTTP_${error.response?.status || 'FAIL'}`,
+          details: error.response?.data?.details || error.response?.data?.detail || ''
+        }
+      }));
+    }
+
     return Promise.reject(error);
   }
 );

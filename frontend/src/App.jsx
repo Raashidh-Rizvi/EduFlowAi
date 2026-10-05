@@ -38,6 +38,7 @@ import api from "./services/api";
 import { AuthProvider } from "./context/AuthContext";
 import { ShieldAlert } from "lucide-react";
 import ProtectedRoute from "./components/common/ProtectedRoute";
+import GlobalErrorModal from "./components/common/GlobalErrorModal";
 
 function AppRoutes() {
   const navigate = useNavigate();
@@ -390,8 +391,32 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    const handleUnhandledRejection = (event) => {
+      // If the promise rejection has a friendlyMessage or error message that wasn't handled, dispatch global error modal
+      const reason = event.reason;
+      if (reason && !event.defaultPrevented) {
+        const msg = reason.friendlyMessage || reason.message || (typeof reason === 'string' ? reason : null);
+        if (msg) {
+          window.dispatchEvent(new CustomEvent('eduflow-global-error', {
+            detail: {
+              title: 'Unexpected Error',
+              message: msg,
+              code: reason.code || 'RUNTIME_ERROR',
+              details: reason.stack || ''
+            }
+          }));
+        }
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  }, []);
+
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <GlobalErrorModal />
       <AppRoutes />
     </BrowserRouter>
   );
