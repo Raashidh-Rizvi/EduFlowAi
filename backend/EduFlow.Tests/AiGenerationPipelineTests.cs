@@ -430,8 +430,10 @@ public class AiGenerationPipelineTests
     }
 
     [Fact]
-    public async Task DocumentProcessingFailed_Returns422DocumentExtractionFailed()
+    public async Task DocumentIndexingFailed_RetriesIndexing_AndGenerationProceeds()
     {
+        // A FAILED status only means background RAG indexing failed; it must not block
+        // later generations from the same PDF (the agent parses the file synchronously).
         var (app, gateway) = await StartApp();
         await using var _ = app;
         var url = SeedDocumentFile($"uploads/pdfs/failed-{Guid.NewGuid():N}.pdf");
@@ -444,13 +446,24 @@ public class AiGenerationPipelineTests
         var response = await client.PostAsJsonAsync("/api/quizzes/generate-ai",
             GenerateBody(course, module));
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var raw = await response.Content.ReadAsStringAsync();
-        var body = JsonDocument.Parse(raw).RootElement;
-        Assert.Equal("DOCUMENT_EXTRACTION_FAILED", body.GetProperty("code").GetString());
-        // The technical reason stays server-side; the user gets the friendly message.
         Assert.DoesNotContain("ValueError", raw);
-        Assert.Empty(gateway.GeneratedPayloads);
+        Assert.NotEmpty(gateway.GeneratedPayloads);
+
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (gateway.IndexCalls)
+            {
+                if (gateway.IndexCalls.Count > 0) break;
+            }
+            await Task.Delay(50);
+        }
+        lock (gateway.IndexCalls)
+        {
+            Assert.NotEmpty(gateway.IndexCalls);
+        }
     }
 
     [Fact]

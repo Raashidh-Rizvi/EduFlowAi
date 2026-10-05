@@ -1860,18 +1860,21 @@ public class QuizzesController : BaseApiController
                 "Course material is not ready. The uploaded PDF is still being prepared for AI quiz generation — please wait until processing is complete."));
         }
 
+        // FAILED only means background RAG indexing failed (embedding quota, vector store,
+        // serverless /tmp, ...). Generation parses the file synchronously and the agent returns
+        // DOCUMENT_EXTRACTION_FAILED itself if the file truly has no text, so a stale FAILED
+        // record must not block every later generation. Retry indexing and proceed.
         if (string.Equals(state, "FAILED", StringComparison.OrdinalIgnoreCase))
         {
-            Logger.LogWarning("generate_ai_quiz document_failed requestId={RequestId} file={File} reason={Reason}",
+            Logger.LogWarning("generate_ai_quiz document_index_failed_retrying requestId={RequestId} file={File} reason={Reason}",
                 HttpContext.TraceIdentifier, fileName, failureReason);
-            return UnprocessableEntity(AiError("DOCUMENT_EXTRACTION_FAILED",
-                "Document processing failed. We could not prepare this PDF for AI generation. Please try uploading the file again."));
         }
 
-        if (string.Equals(state, "UPLOADED", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(state, "UPLOADED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(state, "FAILED", StringComparison.OrdinalIgnoreCase))
         {
-            // Never indexed: kick indexing off now so RAG retrieval catches up. The technical
-            // outcome lands in the server log and the document-status record.
+            // Not indexed (or indexing failed): kick indexing off now so RAG retrieval catches up.
+            // The technical outcome lands in the server log and the document-status record.
             var pathForIndex = physicalPath;
             var courseIdForIndex = courseId;
             var moduleIdForIndex = moduleId;

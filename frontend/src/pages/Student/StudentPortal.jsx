@@ -5581,9 +5581,10 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       style={{
         display: "flex",
         flexDirection: "column",
-        minHeight: "100vh",
-        height: activeTab === "coach" ? "100vh" : undefined,
-        overflow: activeTab === "coach" ? "hidden" : undefined,
+        // Fixed-height shell: top bar and bottom nav stay put, only the
+        // content area between them scrolls.
+        height: "100dvh",
+        overflow: "hidden",
         backgroundColor: "var(--bg-canvas)",
         maxWidth: activeTab === "coach" ? "1040px" : "720px",
         margin: "0 auto",
@@ -5669,7 +5670,7 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
           flex: 1,
           padding: activeTab === "coach" ? "6px 14px 0" : "18px 20px",
           overflowY: activeTab === "coach" ? "hidden" : "auto",
-          paddingBottom: activeTab === "coach" ? "56px" : "80px",
+          paddingBottom: activeTab === "coach" ? "6px" : "24px",
           display: activeTab === "coach" ? "flex" : "block",
           flexDirection: activeTab === "coach" ? "column" : undefined,
           minHeight: 0,
@@ -5865,13 +5866,8 @@ export default function StudentPortal({ user, onLogout, onSwitchRole }) {
       {/* Bottom Navigation */}
       <div
         style={{
-          position: "fixed",
-          bottom: 0,
-          left: "50%",
-          transform: "translateX(-50%)",
+          flexShrink: 0,
           width: "100%",
-          maxWidth: activeTab === "coach" ? "1040px" : "720px",
-          transition: "max-width 0.2s ease",
           background: "var(--bg-surface)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
