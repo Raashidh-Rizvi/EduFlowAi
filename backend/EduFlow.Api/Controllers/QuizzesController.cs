@@ -1803,10 +1803,12 @@ public class QuizzesController : BaseApiController
         }
 
         string? state = null;
+        string? failureReason = null;
         try
         {
             using var doc = JsonDocument.Parse(status.Body);
             if (doc.RootElement.TryGetProperty("state", out var st)) state = st.GetString();
+            if (doc.RootElement.TryGetProperty("error", out var er) && er.ValueKind == JsonValueKind.String) failureReason = er.GetString();
             if (doc.RootElement.TryGetProperty("reindexRecommended", out var ri) && ri.ValueKind == JsonValueKind.True)
             {
                 Logger.LogWarning("document_embedding_mismatch file={File}; re-index recommended before relying on RAG retrieval.",
@@ -1828,8 +1830,8 @@ public class QuizzesController : BaseApiController
 
         if (string.Equals(state, "FAILED", StringComparison.OrdinalIgnoreCase))
         {
-            Logger.LogWarning("generate_ai_quiz document_failed requestId={RequestId} file={File}",
-                HttpContext.TraceIdentifier, fileName);
+            Logger.LogWarning("generate_ai_quiz document_failed requestId={RequestId} file={File} reason={Reason}",
+                HttpContext.TraceIdentifier, fileName, failureReason);
             return UnprocessableEntity(AiError("DOCUMENT_EXTRACTION_FAILED",
                 "Document processing failed. We could not prepare this PDF for AI generation. Please try uploading the file again."));
         }
