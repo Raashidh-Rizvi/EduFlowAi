@@ -57,6 +57,99 @@ import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes, deleteGene
 import { mapAiError } from '../../utils/aiErrors';
 import AiProviderPicker from '../../components/common/AiProviderPicker';
 
+// ── MATCHING QUESTION HELPERS ───────────────────────────────────────────────
+// Pairs are stored in metadataJson.matchingPairs (an array, or a legacy JSON string).
+// The grading key is "left -> right; left2 -> right2" (see MatchingEvaluator).
+const parseQuestionMeta = (q) => {
+  if (q?.metadataJson && typeof q.metadataJson === 'object') return q.metadataJson;
+  try { return JSON.parse(q?.metadataJson || '{}') || {}; } catch { return {}; }
+};
+
+const parseMatchingAnswer = (answer) =>
+  String(answer || '')
+    .split(/[;\n]/)
+    .map(part => part.split('->'))
+    .filter(bits => bits.length === 2 && bits[0].trim() && bits[1].trim())
+    .map(([left, right]) => ({ left: left.trim(), right: right.trim() }));
+
+const readMatchingPairs = (q) => {
+  let pairs = parseQuestionMeta(q).matchingPairs;
+  if (typeof pairs === 'string') {
+    try { pairs = JSON.parse(pairs); } catch { pairs = null; }
+  }
+  if (Array.isArray(pairs) && pairs.length > 0) {
+    return pairs.map(p => ({ left: String(p?.left || ''), right: String(p?.right || '') }));
+  }
+  return parseMatchingAnswer(q?.correctAnswer);
+};
+
+const matchingPairsToAnswer = (pairs) =>
+  (pairs || [])
+    .filter(p => p.left.trim() && p.right.trim())
+    .map(p => `${p.left.trim()} -> ${p.right.trim()}`)
+    .join('; ');
+
+// Options shown to learners: the right-hand values, rotated so order doesn't give the answer away.
+const matchingPairsToOptions = (pairs) => {
+  const rights = (pairs || []).map(p => p.right.trim()).filter(Boolean);
+  return rights.length > 1 ? [...rights.slice(1), rights[0]] : rights;
+};
+
+const withMatchingPairs = (q, pairs) => ({
+  ...q,
+  matchingPairs: pairs,
+  correctAnswer: matchingPairsToAnswer(pairs),
+  options: matchingPairsToOptions(pairs)
+});
+
+function MatchingPairsEditor({ pairs, onChange }) {
+  const list = pairs || [];
+  const update = (i, field, value) => onChange(list.map((p, j) => (j === i ? { ...p, [field]: value } : p)));
+  const inputStyle = {
+    flex: 1,
+    minWidth: 0,
+    padding: '8px 10px',
+    backgroundColor: 'var(--bg-canvas)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: 'var(--radius-xs)',
+    color: 'var(--text-main)',
+    fontSize: '13px',
+    fontFamily: 'inherit'
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+        Matching Pairs (term → correct match):
+      </label>
+      {list.length === 0 && (
+        <span style={{ fontSize: '12px', color: '#F59E0B' }}>No pairs yet. Add at least 2 pairs.</span>
+      )}
+      {list.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <input value={p.left} placeholder="Term" onChange={e => update(i, 'left', e.target.value)} style={inputStyle} />
+          <span style={{ color: '#10B981', fontWeight: '700' }}>→</span>
+          <input value={p.right} placeholder="Correct match" onChange={e => update(i, 'right', e.target.value)} style={{ ...inputStyle, color: '#10B981', fontWeight: '600' }} />
+          <button
+            type="button"
+            onClick={() => onChange(list.filter((_, j) => j !== i))}
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '16px' }}
+            title="Remove pair"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...list, { left: '', right: '' }])}
+        style={{ alignSelf: 'flex-start', border: '1px dashed var(--border-subtle)', background: 'transparent', cursor: 'pointer', color: 'var(--primary)', fontSize: '12px', fontWeight: '700', padding: '6px 10px', borderRadius: 'var(--radius-xs)' }}
+      >
+        + Add pair
+      </button>
+    </div>
+  );
+}
+
 export default function Courses({ currentUser, initialCourseId, onCourseChange }) {
   return currentUser?.role === 'Admin'
     ? <AdminCourseManagement />
@@ -718,17 +811,21 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
           if (q.metadataJson && typeof q.metadataJson === 'object') return q.metadataJson;
           try { return JSON.parse(q.metadataJson || '{}') || {}; } catch { return {}; }
         };
-        questions = res.questions.map((q, idx) => ({
-          id: q.id || `q-item-${idx + 1}`,
-          prompt: q.prompt,
-          type: questionTypeName(q.type),
-          options: q.options || [],
-          correctAnswer: q.correctAnswer || '',
-          explanation: q.explanation || '',
-          points: q.points || 10,
-          slideCitation: readMeta(q).slideCitation || q.slideCitation || null,
-          markingScheme: readMeta(q).markingScheme || q.markingScheme || ''
-        }));
+        questions = res.questions.map((q, idx) => {
+          const type = questionTypeName(q.type);
+          return {
+            id: q.id || `q-item-${idx + 1}`,
+            prompt: q.prompt,
+            type,
+            options: q.options || [],
+            correctAnswer: q.correctAnswer || '',
+            explanation: q.explanation || '',
+            points: q.points || 10,
+            slideCitation: readMeta(q).slideCitation || q.slideCitation || null,
+            markingScheme: readMeta(q).markingScheme || q.markingScheme || '',
+            matchingPairs: type === 'Matching' ? readMatchingPairs(q) : undefined
+          };
+        });
 
         setGeneratedDraft({
           title: `${aiQuizType === 'BossBattle' ? '👹 Boss Battle' : aiQuizType === 'Remediation' ? '🎯 Recovery Quiz' : '⚡ SlideQuest Quiz'} : ${aiQuizScope.moduleTitle}`,
@@ -825,7 +922,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
       metadataJson: JSON.stringify({
         slideCitation: q.slideCitation,
         markingScheme: q.markingScheme,
-        questionType: q.type
+        questionType: q.type,
+        ...(q.type === 'Matching' ? { matchingPairs: q.matchingPairs || [] } : {})
       })
     }));
 
@@ -1003,7 +1101,8 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
             explanation: q.explanation || '',
             points: q.points || 10,
             slideCitation: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).slideCitation : null; } catch { return null; } })(),
-            markingScheme: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).markingScheme : null; } catch { return null; } })()
+            markingScheme: (() => { try { return q.metadataJson ? JSON.parse(q.metadataJson).markingScheme : null; } catch { return null; } })(),
+            matchingPairs: questionTypeName(q.type) === 'Matching' ? readMatchingPairs(q) : undefined
           })));
         }
       } catch (err) {
@@ -1109,7 +1208,12 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
             explanation: q.explanation || '',
             points: Number(q.points) || 10,
             orderIndex: idx + 1,
-            metadataJson: JSON.stringify({ slideCitation: q.slideCitation, markingScheme: q.markingScheme, questionType: q.type })
+            metadataJson: JSON.stringify({
+              slideCitation: q.slideCitation,
+              markingScheme: q.markingScheme,
+              questionType: q.type,
+              ...(q.type === 'Matching' ? { matchingPairs: q.matchingPairs || [] } : {})
+            })
           }))
         });
         showToast(`✅ Quiz "${newTitle}" updated${oldTitle !== newTitle ? ` (renamed from "${oldTitle}")` : ''}!`);
@@ -1147,7 +1251,15 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
       ...assessmentObj,
       attemptId,
       moduleTitle: mod?.title || currentCourse?.title || 'Curriculum',
-      questions
+      // The API sends numeric question types; the runner renders by type name.
+      questions: questions.map(q => {
+        const meta = parseQuestionMeta(q);
+        return {
+          ...q,
+          type: questionTypeName(q.type),
+          matchingLeft: Array.isArray(meta.matchingLeft) ? meta.matchingLeft : []
+        };
+      })
     });
     setRunnerCurrentIndex(0);
     setRunnerAnswers({});
@@ -3513,6 +3625,15 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                               }}
                             />
                           </div>
+                        ) : q.type === 'Matching' ? (
+                          <MatchingPairsEditor
+                            pairs={q.matchingPairs || []}
+                            onChange={pairs => setGeneratedDraft(prev => {
+                              const updatedQ = [...prev.questions];
+                              updatedQ[idx] = withMatchingPairs(updatedQ[idx], pairs);
+                              return { ...prev, questions: updatedQ };
+                            })}
+                          />
                         ) : q.options && q.options.length > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
@@ -3950,6 +4071,15 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                           }}
                         />
                       </div>
+                    ) : q.type === 'Matching' ? (
+                      <MatchingPairsEditor
+                        pairs={q.matchingPairs || []}
+                        onChange={pairs => setEditQuizQuestions(prev => {
+                          const updatedQ = [...prev];
+                          updatedQ[idx] = withMatchingPairs(updatedQ[idx], pairs);
+                          return updatedQ;
+                        })}
+                      />
                     ) : q.options && q.options.length > 0 ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <label style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>
@@ -4990,38 +5120,63 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                   )}
 
                   {/* Format 4: Matching */}
-                  {currentQ.type === 'Matching' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
-                      <label style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
-                        Match the architecture roles with their slide definition:
-                      </label>
-                      {(currentQ.options || []).map((opt, i) => {
-                        const isSelected = currentAnswer === opt;
-                        return (
+                  {currentQ.type === 'Matching' && (() => {
+                    const lefts = currentQ.matchingLeft || [];
+                    const chosen = Object.fromEntries(parseMatchingAnswer(currentAnswer).map(p => [p.left, p.right]));
+                    const setMatch = (left, right) => {
+                      const next = { ...chosen, [left]: right };
+                      handleRunnerAnswerChange(qId, lefts
+                        .filter(l => next[l])
+                        .map(l => `${l} -> ${next[l]}`)
+                        .join('; '));
+                    };
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+                        <label style={{ fontSize: '12.5px', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                          Match each term with its correct description:
+                        </label>
+                        {lefts.length === 0 && (
+                          <span style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>This matching question has no terms to match.</span>
+                        )}
+                        {lefts.map((left, i) => (
                           <div
                             key={i}
-                            onClick={() => handleRunnerAnswerChange(qId, opt)}
                             style={{
-                              padding: '12px 16px',
+                              padding: '10px 14px',
                               borderRadius: 'var(--radius-sm)',
-                              backgroundColor: isSelected ? 'var(--primary-soft)' : 'var(--bg-surface)',
-                              border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
-                              cursor: 'pointer',
+                              backgroundColor: 'var(--bg-surface)',
+                              border: chosen[left] ? '2px solid var(--primary)' : '1px solid var(--border-subtle)',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '12px',
-                              fontSize: '13px',
-                              color: 'var(--text-main)',
-                              fontWeight: isSelected ? '700' : '500'
+                              flexWrap: 'wrap'
                             }}
                           >
-                            <CheckSquare size={16} color={isSelected ? 'var(--primary)' : 'var(--text-muted)'} />
-                            <span>{opt}</span>
+                            <span style={{ flex: '1 1 160px', fontSize: '13px', fontWeight: '700', color: 'var(--text-main)' }}>{left}</span>
+                            <select
+                              value={chosen[left] || ''}
+                              onChange={e => setMatch(left, e.target.value)}
+                              style={{
+                                flex: '2 1 220px',
+                                padding: '10px 12px',
+                                borderRadius: 'var(--radius-sm)',
+                                border: '1px solid var(--border-card)',
+                                backgroundColor: 'var(--bg-canvas)',
+                                color: 'var(--text-main)',
+                                fontSize: '13px',
+                                fontWeight: '600'
+                              }}
+                            >
+                              <option value="">-- Choose match --</option>
+                              {(currentQ.options || []).map((opt, j) => (
+                                <option key={j} value={opt}>{opt}</option>
+                              ))}
+                            </select>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {/* Format 5: Short Answer / Typing */}
                   {currentQ.type === 'ShortAnswer' && (

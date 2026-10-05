@@ -1272,7 +1272,39 @@ public class QuizzesController : BaseApiController
 
                     if (qToken.TryGetProperty("matching_pairs", out var pairsArray) && pairsArray.ValueKind == JsonValueKind.Array)
                     {
-                        metadataDict["matchingPairs"] = pairsArray.ToString();
+                        var pairs = new List<Dictionary<string, string>>();
+                        foreach (var pair in pairsArray.EnumerateArray())
+                        {
+                            if (pair.ValueKind != JsonValueKind.Object) continue;
+                            var left = pair.TryGetProperty("left", out var lp) && lp.ValueKind == JsonValueKind.String ? lp.GetString()?.Trim() : null;
+                            var right = pair.TryGetProperty("right", out var rp) && rp.ValueKind == JsonValueKind.String ? rp.GetString()?.Trim() : null;
+                            if (!string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right))
+                            {
+                                pairs.Add(new Dictionary<string, string> { ["left"] = left!, ["right"] = right! });
+                            }
+                        }
+
+                        if (pairs.Count > 0)
+                        {
+                            metadataDict["matchingPairs"] = pairs;
+                            if (qType == QuestionType.Matching)
+                            {
+                                // Grading format expected by MatchingEvaluator: "left -> right; left2 -> right2"
+                                correct = string.Join("; ", pairs.Select(p => $"{p["left"]} -> {p["right"]}"));
+                                if (options.Count == 0)
+                                {
+                                    var rights = pairs.Select(p => p["right"]).ToList();
+                                    options = rights.Skip(1).Concat(rights.Take(1)).ToList();
+                                }
+                            }
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(explanation) || explanation == "AI Explanation")
+                    {
+                        explanation = !string.IsNullOrWhiteSpace(markingScheme) && markingScheme != "AI Explanation"
+                            ? markingScheme
+                            : $"Correct answer: {correct}.";
                     }
 
                     var question = new Question
@@ -1333,7 +1365,7 @@ public class QuizzesController : BaseApiController
                         matchedOptionTexts.Add(optionsList[fallbackIdx].OptionText);
                     }
 
-                    if (matchedOptionTexts.Count > 0)
+                    if (matchedOptionTexts.Count > 0 && qType != QuestionType.Matching)
                     {
                         question.CorrectAnswer = string.Join(", ", matchedOptionTexts);
                     }
@@ -2329,8 +2361,56 @@ public class QuizzesController : BaseApiController
             Difficulty: q.Difficulty,
             SourceContentId: null,
             LearningObjective: null,
-            MetadataJson: "{}",
+            MetadataJson: q.Type == QuestionType.Matching
+                ? JsonSerializer.Serialize(new { matchingLeft = ExtractMatchingLeftItems(q) })
+                : "{}",
             OptionDetails: null);
+    }
+
+    /// <summary>
+    /// Left-hand prompts of a matching question (no answers), read from the stored
+    /// matchingPairs metadata or, as a fallback, from the "left -> right" answer key.
+    /// </summary>
+    private static List<string> ExtractMatchingLeftItems(Question q)
+    {
+        var lefts = new List<string>();
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(q.MetadataJson) ? "{}" : q.MetadataJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("matchingPairs", out var pairs))
+            {
+                using var nested = pairs.ValueKind == JsonValueKind.String ? JsonDocument.Parse(pairs.GetString() ?? "[]") : null;
+                var arr = nested?.RootElement ?? pairs;
+                if (arr.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var p in arr.EnumerateArray())
+                    {
+                        if (p.ValueKind == JsonValueKind.Object
+                            && p.TryGetProperty("left", out var l) && l.ValueKind == JsonValueKind.String
+                            && !string.IsNullOrWhiteSpace(l.GetString()))
+                        {
+                            lefts.Add(l.GetString()!.Trim());
+                        }
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to the answer-key parse below.
+        }
+
+        if (lefts.Count == 0 && !string.IsNullOrWhiteSpace(q.CorrectAnswer))
+        {
+            foreach (var part in q.CorrectAnswer.Split(new[] { ';', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var sep = part.IndexOf("->", StringComparison.Ordinal);
+                if (sep > 0) lefts.Add(part[..sep].Trim());
+            }
+        }
+
+        return lefts;
     }
 
     private sealed record AnswerView(

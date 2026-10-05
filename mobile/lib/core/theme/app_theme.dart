@@ -12,6 +12,7 @@ class AppTheme {
   static const Color accent = Color(0xFFF43F5E); // Rose
   static const Color warning = Color(0xFFF59E0B); // Amber
   static const Color success = Color(0xFF10B981); // Emerald
+  static const Color error = Color(0xFFEF4444); // Red
 
   static const Color textMain = Color(0xFFF8FAFC);
   static const Color textMuted = Color(0xFF94A3B8);
@@ -62,7 +63,7 @@ class AppTheme {
           letterSpacing: -0.02,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: bgCard,
         elevation: 0,
         shape: RoundedRectangleBorder(

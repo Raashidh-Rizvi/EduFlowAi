@@ -90,7 +90,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => QuizScreen(
-          quizData: node,
+          quizId: (node['quizId'] ?? node['id'] ?? '').toString(),
+          quizTitle: node['title']?.toString(),
           onQuizCompleted: (earnedXp, earnedCoins) {
             setState(() {
               _studentProfile['totalXp'] += earnedXp;

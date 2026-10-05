@@ -845,6 +845,17 @@ class GeminiQuizGenerationService:
             if isinstance(pairs, list) and q_type == "MATCHING"
             else None
         )
+        if matching_pairs:
+            # Matching: answer key is "left -> right; ..." and options are the right-hand choices.
+            correct = "; ".join(f"{p['left']} -> {p['right']}" for p in matching_pairs)
+            options = [p["right"] for p in matching_pairs]
+            options = options[1:] + options[:1]
+
+        explanation = str(q.get("explanation") or "").strip()
+        if not explanation:
+            explanation = str(q.get("marking_scheme") or "").strip() or (
+                f"Correct answer: {correct}." if correct else ""
+            )
 
         try:
             points = int(q.get("points", 10))
@@ -860,7 +871,7 @@ class GeminiQuizGenerationService:
             options=options,
             correct_answer=correct or None,
             correct_index=correct_index,
-            explanation=str(q.get("explanation", "")).strip(),
+            explanation=explanation,
             marking_scheme=(str(q.get("marking_scheme")).strip() or None) if q.get("marking_scheme") else None,
             learning_objective=(str(q.get("learning_objective")).strip() or None) if q.get("learning_objective") else None,
             slide_citation=(str(q.get("slide_citation")).strip() or None) if q.get("slide_citation") else None,

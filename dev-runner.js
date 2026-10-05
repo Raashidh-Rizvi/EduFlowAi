@@ -93,8 +93,8 @@ const services = [
           color: '\x1b[33m', // Yellow
           cwd: path.join(__dirname, 'mobile'),
           cmd: flutterCmd,
-          args: ['run'],
-          url: 'Flutter Mobile/Desktop Application'
+          args: ['run', '-d', 'chrome'],
+          url: 'Flutter App in Chrome Browser'
         }
       ]
     : [])
