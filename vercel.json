@@ -5,17 +5,10 @@
       "root": "frontend",
       "framework": "vite",
       "buildCommand": "VITE_API_BASE_URL=/api npm run build",
-      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-    },
-    "backend": {
-      "root": "backend",
-      "entrypoint": "Dockerfile",
-      "bindings": [
+      "rewrites": [
         {
-          "type": "service",
-          "service": "ai-agent",
-          "format": "url",
-          "env": "AiService__BaseUrl"
+          "source": "/(.*)",
+          "destination": "/index.html"
         }
       ]
     },
@@ -26,9 +19,23 @@
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "backend" } },
-    { "source": "/uploads/(.*)", "destination": { "service": "backend" } },
-    { "source": "/health", "destination": { "service": "backend" } },
-    { "source": "/(.*)", "destination": { "service": "frontend" } }
+    {
+      "source": "/api/(.*)",
+      "destination": "http://159.13.63.98/api/$1"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "http://159.13.63.98/uploads/$1"
+    },
+    {
+      "source": "/health",
+      "destination": "http://159.13.63.98/health"
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    }
   ]
 }
