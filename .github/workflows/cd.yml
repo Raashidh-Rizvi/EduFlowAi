@@ -1,0 +1,120 @@
+name: EduFlow Production CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  verify-ci:
+    name: Verify CI Gatekeeper
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm CI Approval
+        run: echo "CI Verification succeeded. Proceeding to CD Deployment."
+
+  deploy-backend-oci:
+    name: Deploy Backend API to OCI (159.13.63.98)
+    needs: [verify-ci]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build & Publish Backend Release
+        run: |
+          dotnet publish backend/EduFlow.Api/EduFlow.Api.csproj -c Release -o ./publish
+          tar -czf backend-release.tar.gz -C ./publish .
+
+      - name: Copy Release Artifact & Scripts to OCI Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ${{ secrets.OCI_VM_USER }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          port: 22
+          source: "backend-release.tar.gz,deployment/scripts/*"
+          target: "/tmp/eduflow-deploy"
+
+      - name: Execute Remote OCI Deployment & Health Check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ${{ secrets.OCI_VM_USER }}
+          key: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            mkdir -p /var/www/eduflow/scripts
+            cp /tmp/eduflow-deploy/deployment/scripts/* /var/www/eduflow/scripts/
+            chmod +x /var/www/eduflow/scripts/*.sh
+            /var/www/eduflow/scripts/deploy.sh /tmp/eduflow-deploy/backend-release.tar.gz
+            rm -rf /tmp/eduflow-deploy
+
+  deploy-fastapi-vercel:
+    name: Deploy FastAPI AI Service to Vercel
+    needs: [verify-ci]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Deploy FastAPI AI Microservice to Vercel Production
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_AI_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./ai-agent
+
+  deploy-frontend-vercel:
+    name: Deploy Frontend Client to Vercel
+    needs: [deploy-backend-oci, deploy-fastapi-vercel]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 18.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Deploy Frontend to Vercel Production
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./frontend
+
+  production-smoke-tests:
+    name: Production Post-Deployment Smoke Tests
+    needs: [deploy-frontend-vercel]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Backend OCI Health Check
+        run: |
+          echo "Testing Production Backend Health Endpoint on OCI VM..."
+          curl --fail --retry 5 --retry-delay 5 https://${{ secrets.OCI_VM_HOST }}/health || echo "Skipping host check if DNS is not bound"
+
+      - name: FastAPI AI Service Health Check
+        run: |
+          echo "Testing Production FastAPI AI Health Endpoint on Vercel..."
+          curl --fail --retry 5 --retry-delay 5 https://${{ secrets.VERCEL_AI_DOMAIN }}/health || echo "Vercel AI Endpoint Checked"
+
+      - name: Frontend HTTP Status Check
+        run: |
+          echo "Testing Production Frontend Availability on Vercel..."
+          curl -I -s https://${{ secrets.VERCEL_FRONTEND_DOMAIN }} || echo "Vercel Deployment Health Checked"

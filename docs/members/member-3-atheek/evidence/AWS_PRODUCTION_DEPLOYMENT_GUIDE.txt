@@ -1,0 +1,362 @@
+===============================================================================
+EduFlow AI — AWS Production Architecture Guide
+From Localhost to AWS Cloud (S3 + RDS PostgreSQL pgvector + RAG)
+File: AWS_PRODUCTION_DEPLOYMENT_GUIDE.txt
+===============================================================================
+
+This guide explains in complete detail:
+1. How Instructor PDF uploads go to AWS S3 instead of local disk.
+2. How the Python RAG service streams the PDF from S3 into memory.
+3. How Option B (AWS RDS PostgreSQL with pgvector) works.
+4. EXACTLY what code changes in the .NET backend and Python service, and WHY.
+
+===============================================================================
+PART 1: THE ARCHITECTURE SHIFT (LOCAL VS. AWS PRODUCTION)
+===============================================================================
+
+CURRENT LOCAL SETUP:
+--------------------
+[ Instructor Uploads PDF ]
+          │
+          ▼
+Saved to Local Hard Drive: backend/EduFlow.Api/wwwroot/uploads/pdfs/
+          │
+          ▼
+parser.py reads local path: C:\...\lecture4.pdf
+          │
+          ▼
+Saved to local ChromaDB folder: ai-agent/data/chroma_db/
+
+
+AWS PRODUCTION SETUP:
+---------------------
+[ Instructor Uploads PDF ]
+          │
+          ▼
+Saved to AWS S3 Bucket: s3://eduflow-course-materials/it3012/lecture4.pdf
+          │
+          ▼ (Sends S3 URL or Key to Python RAG)
+parser.py streams bytes from S3 into RAM using boto3 (Zero disk needed!)
+          │
+          ▼
+Saved to AWS RDS PostgreSQL using pgvector (Inside your main database!)
+
+===============================================================================
+PART 2: INSTRUCTOR UPLOADS TO AWS S3 & HOW RAG GETS IT
+===============================================================================
+
+Step 2.1: Instructor Uploads the Lecture Slides
+-----------------------------------------------
+1. Instructor opens the web browser and attaches 'IT3012_Lecture_04.pdf'.
+2. The request hits the .NET backend endpoint: POST /api/courses/{id}/modules.
+3. Instead of saving to wwwroot/, the .NET backend streams the file to AWS S3:
+   - Bucket: eduflow-course-materials
+   - Key: courses/it3012/modules/mod-4/IT3012_Lecture_04.pdf
+
+Step 2.2: .NET Calls Python RAG Microservice
+--------------------------------------------
+After S3 confirms upload success, .NET notifies Python:
+POST http://ai-service:8000/api/v1/rag/index-pdf
+{
+  "file_path": "s3://eduflow-course-materials/courses/it3012/modules/mod-4/IT3012_Lecture_04.pdf",
+  "course_id": "course-it3012",
+  "module_id": "mod-4"
+}
+
+Step 2.3: Python parser.py Reads Directly From S3 (Streaming in RAM)
+-------------------------------------------------------------------
+Python does NOT need to save the file to a hard drive! 
+It streams the raw binary bytes from S3 directly into RAM using io.BytesIO:
+
+```python
+import io
+import boto3
+from pypdf import PdfReader
+
+# 1. Connect to AWS S3
+s3_client = boto3.client('s3')
+
+# 2. Download bytes into RAM
+s3_object = s3_client.get_object(
+    Bucket="eduflow-course-materials",
+    Key="courses/it3012/modules/mod-4/IT3012_Lecture_04.pdf"
+)
+pdf_stream = io.BytesIO(s3_object['Body'].read())
+
+# 3. pypdf reads the stream immediately!
+reader = PdfReader(pdf_stream)
+for idx, page in enumerate(reader.pages):
+    text = page.extract_text()
+    print(f"Read Slide {idx + 1}")
+```
+
+WHY THIS IS SO POWERFUL:
+- Zero local hard drive storage is consumed on your cloud container.
+- Super fast because it all happens in RAM.
+- Safe for AWS ECS, AWS Lambda, or Docker containers that have no permanent disk!
+
+===============================================================================
+PART 3: OPTION B DEEP-DIVE — AWS RDS POSTGRESQL WITH PGVECTOR
+===============================================================================
+
+In local development, we use ChromaDB saving files in data/chroma_db/.
+In AWS production, you can store your vectors directly inside your PostgreSQL 
+database (AWS RDS PostgreSQL or NeonDB) using the pgvector extension!
+
+Why is Option B (pgvector) the Best Enterprise Architecture?
+------------------------------------------------------------
+1. ONE SINGLE DATABASE: You don't need a separate vector database. Your Users, 
+   Courses, Quizzes, AND Slide Vectors all live in the same PostgreSQL database!
+2. ACID TRANSACTIONS: If a course module is deleted, all its vector embeddings 
+   are deleted automatically via standard CASCADE foreign keys.
+3. ENTERPRISE BACKUPS: Standard AWS RDS automated daily snapshots back up both 
+   your app tables AND your vector embeddings in one click.
+
+How pgvector Works in PostgreSQL:
+---------------------------------
+
+Step 3.1: Enable the Vector Extension in PostgreSQL
+Run this SQL once on your database:
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+Step 3.2: Create the Vector Table in PostgreSQL
+```sql
+CREATE TABLE course_slide_embeddings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id VARCHAR(100) NOT NULL,
+    module_id VARCHAR(100),
+    page_number INT NOT NULL,
+    slide_title VARCHAR(255),
+    source_file VARCHAR(255) NOT NULL,
+    chunk_text TEXT NOT NULL,
+    
+    -- 768 dimensions for Google text-embedding-004
+    embedding vector(768) NOT NULL,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Step 3.3: Create an HNSW Index for Lightning-Fast Search
+HNSW (Hierarchical Navigable Small World) allows PostgreSQL to search through 
+100,000 slide vectors in under 2 milliseconds:
+```sql
+CREATE INDEX ON course_slide_embeddings 
+USING hnsw (embedding vector_cosine_ops);
+```
+
+Step 3.4: Semantic Vector Search Query in PostgreSQL
+When a student asks a question, Python generates the 768-number question vector 
+and executes this simple SQL query:
+```sql
+SELECT 
+    page_number,
+    slide_title,
+    source_file,
+    chunk_text,
+    1 - (embedding <=> '[0.142, -0.831, 0.412, ...]') AS relevance_score
+FROM course_slide_embeddings
+WHERE course_id = 'course-it3012'
+ORDER BY embedding <=> '[0.142, -0.831, 0.412, ...]' ASC
+LIMIT 3;
+```
+Note: `<=>` is the pgvector Cosine Distance operator! 
+(1 - distance = exact cosine similarity score).
+
+===============================================================================
+PART 4: WHAT CODE WE WANT TO CHANGE IN OUR BACKEND AND WHY
+===============================================================================
+
+Below are the exact code modifications for production:
+
+-------------------------------------------------------------------------------
+CHANGE 1: .NET BACKEND (CoursesController.cs)
+-------------------------------------------------------------------------------
+WHERE:
+File: backend/EduFlow.Api/Controllers/CoursesController.cs
+
+WHAT CHANGES:
+- Remove local FileStream saving to Path.Combine(webRoot, "uploads", "pdfs").
+- Add AmazonS3Client to upload directly to S3.
+
+CODE BEFORE (Local Disk):
+```csharp
+var physicalPath = Path.Combine(webRoot, "uploads", "pdfs", safeFileName);
+using (var stream = new FileStream(physicalPath, FileMode.Create))
+{
+    await file.CopyToAsync(stream);
+}
+module.PdfUrl = $"/uploads/pdfs/{safeFileName}";
+```
+
+CODE AFTER (AWS S3 Production):
+```csharp
+// 1. Upload directly to S3
+var s3Key = $"courses/{courseId}/modules/{moduleId}/{safeFileName}";
+var putRequest = new PutObjectRequest
+{
+    BucketName = _configuration["AWS:S3BucketName"], // "eduflow-course-materials"
+    Key = s3Key,
+    InputStream = file.OpenReadStream(),
+    ContentType = "application/pdf"
+};
+await _s3Client.PutObjectAsync(putRequest);
+
+// 2. Store permanent S3 URL in database
+module.PdfUrl = $"s3://{_configuration["AWS:S3BucketName"]}/{s3Key}";
+
+// 3. Notify Python RAG microservice with the S3 path
+var ragPayload = new {
+    file_path = module.PdfUrl,
+    course_id = courseId.ToString(),
+    module_id = moduleId.ToString()
+};
+await _httpClient.PostAsJsonAsync("http://ai-service:8000/api/v1/rag/index-pdf", ragPayload);
+```
+
+WHY WE CHANGE THIS:
+In cloud platforms (AWS ECS, Kubernetes, Heroku, Azure App Service), container 
+hard drives are EPHEMERAL. If a container restarts or scales to 2 instances, 
+local files in wwwroot are completely erased! AWS S3 guarantees 99.999999999% 
+durability and is accessible by all backend instances.
+
+-------------------------------------------------------------------------------
+CHANGE 2: PYTHON RAG (parser.py)
+-------------------------------------------------------------------------------
+WHERE:
+File: ai-agent/rag/parser.py
+
+WHAT CHANGES:
+Add an S3 branch in DocumentParser.parse():
+
+```python
+import io
+import os
+import boto3
+from pypdf import PdfReader
+
+@staticmethod
+def parse(file_path: str) -> List[ParsedPage]:
+    # 1. AWS S3 Cloud Path Check
+    if file_path.startswith("s3://"):
+        # Parse bucket and key (e.g. s3://bucket-name/key/path.pdf)
+        parts = file_path.replace("s3://", "").split("/", 1)
+        bucket_name = parts[0]
+        s3_key = parts[1]
+
+        # Stream directly from S3
+        s3 = boto3.client('s3')
+        obj = s3.get_object(Bucket=bucket_name, Key=s3_key)
+        stream = io.BytesIO(obj['Body'].read())
+        reader = PdfReader(stream)
+        
+        pages = []
+        for idx, page in enumerate(reader.pages):
+            text = (page.extract_text() or "").strip()
+            title = text.splitlines()[0] if text else f"Slide {idx + 1}"
+            pages.append(ParsedPage(page_number=idx + 1, title=title[:100], text=text))
+        return pages
+
+    # 2. Local File Fallback (Still works on your laptop!)
+    elif os.path.exists(file_path):
+        return DocumentParser._parse_pdf(file_path)
+```
+
+WHY WE CHANGE THIS:
+This single 15-line update allows the exact same Python microservice to run on 
+your laptop in development AND in AWS production without needing separate builds!
+
+-------------------------------------------------------------------------------
+CHANGE 3: VECTOR STORAGE (vector_store.py)
+-------------------------------------------------------------------------------
+WHERE:
+File: ai-agent/rag/vector_store.py
+
+WHAT CHANGES:
+Switch vector store from local ChromaDB to PostgreSQL pgvector:
+
+```python
+import os
+import psycopg2
+from pgvector.psycopg2 import register_vector
+
+class PgVectorStore:
+    def __init__(self):
+        self.conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        register_vector(self.conn)
+
+    def add_chunks(self, chunks):
+        with self.conn.cursor() as cur:
+            for c in chunks:
+                # 1. Generate 768-dim embedding using Google text-embedding-004
+                vector = self.embed_func(c.text)
+                
+                # 2. Insert into PostgreSQL
+                cur.execute("""
+                    INSERT INTO course_slide_embeddings 
+                    (course_id, module_id, page_number, slide_title, source_file, chunk_text, embedding)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (c.course_id, c.module_id, c.page_number, c.title, c.source_file, c.text, vector))
+            self.conn.commit()
+
+    def search(self, query, course_id, top_k=3):
+        query_vector = self.embed_func(query)
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT page_number, slide_title, source_file, chunk_text,
+                       1 - (embedding <=> %s) AS similarity
+                FROM course_slide_embeddings
+                WHERE course_id = %s
+                ORDER BY embedding <=> %s ASC
+                LIMIT %s;
+            """, (query_vector, course_id, query_vector, top_k))
+            return cur.fetchall()
+```
+
+WHY WE CHANGE THIS:
+Instead of managing ChromaDB on disk, all course vectors live securely inside 
+your managed AWS RDS database alongside student enrollments and course data.
+
+===============================================================================
+PART 5: ENVIRONMENT VARIABLES SUMMARY (.env)
+===============================================================================
+
+In Production (AWS), your .env will look like this:
+
+```env
+# AWS Cloud Configuration
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=eduflow-course-materials
+
+# Database (AWS RDS PostgreSQL with pgvector)
+DATABASE_URL=postgresql://postgres:password@eduflow-db.rds.amazonaws.com:5432/eduflow_prod
+
+# Google Embeddings (Zero RAM on AWS)
+EMBEDDING_PROVIDER=gemini
+GEMINI_API_KEY=AIzaSy...
+
+# Ultra-Fast Chat Engine (Sub-second student answers)
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+===============================================================================
+PART 6: HOW TO EXPLAIN THIS IN YOUR VIVA OR CLOUD EXAM
+===============================================================================
+
+Examiner Question: "How would you migrate this local RAG setup to AWS Production?"
+
+Your 3-Point Answer:
+1. "In production, file storage moves from local wwwroot to AWS S3. The .NET 
+    backend streams uploaded lecture PDFs to S3 using the AWS SDK."
+2. "Our Python parser is cloud-ready: instead of reading from disk, it streams 
+    PDF bytes directly from S3 into memory using boto3 and io.BytesIO, eliminating 
+    any need for local disk storage."
+3. "For vector storage, we enable the pgvector extension on our existing AWS 
+    RDS PostgreSQL database. Using HNSW indexes, PostgreSQL performs cosine 
+    similarity searches directly inside our database, unifying relational data 
+    and vector search into a single managed service."
+===============================================================================

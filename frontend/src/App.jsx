@@ -1,149 +1,474 @@
-import React, { useState } from 'react';
-import Sidebar from './components/layout/Sidebar';
-import Navbar from './components/layout/Navbar';
-import Dashboard from './pages/Dashboard/Dashboard';
-import AdminManagement from './pages/Admin/AdminManagement';
-import AiReview from './pages/AiReview/AiReview';
-import Courses from './pages/Courses/Courses';
-import Assessments from './pages/Assessments/Assessments';
-import Gamification from './pages/Gamification/Gamification';
-import Insights from './pages/Insights/Insights';
-import Communications from './pages/Communications/Communications';
-import Login from './pages/Auth/Login';
-import StudentPortal from './pages/Student/StudentPortal';
-import { authService } from './services/authService';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import Sidebar from "./components/layout/Sidebar";
+import Navbar from "./components/layout/Navbar";
+import MarketplaceLayout from "./components/layout/MarketplaceLayout";
+import Dashboard from "./pages/Dashboard/Dashboard";
+import AdminManagement from "./pages/Admin/AdminManagement";
+import PlatformSummary from "./pages/Admin/PlatformSummary";
+import AiReview from "./pages/AiReview/AiReview";
+import Courses from "./pages/Courses/Courses";
+import Assessments from "./pages/Assessments/Assessments";
+import Gamification from "./pages/Gamification/Gamification";
+import Insights from "./pages/Insights/Insights";
+import Communications from "./pages/Communications/Communications";
+import SupportDesk from "./pages/Admin/SupportDesk";
+import AuditLogs from "./pages/Admin/AuditLogs";
+import AdminProfile from "./pages/Admin/AdminProfile";
+import Login from "./pages/Auth/Login";
+import HomePage from "./pages/Marketplace/HomePage";
+import CatalogPage from "./pages/Marketplace/CatalogPage";
+import CourseDetailsPage from "./pages/Marketplace/CourseDetailsPage";
+import InstructorProfilePage from "./pages/Marketplace/InstructorProfilePage";
+import PolicyPage from "./pages/Marketplace/PolicyPage";
+import LearnEntry from "./pages/Student/LearnEntry";
+import StudentPortal from "./pages/Student/StudentPortal";
+import InstructorPortal from "./pages/Instructor/InstructorPortal";
+import EnrollmentRequestsView from "./pages/Instructor/views/EnrollmentRequestsView";
+import { authService } from "./services/authService";
+import instructorService from "./services/instructorService";
+import api from "./services/api";
+import { AuthProvider } from "./context/AuthContext";
+import { ShieldAlert } from "lucide-react";
+import ProtectedRoute from "./components/common/ProtectedRoute";
+import GlobalErrorModal from "./components/common/GlobalErrorModal";
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [unreadNotifications] = useState(3);
-  const [pendingAiProposals] = useState(2);
+function AppRoutes() {
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const [currentUser, setCurrentUser] = useState(() => {
+  const [activeTab, setActiveTabState] = useState(() => {
     try {
-      const stored = localStorage.getItem('eduflow_user');
-      return stored ? JSON.parse(stored) : null;
+      return sessionStorage.getItem("eduflow_active_tab") || "dashboard";
     } catch {
-      return null;
+      return "dashboard";
     }
   });
 
-  const handleLogout = () => {
-    authService.logout();
-    localStorage.removeItem('eduflow_user');
-    setCurrentUser(null);
+  const setActiveTab = (tab) => {
+    try {
+      sessionStorage.setItem("eduflow_active_tab", tab);
+    } catch {}
+    setActiveTabState(tab);
   };
 
-  const handleLoginSuccess = (user) => {
-    localStorage.setItem('eduflow_user', JSON.stringify(user));
-    setCurrentUser(user);
-    // Reset tab to default for role
-    if (user.role === 'Admin' || user.role === 'Instructor') {
-      setActiveTab('dashboard');
+  // Real unread count from GET /notifications/user (0 until the API reports otherwise).
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [pendingAiProposals] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eduflow_ai_proposals_dynamic");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed))
+          return parsed.filter((p) => p.status === "PendingInstructorApproval")
+            .length;
+      }
+    } catch {
+      return 0;
+    }
+    return 0;
+  });
+
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // Instructor/Admin console: live badge count of enrollment requests still awaiting
+  // a decision, refreshed whenever the console mounts and after every decision.
+  const [pendingEnrollments, setPendingEnrollments] = useState(0);
+
+  const refreshPendingEnrollments = async () => {
+    if (
+      !currentUser ||
+      (currentUser.role !== "Instructor" && currentUser.role !== "Admin")
+    ) {
+      setPendingEnrollments(0);
+      return;
+    }
+    try {
+      const summary = await instructorService.getEnrollmentRequestSummary();
+      setPendingEnrollments(Number(summary?.pending) || 0);
+    } catch {
+      setPendingEnrollments(0);
     }
   };
 
-  // ── Not logged in ──────────────────────────────────────────────────────────
-  if (!currentUser) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+  useEffect(() => {
+    refreshPendingEnrollments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  // Unread badge: counted from the signed-in user's real notifications
+  // (GET /notifications/user), refreshed on boot and on window focus instead
+  // of a hard-coded number.
+  const refreshUnreadNotifications = async () => {
+    if (!currentUser || !localStorage.getItem("eduflow_token")) {
+      setUnreadNotifications(0);
+      return;
+    }
+    try {
+      const response = await api.get("/notifications/user");
+      const items = Array.isArray(response?.data) ? response.data : [];
+      setUnreadNotifications(items.filter((n) => !n?.isRead).length);
+    } catch {
+      setUnreadNotifications((prev) => prev);
+    }
+  };
+
+  useEffect(() => {
+    refreshUnreadNotifications();
+    const onFocus = () => refreshUnreadNotifications();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
+
+  // Stored metadata never establishes identity. Only a successful /auth/me
+  // response may restore a session on boot. No protected view renders meanwhile.
+  const [sessionChecked, setSessionChecked] = useState(false);
+
+  useEffect(() => {
+    if (sessionChecked) return;
+    let alive = true;
+    authService
+      .restoreSession()
+      .then((profile) => {
+        if (alive) setCurrentUser(profile);
+      })
+      .finally(() => {
+        if (alive) setSessionChecked(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionChecked]);
+
+  const nextPath = useMemo(() => {
+    const requested = new URLSearchParams(location.search).get("next");
+    return requested && requested.startsWith("/") && !requested.startsWith("//") && !requested.startsWith("/login")
+      ? requested : "/console";
+  }, [location.search]);
+
+  useEffect(() => {
+    const invalidate = () => setCurrentUser(null);
+    const update = event => setCurrentUser(event.detail);
+    window.addEventListener('eduflow-session-cleared', invalidate);
+    window.addEventListener('eduflow-session-updated', update);
+    return () => {
+      window.removeEventListener('eduflow-session-cleared', invalidate);
+      window.removeEventListener('eduflow-session-updated', update);
+    };
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    // Revokes the refresh token server-side, then clears every local credential.
+    await authService.logout();
+    setCurrentUser(null);
+    navigate("/login", { replace: true });
+  }, [navigate]);
+
+  const handleLoginSuccess = useCallback(
+    (user) => {
+      // `user` is the normalized profile returned by authService (already persisted
+      // together with the JWT + refresh token by the service layer).
+      setCurrentUser(user);
+      if (user.role === "Admin" || user.role === "Instructor")
+        setActiveTab("dashboard");
+      navigate(nextPath, { replace: true });
+    },
+    [navigate, nextPath],
+  );
+
+  const authValue = useMemo(
+    () => ({
+      currentUser,
+      onLogout: handleLogout,
+      onLoginSuccess: handleLoginSuccess,
+    }),
+    [currentUser, handleLogout, handleLoginSuccess],
+  );
+
+  // Render nothing but a shell until the stored session has been re-validated
+  // against the backend (prevents a stale/tampered cached role from flashing).
+  if (!sessionChecked) {
+    return <div className="fade-in" style={{ minHeight: "100vh" }} />;
   }
 
-  // ── Student Portal (completely separate experience) ────────────────────────
-  if (currentUser.role === 'Student') {
-    return (
-      <StudentPortal
-        user={currentUser}
-        onLogout={handleLogout}
-      />
-    );
-  }
+  // ── Console (instructor / admin / student workspace) ──────────────────────
+  const consoleView = (() => {
+    if (!currentUser) return <Navigate to="/login" replace />;
 
-  // ── Instructor / Admin Console ─────────────────────────────────────────────
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
-      {/* Sidebar — dynamically filtered by role */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        pendingCount={pendingAiProposals}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-      />
-
-      {/* Main Content */}
-      <main style={{
-        flex: 1,
-        padding: '28px 36px',
-        overflowY: 'auto',
-        maxHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        <Navbar
-          activeTab={activeTab}
-          unreadNotifications={unreadNotifications}
-          currentUser={currentUser}
+    if (currentUser.role === "Student") {
+      return (
+        <StudentPortal
+          user={currentUser}
           onLogout={handleLogout}
         />
+      );
+    }
 
-        <div style={{ flex: 1, paddingBottom: '32px' }}>
-          {activeTab === 'dashboard' && (
-            <Dashboard onNavigateTo={(tab) => setActiveTab(tab)} />
-          )}
+    if (currentUser.role === "Instructor") {
+      return (
+        <InstructorPortal
+          user={currentUser}
+          onLogout={handleLogout}
+          onLogoClick={() => navigate("/")}
+        />
+      );
+    }
 
-          {/* Admin-only page */}
-          {activeTab === 'admin' && currentUser.role === 'Admin' && (
-            <AdminManagement />
-          )}
-          {activeTab === 'admin' && currentUser.role !== 'Admin' && (
-            <AccessDenied requiredRole="Admin" />
-          )}
+    // Admin is the only role that reaches the governance console. Any other
+    // (unexpected) role is denied rather than silently granted console access.
+    if (currentUser.role !== "Admin") {
+      return <AccessDenied requiredRole="Administrator" />;
+    }
 
-          {/* Instructor + Admin pages */}
-          {activeTab === 'ai-review' && (
-            <AiReview />
-          )}
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "row",
+          minHeight: "100vh",
+          width: "100%",
+          backgroundColor: "var(--bg-canvas)",
+        }}
+      >
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          pendingCount={pendingAiProposals}
+          pendingEnrollments={pendingEnrollments}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onLogoClick={() => navigate("/")}
+        />
 
-          {activeTab === 'courses' && (
-            <Courses currentUser={currentUser} />
-          )}
+        <main
+          className="portal-main"
+          style={{
+            flex: 1,
+            padding: "24px 32px",
+            overflowY: "auto",
+            maxHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: "1440px",
+              margin: "0 auto",
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <Navbar
+              activeTab={activeTab}
+              unreadNotifications={unreadNotifications}
+              currentUser={currentUser}
+              onLogout={handleLogout}
+              onNavigate={setActiveTab}
+            />
 
-          {activeTab === 'assessments' && (
-            <Assessments currentUser={currentUser} />
-          )}
+            <div style={{ flex: 1, paddingBottom: "32px" }}>
+              {activeTab === "dashboard" &&
+                (currentUser.role === "Admin" ? (
+                  <PlatformSummary
+                    onNavigateTo={(tab) => setActiveTab(tab)}
+                    currentUser={currentUser}
+                  />
+                ) : (
+                  <Dashboard
+                    onNavigateTo={(tab) => setActiveTab(tab)}
+                    currentUser={currentUser}
+                  />
+                ))}
 
-          {activeTab === 'gamification' && (
-            <Gamification />
-          )}
+              {activeTab === "admin" && currentUser.role === "Admin" && (
+                <AdminManagement />
+              )}
+              {activeTab === "admin" && currentUser.role !== "Admin" && (
+                <AccessDenied requiredRole="Admin" />
+              )}
 
-          {activeTab === 'insights' && (
-            <Insights onTriggerRemedial={() => setActiveTab('ai-review')} />
-          )}
+              {activeTab === "support-desk" && currentUser.role === "Admin" && (
+                <SupportDesk />
+              )}
+              {activeTab === "support-desk" && currentUser.role !== "Admin" && (
+                <AccessDenied requiredRole="Admin" />
+              )}
 
-          {activeTab === 'communications' && (
-            <Communications />
-          )}
-        </div>
-      </main>
-    </div>
+              {activeTab === "audit-logs" && currentUser.role === "Admin" && (
+                <AuditLogs />
+              )}
+              {activeTab === "audit-logs" && currentUser.role !== "Admin" && (
+                <AccessDenied requiredRole="Admin" />
+              )}
+
+              {activeTab === "admin-profile" &&
+                currentUser.role === "Admin" && (
+                  <AdminProfile
+                    currentUser={currentUser}
+                    onSessionRevalidate={() => authService.restoreSession()}
+                  />
+                )}
+              {activeTab === "admin-profile" &&
+                currentUser.role !== "Admin" && (
+                  <AccessDenied requiredRole="Admin" />
+                )}
+
+              {activeTab === "ai-review" && <AiReview />}
+              {activeTab === "enrollment-requests" && (
+                <EnrollmentRequestsView
+                  onNavigate={setActiveTab}
+                  onDecisionMade={refreshPendingEnrollments}
+                />
+              )}
+              {activeTab === "courses" && <Courses currentUser={currentUser} />}
+              {activeTab === "assessments" && (
+                <Assessments currentUser={currentUser} />
+              )}
+              {activeTab === "gamification" && <Gamification />}
+              {activeTab === "insights" && (
+                <Insights onTriggerRemedial={() => setActiveTab("ai-review")} />
+              )}
+              {activeTab === "communications" && <Communications />}
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  })();
+
+  const authView = currentUser ? (
+    <Navigate to={nextPath} replace />
+  ) : (
+    <Login
+      onLoginSuccess={handleLoginSuccess}
+      initialMode={
+        new URLSearchParams(location.search).get("mode") === "register"
+          ? "register"
+          : "login"
+      }
+    />
+  );
+
+  return (
+    <AuthProvider value={authValue}>
+      <div className="fade-in">
+        <Routes>
+          <Route element={<MarketplaceLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/courses" element={<CatalogPage />} />
+            <Route path="/courses/:id" element={<CourseDetailsPage />} />
+            <Route
+              path="/instructors/:id"
+              element={<InstructorProfilePage />}
+            />
+            <Route path="/policies/:slug" element={<PolicyPage />} />
+          </Route>
+
+          {/* Learning portal entry: server-verified enrollment gate, then the student console. */}
+          <Route path="/learn/:courseId" element={<ProtectedRoute roles={["Student"]}><LearnEntry /></ProtectedRoute>} />
+
+          <Route path="/login" element={authView} />
+          <Route path="/console" element={<ProtectedRoute roles={["Admin", "Instructor", "Student"]}>{consoleView}</ProtectedRoute>} />
+          <Route path="/console/admin" element={<ProtectedRoute roles={["Admin"]}>{consoleView}</ProtectedRoute>} />
+          <Route path="/console/instructor" element={<ProtectedRoute roles={["Instructor", "Admin"]}><InstructorPortal user={currentUser} onLogout={handleLogout} onLogoClick={() => navigate("/")} /></ProtectedRoute>} />
+          <Route path="/console/student" element={<ProtectedRoute roles={["Student"]}><StudentPortal user={currentUser} onLogout={handleLogout} /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </AuthProvider>
+  );
+}
+
+export default function App() {
+  useEffect(() => {
+    const handleUnhandledRejection = (event) => {
+      // If the promise rejection has a friendlyMessage or error message that wasn't handled, dispatch global error modal
+      const reason = event.reason;
+      if (reason && !event.defaultPrevented) {
+        const msg = reason.friendlyMessage || reason.message || (typeof reason === 'string' ? reason : null);
+        if (msg) {
+          window.dispatchEvent(new CustomEvent('eduflow-global-error', {
+            detail: {
+              title: 'Unexpected Error',
+              message: msg,
+              code: reason.code || 'RUNTIME_ERROR',
+              details: reason.stack || ''
+            }
+          }));
+        }
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+  }, []);
+
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <GlobalErrorModal />
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
 
 function AccessDenied({ requiredRole }) {
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '60vh',
-      gap: '16px',
-      textAlign: 'center'
-    }}>
-      <div style={{ fontSize: '56px' }}>🚫</div>
-      <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#FFFFFF' }}>Access Denied</h2>
-      <p style={{ color: 'var(--text-muted)', fontSize: '14px', maxWidth: '380px' }}>
-        This section requires <strong style={{ color: 'var(--accent)' }}>{requiredRole}</strong> privileges.
-        Contact your system administrator to request elevated access.
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "60vh",
+        gap: "16px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "52px",
+          height: "52px",
+          borderRadius: "var(--radius-md)",
+          backgroundColor: "var(--accent-soft)",
+          border: "1px solid var(--accent-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ShieldAlert size={28} color="var(--accent)" />
+      </div>
+      <h2
+        style={{
+          fontSize: "20px",
+          fontWeight: "800",
+          color: "var(--text-main)",
+        }}
+      >
+        Access Restricted
+      </h2>
+      <p
+        style={{
+          color: "var(--text-muted)",
+          fontSize: "13.5px",
+          maxWidth: "380px",
+        }}
+      >
+        This section requires{" "}
+        <strong style={{ color: "var(--accent)" }}>{requiredRole}</strong> level
+        authorization. Please contact system governance to request elevated
+        permissions.
       </p>
     </div>
   );

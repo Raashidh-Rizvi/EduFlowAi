@@ -1,0 +1,30 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore.Database.Command": "Warning"
+    }
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=EduFlowDb;Username=postgres;Password=YOUR_POSTGRES_PASSWORD"
+  },
+  "Redis": {
+    "ConnectionString": "localhost:6379"
+  },
+  "JwtSettings": {
+    "Secret": "YOUR_SUPER_SECRET_JWT_KEY_AT_LEAST_256_BITS_LONG_FOR_SECURITY",
+    "Issuer": "EduFlowAPI",
+    "Audience": "EduFlowClients",
+    "ExpiryMinutes": 1440
+  },
+  "AiService": {
+    "BaseUrl": "http://localhost:8888",
+    "ApiKey": "eduflow-local-dev-internal-token-2026",
+    "TimeoutSeconds": 30
+  },
+  "DemoAccounts": {
+    "Enabled": false,
+    "ResetCredentials": false
+  }
+}

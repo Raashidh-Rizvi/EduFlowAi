@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final Function(Map<String, dynamic> user) onLoginSuccess;
@@ -13,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController(text: 'student@eduflow.ai');
   final _passwordController = TextEditingController(text: 'Password123!');
+  final AuthService _authService = AuthService();
   bool _isLoading = false;
 
   final List<Map<String, dynamic>> _demoStudents = [
@@ -46,26 +48,55 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  void _handleLogin() {
-    setState(() => _isLoading = true);
-    Future.delayed(const Duration(milliseconds: 600), () {
-      final selected = _demoStudents.firstWhere(
-        (s) => s['email'] == _emailController.text,
-        orElse: () => {
-          'name': 'Student',
-          'email': _emailController.text,
-          'level': 'Level 1 • 0 XP',
-          'streak': '0🔥',
-        },
+  Future<void> _handleLogin() async {
+    if (_emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter email and password.')),
       );
+      return;
+    }
 
+    setState(() => _isLoading = true);
+
+    final user = await _authService.login(
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
+    );
+
+    setState(() => _isLoading = false);
+
+    if (user != null) {
       widget.onLoginSuccess({
-        'name': selected['name'],
-        'email': selected['email'],
-        'level': selected['level'],
-        'token': 'demo-flutter-jwt-token',
+        'name': user['fullName'] ?? user['name'] ?? 'Student',
+        'email': user['email'] ?? _emailController.text.trim(),
+        'level': user['level'] ?? 'Level 1 • 0 XP',
+        ...user,
       });
-    });
+    } else {
+      // Demo fallback if backend is offline during local UI test
+      final demo = _demoStudents.firstWhere(
+        (s) => s['email'].toString().toLowerCase() == _emailController.text.trim().toLowerCase(),
+        orElse: () => {},
+      );
+      if (demo.isNotEmpty && _passwordController.text == 'Password123!') {
+        widget.onLoginSuccess({
+          'name': demo['name'],
+          'email': demo['email'],
+          'level': demo['level'],
+          'token': 'demo-flutter-jwt-token',
+        });
+        return;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Invalid email or password. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override

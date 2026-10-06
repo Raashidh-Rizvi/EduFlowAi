@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+.dotnet/
+EduFlow.Tests/
+**/appsettings.Development.json
+**/.env
+vercel.json

@@ -14,7 +14,23 @@ public record QuizDto(
     int PassingScorePercent,
     int XpReward,
     int CoinReward,
-    int QuestionsCount
+    int QuestionsCount,
+    QuizScopeType ScopeType = QuizScopeType.Course,
+    Guid? ScopeId = null,
+    string? ScopeName = null,
+    QuizStatus Status = QuizStatus.Published,
+    DifficultyLevel Difficulty = DifficultyLevel.Medium,
+    int TimeLimitSeconds = 900,
+    int AttemptsAllowed = 3,
+    bool RandomizeQuestions = true,
+    bool RandomizeOptions = true,
+    FeedbackMode FeedbackMode = FeedbackMode.Immediate,
+    bool ShowCorrectAnswers = true,
+    bool GeneratedByAI = false,
+    string? GenerationWorkflowId = null,
+    DateTime? CreatedAt = null,
+    Guid? ModuleId = null,
+    Guid? TopicId = null
 );
 
 public record QuizDetailDto(
@@ -26,7 +42,38 @@ public record QuizDetailDto(
     int PassingScorePercent,
     int XpReward,
     int CoinReward,
-    List<QuizQuestionDto> Questions
+    List<QuizQuestionDto> Questions,
+    QuizScopeType ScopeType = QuizScopeType.Course,
+    Guid? ScopeId = null,
+    string? ScopeName = null,
+    QuizStatus Status = QuizStatus.Published,
+    DifficultyLevel Difficulty = DifficultyLevel.Medium,
+    int TimeLimitSeconds = 900,
+    int AttemptsAllowed = 3,
+    bool RandomizeQuestions = true,
+    bool RandomizeOptions = true,
+    FeedbackMode FeedbackMode = FeedbackMode.Immediate,
+    bool ShowCorrectAnswers = true,
+    bool GeneratedByAI = false,
+    string? GenerationWorkflowId = null,
+    QuizConfigurationDto? Configuration = null,
+    Guid? ModuleId = null,
+    Guid? TopicId = null
+);
+
+public record QuizConfigurationDto(
+    int QuestionCount,
+    Dictionary<string, int> QuestionTypeDistribution,
+    Dictionary<string, int> DifficultyDistribution,
+    List<Guid> SelectedTopicIds,
+    List<Guid> SelectedContentIds,
+    int TimeLimitSeconds,
+    int PassPercentage,
+    int AttemptsAllowed,
+    bool RandomizeQuestions,
+    bool RandomizeOptions,
+    FeedbackMode FeedbackMode,
+    bool NegativeMarking
 );
 
 public record QuizQuestionDto(
@@ -35,7 +82,21 @@ public record QuizQuestionDto(
     QuestionType Type,
     List<string> Options,
     int Points,
-    int OrderIndex
+    int OrderIndex,
+    string? CorrectAnswer = null,
+    string? Explanation = null,
+    DifficultyLevel Difficulty = DifficultyLevel.Medium,
+    Guid? SourceContentId = null,
+    string? LearningObjective = null,
+    string MetadataJson = "{}",
+    List<QuestionOptionDto>? OptionDetails = null
+);
+
+public record QuestionOptionDto(
+    Guid? Id,
+    string OptionText,
+    bool IsCorrect,
+    int DisplayOrder
 );
 
 public record StartQuizAttemptResponse(
@@ -43,12 +104,20 @@ public record StartQuizAttemptResponse(
     Guid QuizId,
     string QuizTitle,
     int TimeLimitMinutes,
-    List<QuizQuestionDto> Questions
+    int TimeLimitSeconds,
+    List<QuizQuestionDto> Questions,
+    int AttemptNumber = 0,
+    DateTime? StartedAt = null,
+    // False for an instructor/admin preview, which is not recorded as an attempt.
+    bool IsRecorded = true
 );
 
+/// <param name="AttemptId">The attempt returned by /start. Older clients may omit it; the
+/// student's open attempt (or a new one, subject to the attempt limit) is used instead.</param>
 public record SubmitQuizRequest(
     Guid QuizId,
-    List<QuestionAnswerSubmission> Answers
+    List<QuestionAnswerSubmission> Answers,
+    Guid? AttemptId = null
 );
 
 public record QuestionAnswerSubmission(
@@ -66,7 +135,9 @@ public record QuizResultDto(
     int XpEarned,
     int CoinsEarned,
     string? Feedback,
-    List<QuestionResultItem> QuestionBreakdown
+    List<QuestionResultItem> QuestionBreakdown,
+    string ScopeType = "COURSE",
+    string? BadgeUnlocked = null
 );
 
 public record QuestionResultItem(
@@ -76,7 +147,15 @@ public record QuestionResultItem(
     string CorrectAnswer,
     bool IsCorrect,
     int PointsAwarded,
-    string Explanation
+    string Explanation,
+    string? SlideCitation = null,
+    string? QuestionType = null,
+    string? MarkingScheme = null,
+    int MaxMarks = 0,
+    // Evaluated | NeedsReview | Pending
+    string? EvaluationStatus = null,
+    // Deterministic | Ai | Manual
+    string? EvaluationMethod = null
 );
 
 public record CreateQuizRequest(
@@ -87,7 +166,22 @@ public record CreateQuizRequest(
     int PassingScorePercent,
     int XpReward,
     int CoinReward,
-    List<CreateQuestionRequest> Questions
+    List<CreateQuestionRequest> Questions,
+    QuizScopeType ScopeType = QuizScopeType.Course,
+    Guid? ScopeId = null,
+    DifficultyLevel Difficulty = DifficultyLevel.Medium,
+    int TimeLimitSeconds = 900,
+    int AttemptsAllowed = 3,
+    bool RandomizeQuestions = true,
+    bool RandomizeOptions = true,
+    FeedbackMode FeedbackMode = FeedbackMode.Immediate,
+    bool ShowCorrectAnswers = true,
+    QuizStatus Status = QuizStatus.Published,
+    bool GeneratedByAI = false,
+    string? GenerationWorkflowId = null,
+    QuizConfigurationDto? Configuration = null,
+    // Required when ScopeType is Course: every assessment belongs to a module.
+    Guid? ModuleId = null
 );
 
 public record CreateQuestionRequest(
@@ -97,5 +191,93 @@ public record CreateQuestionRequest(
     string CorrectAnswer,
     string Explanation,
     int Points,
-    int OrderIndex
+    int OrderIndex,
+    DifficultyLevel Difficulty = DifficultyLevel.Medium,
+    Guid? SourceContentId = null,
+    string? LearningObjective = null,
+    string MetadataJson = "{}",
+    List<QuestionOptionDto>? OptionDetails = null
 );
+
+public record GenerateAiQuizRequest(
+    Guid CourseId,
+    string Topic,
+    string Difficulty,
+    int QuestionCount,
+    int TimeLimitMinutes = 15,
+    int PassingScorePercent = 70,
+    int XpReward = 60,
+    int CoinReward = 25,
+    QuizScopeType ScopeType = QuizScopeType.Course,
+    Guid? ScopeId = null,
+    string? PdfUrl = null,
+    string? SlideUrl = null,
+    List<string>? SelectedTopics = null,
+    List<string>? QuestionTypes = null,
+    Dictionary<string, int>? QuestionTypeDistribution = null,
+    Dictionary<string, int>? DifficultyDistribution = null,
+    List<string>? LearningObjectives = null,
+    string? ModuleTitle = null,
+    Guid? ModuleId = null,
+    /// <summary>Optional AI provider override for this generation (gemini|groq|azure).</summary>
+    string? Provider = null,
+    /// <summary>Optional model override; must be on the server-side allowlist for the provider.</summary>
+    string? Model = null,
+    /// <summary>Whether the generated quiz is immediately published for student access. Defaults to true.</summary>
+    bool AutoPublish = true
+);
+
+public record UploadQuizRequest(
+    Guid CourseId,
+    string Title,
+    string Description,
+    int TimeLimitMinutes,
+    int PassingScorePercent,
+    int XpReward,
+    int CoinReward,
+    string? SourceFileName,
+    List<CreateQuestionRequest> Questions,
+    QuizScopeType ScopeType = QuizScopeType.Course,
+    Guid? ScopeId = null,
+    Guid? ModuleId = null
+);
+
+/// <param name="Reason">Required when changing an answer that already has a mark.</param>
+public record ManualMarkRequest(int AwardedMarks, string? Feedback = null, string? Reason = null);
+
+public record ValidateQuizResponse(
+    bool IsValid,
+    List<string> Errors,
+    List<string> Warnings,
+    int ValidatedQuestionCount,
+    int TotalMarks,
+    bool DistributionMatched
+);
+
+public record SingleQuestionRegenerateRequest(
+    Guid QuestionId,
+    string? FocusTopic = null,
+    string? PromptGuidance = null,
+    QuestionType? TargetType = null,
+    DifficultyLevel? TargetDifficulty = null
+);
+
+public record DuplicateQuizResponse(
+    Guid OriginalQuizId,
+    Guid NewQuizId,
+    string NewQuizTitle,
+    string Message
+);
+
+public record SubmissionFeedbackRequest(
+    string Feedback
+);
+
+public record UpdateStudyPlanRequest(
+    string? TargetGoal = null,
+    int? TotalWeeks = null,
+    double? EstimatedHoursPerWeek = null,
+    string? MilestoneTitle = null
+);
+
+

@@ -1,0 +1,10 @@
+# .env must stay out of the image: main.py calls load_dotenv(override=True),
+# which would override the container environment set by docker-compose.
+.env
+venv/
+.venv/
+**/__pycache__/
+.pytest_cache/
+tests/
+data/
+vercel.json
