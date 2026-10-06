@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace EduFlow.Core.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UserRole
 {
     Admin,
@@ -10,14 +13,42 @@ public enum UserRole
 public enum XpSourceType
 {
     LessonCompleted,
+    PracticeCompleted,
+    TopicCompleted,
+    ModuleCompleted,
+    CourseCompleted,
     QuizCompleted,
+    PassBonus,
+    HighScoreBonus,
     PerfectScore,
+    ImprovementBonus,
+    StreakBonus,
+    DailyMissionGrandBonus,
     DailyChallenge,
     WeeklyChallenge,
-    StreakBonus,
     BossBattle,
     TeamChallenge,
-    AiAdaptiveChallenge
+    AiAdaptiveChallenge,
+    RemediationCompleted,
+    FocusSession,
+    LevelUp,
+    BadgeUnlocked,
+    DailyMissionCompleted
+}
+
+/// <summary>The measure an achievement (badge) is unlocked by.</summary>
+public enum AchievementCriteria
+{
+    None,
+    LessonsCompleted,
+    StreakDays,
+    PerfectScores,
+    AssessmentsPassed,
+    BossAssessmentsPassed,
+    ImprovementBonusesEarned,
+    ChallengesCompleted,
+    CoursesCompleted,
+    TeamMemberships
 }
 
 public enum DifficultyLevel
@@ -48,9 +79,24 @@ public enum BadgeCategory
 {
     Learning,
     Assessment,
+    Consistency,
+    Improvement,
+    Mastery,
+    Challenge,
     Streak,
     Social,
     Milestone
+}
+
+public enum NextBestActionType
+{
+    WatchLesson,
+    ReviewTopic,
+    TakeQuiz,
+    TakeRemediationQuiz,
+    DoChallenge,
+    TakeBossChallenge,
+    Rest
 }
 
 public enum StudyPlanStatus
@@ -58,6 +104,7 @@ public enum StudyPlanStatus
     PendingInstructorApproval,
     Approved,
     Rejected,
+
     RevisionRequested
 }
 
@@ -66,23 +113,155 @@ public enum AssessmentType
     Quiz,
     Assignment,
     Exam,
-    BossBattle
+    BossBattle,
+    TopicQuiz,
+    ModuleQuiz,
+    CourseQuiz,
+    LessonQuiz
+}
+
+public enum QuizScopeType
+{
+    Topic,
+    ContentItem,
+    Module,
+    Course
+}
+
+public enum QuizStatus
+{
+    Draft,
+    AiGenerating,
+    Validating,
+    ReadyForReview,
+    Approved,
+    Published,
+    RevisionRequested,
+    Rejected,
+    Unpublished,
+    Archived,
+    Failed
+}
+
+/// <summary>Lifecycle of one assessment attempt (persisted as <c>Submission</c>).</summary>
+public enum AttemptStatus
+{
+    InProgress,
+    Submitted,
+    Evaluating,
+    Evaluated,
+    Cancelled
+}
+
+/// <summary>How an answer's marks were produced.</summary>
+public enum EvaluationMethod
+{
+    Deterministic,
+    Ai,
+    Manual
+}
+
+public enum AnswerEvaluationStatus
+{
+    Pending,
+    Evaluated,
+    NeedsReview
+}
+
+public enum GradingConfigurationStatus
+{
+    Draft,
+    Active
+}
+
+/// <summary>Which evaluated attempt counts toward the course grade.</summary>
+public enum AttemptScoringRule
+{
+    Highest,
+    Latest
+}
+
+public enum FeedbackMode
+{
+    Immediate,
+    OnSubmission,
+    Manual
 }
 
 public enum QuestionType
 {
     MultipleChoice,
+    MultipleSelect,
     TrueFalse,
-    CodeSnippet,
+    ShortAnswer,
     FillInBlank,
-    OpenEnded
+    Matching,
+    Ordering,
+    ScenarioBased,
+    TimedChallenge,
+    CodeSnippet,
+    OpenEnded,
+    Numerical
 }
 
 public enum EnrollmentStatus
 {
+    /// <summary>Approved and actively participating in the course.</summary>
     Active,
+
+    /// <summary>Approved and finished the course.</summary>
     Completed,
-    Dropped
+
+    /// <summary>Approved enrollment later withdrawn (or roster-removed) by the instructor.</summary>
+    Dropped,
+
+    /// <summary>Student requested enrollment; awaiting instructor approval.</summary>
+    Pending,
+
+    /// <summary>Instructor rejected the student's enrollment request.</summary>
+    Rejected,
+
+    /// <summary>Student withdrew the enrollment request before an instructor decided.</summary>
+    Cancelled
+}
+
+public static class EnrollmentStatusExtensions
+{
+    /// <summary>Statuses that grant a student access to a course's learning materials.</summary>
+    public static bool GrantsAccess(this EnrollmentStatus status)
+        => status == EnrollmentStatus.Active || status == EnrollmentStatus.Completed;
+
+    /// <summary>
+    /// Public-facing status label. The API contract exposes the approval workflow as
+    /// PENDING / APPROVED / REJECTED / CANCELLED while the table keeps the legacy
+    /// Active / Completed / Dropped values used by the rest of the platform.
+    /// </summary>
+    public static string ToApiLabel(this EnrollmentStatus status) => status switch
+    {
+        EnrollmentStatus.Pending => "PENDING",
+        EnrollmentStatus.Active => "APPROVED",
+        EnrollmentStatus.Completed => "COMPLETED",
+        EnrollmentStatus.Rejected => "REJECTED",
+        EnrollmentStatus.Cancelled => "CANCELLED",
+        EnrollmentStatus.Dropped => "DROPPED",
+        _ => status.ToString().ToUpperInvariant()
+    };
+}
+
+/// <summary>
+/// Moderation lifecycle of a <see cref="EduFlow.Core.Entities.CourseReview"/>.
+/// Only <see cref="Approved"/> reviews contribute to course/instructor averages.
+/// </summary>
+public enum ReviewStatus
+{
+    /// <summary>Submitted, awaiting administrative moderation (used when approval is required).</summary>
+    Pending,
+
+    /// <summary>Visible to everyone and counted by the rating aggregation.</summary>
+    Approved,
+
+    /// <summary>Hidden by an administrator; excluded from averages everywhere.</summary>
+    Rejected
 }
 
 public enum TeamRole
@@ -90,3 +269,20 @@ public enum TeamRole
     Leader,
     Member
 }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SupportTicketType
+{
+    Bug,
+    Dispute,
+    Feedback
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SupportTicketStatus
+{
+    Open,
+    InProgress,
+    Resolved
+}
+

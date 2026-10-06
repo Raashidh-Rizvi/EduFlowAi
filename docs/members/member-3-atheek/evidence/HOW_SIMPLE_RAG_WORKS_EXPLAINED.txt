@@ -1,0 +1,181 @@
+===============================================================================
+EduFlow AI — Complete Step-by-Step RAG Walkthrough
+Module: Software Engineering Frameworks (SE Frameworks)
+File: HOW_SIMPLE_RAG_WORKS_EXPLAINED.txt
+===============================================================================
+
+This document explains EXACTLY how our Simple RAG system works in plain English.
+You can use this real example for your Viva, exam presentation, or team review.
+
+===============================================================================
+PART 1: THE REAL-LIFE SCENARIO
+===============================================================================
+
+1. COURSE: Software Engineering Frameworks (SE Frameworks)
+2. UPLOADED FILE: Lecture_04_Clean_Architecture_Notes.pdf (saved on your disk)
+3. STUDENT QUESTION:
+   "Explain Dependency Inversion Principle and how it connects to Clean Architecture."
+
+Let's see what happens step-by-step from the moment the instructor uploads 
+the slides until the student gets the final answer with slide proof.
+
+===============================================================================
+PART 2: WHAT HAPPENED BEFORE (INSTRUCTOR UPLOADS THE PDF)
+===============================================================================
+
+When the lecturer uploaded the slides in the Web Portal:
+
+Step 1: Save to Hard Drive
+--------------------------
+The .NET backend saved the physical file to:
+C:\...\backend\EduFlow.Api\wwwroot\uploads\pdfs\Lecture_04_Clean_Architecture_Notes.pdf
+
+Step 2: Read Slide by Slide (parser.py)
+---------------------------------------
+parser.py used pypdf to read the PDF.
+- Slide 1: Title slide ("SE Frameworks - Lecture 04")
+- Slide 8: "Dependency Inversion Principle (DIP) & Inversion of Control"
+- Slide 12: "Clean Architecture: Core Domain Entities vs Infrastructure"
+- ... up to Slide 42.
+
+Step 3: Cut into 500-Token Chunks (chunker.py)
+---------------------------------------------
+chunker.py cut the slides into ~500-token chunks (1,800 characters) and attached:
+{
+  "page_number": 8,
+  "title": "Dependency Inversion Principle",
+  "course_id": "se-frameworks",
+  "source_file": "Lecture_04_Clean_Architecture_Notes.pdf"
+}
+
+Step 4: Save Vectors in ChromaDB (vector_store.py)
+--------------------------------------------------
+vector_store.py converted the text of Slide 8 into 768 coordinate numbers:
+[ 0.142, -0.831, 0.412, ... ] using Google text-embedding-004.
+These coordinates were permanently saved on your disk in:
+ai-agent/data/chroma_db/
+
+===============================================================================
+PART 3: THE STUDENT ASKS A QUESTION (STEP-BY-STEP ACROSS RAG)
+===============================================================================
+
+Now, a student opens their laptop, goes to the Student Portal, and types:
+"Explain Dependency Inversion Principle and how it connects to Clean Architecture."
+
+Here is the exact journey across the 5 files:
+
+-------------------------------------------------------------------------------
+STEP 1: The Request Arrives at main.py
+-------------------------------------------------------------------------------
+The student clicks 'Send'. The React frontend sends this JSON to Python:
+
+POST http://localhost:8000/api/v1/rag/chat
+{
+  "question": "Explain Dependency Inversion Principle and how it connects to Clean Architecture.",
+  "course_id": "se-frameworks",
+  "max_citations": 2
+}
+
+FastAPI (main.py) receives this request.
+
+-------------------------------------------------------------------------------
+STEP 2: Safety Check with schemas.py
+-------------------------------------------------------------------------------
+Before touching any AI, schemas.py checks the incoming message:
+- Is 'question' text? YES.
+- Is 'course_id' provided? YES.
+- Is 'max_citations' an integer? YES (2).
+If anything was missing or broken, it stops the error immediately. 
+Everything is valid, so main.py hands the request to rag_service.py.
+
+-------------------------------------------------------------------------------
+STEP 3: Finding the Right Slides in ChromaDB (vector_store.py)
+-------------------------------------------------------------------------------
+rag_service.py calls vector_store.search().
+
+1. The embedding model turns the student's question into coordinate numbers.
+2. ChromaDB applies the COURSE FILTER:
+   where = { "course_id": "se-frameworks" }
+   (This guarantees students NEVER see slides from other courses!)
+3. ChromaDB compares the question coordinates with all slide coordinates.
+4. It finds the 2 closest mathematical matches on disk:
+   - Match 1: Slide 8 ("Dependency Inversion Principle") -> 96% match!
+   - Match 2: Slide 12 ("Clean Architecture Layer Boundaries") -> 92% match!
+
+-------------------------------------------------------------------------------
+STEP 4: Answering via LLM Brain (rag_service.py -> Groq or Gemini)
+-------------------------------------------------------------------------------
+rag_service.py takes the text of Slide 8 and Slide 12 and builds this prompt:
+
+"You are the EduFlow AI Learning Coach.
+Answer the student's question using ONLY these course slides:
+
+--- [Source: Lecture_04_Clean_Architecture_Notes.pdf - Slide 8] ---
+High-level modules should not depend on low-level modules. 
+Both should depend on abstractions (interfaces). 
+
+--- [Source: Lecture_04_Clean_Architecture_Notes.pdf - Slide 12] ---
+In Clean Architecture, Core Domain Entities sit at the center. 
+The Web API and Database (Infrastructure) depend inwards on Core abstractions.
+
+Student Question: Explain Dependency Inversion Principle and how it connects to Clean Architecture.
+
+Cite the exact slide numbers in your answer."
+
+rag_service.py sends this prompt to the active LLM:
+- If LLM_PROVIDER="groq": Groq LPU answers in 0.3 seconds!
+- If LLM_PROVIDER="gemini": Gemini 1.5 Flash answers in 1.5 seconds!
+
+-------------------------------------------------------------------------------
+STEP 5: The Response Delivered to the Student
+-------------------------------------------------------------------------------
+FastAPI returns this final JSON back to the student's screen:
+
+{
+  "answer": "According to Slide 8, the Dependency Inversion Principle (DIP) states that high-level business policies must not depend directly on low-level database details; both must depend on abstractions (interfaces).\n\nAs explained on Slide 12, in Clean Architecture, our Core domain layer defines these repository interfaces. The outer Infrastructure layer (such as EF Core or PostgreSQL) implements them, keeping our core software decoupled and easily testable.",
+  "citations": [
+    {
+      "page_number": 8,
+      "source_file": "Lecture_04_Clean_Architecture_Notes.pdf",
+      "preview_text": "[Slide 8: Dependency Inversion Principle] High-level modules should not depend on low-level modules...",
+      "relevance_score": 0.96
+    },
+    {
+      "page_number": 12,
+      "source_file": "Lecture_04_Clean_Architecture_Notes.pdf",
+      "preview_text": "[Slide 12: Clean Architecture Layer Boundaries] Core Domain Entities sit at the center...",
+      "relevance_score": 0.92
+    }
+  ],
+  "source": "groq_rag",
+  "confidence_score": 0.96
+}
+
+On the website, the student sees the clear explanation, plus two clickable
+badges: [📌 Source: Slide 8] and [📌 Source: Slide 12].
+
+===============================================================================
+PART 4: SUMMARY TABLE — WHAT EACH FILE DID IN THIS RUN
+===============================================================================
+
+1. main.py          -> Received the HTTP POST request at /api/v1/rag/chat.
+2. schemas.py       -> Checked that question & course_id were valid.
+3. vector_store.py  -> Found Slide 8 & Slide 12 in ChromaDB on disk.
+4. rag_service.py   -> Built the grounded prompt and called Groq / Gemini.
+5. Student Screen   -> Displayed the answer + exact slide citations!
+
+===============================================================================
+PART 5: HOW TO ANSWER THE EXAMINER IN YOUR VIVA
+===============================================================================
+
+Question from Examiner: "How does RAG work in your project?"
+
+Your Answer (3 simple points):
+1. "First, when lecture slides are uploaded, parser.py reads each page using 
+    pypdf, and chunker.py cuts them into 500-token chunks with slide numbers."
+2. "Second, vector_store.py embeds those chunks using Google text-embedding-004
+    and stores them in persistent ChromaDB, scoped by Course ID."
+3. "Third, when a student asks a question, we retrieve only the matching slides 
+    from ChromaDB and feed them into Groq / Gemini. The AI answers strictly 
+    from the slides and gives the student the exact slide citations."
+===============================================================================

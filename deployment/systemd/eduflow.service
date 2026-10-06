@@ -1,0 +1,26 @@
+[Unit]
+Description=EduFlow ASP.NET Core Web API Service
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/eduflow/backend
+ExecStart=/usr/bin/dotnet /var/www/eduflow/backend/EduFlow.Api.dll
+Restart=always
+# Restart service after 10 seconds if the dotnet service crashes:
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=eduflow-api
+User=www-data
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+Environment=DOTNET_GCHeapHardLimit=0x1C000000 # Limit GC heap to ~448MB for 1GB RAM VM
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+
+# Security and Sandbox options
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

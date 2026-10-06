@@ -26,6 +26,7 @@ public class User : BaseEntity
     // Navigation properties
     public StudentXp? StudentXp { get; set; }
     public StudentStreak? StudentStreak { get; set; }
+    public InstructorProfile? InstructorProfile { get; set; }
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
     public ICollection<Course> InstructedCourses { get; set; } = new List<Course>();
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
@@ -37,6 +38,8 @@ public class User : BaseEntity
     public ICollection<StudyPlan> StudyPlans { get; set; } = new List<StudyPlan>();
     public ICollection<Notification> Notifications { get; set; } = new List<Notification>();
     public ICollection<LessonCompletion> LessonCompletions { get; set; } = new List<LessonCompletion>();
+    public ICollection<SupportTicket> SubmittedSupportTickets { get; set; } = new List<SupportTicket>();
+    public ICollection<SupportTicketResponse> AuthoredSupportTicketResponses { get; set; } = new List<SupportTicketResponse>();
 }
 
 public class RefreshToken : BaseEntity
@@ -48,24 +51,106 @@ public class RefreshToken : BaseEntity
     public bool IsRevoked { get; set; } = false;
 }
 
+/// <summary>
+/// Public-facing teaching profile for a user whose <see cref="User.Role"/> is
+/// <see cref="UserRole.Instructor"/>. One row per user (unique <see cref="UserId"/>).
+/// Name and profile image live on <see cref="User"/> (<c>FullName</c> / <c>AvatarUrl</c>);
+/// this row carries the editable biography and expertise fields.
+/// </summary>
+public class InstructorProfile : BaseEntity
+{
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public string Headline { get; set; } = string.Empty;
+    public string Bio { get; set; } = string.Empty;
+
+    /// <summary>Comma-separated expertise tags, e.g. "Databases,EF Core,Distributed Systems".</summary>
+    public string Expertise { get; set; } = string.Empty;
+
+    public string? WebsiteUrl { get; set; }
+    public string? LinkedInUrl { get; set; }
+}
+
 // -----------------------------------------------------------------------------
-// 2. Education & Curriculum Entities
+// 2. Education & Curriculum Entities (Hierarchical: Course -> Module -> Topic -> ContentItem)
 // -----------------------------------------------------------------------------
 public class Course : BaseEntity
 {
     public string Code { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>One-to-two sentence marketing summary shown on course cards and search results.</summary>
+    public string ShortDescription { get; set; } = string.Empty;
+
     public string Category { get; set; } = "Computer Science";
+    public string Term { get; set; } = "Fall 2026";
     public string? ThumbnailUrl { get; set; }
     public bool IsPublished { get; set; } = true;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public string Status { get; set; } = "Published"; // Draft, Published, Archived
+
+    /// <summary>Course duration in hours. 0 means "duration not specified".</summary>
+    public int DurationHours { get; set; } = 0;
+
+    /// <summary>Enrollment price. Ignored when <see cref="IsFree"/> is true.</summary>
+    public decimal Price { get; set; } = 0m;
+
+    /// <summary>True when the course is freely enrollable.</summary>
+    public bool IsFree { get; set; } = true;
+
+    /// <summary>Denormalized average student rating (1-5). Maintained by the review pipeline.</summary>
+    public double AverageRating { get; set; } = 0.0;
+
+    /// <summary>Number of student ratings contributing to <see cref="AverageRating"/>.</summary>
+    public int RatingCount { get; set; } = 0;
+
     public Guid InstructorId { get; set; }
     public User? Instructor { get; set; }
+
+    /// <summary>Instructor-authored learning outcomes rendered as the "What you'll learn" checklist.</summary>
+    public string LearningOutcomesJson { get; set; } = "[]";
+
+    /// <summary>Instructor-authored requirements students should meet before enrolling.</summary>
+    public string PrerequisitesJson { get; set; } = "[]";
+
+    /// <summary>Instructor-authored description of who this course targets.</summary>
+    public string TargetAudienceJson { get; set; } = "[]";
+
+    /// <summary>Primary instruction language displayed on the course page.</summary>
+    public string Language { get; set; } = "English";
+
+    /// <summary>Total XP a student can earn from this course. Display-only guidance:
+    /// actual awards are always computed server-side from lesson/quiz/assessment events.</summary>
+    public int XpReward { get; set; } = 0;
+
+    /// <summary>Whether finishing this course grants a certificate of completion.</summary>
+    public bool CertificateEnabled { get; set; } = false;
 
     public ICollection<Module> Modules { get; set; } = new List<Module>();
     public ICollection<Enrollment> Enrollments { get; set; } = new List<Enrollment>();
     public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
     public ICollection<Challenge> Challenges { get; set; } = new List<Challenge>();
+    public ICollection<CourseReview> Reviews { get; set; } = new List<CourseReview>();
+}
+
+/// <summary>
+/// A student's rating + comment for a course they are enrolled in.
+/// One review per (course, student) pair — enforced by a unique index.
+/// Only reviews whose <see cref="Status"/> is <see cref="ReviewStatus.Approved"/>
+/// are visible publicly and counted by the rating aggregation.
+/// </summary>
+public class CourseReview : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public int Rating { get; set; } = 5; // 1..5
+    public string Comment { get; set; } = string.Empty;
+    public ReviewStatus Status { get; set; } = ReviewStatus.Approved;
+    public DateTime? ModeratedAt { get; set; }
+    public Guid? ModeratedById { get; set; }
 }
 
 public class Module : BaseEntity
@@ -74,11 +159,67 @@ public class Module : BaseEntity
     public Course? Course { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
     public int OrderIndex { get; set; }
+    public string Status { get; set; } = "Published";
 
-    public ICollection<Lesson> Lessons { get; set; } = new List<Lesson>();
+    public ICollection<Topic> Topics { get; set; } = new List<Topic>();
+    public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
 }
 
+public class Topic : BaseEntity
+{
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public string ContentType { get; set; } = "Theory"; // Theory, Practical, Assessment, Workshop
+    public int EstimatedMinutes { get; set; } = 30;
+    public string Status { get; set; } = "Published";
+
+    public ICollection<ContentItem> ContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
+}
+
+public class ContentItem : BaseEntity
+{
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public Guid? ParentContentId { get; set; }
+    public ContentItem? ParentContent { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "Lesson"; // Lesson, Subtopic, Video, Reading, Lab, Exercise
+    public int DisplayOrder { get; set; }
+    public int EstimatedMinutes { get; set; } = 20;
+    public int XpReward { get; set; } = 25;
+    public string? VideoUrl { get; set; }
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
+    public string Status { get; set; } = "Published";
+
+    /// <summary>
+    /// When true, the body may be read WITHOUT enrollment (anonymous preview), provided the
+    /// parent course is published. Instructors mark this to advertise their course.
+    /// </summary>
+    public bool IsFreePreview { get; set; } = false;
+
+    public ICollection<ContentItem> ChildContentItems { get; set; } = new List<ContentItem>();
+    public ICollection<Assessment> Assessments { get; set; } = new List<Assessment>();
+    public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
+}
+
+/// <summary>
+/// LEGACY — read-only. Lessons now live in <see cref="ContentItem"/> (same Id), the canonical
+/// Course → Module → Topic → ContentItem tree. The table is kept only so existing foreign keys
+/// (<see cref="LessonCompletion.LessonId"/>, <see cref="StudyPlanItem.ReferencedLessonId"/>)
+/// stay valid until the legacy-removal migration. No code may read or write it.
+/// </summary>
 public class Lesson : BaseEntity
 {
     public Guid ModuleId { get; set; }
@@ -86,9 +227,18 @@ public class Lesson : BaseEntity
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string? VideoUrl { get; set; }
+    public string? PdfUrl { get; set; }
+    public string? AttachmentFileName { get; set; }
     public int XpReward { get; set; } = 25;
     public int EstimatedMinutes { get; set; } = 20;
     public int OrderIndex { get; set; }
+
+    /// <summary>
+    /// When true, the lesson body may be read WITHOUT enrollment (anonymous preview),
+    /// provided the parent course is published. Instructors mark this from the
+    /// curriculum editor to advertise their course.
+    /// </summary>
+    public bool IsFreePreview { get; set; } = false;
 
     public ICollection<LessonCompletion> Completions { get; set; } = new List<LessonCompletion>();
 }
@@ -99,65 +249,171 @@ public class Enrollment : BaseEntity
     public User? Student { get; set; }
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
+
+    /// <summary>Cached course progress; written only by the progress service.</summary>
     public double ProgressPercentage { get; set; } = 0.0;
     public EnrollmentStatus Status { get; set; } = EnrollmentStatus.Active;
+
+    /// <summary>When every learning unit of the course was first completed.</summary>
+    public DateTime? CompletedAt { get; set; }
+
+    /// <summary>When the (re-)submission that produced the current status was made.</summary>
+    public DateTime? RequestedAt { get; set; }
+
+    /// <summary>When an instructor approved or rejected this enrollment.</summary>
+    public DateTime? ReviewedAt { get; set; }
+
+    /// <summary>The instructor who approved/rejected. Null for admin or system actions.</summary>
+    public Guid? ReviewedByInstructorId { get; set; }
+    public User? ReviewedByInstructor { get; set; }
+
+    /// <summary>Instructor's decision note (e.g. rejection reason).</summary>
+    public string? ReviewNotes { get; set; }
 }
 
+/// <summary>A student's completion of one content item (the canonical learning unit).</summary>
 public class LessonCompletion : BaseEntity
 {
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
-    public Guid LessonId { get; set; }
+
+    /// <summary>LEGACY — completions recorded before lessons moved into ContentItems.</summary>
+    public Guid? LessonId { get; set; }
     public Lesson? Lesson { get; set; }
+    public Guid? ContentItemId { get; set; }
+    public ContentItem? ContentItem { get; set; }
     public DateTime CompletedAt { get; set; } = DateTime.UtcNow;
 }
 
 // -----------------------------------------------------------------------------
-// 3. Assessment & Quiz Engine Entities
+// 3. Assessment & Unified Quiz Scope Engine Entities
 // -----------------------------------------------------------------------------
+/// <summary>
+/// An assessment always belongs to exactly one <see cref="Module"/> and may optionally
+/// target one <see cref="Topic"/> (or content item) inside that module.
+/// <see cref="CourseId"/> is a denormalized copy of Module.CourseId kept for querying.
+/// <see cref="ScopeType"/>/<see cref="ScopeId"/> are the legacy API-facing view of the same
+/// placement, written only through the scope helper; they will be removed with the legacy API.
+/// </summary>
 public class Assessment : BaseEntity
 {
     public Guid CourseId { get; set; }
     public Course? Course { get; set; }
+    public Guid ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public QuizScopeType ScopeType { get; set; } = QuizScopeType.Module;
+    public Guid? ScopeId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public AssessmentType Type { get; set; } = AssessmentType.Quiz;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public int TimeLimitSeconds { get; set; } = 900; // 15 mins default
     public int TimeLimitMinutes { get; set; } = 15;
+    public int AttemptsAllowed { get; set; } = 3;
     public int PassingScorePercent { get; set; } = 70;
+    public int QuestionCount { get; set; } = 5;
+    public bool RandomizeQuestions { get; set; } = true;
+    public bool RandomizeOptions { get; set; } = true;
+    public FeedbackMode FeedbackMode { get; set; } = FeedbackMode.Immediate;
+    public bool ShowCorrectAnswers { get; set; } = true;
     public int XpReward { get; set; } = 50;
     public int CoinReward { get; set; } = 20;
+    public QuizStatus Status { get; set; } = QuizStatus.Published;
+    public Guid? CreatedBy { get; set; }
+    public bool GeneratedByAI { get; set; } = false;
+    public string? GenerationWorkflowId { get; set; }
+
+    /// <summary>Provider/model that produced this quiz (e.g. "groq" / "openai/gpt-oss-120b").
+    /// Historical quizzes keep their metadata even if that provider is later unconfigured.</summary>
+    public string? AiProvider { get; set; }
+    public string? AiModel { get; set; }
     public DateTime? DueDate { get; set; }
 
+    /// <summary>Share of the course grade (0-100), or null when the assessment is not graded.</summary>
+    public decimal? GradeWeightPercent { get; set; }
+
+    // Optional finer-grained target inside the module
+    public Guid? ContentItemScopeId { get; set; }
+    public ContentItem? ContentItemScope { get; set; }
+    public QuizConfiguration? Configuration { get; set; }
     public ICollection<Question> Questions { get; set; } = new List<Question>();
     public ICollection<Submission> Submissions { get; set; } = new List<Submission>();
+}
+
+public class QuizConfiguration : BaseEntity
+{
+    public Guid QuizId { get; set; }
+    public Assessment? Quiz { get; set; }
+    public int QuestionCount { get; set; } = 10;
+    public string QuestionTypeDistributionJson { get; set; } = "{}"; // e.g. {"MultipleChoice":6,"MultipleSelect":2,"TrueFalse":2}
+    public string DifficultyDistributionJson { get; set; } = "{}";   // e.g. {"Easy":3,"Medium":5,"Hard":2}
+    public string SelectedTopicIdsJson { get; set; } = "[]";
+    public string SelectedContentIdsJson { get; set; } = "[]";
+    public int TimeLimitSeconds { get; set; } = 900;
+    public int PassPercentage { get; set; } = 70;
+    public int AttemptsAllowed { get; set; } = 3;
+    public bool RandomizeQuestions { get; set; } = true;
+    public bool RandomizeOptions { get; set; } = true;
+    public FeedbackMode FeedbackMode { get; set; } = FeedbackMode.Immediate;
+    public bool NegativeMarking { get; set; } = false;
 }
 
 public class Question : BaseEntity
 {
     public Guid AssessmentId { get; set; }
     public Assessment? Assessment { get; set; }
-    public string Prompt { get; set; } = string.Empty;
+    public string Prompt { get; set; } = string.Empty; // Question text
     public QuestionType Type { get; set; } = QuestionType.MultipleChoice;
-    public string OptionsJson { get; set; } = "[]"; // Serialized JSON array of options
+    public string OptionsJson { get; set; } = "[]"; // Serialized JSON array of string options (or complex option objects)
     public string CorrectAnswer { get; set; } = string.Empty;
     public string Explanation { get; set; } = string.Empty;
-    public int Points { get; set; } = 10;
+    public DifficultyLevel Difficulty { get; set; } = DifficultyLevel.Medium;
+    public int Points { get; set; } = 10; // Marks
     public int OrderIndex { get; set; }
+    public Guid? SourceContentId { get; set; }
+    public ContentItem? SourceContentItem { get; set; }
+    public string? LearningObjective { get; set; }
+    public string MetadataJson { get; set; } = "{}"; // bloomsTaxonomy, distractorRationales, matchingPairs, sequenceOrder
+
+    public ICollection<QuestionOption> Options { get; set; } = new List<QuestionOption>();
 }
 
+public class QuestionOption : BaseEntity
+{
+    public Guid QuestionId { get; set; }
+    public Question? Question { get; set; }
+    public string OptionText { get; set; } = string.Empty;
+    public bool IsCorrect { get; set; } = false;
+    public int DisplayOrder { get; set; }
+}
+
+/// <summary>
+/// One student attempt at an assessment (the canonical attempt record). Created when the
+/// attempt starts, completed on submission, and finalized by evaluation. Marks are only
+/// ever written by the server-side evaluation path.
+/// </summary>
 public class Submission : BaseEntity
 {
     public Guid AssessmentId { get; set; }
     public Assessment? Assessment { get; set; }
     public Guid StudentId { get; set; }
     public User? Student { get; set; }
+
+    /// <summary>1-based, unique per (assessment, student).</summary>
+    public int AttemptNumber { get; set; } = 1;
+    public AttemptStatus Status { get; set; } = AttemptStatus.InProgress;
+    public DateTime? StartedAt { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? EvaluatedAt { get; set; }
+
     public int ScoreObtained { get; set; }
     public int MaxScore { get; set; }
     public double PercentageScore { get; set; }
     public bool Passed { get; set; }
     public bool IsAutoGraded { get; set; } = true;
     public string? InstructorFeedback { get; set; }
-    public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<SubmissionAnswer> Answers { get; set; } = new List<SubmissionAnswer>();
 }
@@ -170,12 +426,144 @@ public class SubmissionAnswer : BaseEntity
     public Question? Question { get; set; }
     public string SelectedAnswer { get; set; } = string.Empty;
     public bool IsCorrect { get; set; }
+
+    /// <summary>Awarded marks; constrained to 0..<see cref="MaxMarks"/>.</summary>
     public int PointsAwarded { get; set; }
+
+    /// <summary>The question's maximum marks at the time of evaluation.</summary>
+    public int MaxMarks { get; set; }
+    public string? Feedback { get; set; }
+    public EvaluationMethod EvaluationMethod { get; set; } = EvaluationMethod.Deterministic;
+    public AnswerEvaluationStatus EvaluationStatus { get; set; } = AnswerEvaluationStatus.Pending;
+
+    /// <summary>
+    /// JSON <c>QuestionSnapshot</c>: the prompt, options, answer key and maximum marks this
+    /// answer was marked against, so the result is reproducible after the question changes.
+    /// </summary>
+    public string? QuestionSnapshotJson { get; set; }
+
+    public ICollection<MarkAdjustment> MarkAdjustments { get; set; } = new List<MarkAdjustment>();
+}
+
+/// <summary>
+/// Every manual mark (first marking of a subjective answer, or an override of an existing
+/// mark) with its author, previous and new value and the stated reason.
+/// </summary>
+public class MarkAdjustment : BaseEntity
+{
+    public Guid SubmissionAnswerId { get; set; }
+    public SubmissionAnswer? SubmissionAnswer { get; set; }
+    /// <summary>The marker; null only if that account was later deleted.</summary>
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public int PreviousMarks { get; set; }
+    public int NewMarks { get; set; }
+    public AnswerEvaluationStatus PreviousStatus { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+
+// -----------------------------------------------------------------------------
+// 3b. Grading: policies, weights, course results
+// -----------------------------------------------------------------------------
+
+/// <summary>
+/// A grading scale. The institution default has no <see cref="CourseId"/>; a course may own
+/// a custom policy. Thresholds are data, never code.
+/// </summary>
+public class GradingPolicy : BaseEntity
+{
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool IsInstitutionDefault { get; set; }
+
+    public ICollection<GradeBand> Bands { get; set; } = new List<GradeBand>();
+}
+
+/// <summary>
+/// A grade awarded for percentages from <see cref="MinPercentage"/> (inclusive) up to the next
+/// higher band's minimum (exclusive). The lowest band must start at 0.
+/// </summary>
+public class GradeBand : BaseEntity
+{
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public decimal MinPercentage { get; set; }
+}
+
+/// <summary>
+/// How a course turns assessment results into a course grade: the grading policy, which
+/// attempt counts, and (on each assessment) its weight. Weights may be incomplete while
+/// <see cref="Status"/> is Draft; activation requires them to total exactly 100.
+/// </summary>
+public class CourseGradingConfiguration : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid GradingPolicyId { get; set; }
+    public GradingPolicy? GradingPolicy { get; set; }
+    public GradingConfigurationStatus Status { get; set; } = GradingConfigurationStatus.Draft;
+    public AttemptScoringRule AttemptScoring { get; set; } = AttemptScoringRule.Highest;
+    public DateTime? ActivatedAt { get; set; }
+    public Guid? ActivatedById { get; set; }
+}
+
+/// <summary>
+/// A student's course result, derived from evaluated attempts by the grade service and never
+/// written by clients. A manual override is recorded alongside, never in place of, the
+/// calculated grade.
+/// </summary>
+public class CourseResult : BaseEntity
+{
+    public Guid CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+
+    /// <summary>Weighted percentage over the full 100% (assessments without a result count as 0).</summary>
+    public decimal CoursePercentage { get; set; }
+
+    /// <summary>Weighted percentage over only the weight already assessed (null when nothing is assessed).</summary>
+    public decimal? CurrentPercentage { get; set; }
+
+    /// <summary>Total weight of assessments that have an evaluated attempt.</summary>
+    public decimal AssessedWeight { get; set; }
+    public string CalculatedGrade { get; set; } = string.Empty;
+    public string? OverrideGrade { get; set; }
+
+    /// <summary>True when every weighted assessment has an evaluated attempt.</summary>
+    public bool IsComplete { get; set; }
+    public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
+
+    public string EffectiveGrade => OverrideGrade ?? CalculatedGrade;
+
+    public ICollection<GradeOverride> Overrides { get; set; } = new List<GradeOverride>();
+}
+
+/// <summary>Audit trail of manual grade overrides (original value, new value, reason, actor).</summary>
+public class GradeOverride : BaseEntity
+{
+    public Guid CourseResultId { get; set; }
+    public CourseResult? CourseResult { get; set; }
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public string PreviousGrade { get; set; } = string.Empty;
+
+    /// <summary>The override grade, or null when an override was removed.</summary>
+    public string? NewGrade { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 // -----------------------------------------------------------------------------
 // 4. Gamification: XP, Levels, Badges, Streaks & Challenges
 // -----------------------------------------------------------------------------
+/// <summary>
+/// The points ledger. Every XP or coin change is one row; <see cref="StudentXp"/> is only an
+/// aggregate of these rows. <see cref="IdempotencyKey"/> (unique per student) guarantees that
+/// the same LMS event can never pay twice.
+/// </summary>
 public class XpTransaction : BaseEntity
 {
     public Guid StudentId { get; set; }
@@ -183,6 +571,21 @@ public class XpTransaction : BaseEntity
     public XpSourceType SourceType { get; set; }
     public Guid SourceId { get; set; }
     public int XpAmount { get; set; }
+    public int CoinAmount { get; set; }
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>Stable key of the event that caused this award, e.g. "quiz-completed:{assessmentId}".</summary>
+    public string? IdempotencyKey { get; set; }
+}
+
+/// <summary>
+/// One configurable gamification value (XP amount, tier threshold, coin ratio, cap...).
+/// Rules are data: changing a reward never requires a code change.
+/// </summary>
+public class GamificationRule : BaseEntity
+{
+    public string Key { get; set; } = string.Empty;
+    public decimal Value { get; set; }
     public string Description { get; set; } = string.Empty;
 }
 
@@ -215,6 +618,10 @@ public class Badge
     public BadgeCategory Category { get; set; } = BadgeCategory.Learning;
     public int XpBonus { get; set; } = 100;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>What the achievement measures; unlocked when the measure reaches <see cref="Threshold"/>.</summary>
+    public AchievementCriteria Criteria { get; set; } = AchievementCriteria.None;
+    public int Threshold { get; set; } = 1;
 
     public ICollection<StudentBadge> StudentBadges { get; set; } = new List<StudentBadge>();
 }
@@ -273,6 +680,51 @@ public class DailyChallenge : BaseEntity
     public DateTime ExpiresAt { get; set; }
 }
 
+public class SkillMastery : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+    public Guid? ModuleId { get; set; }
+    public Module? Module { get; set; }
+    public Guid? TopicId { get; set; }
+    public Topic? Topic { get; set; }
+    public string TopicName { get; set; } = string.Empty;
+    public string SkillName { get; set; } = string.Empty;
+    public int MasteryPercentage { get; set; } = 0; // 0 to 100
+    public int TotalAttempts { get; set; } = 0;
+    public int CorrectAttempts { get; set; } = 0;
+    public DateTime LastAssessedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class PersonalBestRecord : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public Guid AssessmentId { get; set; }
+    public Assessment? Assessment { get; set; }
+    public int BestScorePercent { get; set; }
+    public int BestTimeSeconds { get; set; }
+    public DateTime AchievedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class StudentDailyMission : BaseEntity
+{
+    public Guid StudentId { get; set; }
+    public User? Student { get; set; }
+    public DateOnly Date { get; set; }
+    public string MissionKey { get; set; } = string.Empty; // LESSON_COMPLETE, PRACTICE_5_QUESTIONS, SCORE_70_QUIZ, AI_CHALLENGE
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int CurrentCount { get; set; } = 0;
+    public int TargetCount { get; set; } = 1;
+    public bool IsCompleted { get; set; } = false;
+    public int RewardXp { get; set; } = 20;
+    public int RewardCoins { get; set; } = 5;
+    public bool Claimed { get; set; } = false;
+}
+
 public class StudentChallenge : BaseEntity
 {
     public Guid StudentId { get; set; }
@@ -295,6 +747,23 @@ public class Team : BaseEntity
     public string? AvatarUrl { get; set; }
     public Guid LeaderId { get; set; }
     public User? Leader { get; set; }
+
+    // ── Quest binding ────────────────────────────────────────────────────────
+    // A squad's quest is anchored to a real course so progress is derived from
+    // actual lesson completions / enrollments rather than a free-text label.
+
+    /// <summary>The course this squad's quest is anchored to. Null = unbound squad.</summary>
+    public Guid? CourseId { get; set; }
+    public Course? Course { get; set; }
+
+    /// <summary>Display title of the active quest (falls back to the bound course title).</summary>
+    public string QuestTitle { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Quest XP target. When 0 the target is derived from the bound course's real
+    /// reward total (see <see cref="TeamService"/>); never a hard-coded number.
+    /// </summary>
+    public int TargetXp { get; set; } = 0;
 
     public ICollection<TeamMember> Members { get; set; } = new List<TeamMember>();
     public ICollection<TeamChallenge> TeamChallenges { get; set; } = new List<TeamChallenge>();
@@ -393,4 +862,63 @@ public class Announcement : BaseEntity
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public bool IsGlobal { get; set; } = false;
+}
+
+// -----------------------------------------------------------------------------
+// 8. Analytics, Reports & Audit Trail Entities
+// -----------------------------------------------------------------------------
+public class Report : BaseEntity
+{
+    public string Title { get; set; } = string.Empty;
+    public string Type { get; set; } = "StudentPerformance"; // StudentPerformance | CourseAnalytics | EngagementSummary | GamificationAudit
+    public Guid? GeneratedById { get; set; }
+    public User? GeneratedBy { get; set; }
+    public string Status { get; set; } = "Completed"; // Pending | Completed | Failed
+    public string SummaryJson { get; set; } = "{}";
+    public string? FileUrl { get; set; }
+}
+
+public class AuditLog : BaseEntity
+{
+    public Guid? ActorId { get; set; }
+    public User? Actor { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string EntityId { get; set; } = string.Empty;
+    public string Details { get; set; } = string.Empty;
+    public string IpAddress { get; set; } = "127.0.0.1";
+}
+
+// -----------------------------------------------------------------------------
+// 9. Support Desk & Inquiries Entities
+// -----------------------------------------------------------------------------
+public class SupportTicket : BaseEntity
+{
+    public Guid SubmittedByUserId { get; set; }
+    public User? SubmittedByUser { get; set; }
+
+    public SupportTicketType Type { get; set; } = SupportTicketType.Feedback;
+    public SupportTicketStatus Status { get; set; } = SupportTicketStatus.Open;
+
+    public string Message { get; set; } = string.Empty;
+    public DateTime? ResolvedAt { get; set; }
+
+    /// <summary>Optimistic concurrency token; updated on every accepted change.</summary>
+    public Guid Version { get; set; } = Guid.NewGuid();
+
+    /// <summary>Client-generated submission idempotency key, unique per user.</summary>
+    public Guid ClientRequestId { get; set; }
+
+    public ICollection<SupportTicketResponse> Responses { get; set; } = new List<SupportTicketResponse>();
+}
+
+public class SupportTicketResponse : BaseEntity
+{
+    public Guid SupportTicketId { get; set; }
+    public SupportTicket? SupportTicket { get; set; }
+
+    public Guid AdminUserId { get; set; }
+    public User? AdminUser { get; set; }
+
+    public string Message { get; set; } = string.Empty;
 }

@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
 using EduFlow.Core.DTOs;
 using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
+using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
 using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -15,21 +18,21 @@ namespace EduFlow.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class ChallengesController : ControllerBase
+public class ChallengesController : BaseApiController
 {
-    private readonly ApplicationDbContext _dbContext;
-    private readonly IGamificationService _gamificationService;
+    private readonly IDomainEventDispatcher _events;
 
-    public ChallengesController(ApplicationDbContext dbContext, IGamificationService gamificationService)
+    public ChallengesController(ApplicationDbContext dbContext, IDomainEventDispatcher events)
+        : base(dbContext)
     {
-        _dbContext = dbContext;
-        _gamificationService = gamificationService;
+        _events = events;
     }
 
     [HttpGet("daily")]
+    [Authorize]
     public async Task<IActionResult> GetDailyMissions()
     {
-        var missions = await _dbContext.Challenges
+        var missions = await DbContext.Challenges
             .Where(c => c.IsActive && c.Type == ChallengeType.DailyMission)
             .Select(c => new DailyChallengeDto(
                 c.Id,
@@ -49,9 +52,10 @@ public class ChallengesController : ControllerBase
     }
 
     [HttpGet("course/{courseId}")]
+    [Authorize]
     public async Task<IActionResult> GetCourseChallenges(Guid courseId)
     {
-        var challenges = await _dbContext.Challenges
+        var challenges = await DbContext.Challenges
             .Where(c => c.CourseId == courseId && c.IsActive)
             .ToListAsync();
 
@@ -62,6 +66,12 @@ public class ChallengesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateChallenge([FromBody] CreateChallengeRequest request)
     {
+        if (request.CourseId.HasValue && request.CourseId.Value != Guid.Empty)
+        {
+            if (!await IsCourseOwnerOrAdmin(request.CourseId.Value))
+                return Forbid();
+        }
+
         var challenge = new Challenge
         {
             CourseId = request.CourseId,
@@ -76,8 +86,8 @@ public class ChallengesController : ControllerBase
             IsActive = true
         };
 
-        await _dbContext.Challenges.AddAsync(challenge);
-        await _dbContext.SaveChangesAsync();
+        await DbContext.Challenges.AddAsync(challenge);
+        await DbContext.SaveChangesAsync();
 
         return Ok(challenge);
     }
@@ -86,11 +96,14 @@ public class ChallengesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateChallenge(Guid id, [FromBody] CreateChallengeRequest request)
     {
-        var challenge = await _dbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
+        var challenge = await DbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
         if (challenge == null)
         {
             return NotFound(new { message = "Challenge not found." });
         }
+
+        if (!await IsChallengeOwnerOrAdmin(id))
+            return Forbid();
 
         challenge.Title = request.Title;
         challenge.Description = request.Description;
@@ -101,7 +114,7 @@ public class ChallengesController : ControllerBase
         challenge.TimeLimitMinutes = request.TimeLimitMinutes;
         challenge.UpdatedAt = DateTime.UtcNow;
 
-        await _dbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync();
         return Ok(challenge);
     }
 
@@ -109,19 +122,22 @@ public class ChallengesController : ControllerBase
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> DeleteChallenge(Guid id)
     {
-        var challenge = await _dbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
+        var challenge = await DbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
         if (challenge == null)
         {
             return NotFound(new { message = "Challenge not found." });
         }
 
-        _dbContext.Challenges.Remove(challenge);
-        await _dbContext.SaveChangesAsync();
+        if (!await IsChallengeOwnerOrAdmin(id))
+            return Forbid();
+
+        DbContext.Challenges.Remove(challenge);
+        await DbContext.SaveChangesAsync();
         return Ok(new { message = "Challenge deleted successfully." });
     }
 
     [HttpPost("{id}/submit")]
-    [Authorize]
+    [Authorize(Roles = "Student")]
     public async Task<IActionResult> SubmitChallenge(Guid id, [FromBody] SubmitChallengeRequest request)
     {
         var uidClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("uid");
@@ -130,24 +146,24 @@ public class ChallengesController : ControllerBase
             return Unauthorized();
         }
 
-        var challenge = await _dbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
+        var challenge = await DbContext.Challenges.FirstOrDefaultAsync(c => c.Id == id);
         if (challenge == null)
         {
             return NotFound(new { message = "Challenge not found." });
         }
 
-        // Award XP and coins through the Gamification Engine
-        var result = await _gamificationService.AwardXpAsync(
-            studentId,
-            XpSourceType.DailyChallenge,
-            challenge.Id,
-            challenge.XpReward,
-            $"Completed challenge: {challenge.Title}"
-        );
+        if (!challenge.IsActive)
+        {
+            return BadRequest(new { message = "This challenge is no longer active." });
+        }
 
-        // Update StudentChallenge attempt status
-        var studentChallenge = await _dbContext.StudentChallenges
+        // A challenge pays out once per student; repeat submissions earn nothing.
+        var studentChallenge = await DbContext.StudentChallenges
             .FirstOrDefaultAsync(sc => sc.ChallengeId == id && sc.StudentId == studentId);
+        if (studentChallenge?.Status == ChallengeStatus.Completed)
+        {
+            return Conflict(new { message = "You have already completed this challenge.", code = "CHALLENGE_ALREADY_COMPLETED" });
+        }
 
         if (studentChallenge == null)
         {
@@ -159,7 +175,7 @@ public class ChallengesController : ControllerBase
                 ScoreObtained = challenge.XpReward,
                 CompletedAt = DateTime.UtcNow
             };
-            await _dbContext.StudentChallenges.AddAsync(studentChallenge);
+            await DbContext.StudentChallenges.AddAsync(studentChallenge);
         }
         else
         {
@@ -168,9 +184,14 @@ public class ChallengesController : ControllerBase
             studentChallenge.CompletedAt = DateTime.UtcNow;
         }
 
-        await _dbContext.SaveChangesAsync();
+        // The completion row is saved first; gamification reacts to the event (its XP is
+        // idempotent per challenge) and its result is returned to the caller.
+        await DbContext.SaveChangesAsync();
+        var result = (await _events.PublishAsync(new ChallengeCompleted(studentId, challenge.Id, challenge.Title, challenge.XpReward)))
+            .OfType<ChallengeResultDto>()
+            .FirstOrDefault();
 
-        return Ok(result);
+        return Ok(result ?? new ChallengeResultDto(true, 100, 0, 0, 0, 0, false, new List<string>()));
     }
 }
 

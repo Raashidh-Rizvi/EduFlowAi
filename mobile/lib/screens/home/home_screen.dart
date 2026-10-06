@@ -239,7 +239,55 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // 4. AI Coach Shortcut Banner
+            // 4. Explore Course Catalog Banner
+            InkWell(
+              onTap: () => onNavigate('explore'),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF065F46), Color(0xFF047857)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppTheme.success.withOpacity(0.4)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.success.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Text('🧭', style: TextStyle(fontSize: 32)),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Explore Course Catalog',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+                          ),
+                          Text(
+                            'Browse courses in Web Dev, AI, Data Science & Enroll now.',
+                            style: TextStyle(color: Colors.white70, fontSize: 11.5),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 14),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // 5. AI Coach Shortcut Banner
             InkWell(
               onTap: () => onNavigate('coach'),
               borderRadius: BorderRadius.circular(16),

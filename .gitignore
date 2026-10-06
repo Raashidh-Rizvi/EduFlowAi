@@ -5,6 +5,19 @@
 *.suo
 *.userosscache
 *.sln.docstates
+backend/EduFlow.Api/appsettings.Development.json
+backend/EduFlow.Api/appsettings.Local.json
+
+# User-uploaded course material (served only via the authorized UploadsController).
+# Files already tracked (DbInitializer seed PDFs, e2e fixtures) stay tracked; new uploads are not committed.
+backend/EduFlow.Api/wwwroot/uploads/
+
+# Stray ad-hoc API-testing output (use a local /scratch/ dir instead, also gitignored)
+/backend_response*.json
+/response.json
+/final_success_test.json
+/success_test*.json
+/scratch/
 
 # Node.js / React
 **/node_modules/
@@ -17,6 +30,12 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright
+**/playwright-report/
+**/test-results/
+**/e2e/screenshots/
+.playwright-mcp/
 
 # Flutter / Dart
 **/mobile/build/
@@ -32,11 +51,17 @@ yarn-error.log*
 *.py[cod]
 *$py.class
 **/venv/
+**/.venv/
 **/.env
 .pytest_cache/
+**/data/chroma_db/
+ai-agent/data/
+**/temp_test_chroma_db/
 
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+DAILY_GIT_WORKFLOW.md
+GITHUB_ACTIONS_GUIDE.md

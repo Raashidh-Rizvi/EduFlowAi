@@ -1,0 +1,3 @@
+## 2023-10-27 - [N+1 Query Bottleneck in Leaderboards]
+**Learning:** Found an O(N) database query anti-pattern in the GamificationService leaderboards. The application fetches student details (user info, xp, and streaks) inside a foreach loop for each top student. While Entity Framework Core handles navigation properties well when configured, these were manual lookups by Id inside the loop, causing severe N+1 problems.
+**Action:** Always batch queries for related entities using `.Contains()` when joining isn't feasible, or use `.Include()` if the relationships are mapped in EF Core, to ensure O(1) query performance instead of O(N).
