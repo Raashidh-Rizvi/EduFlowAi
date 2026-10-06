@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoInstructorSection } from './helpers.js';
 
 test.describe('SlideQuest AI Generation & Quiz Runner', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,7 +20,7 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     // Real Azure generation + publish round-trip; allow a generous budget.
     test.setTimeout(300000);
     // 1. Navigate to Curriculum & Modules (opens the course directory)
-    await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
+    await gotoInstructorSection(page, 'courses');
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });// 1b. Wait for the directory to actually render (the course list is an
     //     API call), then open the seeded course that owns the lecture deck.
     //     Selecting it by code keeps the round-trip deterministic regardless of
@@ -70,7 +71,7 @@ test.describe('SlideQuest AI Generation & Quiz Runner', () => {
     expect(published.status()).toBe(200);
 
     // 8. The draft is streamed to the Assessments & Quizzes tab
-    await page.getByRole('button', { name: /Assessments & Quizzes/i }).click();
+    await gotoInstructorSection(page, 'assessments');
     await expect(page.locator('text=Assessments').first()).toBeVisible({ timeout: 15000 });
   });
 });

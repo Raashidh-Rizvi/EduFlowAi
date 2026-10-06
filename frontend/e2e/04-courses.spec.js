@@ -1,4 +1,5 @@
 ﻿import { test, expect } from '@playwright/test';
+import { gotoInstructorSection } from './helpers.js';
 
 test.describe('Courses Curriculum & Learning Path Exploration', () => {
   test.beforeEach(async ({ page }) => {
@@ -17,7 +18,7 @@ test.describe('Courses Curriculum & Learning Path Exploration', () => {
 
   test('should navigate to Courses, display curriculum tree and allow course management', async ({ page }) => {
     // Click Curriculum & Modules in sidebar
-    await page.getByRole('button', { name: /Curriculum & Modules/i }).click();
+    await gotoInstructorSection(page, 'courses');
 
     // Verify page loaded
     await expect(page.locator('text=Curriculum & Learning Journey')).toBeVisible({ timeout: 10000 });

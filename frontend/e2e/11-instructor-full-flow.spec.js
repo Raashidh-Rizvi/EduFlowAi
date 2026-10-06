@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoInstructorSection } from './helpers.js';
 
 const BASE_URL = 'http://localhost:2174';
 
@@ -27,13 +28,13 @@ test.describe('Instructor Full Flow - End to End', () => {
   });
 
   test('2. Navigate to Courses page', async ({ page }) => {
-    await page.getByRole('button', { name: /Courses|Manage Curriculum/i }).first().click();
+    await gotoInstructorSection(page, 'courses');
     await expect(page.locator('text=Course').first()).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: 'e2e/screenshots/phase4-02-courses.png', fullPage: true });
   });
 
   test('3. Create a new course', async ({ page }) => {
-    await page.getByRole('button', { name: /Courses|Manage Curriculum/i }).first().click();
+    await gotoInstructorSection(page, 'courses');
     await expect(page.locator('text=Course').first()).toBeVisible({ timeout: 10000 });
     
     // Click create course button
@@ -50,7 +51,7 @@ test.describe('Instructor Full Flow - End to End', () => {
   });
 
   test('4. Add module to course', async ({ page }) => {
-    await page.getByRole('button', { name: /Courses|Manage Curriculum/i }).first().click();
+    await gotoInstructorSection(page, 'courses');
     await expect(page.locator('text=Course').first()).toBeVisible({ timeout: 10000 });
     
     // Look for module-related buttons
@@ -62,13 +63,13 @@ test.describe('Instructor Full Flow - End to End', () => {
   });
 
   test('5. Navigate to Assessments page', async ({ page }) => {
-    await page.getByRole('button', { name: /Assessments|Quizzes/i }).first().click();
+    await gotoInstructorSection(page, 'assessments');
     await expect(page.locator('text=Assessment').first()).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: 'e2e/screenshots/phase4-05-assessments.png', fullPage: true });
   });
 
   test('6. AI Review page loads', async ({ page }) => {
-    await page.getByRole('button', { name: /AI Review|Review AI/i }).first().click();
+    await gotoInstructorSection(page, 'ai-review');
     await expect(page.locator('text=AI').first()).toBeVisible({ timeout: 10000 });
     await page.screenshot({ path: 'e2e/screenshots/phase4-06-ai-review.png', fullPage: true });
   });
