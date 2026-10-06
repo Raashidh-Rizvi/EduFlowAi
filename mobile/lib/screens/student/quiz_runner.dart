@@ -82,7 +82,7 @@ class _QuizRunnerState extends State<QuizRunner> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
         child: Column(
           children: [
-            const Text('No Questions Available',
+            Text('No Questions Available',
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
             const SizedBox(height: 12),
@@ -97,13 +97,13 @@ class _QuizRunnerState extends State<QuizRunner> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
         child: Column(
           children: [
-            const Text('Submission Failed',
+            Text('Submission Failed',
                 style: TextStyle(
                     fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
             const SizedBox(height: 8),
             Text(_submitError!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textMuted)),
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted)),
             const SizedBox(height: 20),
             Wrap(
               spacing: 10,
@@ -138,17 +138,17 @@ class _QuizRunnerState extends State<QuizRunner> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(widget.quiz['title']?.toString() ?? '',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textMain)),
                   Text('Question ${_qIdx + 1} of ${qs.length}',
-                      style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted)),
+                      style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted)),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close, size: 16, color: AppTheme.textMuted),
+              icon: Icon(Icons.close, size: 16, color: AppTheme.textMuted),
               onPressed: widget.onCancel,
             ),
           ],
@@ -171,7 +171,7 @@ class _QuizRunnerState extends State<QuizRunner> {
         PortalCard(
           color: AppTheme.bgSurface,
           child: Text(q['prompt']?.toString() ?? '',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
                   color: AppTheme.textMain,
@@ -235,7 +235,7 @@ class _QuizRunnerState extends State<QuizRunner> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(text,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                       color: AppTheme.textMain)),
@@ -267,7 +267,7 @@ class _QuizRunnerState extends State<QuizRunner> {
                     ? '🎉 Assessment Passed'
                     : 'Assessment Finished',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.textMain),
           ),
           const SizedBox(height: 6),
@@ -275,7 +275,7 @@ class _QuizRunnerState extends State<QuizRunner> {
             'Score: ${r['scoreObtained']}/${r['maxScore']} ($finalScore%)'
             '${passing != null ? ' • Required: $passing%' : ''}',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+            style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
           ),
           const SizedBox(height: 16),
           Container(
@@ -317,7 +317,7 @@ class _QuizRunnerState extends State<QuizRunner> {
             const SizedBox(height: 16),
             Text(feedback,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12.5, color: AppTheme.textMuted, height: 1.5)),
           ],
           if (breakdown.isNotEmpty) ...[
@@ -349,7 +349,7 @@ class _QuizRunnerState extends State<QuizRunner> {
         border: Border.all(color: tint(c, 0.4)),
       ),
       child: DefaultTextStyle(
-        style: const TextStyle(fontSize: 12, color: AppTheme.textMain, height: 1.5),
+        style: TextStyle(fontSize: 12, color: AppTheme.textMain, height: 1.5),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -358,7 +358,7 @@ class _QuizRunnerState extends State<QuizRunner> {
             Text('Your answer: ${sel.isEmpty ? '(no answer)' : sel}'),
             if (correct.isNotEmpty && correct != 'Hidden') Text('Correct answer: $correct'),
             if (expl.isNotEmpty)
-              Text(expl, style: const TextStyle(color: AppTheme.textMuted)),
+              Text(expl, style: TextStyle(color: AppTheme.textMuted)),
           ],
         ),
       ),

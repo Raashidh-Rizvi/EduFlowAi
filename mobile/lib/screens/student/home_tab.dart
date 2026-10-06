@@ -68,12 +68,12 @@ class _HomeTabState extends State<HomeTab> {
                         Text.rich(TextSpan(children: [
                           TextSpan(
                             text: '${_num.format(toInt(p['totalXp']))} ',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 30,
                                 fontWeight: FontWeight.w800,
                                 color: AppTheme.primaryGlow),
                           ),
-                          const TextSpan(
+                          TextSpan(
                             text: 'Total XP',
                             style: TextStyle(
                                 fontSize: 14,
@@ -91,7 +91,7 @@ class _HomeTabState extends State<HomeTab> {
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                               color: AppTheme.warning)),
-                      const Text('Coins',
+                      Text('Coins',
                           style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted)),
                     ],
                   ),
@@ -120,7 +120,7 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(height: 12),
               Text(
                 '${_num.format(xpInLevel)} / ${_num.format(xpToNext)} XP to Level ${level + 1} ($pct%)',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12.5, color: AppTheme.textMuted, fontWeight: FontWeight.w500),
               ),
             ],
@@ -139,12 +139,12 @@ class _HomeTabState extends State<HomeTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('${toInt(p['streak'])} Day Learning Streak',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: AppTheme.textMain,
                             fontSize: 14)),
                     Text('${toInt(p['freezeTokens'])} streak freeze protection available',
-                        style: const TextStyle(fontSize: 11.5, color: AppTheme.textMuted)),
+                        style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted)),
                   ],
                 ),
               ),
@@ -159,7 +159,7 @@ class _HomeTabState extends State<HomeTab> {
         const SizedBox(height: 20),
 
         // Daily mission
-        const Text('RECOMMENDED STUDY MISSION',
+        Text('RECOMMENDED STUDY MISSION',
             style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
@@ -195,13 +195,13 @@ class _HomeTabState extends State<HomeTab> {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text('Clean Architecture & PostgreSQL Indexing',
+              Text('Clean Architecture & PostgreSQL Indexing',
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
                       color: AppTheme.textMain)),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Read the curriculum specification PDF, review composite index selectivity, and complete the diagnostic evaluation.',
                 style: TextStyle(fontSize: 12, color: AppTheme.textMuted, height: 1.5),
               ),
@@ -243,7 +243,7 @@ class _HomeTabState extends State<HomeTab> {
             children: [
               _iconBox(Icons.bolt, AppTheme.primary, size: 40),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -280,7 +280,7 @@ class _HomeTabState extends State<HomeTab> {
             children: [
               _iconBox(Icons.smart_toy_outlined, AppTheme.secondary),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -295,7 +295,7 @@ class _HomeTabState extends State<HomeTab> {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, size: 16, color: AppTheme.textMuted),
+              Icon(Icons.chevron_right, size: 16, color: AppTheme.textMuted),
             ],
           ),
         ),

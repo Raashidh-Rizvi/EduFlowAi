@@ -127,7 +127,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -149,7 +149,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                         Text(
                           _errorMessage!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: AppTheme.textMuted),
+                          style: TextStyle(color: AppTheme.textMuted),
                         ),
                         const SizedBox(height: 24),
                         ElevatedButton.icon(
@@ -162,7 +162,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                   ),
                 )
               : _nodes.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text(
                         'No course content found.\nEnroll in a course to start your journey!',
                         textAlign: TextAlign.center,
@@ -213,7 +213,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                                             ? AppTheme.success.withOpacity(0.2)
                                             : isActive
                                                 ? AppTheme.primary.withOpacity(0.25)
-                                                : Colors.white.withOpacity(0.05),
+                                                : AppTheme.textMain.withOpacity(0.05),
                                       ),
                                       child: Center(
                                         child: Text(
@@ -261,7 +261,7 @@ class _JourneyScreenState extends State<JourneyScreen> {
                                           const SizedBox(height: 4),
                                           Text(
                                             node['desc'],
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 color: AppTheme.textMuted, fontSize: 11.5),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,

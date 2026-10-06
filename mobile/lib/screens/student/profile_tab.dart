@@ -42,7 +42,7 @@ class ProfileTab extends StatelessWidget {
               const SizedBox(height: 12),
               Text(name,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textMain)),
@@ -74,7 +74,7 @@ class ProfileTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        const Text('EARNED CREDENTIALS & BADGES',
+        Text('EARNED CREDENTIALS & BADGES',
             style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
@@ -105,7 +105,7 @@ class ProfileTab extends StatelessWidget {
             children: [
               const Icon(Icons.dark_mode_outlined, color: AppTheme.secondary),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -166,7 +166,7 @@ class ProfileTab extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 12.5,
                     color: AppTheme.textMain)),
@@ -175,7 +175,7 @@ class ProfileTab extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 10.5, color: AppTheme.textMuted)),
           ],
         ),

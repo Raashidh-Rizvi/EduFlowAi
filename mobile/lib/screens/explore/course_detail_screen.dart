@@ -131,7 +131,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
             ),
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Color(0xFF1E1B4B), Color(0xFF0F172A), AppTheme.bgMain],
                     begin: Alignment.topCenter,
@@ -214,7 +214,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                           title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppTheme.textMain,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -233,18 +233,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                             const SizedBox(width: 8),
                             Text(
                               instructorName,
-                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
+                              style: TextStyle(color: AppTheme.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                             const Spacer(),
                             const Icon(Icons.star, color: AppTheme.warning, size: 16),
                             const SizedBox(width: 4),
                             Text(
                               rating.toStringAsFixed(1),
-                              style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 13),
+                              style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 13),
                             ),
                             Text(
                               ' ($ratingCount)',
-                              style: const TextStyle(color: AppTheme.textSubtle, fontSize: 11),
+                              style: TextStyle(color: AppTheme.textSubtle, fontSize: 11),
                             ),
                           ],
                         ),
@@ -319,7 +319,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
       // Bottom Sticky Enrollment Action Bar
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppTheme.bgSurface,
           border: Border(top: BorderSide(color: AppTheme.borderSubtle)),
         ),
@@ -331,7 +331,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Course Price', style: TextStyle(color: AppTheme.textSubtle, fontSize: 11)),
+                  Text('Course Price', style: TextStyle(color: AppTheme.textSubtle, fontSize: 11)),
                   Text(
                     price,
                     style: TextStyle(
@@ -390,8 +390,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
       children: [
         Icon(icon, color: AppTheme.secondary, size: 18),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 12)),
-        Text(label, style: const TextStyle(color: AppTheme.textSubtle, fontSize: 10)),
+        Text(value, style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 12)),
+        Text(label, style: TextStyle(color: AppTheme.textSubtle, fontSize: 10)),
       ],
     );
   }
@@ -409,15 +409,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('About This Course', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
+          Text('About This Course', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Text(
             desc,
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.5),
           ),
           const SizedBox(height: 20),
 
-          const Text('What You Will Learn', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
+          Text('What You Will Learn', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
           ...outcomes.map((item) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
@@ -429,7 +429,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                     Expanded(
                       child: Text(
                         item,
-                        style: const TextStyle(color: AppTheme.textMain, fontSize: 13, height: 1.3),
+                        style: TextStyle(color: AppTheme.textMain, fontSize: 13, height: 1.3),
                       ),
                     ),
                   ],
@@ -437,15 +437,15 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
               )),
           const SizedBox(height: 16),
 
-          const Text('Prerequisites', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
+          Text('Prerequisites', style: TextStyle(color: AppTheme.textMain, fontSize: 15, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           ...prereqs.map((p) => Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   children: [
-                    const Icon(Icons.circle, color: AppTheme.textSubtle, size: 6),
+                    Icon(Icons.circle, color: AppTheme.textSubtle, size: 6),
                     const SizedBox(width: 10),
-                    Text(p, style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                    Text(p, style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
                   ],
                 ),
               )),
@@ -457,7 +457,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
   Widget _buildCurriculumTab(Map<String, dynamic> c) {
     final modules = (c['modules'] as List<dynamic>?) ?? [];
     if (modules.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('Curriculum lessons will be unlocked upon enrollment.', style: TextStyle(color: AppTheme.textMuted)),
       );
     }
@@ -482,11 +482,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
             collapsedIconColor: AppTheme.textSubtle,
             title: Text(
               modTitle,
-              style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 13),
+              style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 13),
             ),
             subtitle: Text(
               '${lessons.length} lessons',
-              style: const TextStyle(color: AppTheme.textSubtle, fontSize: 11),
+              style: TextStyle(color: AppTheme.textSubtle, fontSize: 11),
             ),
             children: lessons.map((l) {
               final lessonMap = l as Map<String, dynamic>;
@@ -497,7 +497,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   border: Border(top: BorderSide(color: AppTheme.borderSubtle, width: 0.5)),
                 ),
                 child: Row(
@@ -514,11 +514,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                         children: [
                           Text(
                             lTitle,
-                            style: const TextStyle(color: AppTheme.textMain, fontSize: 12, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: AppTheme.textMain, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                           Text(
                             '$mins mins • +$xp XP',
-                            style: const TextStyle(color: AppTheme.textSubtle, fontSize: 10),
+                            style: TextStyle(color: AppTheme.textSubtle, fontSize: 10),
                           ),
                         ],
                       ),
@@ -551,7 +551,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
+          children: [
             Icon(Icons.rate_review_outlined, color: AppTheme.textSubtle, size: 40),
             SizedBox(height: 10),
             Text('No student reviews yet.', style: TextStyle(color: AppTheme.textMuted)),
@@ -594,7 +594,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                   Expanded(
                     child: Text(
                       studentName,
-                      style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 13),
+                      style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w700, fontSize: 13),
                     ),
                   ),
                   Row(
@@ -613,7 +613,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> with SingleTick
                 const SizedBox(height: 8),
                 Text(
                   comment,
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4),
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.4),
                 ),
               ],
             ],

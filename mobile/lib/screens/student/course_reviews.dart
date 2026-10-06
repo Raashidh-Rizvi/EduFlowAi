@@ -183,7 +183,7 @@ class _CourseReviewsState extends State<CourseReviews> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('RATINGS & REVIEWS',
+              Text('RATINGS & REVIEWS',
                   style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -191,7 +191,7 @@ class _CourseReviewsState extends State<CourseReviews> {
                       color: AppTheme.textMuted)),
               const SizedBox(height: 10),
               if (_loading)
-                const Text('Loading reviews…', style: TextStyle(color: AppTheme.textMuted))
+                Text('Loading reviews…', style: TextStyle(color: AppTheme.textMuted))
               else if (_loadError.isNotEmpty)
                 Text(_loadError, style: const TextStyle(color: AppTheme.error))
               else
@@ -202,14 +202,14 @@ class _CourseReviewsState extends State<CourseReviews> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(count > 0 ? average.toStringAsFixed(1) : '–',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 32,
                                 fontWeight: FontWeight.w800,
                                 color: AppTheme.textMain)),
                         StarRating(average: average, count: count, size: 15),
                         const SizedBox(height: 4),
                         Text('$count review${count == 1 ? '' : 's'}',
-                            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                            style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                       ],
                     ),
                     const SizedBox(width: 20),
@@ -233,7 +233,7 @@ class _CourseReviewsState extends State<CourseReviews> {
         _form(),
         const SizedBox(height: 16),
         if (!_loading && _loadError.isEmpty && _reviews.isEmpty)
-          const PortalCard(
+          PortalCard(
             child: Column(
               children: [
                 Icon(Icons.rate_review_outlined, color: AppTheme.textMuted, size: 20),
@@ -261,7 +261,7 @@ class _CourseReviewsState extends State<CourseReviews> {
           SizedBox(
               width: 22,
               child: Text('$star★',
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted))),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted))),
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
@@ -277,7 +277,7 @@ class _CourseReviewsState extends State<CourseReviews> {
               width: 24,
               child: Text('$n',
                   textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted))),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted))),
         ],
       ),
     );
@@ -290,14 +290,14 @@ class _CourseReviewsState extends State<CourseReviews> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(mine != null ? 'Your review' : 'Rate this course',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 13.5, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
           const SizedBox(height: 4),
           Text(
             mine != null
                 ? 'You can update your rating at any time — only your latest review counts.'
                 : 'Only students with a verified (active or completed) enrollment can leave a review.',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
           if (_notice != null) ...[
             const SizedBox(height: 10),
@@ -323,7 +323,7 @@ class _CourseReviewsState extends State<CourseReviews> {
             ],
           ),
           const SizedBox(height: 12),
-          const Text.rich(TextSpan(children: [
+          Text.rich(TextSpan(children: [
             TextSpan(
                 text: 'Written review ',
                 style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textMain)),
@@ -401,7 +401,7 @@ class _CourseReviewsState extends State<CourseReviews> {
                   border: Border.all(color: tint(AppTheme.primary, 0.4)),
                 ),
                 child: Text(name[0].toUpperCase(),
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontWeight: FontWeight.w800, color: AppTheme.primaryGlow)),
               ),
               const SizedBox(width: 10),
@@ -414,7 +414,7 @@ class _CourseReviewsState extends State<CourseReviews> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(name,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800,
                                 color: AppTheme.textMain)),
@@ -423,7 +423,7 @@ class _CourseReviewsState extends State<CourseReviews> {
                       ],
                     ),
                     Text(formatDate(r['createdAt']),
-                        style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                        style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                   ],
                 ),
               ),

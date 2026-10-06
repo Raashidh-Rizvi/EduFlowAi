@@ -116,7 +116,7 @@ class _LeaderboardTabState extends State<LeaderboardTab> {
                         color: AppTheme.primary),
                     const SizedBox(height: 4),
                     Text((sq['name'] ?? 'Squad').toString(),
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
                             color: AppTheme.textMain)),
@@ -136,13 +136,13 @@ class _LeaderboardTabState extends State<LeaderboardTab> {
               Expanded(
                 child: Text(
                     'Quest: ${(sq['description'] ?? '').toString().isEmpty ? 'Sprint Quest' : sq['description']}',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5,
                         color: AppTheme.textMain,
                         fontWeight: FontWeight.w600)),
               ),
               Text('$pct% Completed',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12, color: AppTheme.textMuted)),
             ],
           ),
@@ -172,7 +172,7 @@ class _LeaderboardTabState extends State<LeaderboardTab> {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Text('Teammates:',
+                Text('Teammates:',
                     style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                 for (final m in members)
                   if (m is Map)
@@ -227,7 +227,7 @@ class _LeaderboardTabState extends State<LeaderboardTab> {
                     Flexible(
                       child: Text((e['studentName'] ?? 'Learner').toString(),
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: AppTheme.textMain,
                               fontSize: 13.5)),
@@ -241,7 +241,7 @@ class _LeaderboardTabState extends State<LeaderboardTab> {
                 const SizedBox(height: 2),
                 Text(
                     'Level ${toInt(e['level'], 1)} • ${toInt(e['streak'])}d streak',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 11.5, color: AppTheme.textMuted)),
               ],
             ),

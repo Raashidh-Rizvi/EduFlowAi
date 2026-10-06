@@ -251,10 +251,10 @@ class _CoachTabState extends State<CoachTab> {
                       onPressed: _scrollToBottom,
                       avatar: const Icon(Icons.keyboard_arrow_down,
                           size: 14, color: AppTheme.primary),
-                      label: const Text('Latest answer',
+                      label: Text('Latest answer',
                           style: TextStyle(fontSize: 12, color: AppTheme.textMain)),
                       backgroundColor: AppTheme.bgSurface,
-                      side: const BorderSide(color: AppTheme.borderSubtle),
+                      side: BorderSide(color: AppTheme.borderSubtle),
                     ),
                   ),
                 ),
@@ -278,7 +278,7 @@ class _CoachTabState extends State<CoachTab> {
             children: [
               const Icon(Icons.smart_toy_outlined, size: 16, color: AppTheme.primary),
               const SizedBox(width: 6),
-              const Text('AI Assistant',
+              Text('AI Assistant',
                   style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13.5,
@@ -329,7 +329,7 @@ class _CoachTabState extends State<CoachTab> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Text('Focus:',
+              Text('Focus:',
                   style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w600,
@@ -342,7 +342,7 @@ class _CoachTabState extends State<CoachTab> {
                     isExpanded: true,
                     isDense: true,
                     dropdownColor: AppTheme.bgCard,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMain),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMain),
                     onChanged: _loading
                         ? null
                         : (v) => setState(() {
@@ -413,7 +413,7 @@ class _CoachTabState extends State<CoachTab> {
             children: [
               Expanded(
                 child: Text('⚡ Lecture Tools: $title',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                         color: AppTheme.textMain)),
@@ -421,7 +421,7 @@ class _CoachTabState extends State<CoachTab> {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed: () => setState(() => _toolsExpanded = false),
-                icon: const Icon(Icons.close, size: 14, color: AppTheme.textMuted),
+                icon: Icon(Icons.close, size: 14, color: AppTheme.textMuted),
               ),
             ],
           ),
@@ -452,10 +452,10 @@ class _CoachTabState extends State<CoachTab> {
           if (t != null) ...[
             const SizedBox(height: 10),
             Text('Selected Topic: ${_topicName(t)}',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
             Text('Slides ${t['page_start']}–${t['page_end']}',
-                style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -487,7 +487,7 @@ class _CoachTabState extends State<CoachTab> {
     );
   }
 
-  Widget _thinking() => const Padding(
+  Widget _thinking() => Padding(
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
@@ -520,7 +520,7 @@ class _CoachTabState extends State<CoachTab> {
             ),
           ),
           child: Text((msg['text'] ?? '').toString(),
-              style: const TextStyle(color: Colors.white, fontSize: 13.5)),
+              style: TextStyle(color: AppTheme.textMain, fontSize: 13.5)),
         ),
       );
     }
@@ -587,7 +587,7 @@ class _CoachTabState extends State<CoachTab> {
         childrenPadding: const EdgeInsets.only(left: 8),
         title: Text(
             '${section['title']} · Slides ${section['page_start']}–${section['page_end']}',
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
         children: [
           Align(
@@ -639,17 +639,17 @@ class _CoachTabState extends State<CoachTab> {
                   Text.rich(TextSpan(children: [
                     TextSpan(
                         text: 'Session ${s['session_number']}: ${s['title']}',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w700, color: AppTheme.textMain)),
                     TextSpan(
                         text: ' · ${s['estimated_minutes']} minutes',
-                        style: const TextStyle(color: AppTheme.textMuted)),
+                        style: TextStyle(color: AppTheme.textMuted)),
                   ]), style: const TextStyle(fontSize: 13)),
                   for (final task in (s['tasks'] is List ? s['tasks'] as List : const []))
                     Padding(
                       padding: const EdgeInsets.only(left: 12, top: 3),
                       child: Text('• $task',
-                          style: const TextStyle(fontSize: 12.5, color: AppTheme.textMain)),
+                          style: TextStyle(fontSize: 12.5, color: AppTheme.textMain)),
                     ),
                 ],
               ),
@@ -665,7 +665,7 @@ class _CoachTabState extends State<CoachTab> {
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.only(top: 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
           border: Border(top: BorderSide(color: AppTheme.borderSubtle))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -674,7 +674,7 @@ class _CoachTabState extends State<CoachTab> {
               web
                   ? '🌐 Verified External Web Sources & Citations:'
                   : '📑 Verifiable Slide Citations & Exploration:',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 11.5, fontWeight: FontWeight.w700, color: AppTheme.textMuted)),
           const SizedBox(height: 6),
           for (final c in citations) _citation(c),
@@ -781,9 +781,9 @@ class _CoachTabState extends State<CoachTab> {
                     setState(() => _showSuggestions = false);
                   },
             label: Text(_prompts[i],
-                style: const TextStyle(fontSize: 11.5, color: AppTheme.textMain)),
+                style: TextStyle(fontSize: 11.5, color: AppTheme.textMain)),
             backgroundColor: AppTheme.bgSurface,
-            side: const BorderSide(color: AppTheme.borderSubtle),
+            side: BorderSide(color: AppTheme.borderSubtle),
           ),
         ),
       );
@@ -817,12 +817,12 @@ class _CoachTabState extends State<CoachTab> {
               onChanged: (_) => setState(() {}),
               onSubmitted: _sendMessage,
               textInputAction: TextInputAction.send,
-              style: const TextStyle(fontSize: 13.5, color: AppTheme.textMain),
+              style: TextStyle(fontSize: 13.5, color: AppTheme.textMain),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                hintStyle: const TextStyle(color: AppTheme.textSubtle, fontSize: 13),
+                hintStyle: TextStyle(color: AppTheme.textSubtle, fontSize: 13),
                 hintText: _loading
                     ? 'AI Assistant is thinking...'
                     : _selectedDeck.isNotEmpty
@@ -912,7 +912,7 @@ class FormattedMessage {
           out.add(Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 4),
             child: Text(title,
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
           ));
           continue;
@@ -920,7 +920,7 @@ class FormattedMessage {
         final isBullet = RegExp(r'^[•\-*]\s+').hasMatch(t);
         final content = isBullet ? t.replaceFirst(RegExp(r'^[•\-*]\s+'), '') : line;
         final rich = Text.rich(TextSpan(children: _inline(context, content)),
-            style: const TextStyle(fontSize: 13.5, color: AppTheme.textMain, height: 1.55));
+            style: TextStyle(fontSize: 13.5, color: AppTheme.textMain, height: 1.55));
         out.add(isBullet
             ? Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 2),
@@ -977,7 +977,7 @@ class FormattedMessage {
     if (tok.startsWith('**') && tok.endsWith('**') && tok.length >= 4) {
       return TextSpan(
           text: tok.substring(2, tok.length - 2),
-          style: const TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMain));
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppTheme.textMain));
     }
     if (tok.startsWith('*') && tok.endsWith('*') && tok.length >= 2) {
       return TextSpan(

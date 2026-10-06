@@ -99,13 +99,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       backgroundColor: AppTheme.bgMain,
       appBar: AppBar(
         backgroundColor: AppTheme.bgSurface,
-        title: const Text(
+        title: Text(
           'Explore Catalog',
           style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 18),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: AppTheme.textMuted),
+            icon: Icon(Icons.refresh, color: AppTheme.textMuted),
             onPressed: _fetchCourses,
           ),
         ],
@@ -130,14 +130,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 child: TextField(
                   controller: _searchController,
                   onChanged: (_) => _fetchCourses(),
-                  style: const TextStyle(color: AppTheme.textMain, fontSize: 14),
+                  style: TextStyle(color: AppTheme.textMain, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Search courses, topics, instructors...',
-                    hintStyle: const TextStyle(color: AppTheme.textSubtle, fontSize: 13),
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.textSubtle, size: 20),
+                    hintStyle: TextStyle(color: AppTheme.textSubtle, fontSize: 13),
+                    prefixIcon: Icon(Icons.search, color: AppTheme.textSubtle, size: 20),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, color: AppTheme.textSubtle, size: 18),
+                            icon: Icon(Icons.clear, color: AppTheme.textSubtle, size: 18),
                             onPressed: () {
                               _searchController.clear();
                               _fetchCourses();
@@ -207,7 +207,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               // 3. Filters Row (Level & Price)
               Row(
                 children: [
-                  const Text('Filter:', style: TextStyle(color: AppTheme.textSubtle, fontSize: 11, fontWeight: FontWeight.w700)),
+                  Text('Filter:', style: TextStyle(color: AppTheme.textSubtle, fontSize: 11, fontWeight: FontWeight.w700)),
                   const SizedBox(width: 8),
 
                   // Level Dropdown Chip
@@ -258,7 +258,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
                             '🎓 Explore & Enroll',
                             style: TextStyle(color: AppTheme.warning, fontWeight: FontWeight.w900, fontSize: 13),
@@ -294,7 +294,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 children: [
                   Text(
                     'Available Courses (${_courses.length})',
-                    style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 15),
+                    style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 15),
                   ),
                   if (_selectedCategory != 'All' || _selectedLevel != 'All' || _selectedPrice != 'All' || _searchController.text.isNotEmpty)
                     GestureDetector(
@@ -335,14 +335,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.search_off, color: AppTheme.textSubtle, size: 44),
+                      Icon(Icons.search_off, color: AppTheme.textSubtle, size: 44),
                       const SizedBox(height: 12),
-                      const Text(
+                      Text(
                         'No courses found matching criteria',
                         style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 14),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
+                      Text(
                         'Try adjusting your search query or filter tags.',
                         style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                       ),
@@ -401,13 +401,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
           value: currentValue,
           dropdownColor: AppTheme.bgSurface,
           isDense: true,
-          style: const TextStyle(color: AppTheme.textMain, fontSize: 11, fontWeight: FontWeight.w700),
-          icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.textSubtle, size: 16),
+          style: TextStyle(color: AppTheme.textMain, fontSize: 11, fontWeight: FontWeight.w700),
+          icon: Icon(Icons.keyboard_arrow_down, color: AppTheme.textSubtle, size: 16),
           onChanged: onChanged,
           items: items.map((item) {
             return DropdownMenuItem<String>(
               value: item,
-              child: Text(item, style: const TextStyle(color: AppTheme.textMain, fontSize: 11)),
+              child: Text(item, style: TextStyle(color: AppTheme.textMain, fontSize: 11)),
             );
           }).toList(),
         ),
@@ -506,7 +506,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 15),
+                    style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 15),
                   ),
                   if (shortDesc.isNotEmpty) ...[
                     const SizedBox(height: 4),
@@ -514,7 +514,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       shortDesc,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.3),
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 12, height: 1.3),
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -526,13 +526,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       const SizedBox(width: 4),
                       Text(
                         rating.toStringAsFixed(1),
-                        style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12),
+                        style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12),
                       ),
-                      Text(' ($ratingCount)', style: const TextStyle(color: AppTheme.textSubtle, fontSize: 10)),
+                      Text(' ($ratingCount)', style: TextStyle(color: AppTheme.textSubtle, fontSize: 10)),
                       const SizedBox(width: 12),
-                      const Icon(Icons.schedule, color: AppTheme.textSubtle, size: 14),
+                      Icon(Icons.schedule, color: AppTheme.textSubtle, size: 14),
                       const SizedBox(width: 4),
-                      Text('$durationHours hrs', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                      Text('$durationHours hrs', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                       const Spacer(),
                       // XP Tag
                       Text(
@@ -542,7 +542,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     ],
                   ),
 
-                  const Divider(color: AppTheme.borderSubtle, height: 20),
+                  Divider(color: AppTheme.borderSubtle, height: 20),
 
                   // Card Footer
                   Row(
@@ -550,11 +550,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.person_outline, size: 14, color: AppTheme.textSubtle),
+                          Icon(Icons.person_outline, size: 14, color: AppTheme.textSubtle),
                           const SizedBox(width: 4),
                           Text(
                             instructor,
-                            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                         ],
                       ),

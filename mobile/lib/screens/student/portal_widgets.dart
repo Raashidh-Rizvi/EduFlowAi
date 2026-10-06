@@ -270,21 +270,21 @@ class GhostButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final IconData? icon;
-  final Color color;
+  final Color? color;
 
   const GhostButton({
     super.key,
     required this.label,
     this.onPressed,
     this.icon,
-    this.color = AppTheme.textMain,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     final style = OutlinedButton.styleFrom(
-      foregroundColor: color,
-      side: const BorderSide(color: AppTheme.borderSubtle),
+      foregroundColor: color ?? AppTheme.textMain,
+      side: BorderSide(color: AppTheme.borderSubtle),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
@@ -321,10 +321,10 @@ Future<void> showPdfDialog(BuildContext context,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
                 Text('$name • Document Viewer',
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
               ],
             ),
           ),
@@ -352,7 +352,7 @@ Future<void> showPdfDialog(BuildContext context,
             ),
           ),
           const SizedBox(height: 8),
-          const Text('Open this link in your browser to view or save the PDF.',
+          Text('Open this link in your browser to view or save the PDF.',
               style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
         ],
       ),
@@ -418,12 +418,12 @@ class _CodeSnippetCardState extends State<CodeSnippetCard> {
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: AppTheme.borderSubtle)),
             ),
             child: Row(
               children: [
-                const Text('code',
+                Text('code',
                     style: TextStyle(fontSize: 11, color: AppTheme.textSubtle)),
                 const Spacer(),
                 TextButton.icon(
@@ -473,12 +473,12 @@ class SectionHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
                   Text(subtitle!,
-                      style: const TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
+                      style: TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
                 ],
               ],
             ),
@@ -509,13 +509,13 @@ class EmptyState extends StatelessWidget {
           const SizedBox(height: 10),
           Text(title,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
           if (message != null) ...[
             const SizedBox(height: 6),
             Text(message!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
           ],
           if (action != null) ...[const SizedBox(height: 14), action!],
         ],
@@ -539,7 +539,7 @@ class LoadingLine extends StatelessWidget {
               width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
           const SizedBox(width: 10),
           Flexible(
-              child: Text(text, style: const TextStyle(color: AppTheme.textMuted))),
+              child: Text(text, style: TextStyle(color: AppTheme.textMuted))),
         ],
       ),
     );

@@ -607,7 +607,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _topBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppTheme.bgSurface,
         border: Border(bottom: BorderSide(color: AppTheme.borderSubtle)),
       ),
@@ -624,7 +624,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             child: const Icon(Icons.school, color: Colors.white, size: 19),
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -642,7 +642,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           IconButton(
             tooltip: 'Help & Support',
             onPressed: () => showHelpSupportDialog(context),
-            icon: const Icon(Icons.help_outline, color: AppTheme.textMuted),
+            icon: Icon(Icons.help_outline, color: AppTheme.textMuted),
           ),
           StatusPill(
             label: '${_num.format(toInt(_profile['totalXp']))} XP',
@@ -737,7 +737,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Widget _bottomNav() {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppTheme.bgSurface,
         border: Border(top: BorderSide(color: AppTheme.borderSubtle)),
       ),

@@ -130,7 +130,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              const Center(
+              Center(
                 child: Text(
                   'EduFlow AI',
                   style: TextStyle(
@@ -141,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-              const Center(
+              Center(
                 child: Text(
                   'Gamified Student Mobile Companion',
                   style: TextStyle(
@@ -154,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 36),
 
               // One-Tap Demo Accounts
-              const Text(
+              Text(
                 'QUICK DEMO STUDENT LOGINS',
                 style: TextStyle(
                   fontSize: 11,
@@ -199,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Text(
                                 demo['name'],
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   color: AppTheme.textMain,
                                   fontSize: 13,
@@ -207,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               Text(
                                 demo['email'],
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppTheme.textMuted,
                                   fontSize: 11,
                                 ),
@@ -218,7 +218,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.05),
+                            color: AppTheme.textMain.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
@@ -240,20 +240,20 @@ class _LoginScreenState extends State<LoginScreen> {
               // Email Input
               TextField(
                 controller: _emailController,
-                style: const TextStyle(color: AppTheme.textMain, fontSize: 14),
+                style: TextStyle(color: AppTheme.textMain, fontSize: 14),
                 decoration: InputDecoration(
                   labelText: 'Email Address',
-                  labelStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                  prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.textSubtle, size: 20),
+                  labelStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  prefixIcon: Icon(Icons.email_outlined, color: AppTheme.textSubtle, size: 20),
                   filled: true,
                   fillColor: AppTheme.bgSurface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppTheme.borderSubtle),
+                    borderSide: BorderSide(color: AppTheme.borderSubtle),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppTheme.borderSubtle),
+                    borderSide: BorderSide(color: AppTheme.borderSubtle),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -267,20 +267,20 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _passwordController,
                 obscureText: true,
-                style: const TextStyle(color: AppTheme.textMain, fontSize: 14),
+                style: TextStyle(color: AppTheme.textMain, fontSize: 14),
                 decoration: InputDecoration(
                   labelText: 'Password',
-                  labelStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-                  prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.textSubtle, size: 20),
+                  labelStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  prefixIcon: Icon(Icons.lock_outline, color: AppTheme.textSubtle, size: 20),
                   filled: true,
                   fillColor: AppTheme.bgSurface,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppTheme.borderSubtle),
+                    borderSide: BorderSide(color: AppTheme.borderSubtle),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppTheme.borderSubtle),
+                    borderSide: BorderSide(color: AppTheme.borderSubtle),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),

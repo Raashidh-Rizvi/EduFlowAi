@@ -63,7 +63,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppTheme.bgCard,
-          content: const Text(
+          content: Text(
               'You have an unsaved support inquiry draft. Discard this draft and close?',
               style: TextStyle(color: AppTheme.textMain)),
           actions: [
@@ -144,7 +144,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
                 ],
               ),
             ),
-            const Divider(color: AppTheme.borderSubtle, height: 20),
+            Divider(color: AppTheme.borderSubtle, height: 20),
             Expanded(
               child: _view == 'history'
                   ? SupportHistory(
@@ -178,7 +178,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
                   color: AppTheme.primary, size: 20),
             ),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -195,7 +195,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
             ),
             IconButton(
               onPressed: _submitting ? null : _close,
-              icon: const Icon(Icons.close, color: AppTheme.textMuted),
+              icon: Icon(Icons.close, color: AppTheme.textMuted),
               tooltip: 'Close',
             ),
           ],
@@ -254,7 +254,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
           isExpanded: true,
           dropdownColor: AppTheme.bgCard,
           decoration: _inputDecoration(),
-          style: const TextStyle(color: AppTheme.textMain, fontSize: 13),
+          style: TextStyle(color: AppTheme.textMain, fontSize: 13),
           items: const [
             DropdownMenuItem(
                 value: '', child: Text('Select ticket category...')),
@@ -297,7 +297,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
           minLines: 6,
           maxLines: 10,
           inputFormatters: [LengthLimitingTextInputFormatter(_maxLen)],
-          style: const TextStyle(color: AppTheme.textMain, fontSize: 13),
+          style: TextStyle(color: AppTheme.textMain, fontSize: 13),
           decoration: _inputDecoration(
               hint:
                   'Describe your inquiry or issue in detail. For bugs, include steps to reproduce; for disputes, include relevant assessment or course context...'),
@@ -310,7 +310,7 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: tint(AppTheme.warning, 0.3)),
           ),
-          child: const Row(
+          child: Row(
             children: [
               Icon(Icons.shield_outlined, size: 16, color: AppTheme.warning),
               SizedBox(width: 8),
@@ -353,13 +353,13 @@ class _HelpSupportDialogState extends State<HelpSupportDialog> {
           const Icon(Icons.check_circle_outline,
               size: 44, color: AppTheme.success),
           const SizedBox(height: 10),
-          const Text('Ticket Submitted Successfully',
+          Text('Ticket Submitted Successfully',
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: AppTheme.textMain)),
           const SizedBox(height: 6),
-          const Text(
+          Text(
               'Your inquiry has been registered. You can track progress and administrator responses in your Support History.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted)),
@@ -579,7 +579,7 @@ class _SupportHistoryState extends State<SupportHistory> {
             Text('Page $_page of $_totalPages ($_totalCount total)',
                 textAlign: TextAlign.center,
                 style:
-                    const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                    TextStyle(fontSize: 12, color: AppTheme.textMuted)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -625,7 +625,7 @@ class _SupportHistoryState extends State<SupportHistory> {
       isExpanded: true,
       dropdownColor: AppTheme.bgCard,
       decoration: _inputDecoration(),
-      style: const TextStyle(color: AppTheme.textMain, fontSize: 12.5),
+      style: TextStyle(color: AppTheme.textMain, fontSize: 12.5),
       items: [
         for (final e in items.entries)
           DropdownMenuItem(value: e.key, child: Text(e.value)),
@@ -656,7 +656,7 @@ class _SupportHistoryState extends State<SupportHistory> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(shortId,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 12,
                               color: AppTheme.textMain)),
@@ -667,7 +667,7 @@ class _SupportHistoryState extends State<SupportHistory> {
                   const SizedBox(height: 6),
                   Text(
                       '${formatDate(t['createdAt'])} • $responses ${responses == 1 ? 'response' : 'responses'}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11.5, color: AppTheme.textMuted)),
                 ],
               ),
@@ -739,7 +739,7 @@ class _TicketDetailState extends State<TicketDetail> {
             children: [
               Row(
                 children: [
-                  const Text('Ticket ID',
+                  Text('Ticket ID',
                       style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w700,
@@ -748,7 +748,7 @@ class _TicketDetailState extends State<TicketDetail> {
                   Expanded(
                     child: Text((t['id'] ?? '').toString(),
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: 12,
                             color: AppTheme.textMain)),
@@ -764,18 +764,18 @@ class _TicketDetailState extends State<TicketDetail> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.schedule,
+                  Icon(Icons.schedule,
                       size: 13, color: AppTheme.textMuted),
                   const SizedBox(width: 4),
                   Text('Submitted: ${formatDateTime(t['createdAt'])}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 12, color: AppTheme.textMuted)),
                 ],
               ),
               if (updated != null && updated != t['createdAt']) ...[
                 const SizedBox(height: 4),
                 Text('Updated: ${formatDateTime(updated)}',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: AppTheme.textMuted)),
               ],
             ],
@@ -799,7 +799,7 @@ class _TicketDetailState extends State<TicketDetail> {
                 Expanded(
                   child: Text(
                     'This ticket was marked as resolved${t['resolvedAt'] != null ? ' on ${formatDateTime(t['resolvedAt'])}' : ''}. Resolved tickets remain permanently visible in your support history.',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5, color: AppTheme.textMain),
                   ),
                 ),
@@ -813,7 +813,7 @@ class _TicketDetailState extends State<TicketDetail> {
         PortalCard(
           color: AppTheme.bgMain,
           child: SelectableText((t['message'] ?? '').toString(),
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 13, color: AppTheme.textMain, height: 1.5)),
         ),
         const SizedBox(height: 16),
@@ -844,19 +844,19 @@ class _TicketDetailState extends State<TicketDetail> {
                           Expanded(
                             child: Text(
                                 (r['authorLabel'] ?? 'Support team').toString(),
-                                style: const TextStyle(
+                                style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 12.5,
                                     color: AppTheme.textMain)),
                           ),
                           Text(formatDateTime(r['createdAt']),
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 11.5, color: AppTheme.textMuted)),
                         ],
                       ),
                       const SizedBox(height: 8),
                       SelectableText((r['message'] ?? '').toString(),
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 13,
                               color: AppTheme.textMain,
                               height: 1.5)),
@@ -924,7 +924,7 @@ class ErrorBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
               child: Text(message,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12.5, color: AppTheme.textMain))),
           if (action != null) action!,
         ],
@@ -941,7 +941,7 @@ class _Label extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
                 color: AppTheme.textMain)),
@@ -954,7 +954,7 @@ class _Heading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(text.toUpperCase(),
-      style: const TextStyle(
+      style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w700,
           color: AppTheme.textMuted,
@@ -963,18 +963,18 @@ class _Heading extends StatelessWidget {
 
 InputDecoration _inputDecoration({String? hint}) => InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: AppTheme.textSubtle, fontSize: 12.5),
+      hintStyle: TextStyle(color: AppTheme.textSubtle, fontSize: 12.5),
       filled: true,
       fillColor: AppTheme.bgMain,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppTheme.borderSubtle),
+        borderSide: BorderSide(color: AppTheme.borderSubtle),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppTheme.borderSubtle),
+        borderSide: BorderSide(color: AppTheme.borderSubtle),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
