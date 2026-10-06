@@ -61,7 +61,7 @@ class EnrollmentRequestsTab extends StatelessWidget {
           trailing: browseButton,
         ),
         if (myCourses.isEmpty)
-          const PortalCard(
+          PortalCard(
             child: Text(
               'No approved courses yet — request one below and its card appears here once your instructor approves it.',
               style: TextStyle(color: AppTheme.textMuted, height: 1.4),
@@ -152,14 +152,14 @@ class _RequestCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(request['courseCode']?.toString() ?? '',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.6,
                             color: AppTheme.primaryGlow)),
                     const SizedBox(height: 2),
                     Text(request['courseTitle']?.toString() ?? 'Untitled course',
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                             color: AppTheme.textMain)),
@@ -176,7 +176,7 @@ class _RequestCard extends StatelessWidget {
           Text(
             'Requested ${formatDate(request['requestedAt'])}'
             '${reviewedAt != null ? ' · Reviewed ${formatDate(reviewedAt)}' : ''}',
-            style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
           ),
           if (notes.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -189,7 +189,7 @@ class _RequestCard extends StatelessWidget {
                 border: Border.all(color: AppTheme.borderSubtle),
               ),
               child: Text(notes,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.textMain)),
+                  style: TextStyle(fontSize: 13, color: AppTheme.textMain)),
             ),
           ],
           const SizedBox(height: 12),
@@ -289,18 +289,18 @@ class EnrolledCourseCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             '${course['code'] ?? ''}${instructor != null && instructor.isNotEmpty ? ' · $instructor' : ''}',
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12, color: AppTheme.primaryGlow, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 4),
           Text(course['title']?.toString() ?? 'Untitled course',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
           const SizedBox(height: 6),
           Text(desc.isEmpty ? 'No description yet.' : desc,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
+              style: TextStyle(fontSize: 13, color: AppTheme.textMuted, height: 1.4)),
           const SizedBox(height: 10),
           Wrap(
             spacing: 12,
@@ -329,12 +329,12 @@ class EnrolledCourseCard extends StatelessWidget {
               ),
             ),
           ],
-          const Divider(height: 24, color: AppTheme.borderSubtle),
+          Divider(height: 24, color: AppTheme.borderSubtle),
           Row(
             children: [
               Expanded(
                 child: Text(footer,
-                    style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                    style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
               ),
               PrimaryButton(
                 label: 'Continue Course',
@@ -353,7 +353,7 @@ class EnrolledCourseCard extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: AppTheme.textSubtle),
           const SizedBox(width: 4),
-          Text(text, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+          Text(text, style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
         ],
       );
 }

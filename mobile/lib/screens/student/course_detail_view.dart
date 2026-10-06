@@ -36,7 +36,7 @@ class CourseDetailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!access.ready) {
-      return const PortalCard(
+      return PortalCard(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 36),
         child: Text('Verifying your access to this course…',
             textAlign: TextAlign.center,
@@ -64,7 +64,7 @@ class CourseDetailView extends StatelessWidget {
                   child: const Icon(Icons.lock_outline, color: AppTheme.warning, size: 22),
                 ),
                 const SizedBox(height: 12),
-                const Text('Course materials are locked',
+                Text('Course materials are locked',
                     style: TextStyle(
                         fontSize: 15, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
                 const SizedBox(height: 12),
@@ -73,7 +73,7 @@ class CourseDetailView extends StatelessWidget {
                       ? access.reason!
                       : 'Only learners with an approved enrollment — plus the course instructor and admins — can open this curriculum and syllabus.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 12.5, color: AppTheme.textMuted, height: 1.6),
                 ),
                 const SizedBox(height: 12),
@@ -100,7 +100,7 @@ class CourseDetailView extends StatelessWidget {
                   ? 'Loading your course…'
                   : 'This course is not in your enrolled courses.',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+              style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
             ),
           ),
         ],
@@ -143,7 +143,7 @@ class CourseDetailView extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(c['title']?.toString() ?? '',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textMain,
@@ -153,7 +153,7 @@ class CourseDetailView extends StatelessWidget {
                 desc.isNotEmpty
                     ? desc
                     : 'Your instructor has not added a course description yet.',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12.5, color: AppTheme.textMuted, height: 1.65),
               ),
               const SizedBox(height: 12),
@@ -167,9 +167,9 @@ class CourseDetailView extends StatelessWidget {
                       const TextSpan(text: 'By '),
                       TextSpan(
                           text: instructor,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontWeight: FontWeight.w700, color: AppTheme.textMain)),
-                    ]), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                    ]), style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
                   StarRating(
                       average: toDouble(c['averageRating']),
                       count: toInt(c['ratingCount'])),
@@ -183,7 +183,7 @@ class CourseDetailView extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${progress['completedUnits'] ?? 0} of ${progress['totalUnits'] ?? 0} lessons and assessments completed',
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                 ),
               ],
             ],
@@ -204,7 +204,7 @@ class CourseDetailView extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: AppTheme.textMuted),
           const SizedBox(width: 5),
-          Text(text, style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+          Text(text, style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
         ],
       );
 }
@@ -259,7 +259,7 @@ class AwaitingApprovalCard extends StatelessWidget {
           children: [
             StatusPill(label: course['code']?.toString() ?? '', color: AppTheme.primaryGlow),
             Text(course['title']?.toString() ?? '',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
             EnrollmentStatusPill(status: status),
           ],
@@ -290,7 +290,7 @@ class AwaitingApprovalCard extends StatelessWidget {
                       isPending
                           ? 'Waiting for instructor approval'
                           : 'Course materials are locked',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textMain),
@@ -302,7 +302,7 @@ class AwaitingApprovalCard extends StatelessWidget {
                           : status == 'Rejected'
                               ? 'Your enrollment request was declined. You can submit it again from the Enrollment tab if your circumstances change.'
                               : 'You do not have an approved enrollment for this course. Submit a new request from the Enrollment tab to regain access.',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 12.5, color: AppTheme.textMuted, height: 1.6),
                     ),
                   ],
@@ -399,11 +399,11 @@ class _CurriculumSectionState extends State<CurriculumSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Curriculum & Syllabus',
+        Text('Curriculum & Syllabus',
             style: TextStyle(
                 fontSize: 18, fontWeight: FontWeight.w800, color: AppTheme.textMain)),
         const SizedBox(height: 2),
-        const Text(
+        Text(
           'Study the syllabus PDFs and lecture materials, then complete each unit for XP and course progress.',
           style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
         ),
@@ -448,7 +448,7 @@ class _CurriculumSectionState extends State<CurriculumSection> {
           children: [
             StatusPill(label: course['code']?.toString() ?? '', color: AppTheme.primaryGlow),
             Text(course['title']?.toString() ?? '',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13.5, fontWeight: FontWeight.w700, color: AppTheme.textMain)),
             if (progress != null)
               Tooltip(
@@ -475,9 +475,9 @@ class _CurriculumSectionState extends State<CurriculumSection> {
                 const TextSpan(text: 'By '),
                 TextSpan(
                     text: instructor,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontWeight: FontWeight.w700, color: AppTheme.textMain)),
-              ]), style: const TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+              ]), style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
             StarRating(
                 average: toDouble(course['averageRating']),
                 count: toInt(course['ratingCount'])),
@@ -588,7 +588,7 @@ class _CurriculumSectionState extends State<CurriculumSection> {
                                 fontWeight: FontWeight.w700,
                                 color: AppTheme.secondary)),
                         Text(title,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
                                 color: AppTheme.textMain)),
@@ -601,7 +601,7 @@ class _CurriculumSectionState extends State<CurriculumSection> {
                     const SizedBox(width: 8),
                   ],
                   Text('${lessons.length} Lessons',
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                 ],
               ),
             ),
@@ -639,11 +639,11 @@ class _CurriculumSectionState extends State<CurriculumSection> {
                                       (fileName?.isNotEmpty ?? false)
                                           ? fileName!
                                           : 'Module Reading Material.pdf',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                           fontSize: 12.5,
                                           fontWeight: FontWeight.w600,
                                           color: AppTheme.textMain)),
-                                  const Text('Official module documentation',
+                                  Text('Official module documentation',
                                       style: TextStyle(
                                           fontSize: 11, color: AppTheme.textMuted)),
                                 ],
@@ -687,10 +687,10 @@ class _CurriculumSectionState extends State<CurriculumSection> {
                     _lesson(courseId, id, les),
                     const SizedBox(height: 6),
                   ],
-                  const Divider(height: 18, color: AppTheme.borderSubtle),
+                  Divider(height: 18, color: AppTheme.borderSubtle),
                   Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text('Ready for evaluation?',
                             style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                       ),
@@ -741,13 +741,13 @@ class _CurriculumSectionState extends State<CurriculumSection> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
                         color: AppTheme.textMain)),
                 if ((les['content']?.toString() ?? '').isNotEmpty)
                   Text(les['content'].toString(),
-                      style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
               ],
             ),
           ),

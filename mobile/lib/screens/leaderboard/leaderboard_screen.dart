@@ -53,7 +53,7 @@ class LeaderboardScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // Ranking List
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'GLOBAL COHORT STANDINGS',
@@ -87,10 +87,10 @@ class LeaderboardScreen extends StatelessWidget {
                     const SizedBox(width: 14),
                     CircleAvatar(
                       radius: 16,
-                      backgroundColor: Colors.white.withOpacity(0.08),
+                      backgroundColor: AppTheme.textMain.withOpacity(0.08),
                       child: Text(
                         (r['name'] as String)[0],
-                        style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white),
+                        style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -108,7 +108,7 @@ class LeaderboardScreen extends StatelessWidget {
                           ),
                           Text(
                             'Level ${r['level']} • ${r['streak']}d streak 🔥',
-                            style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                            style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                           ),
                         ],
                       ),
@@ -134,7 +134,7 @@ class LeaderboardScreen extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           data['name'],
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppTheme.textMain),
         ),
         Text(
           '${data['xp']} XP',

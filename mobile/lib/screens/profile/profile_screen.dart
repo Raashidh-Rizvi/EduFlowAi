@@ -29,6 +29,12 @@ class ProfileScreen extends StatelessWidget {
         title: const Text('Student Profile & Badges 🎓'),
         actions: [
           IconButton(
+            icon: Icon(AppTheme.isDark ? Icons.light_mode : Icons.dark_mode,
+                color: AppTheme.primaryGlow),
+            tooltip: 'Toggle light/dark theme',
+            onPressed: () => ThemeController.toggle(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: AppTheme.accent),
             tooltip: 'Sign Out',
             onPressed: () {
@@ -36,12 +42,12 @@ class ProfileScreen extends StatelessWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   backgroundColor: AppTheme.bgCard,
-                  title: const Text('Sign Out', style: TextStyle(color: Colors.white)),
-                  content: const Text('Are you sure you want to log out of EduFlow AI?', style: TextStyle(color: AppTheme.textMuted)),
+                  title: Text('Sign Out', style: TextStyle(color: AppTheme.textMain)),
+                  content: Text('Are you sure you want to log out of EduFlow AI?', style: TextStyle(color: AppTheme.textMuted)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+                      child: Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
                     ),
                     ElevatedButton(
                       onPressed: () {
@@ -87,7 +93,7 @@ class ProfileScreen extends StatelessWidget {
                       children: [
                         Text(
                           studentProfile['studentName'] as String,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textMain),
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textMain),
                         ),
                         Text(
                           studentProfile['levelName'] as String,
@@ -110,7 +116,7 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             // Badge Collection Grid
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'EARNED BADGES & TROPHIES',
@@ -162,7 +168,7 @@ class ProfileScreen extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         b['desc'],
-                        style: const TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
+                        style: TextStyle(fontSize: 10.5, color: AppTheme.textMuted),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,

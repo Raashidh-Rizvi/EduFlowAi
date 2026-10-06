@@ -11,10 +11,7 @@ class ApiService {
   /// emulator reaches the host machine through 10.0.2.2.
   static String get baseUrl {
     if (_override.isNotEmpty) return _override;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:5204/api';
-    }
-    return 'http://localhost:5204/api';
+    return 'https://eduflowai-ten.vercel.app/api';
   }
 
   static const _storage = FlutterSecureStorage();

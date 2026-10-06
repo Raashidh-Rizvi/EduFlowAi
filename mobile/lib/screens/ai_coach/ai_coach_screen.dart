@@ -87,7 +87,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                     ),
                     child: Text(
                       msg['text']!,
-                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                      style: TextStyle(color: AppTheme.textMain, fontSize: 13, height: 1.4),
                     ),
                   ),
                 );
@@ -105,7 +105,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                   padding: const EdgeInsets.only(right: 8),
                   child: ActionChip(
                     backgroundColor: AppTheme.bgSurface,
-                    side: const BorderSide(color: AppTheme.borderSubtle),
+                    side: BorderSide(color: AppTheme.borderSubtle),
                     label: Text(prompt, style: const TextStyle(fontSize: 11, color: AppTheme.secondary)),
                     onPressed: () => _sendMessage(prompt),
                   ),
@@ -117,7 +117,7 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
           // Input Bar
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: AppTheme.bgSurface,
               border: Border(top: BorderSide(color: AppTheme.borderSubtle)),
             ),
@@ -126,10 +126,10 @@ class _AiCoachScreenState extends State<AiCoachScreen> {
                 Expanded(
                   child: TextField(
                     controller: _msgController,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    style: TextStyle(color: AppTheme.textMain, fontSize: 13),
                     decoration: InputDecoration(
                       hintText: 'Ask your AI Coach anything...',
-                      hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                       filled: true,
                       fillColor: AppTheme.bgCard,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

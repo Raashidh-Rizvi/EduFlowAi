@@ -200,7 +200,7 @@ class _QuizScreenState extends State<QuizScreen> {
     if (_isLoading) {
       return Scaffold(
         backgroundColor: AppTheme.bgMain,
-        body: const Center(
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -227,7 +227,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 Text(
                   _error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textMain, fontSize: 14),
+                  style: TextStyle(color: AppTheme.textMain, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
                 ElevatedButton(
@@ -269,12 +269,12 @@ class _QuizScreenState extends State<QuizScreen> {
                   _timerExpired
                       ? 'Time\'s Up!'
                       : (passed ? 'Challenge Conquered!' : 'Keep Practicing!'),
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppTheme.textMain),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'You scored $scorePct% (${result['scoreObtained']}/${result['maxScore']} marks)',
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 14),
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
                 ),
                 const SizedBox(height: 24),
                 Container(
@@ -357,7 +357,7 @@ class _QuizScreenState extends State<QuizScreen> {
               child: LinearProgressIndicator(
                 value: (_currentQuestionIndex + 1) / _questions.length,
                 minHeight: 6,
-                backgroundColor: Colors.white.withOpacity(0.08),
+                backgroundColor: AppTheme.textMain.withOpacity(0.08),
                 valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.secondary),
               ),
             ),
@@ -376,12 +376,12 @@ class _QuizScreenState extends State<QuizScreen> {
                 children: [
                   Text(
                     'Question ${_currentQuestionIndex + 1} of ${_questions.length}  •  ${currentQ['points']} pts',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 11, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     currentQ['prompt'],
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain, height: 1.4),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain, height: 1.4),
                   ),
                 ],
               ),
@@ -422,12 +422,12 @@ class _QuizScreenState extends State<QuizScreen> {
                             height: 28,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: isSelected ? AppTheme.primary : Colors.white.withOpacity(0.06),
+                              color: isSelected ? AppTheme.primary : AppTheme.textMain.withOpacity(0.06),
                             ),
                             child: Center(
                               child: Text(
                                 String.fromCharCode(65 + index),
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Colors.white),
+                                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppTheme.textMain),
                               ),
                             ),
                           ),
@@ -435,7 +435,7 @@ class _QuizScreenState extends State<QuizScreen> {
                           Expanded(
                             child: Text(
                               optionText,
-                              style: const TextStyle(color: AppTheme.textMain, fontSize: 13, fontWeight: FontWeight.w500),
+                              style: TextStyle(color: AppTheme.textMain, fontSize: 13, fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
@@ -458,7 +458,7 @@ class _QuizScreenState extends State<QuizScreen> {
                 _isSubmitting
                     ? 'Submitting...'
                     : (_currentQuestionIndex == _questions.length - 1 ? 'Submit Quiz' : 'Next Question ➔'),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textMain),
               ),
             ),
           ],

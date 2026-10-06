@@ -189,7 +189,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
             children: [
               const Text('🎉', style: TextStyle(fontSize: 48)),
               const SizedBox(height: 8),
-              const Text('Focus Sprint Conquered!',
+              Text('Focus Sprint Conquered!',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 20,
@@ -199,7 +199,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
               Text(
                 'You completed your sprint on $task without losing concentration!',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textMuted),
+                style: TextStyle(fontSize: 13, color: AppTheme.textMuted),
               ),
               const SizedBox(height: 14),
               Text('+$xp XP • +$coins Coins Awarded!',
@@ -260,7 +260,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Wrap(
+              Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -274,13 +274,13 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                 ],
               ),
               const SizedBox(height: 10),
-              const Text('Study Focus & Mind Garden',
+              Text('Study Focus & Mind Garden',
                   style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textMain)),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Lock in uninterrupted concentration. Uninterrupted focus awards +XP, grows your Mind Garden, and protects your streak!',
                 style: TextStyle(fontSize: 12.5, color: AppTheme.textMuted, height: 1.5),
               ),
@@ -334,7 +334,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
               Text(emoji, style: const TextStyle(fontSize: 64)),
               const SizedBox(height: 8),
               Text('$mm:$ss',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 52,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.textMain,
@@ -347,11 +347,11 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  const Text('Flow State Progress',
+                  Text('Flow State Progress',
                       style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted)),
                   const Spacer(),
                   Text('$pct% Completed',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11.5,
                           color: AppTheme.primaryGlow,
                           fontWeight: FontWeight.w700)),
@@ -370,7 +370,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
               const SizedBox(height: 18),
 
               // Topic
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text('Active Concentration Topic:',
                     style: TextStyle(
@@ -383,7 +383,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                 initialValue: _selectedTask,
                 isExpanded: true,
                 dropdownColor: AppTheme.bgCard,
-                style: const TextStyle(fontSize: 13, color: AppTheme.textMain),
+                style: TextStyle(fontSize: 13, color: AppTheme.textMain),
                 decoration: _inputDecoration(),
                 items: [
                   for (final t in _topics)
@@ -400,7 +400,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                 TextField(
                   controller: _customCtrl,
                   enabled: !_isActive,
-                  style: const TextStyle(fontSize: 13, color: AppTheme.textMain),
+                  style: TextStyle(fontSize: 13, color: AppTheme.textMain),
                   decoration:
                       _inputDecoration(hint: 'What are you focusing on?'),
                 ),
@@ -410,7 +410,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
               // Ambient sound
               Row(
                 children: [
-                  const Text('Ambient Sound',
+                  Text('Ambient Sound',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -454,7 +454,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                       ),
                       selectedColor: tint(AppTheme.secondary, 0.25),
                       backgroundColor: AppTheme.bgMain,
-                      side: const BorderSide(color: AppTheme.borderSubtle),
+                      side: BorderSide(color: AppTheme.borderSubtle),
                       showCheckmark: false,
                     ),
                 ],
@@ -474,13 +474,13 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                   IconButton.outlined(
                     tooltip: 'Reset',
                     onPressed: () => _reset(),
-                    icon: const Icon(Icons.restart_alt,
+                    icon: Icon(Icons.restart_alt,
                         size: 20, color: AppTheme.textMuted),
                   ),
                 ],
               ),
               const SizedBox(height: 14),
-              const Text(
+              Text(
                 '💡 Psychology Tip: Completing a continuous focus sprint activates the dopamine reward pathways, reinforcing deep academic recall.',
                 style: TextStyle(fontSize: 11.5, color: AppTheme.textMuted, height: 1.5),
               ),
@@ -490,7 +490,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
         const SizedBox(height: 20),
 
         // Mind garden
-        const Text('MIND GARDEN & FOCUS ARTIFACTS',
+        Text('MIND GARDEN & FOCUS ARTIFACTS',
             style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
@@ -510,7 +510,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                   border: Border.all(color: tint(AppTheme.success, 0.3)),
                 ),
                 child: Text(a,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12,
                         color: AppTheme.textMain,
                         fontWeight: FontWeight.w600)),
@@ -523,18 +523,18 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
 
   InputDecoration _inputDecoration({String? hint}) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: AppTheme.textSubtle, fontSize: 13),
+        hintStyle: TextStyle(color: AppTheme.textSubtle, fontSize: 13),
         isDense: true,
         filled: true,
         fillColor: AppTheme.bgMain,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.borderSubtle),
+          borderSide: BorderSide(color: AppTheme.borderSubtle),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppTheme.borderSubtle),
+          borderSide: BorderSide(color: AppTheme.borderSubtle),
         ),
       );
 
@@ -553,7 +553,7 @@ class _FocusFlowTabState extends State<FocusFlowTab> {
                   style: TextStyle(
                       fontSize: 20, fontWeight: FontWeight.w800, color: color)),
               Text(label,
-                  style: const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
             ],
           ),
         ),

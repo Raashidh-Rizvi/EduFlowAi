@@ -40,7 +40,7 @@ class HomeScreen extends StatelessWidget {
               children: [
                 Text(
                   studentProfile['studentName'] as String,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textMain),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textMain),
                 ),
                 Text(
                   studentProfile['levelName'] as String,
@@ -109,7 +109,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       Text(
                         '${studentProfile['totalXp']} Total XP',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                        style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w900, fontSize: 13),
                       ),
                     ],
                   ),
@@ -119,14 +119,14 @@ class HomeScreen extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: levelProgress,
                       minHeight: 10,
-                      backgroundColor: Colors.white.withOpacity(0.1),
+                      backgroundColor: AppTheme.textMain.withOpacity(0.1),
                       valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.secondary),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     '${(studentProfile['xpRequiredForNext'] as num) - (studentProfile['xpProgressInLevel'] as num)} XP until Level ${(studentProfile['currentLevel'] as int) + 1}',
-                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
                   ),
                 ],
               ),
@@ -151,11 +151,11 @@ class HomeScreen extends StatelessWidget {
                       children: [
                         Text(
                           '${studentProfile['currentStreak']} Day Streak!',
-                          style: const TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 14),
+                          style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 14),
                         ),
                         Text(
                           '${studentProfile['freezeTokens']} Freeze Shields Active',
-                          style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
                         ),
                       ],
                     ),
@@ -163,7 +163,7 @@ class HomeScreen extends StatelessWidget {
                   ElevatedButton(
                     onPressed: onUseStreakFreeze,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white.withOpacity(0.06),
+                      backgroundColor: AppTheme.textMain.withOpacity(0.06),
                       foregroundColor: AppTheme.secondary,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -177,7 +177,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 20),
 
             // 3. Daily Mission Card
-            const Text(
+            Text(
               'TODAY\'S ADAPTIVE MISSION',
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.textSubtle, letterSpacing: 0.08),
             ),
@@ -209,12 +209,12 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'Clean Architecture Deep Dive',
                     style: TextStyle(color: AppTheme.textMain, fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Complete 1 lesson on Dependency Inversion and score >= 75% on the diagnostic quiz.',
                     style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5, height: 1.4),
                   ),
@@ -230,7 +230,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       child: Text(
                         (studentProfile['isMissionClaimed'] as bool) ? '✓ Completed & Claimed' : 'Complete & Claim (+100 XP)',
-                        style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13),
+                        style: TextStyle(fontWeight: FontWeight.w800, color: AppTheme.textMain, fontSize: 13),
                       ),
                     ),
                   ),
@@ -306,7 +306,7 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     const Text('🤖', style: TextStyle(fontSize: 32)),
                     const SizedBox(width: 14),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
