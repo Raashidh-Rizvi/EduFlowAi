@@ -337,7 +337,38 @@ export default function Assessments({ currentUser }) {
   };
 
   // AI Quiz Generation Trigger
+  // Returns an error message for the first out-of-range gamification/timing field, or null.
+  const validateQuizParams = ({ time, pass, xp, coins }) => {
+    const rules = [
+      ['Time limit', time, 1, 300, 'minutes'],
+      ['Pass requirement', pass, 1, 100, '%'],
+      ['XP reward', xp, 0, 1000, 'XP'],
+      ['Coins reward', coins, 0, 1000, 'coins'],
+    ];
+    for (const [label, value, min, max, unit] of rules) {
+      if (value === '' || value === null || value === undefined || !Number.isInteger(Number(value))) {
+        return `${label} must be a whole number.`;
+      }
+      if (Number(value) < min || Number(value) > max) {
+        return `${label} must be between ${min} and ${max} ${unit}.`;
+      }
+    }
+    return null;
+  };
+
+  const validateQuizQuestions = (list) => {
+    for (let i = 0; i < list.length; i++) {
+      const q = list[i];
+      if (!String(q.prompt ?? q.text ?? '').trim()) return `Question ${i + 1} needs a prompt.`;
+    }
+    return null;
+  };
+
   const handleGenerateAiQuestions = async () => {
+    if (!Number.isInteger(Number(aiCount)) || Number(aiCount) < 1 || Number(aiCount) > 10) {
+      alert('Question count must be a whole number between 1 and 10.');
+      return;
+    }
     setIsAiGenerating(true);
     const targetXp = aiDifficulty === 'Easy' ? 50 : aiDifficulty === 'Medium' ? 100 : aiDifficulty === 'Hard' ? 140 : 150;
     const targetCoins = aiDifficulty === 'Easy' ? 15 : aiDifficulty === 'Medium' ? 30 : aiDifficulty === 'Hard' ? 50 : 80;
@@ -531,6 +562,12 @@ export default function Assessments({ currentUser }) {
       return;
     }
 
+    const paramError = validateQuizParams({ time: quizTime, pass: quizPass, xp: quizXp, coins: quizCoins }) || validateQuizQuestions(questions);
+    if (paramError) {
+      alert(paramError);
+      return;
+    }
+
     const moduleId = manualModuleId || modulesList[0]?.id;
     if (!moduleId) {
       alert('Select the module this assessment belongs to.');
@@ -648,6 +685,11 @@ export default function Assessments({ currentUser }) {
     }
     if (editQuestions.length === 0) {
       alert('Please include at least one question.');
+      return;
+    }
+    const editError = validateQuizParams({ time: editTime, pass: editPass, xp: editXp, coins: editCoins }) || validateQuizQuestions(editQuestions);
+    if (editError) {
+      alert(editError);
       return;
     }
     setIsSavingEdit(true);
@@ -914,8 +956,12 @@ export default function Assessments({ currentUser }) {
 
 
   const handleCreateBoss = () => {
-    if (!newBossName) {
+    if (!newBossName.trim()) {
       alert('Please enter a Boss name.');
+      return;
+    }
+    if (!Number.isInteger(Number(newBossXp)) || Number(newBossXp) < 0 || Number(newBossXp) > 10000) {
+      alert('Bounty XP must be a whole number between 0 and 10000.');
       return;
     }
 
@@ -1528,6 +1574,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Time Limit (mins)</label>
                   <input
                     type="number"
+                    min={1}
+                    max={300}
                     value={quizTime}
                     onChange={(e) => setQuizTime(Number(e.target.value))}
                     className="form-input"
@@ -1537,6 +1585,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Pass Req (%)</label>
                   <input
                     type="number"
+                    min={1}
+                    max={100}
                     value={quizPass}
                     onChange={(e) => setQuizPass(Number(e.target.value))}
                     className="form-input"
@@ -1546,6 +1596,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">XP Bounty</label>
                   <input
                     type="number"
+                    min={0}
+                    max={1000}
                     value={quizXp}
                     onChange={(e) => setQuizXp(Number(e.target.value))}
                     className="form-input"
@@ -1555,6 +1607,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Coins Reward</label>
                   <input
                     type="number"
+                    min={0}
+                    max={1000}
                     value={quizCoins}
                     onChange={(e) => setQuizCoins(Number(e.target.value))}
                     className="form-input"
@@ -2056,7 +2110,9 @@ export default function Assessments({ currentUser }) {
               <label className="form-label">Bounty XP Reward</label>
               <input
                 type="number" 
-                value={newBossXp}
+                min={0}
+                    max={10000}
+                    value={newBossXp}
                 onChange={(e) => setNewBossXp(Number(e.target.value))}
                 className="form-input"
               />
@@ -2992,6 +3048,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Time (Mins)</label>
                   <input
                     type="number"
+                    min={1}
+                    max={300}
                     value={editTime}
                     onChange={(e) => setEditTime(Number(e.target.value))}
                     className="form-input"
@@ -3001,6 +3059,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Pass (%)</label>
                   <input
                     type="number"
+                    min={1}
+                    max={100}
                     value={editPass}
                     onChange={(e) => setEditPass(Number(e.target.value))}
                     className="form-input"
@@ -3010,6 +3070,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">XP Reward</label>
                   <input
                     type="number"
+                    min={0}
+                    max={1000}
                     value={editXp}
                     onChange={(e) => setEditXp(Number(e.target.value))}
                     className="form-input"
@@ -3019,6 +3081,8 @@ export default function Assessments({ currentUser }) {
                   <label className="form-label">Coins</label>
                   <input
                     type="number"
+                    min={0}
+                    max={1000}
                     value={editCoins}
                     onChange={(e) => setEditCoins(Number(e.target.value))}
                     className="form-input"

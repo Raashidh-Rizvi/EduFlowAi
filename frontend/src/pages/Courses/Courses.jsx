@@ -390,6 +390,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
   const [aiPassMark, setAiPassMark] = useState(70);
   const [aiXpReward, setAiXpReward] = useState(100);
   const [aiCoinReward, setAiCoinReward] = useState(30);
+  const [aiQuizErrors, setAiQuizErrors] = useState({});
   const [aiQuestionTypes, setAiQuestionTypes] = useState(['MultipleChoice', 'CodeSnippet', 'TrueFalse']);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
   // Empty strings mean "let the server use its configured default provider/model".
@@ -767,7 +768,32 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
   };
 
   // ── SlideQuest AI Generation Logic with Strict RAG & Marking Schemes ───────
+  const validateAiQuizSettings = () => {
+    const errors = {};
+    const check = (key, label, value, min, max) => {
+      const raw = String(value ?? '').trim();
+      if (raw === '') { errors[key] = `${label} is required.`; return; }
+      const n = Number(raw);
+      if (!Number.isFinite(n) || !Number.isInteger(n)) { errors[key] = `${label} must be a whole number.`; return; }
+      if (n < min || n > max) errors[key] = `${label} must be between ${min} and ${max}.`;
+    };
+    check('questionCount', 'Question count', aiQuestionCount, 1, 30);
+    check('timeLimit', 'Time limit', aiTimeLimit, 5, 90);
+    check('passMark', 'Passing mark', aiPassMark, 50, 100);
+    check('xpReward', 'XP reward', aiXpReward, 20, 300);
+    if (!selectedQuestionFormats || selectedQuestionFormats.length === 0) {
+      errors.questionFormats = 'Select at least one question type.';
+    }
+    return errors;
+  };
+
   const handleGenerateAiQuizDraft = async () => {
+    const settingsErrors = validateAiQuizSettings();
+    setAiQuizErrors(settingsErrors);
+    if (Object.keys(settingsErrors).length > 0) {
+      showToast('⚠️ Please fix the highlighted quiz settings.');
+      return;
+    }
     setIsGeneratingQuiz(true);
     setQuizNotification(null);
     setAiErrorModal(null);
@@ -791,6 +817,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         difficulty: aiQuizDifficulty,
         questionCount: Number(aiQuestionCount),
         timeLimitMinutes: Number(aiTimeLimit),
+        passingScorePercent: Number(aiPassMark),
         xpReward: Math.min(Number(aiXpReward), 300),
         coinReward: Math.min(Number(aiCoinReward), 100),
         pdfUrl: module?.pdfUrl || null,
@@ -3269,6 +3296,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         );
                       })}
                     </div>
+                    {aiQuizErrors.questionFormats && <div role="alert" style={{ color: '#DC2626', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>{aiQuizErrors.questionFormats}</div>}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -3283,17 +3311,19 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         min={1}
                         max={30}
                         value={aiQuestionCount}
-                        onChange={e => setAiQuestionCount(e.target.value)}
+                        onChange={e => { setAiQuestionCount(e.target.value); setAiQuizErrors(prev => ({ ...prev, questionCount: undefined })); }}
+                        aria-invalid={!!aiQuizErrors.questionCount}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           backgroundColor: 'var(--bg-canvas)',
-                          border: '1px solid var(--border-card)',
+                          border: aiQuizErrors.questionCount ? '1px solid #DC2626' : '1px solid var(--border-card)',
                           borderRadius: 'var(--radius-sm)',
                           color: 'var(--text-main)',
                           fontSize: '13px'
                         }}
                       />
+                      {aiQuizErrors.questionCount && <div role="alert" style={{ color: '#DC2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>{aiQuizErrors.questionCount}</div>}
                     </div>
 
                     {/* Difficulty */}
@@ -3331,17 +3361,19 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         min={5}
                         max={90}
                         value={aiTimeLimit}
-                        onChange={e => setAiTimeLimit(e.target.value)}
+                        onChange={e => { setAiTimeLimit(e.target.value); setAiQuizErrors(prev => ({ ...prev, timeLimit: undefined })); }}
+                        aria-invalid={!!aiQuizErrors.timeLimit}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           backgroundColor: 'var(--bg-canvas)',
-                          border: '1px solid var(--border-card)',
+                          border: aiQuizErrors.timeLimit ? '1px solid #DC2626' : '1px solid var(--border-card)',
                           borderRadius: 'var(--radius-sm)',
                           color: 'var(--text-main)',
                           fontSize: '13px'
                         }}
                       />
+                      {aiQuizErrors.timeLimit && <div role="alert" style={{ color: '#DC2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>{aiQuizErrors.timeLimit}</div>}
                     </div>
                   </div>
 
@@ -3356,17 +3388,19 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         min={50}
                         max={100}
                         value={aiPassMark}
-                        onChange={e => setAiPassMark(e.target.value)}
+                        onChange={e => { setAiPassMark(e.target.value); setAiQuizErrors(prev => ({ ...prev, passMark: undefined })); }}
+                        aria-invalid={!!aiQuizErrors.passMark}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           backgroundColor: 'var(--bg-canvas)',
-                          border: '1px solid var(--border-card)',
+                          border: aiQuizErrors.passMark ? '1px solid #DC2626' : '1px solid var(--border-card)',
                           borderRadius: 'var(--radius-sm)',
                           color: 'var(--text-main)',
                           fontSize: '13px'
                         }}
                       />
+                      {aiQuizErrors.passMark && <div role="alert" style={{ color: '#DC2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>{aiQuizErrors.passMark}</div>}
                     </div>
 
                     {/* XP Reward */}
@@ -3379,17 +3413,19 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
                         min={20}
                         max={300}
                         value={aiXpReward}
-                        onChange={e => setAiXpReward(e.target.value)}
+                        onChange={e => { setAiXpReward(e.target.value); setAiQuizErrors(prev => ({ ...prev, xpReward: undefined })); }}
+                        aria-invalid={!!aiQuizErrors.xpReward}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
                           backgroundColor: 'var(--bg-canvas)',
-                          border: '1px solid var(--border-card)',
+                          border: aiQuizErrors.xpReward ? '1px solid #DC2626' : '1px solid var(--border-card)',
                           borderRadius: 'var(--radius-sm)',
                           color: 'var(--text-main)',
                           fontSize: '13px'
                         }}
                       />
+                      {aiQuizErrors.xpReward && <div role="alert" style={{ color: '#DC2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>{aiQuizErrors.xpReward}</div>}
                     </div>
                   </div>
 

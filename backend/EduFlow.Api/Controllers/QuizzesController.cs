@@ -298,10 +298,26 @@ public class QuizzesController : BaseApiController
     // 2. CREATE / UPDATE / DELETE SCOPED QUIZ
     // -------------------------------------------------------------------------
 
+    private static string? ValidateQuizSettings(int timeLimitMinutes, int passingScorePercent, int xpReward, int coinReward)
+    {
+        if (timeLimitMinutes < 1 || timeLimitMinutes > 300)
+            return "Time limit must be between 1 and 300 minutes.";
+        if (passingScorePercent < 1 || passingScorePercent > 100)
+            return "Passing score must be between 1 and 100 percent.";
+        if (xpReward < 0 || xpReward > 1000)
+            return "XP reward must be between 0 and 1000.";
+        if (coinReward < 0 || coinReward > 1000)
+            return "Coin reward must be between 0 and 1000.";
+        return null;
+    }
+
     [HttpPost]
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> CreateQuiz([FromBody] CreateQuizRequest request)
     {
+        var settingsError = ValidateQuizSettings(request.TimeLimitMinutes, request.PassingScorePercent, request.XpReward, request.CoinReward);
+        if (settingsError != null) return BadRequest(new { message = settingsError });
+
         // SECURITY: ownership is resolved from the JWT only. There is no seeded/default
         // course id and no "first course in the database" fallback — an instructor must
         // explicitly select one of their own courses.
@@ -435,6 +451,9 @@ public class QuizzesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UploadQuiz([FromBody] UploadQuizRequest request)
     {
+        var settingsError = ValidateQuizSettings(request.TimeLimitMinutes, request.PassingScorePercent, request.XpReward, request.CoinReward);
+        if (settingsError != null) return BadRequest(new { message = settingsError });
+
         if (request.CourseId == Guid.Empty)
         {
             return BadRequest(new { message = "A course must be selected for this quiz." });
@@ -553,6 +572,9 @@ public class QuizzesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> UpdateQuiz(Guid id, [FromBody] CreateQuizRequest request)
     {
+        var settingsError = ValidateQuizSettings(request.TimeLimitMinutes, request.PassingScorePercent, request.XpReward, request.CoinReward);
+        if (settingsError != null) return BadRequest(new { message = settingsError });
+
         var quiz = await DbContext.Assessments
             .Include(a => a.Questions)
                 .ThenInclude(q => q.Options)
@@ -938,6 +960,11 @@ public class QuizzesController : BaseApiController
     [Authorize(Roles = "Instructor,Admin")]
     public async Task<IActionResult> GenerateAiQuiz([FromBody] GenerateAiQuizRequest request)
     {
+        var settingsError = ValidateQuizSettings(request.TimeLimitMinutes, request.PassingScorePercent, request.XpReward, request.CoinReward);
+        if (settingsError != null) return BadRequest(new { message = settingsError });
+        if (request.QuestionCount < 1 || request.QuestionCount > 50)
+            return BadRequest(new { message = "Question count must be between 1 and 50." });
+
         var course = await DbContext.Courses.FirstOrDefaultAsync(c => c.Id == request.CourseId);
         if (course == null)
         {
