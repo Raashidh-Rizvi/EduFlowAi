@@ -1,6 +1,6 @@
 # EduFlow AI - Simple RAG Core Service Dependencies
 fastapi>=0.111.0
-uvicorn>=0.30.0
+uvicorn>=0.54.0
 pydantic>=2.7.0
 python-dotenv>=1.0.1
 pypdf>=4.2.0
