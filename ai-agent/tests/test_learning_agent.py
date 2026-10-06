@@ -274,12 +274,13 @@ def test_stm_explanation_and_chat_share_only_the_same_scoped_session(environment
     agent, _, llm, api = environment
     scope = {"student_id": "student-a", "session_id": "session-a", "course_id": "course-a", "source_file": "search.pdf"}
     section = agent.learn(request("breakdown")).sub_lectures[1]
-    llm.return_value = ("A queue stores the next states.", "mock")
-    agent.chat("What is a queue?", **scope)
+    llm.return_value = ("Visited states avoid repeated work.", "mock")
+    # The test embeddings only match exactly when the query has neither "search" nor "queue".
+    agent.chat("What is a visited state?", **scope)
     llm.return_value = ("Slide 2 describes FIFO processing.", "mock")
     result = api.post("/api/v1/agent/learn", json={**scope, "request_type": "explain", "sub_lecture_id": section.id})
     assert result.status_code == 200
-    assert llm.call_args.kwargs["conversation_history"][0]["content"] == "What is a queue?"
+    assert llm.call_args.kwargs["conversation_history"][0]["content"] == "What is a visited state?"
     agent.chat("Can you clarify that?", **scope)
     history = llm.call_args.kwargs["conversation_history"]
     assert len(history) == 4

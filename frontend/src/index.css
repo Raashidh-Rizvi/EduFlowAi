@@ -934,3 +934,48 @@ select option {
     overflow-x: auto;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Crescent Arc Loader — matches the dark-navy + blue-glow screenshot
+   ══════════════════════════════════════════════════════════════════ */
+@keyframes crescent-spin {
+  to { transform: rotate(360deg); }
+}
+
+.crescent-arc {
+  --crescent-size: 40px;
+  --crescent-color: #1e6bff;
+  --crescent-glow: rgba(30, 107, 255, 0.55);
+  --crescent-track: rgba(30, 107, 255, 0.12);
+  --crescent-thickness: calc(var(--crescent-size) * 0.09);
+
+  display: inline-block;
+  width: var(--crescent-size);
+  height: var(--crescent-size);
+  border-radius: 50%;
+
+  /* Arc: blue arc ~270°, transparent gap ~90° */
+  border: var(--crescent-thickness) solid transparent;
+  border-top-color: var(--crescent-color);
+  border-right-color: var(--crescent-color);
+  border-bottom-color: var(--crescent-color);
+  /* border-left stays transparent → crescent gap */
+
+  /* Glow */
+  box-shadow:
+    0 0 calc(var(--crescent-size) * 0.3) var(--crescent-glow),
+    0 0 calc(var(--crescent-size) * 0.12) var(--crescent-glow) inset;
+
+  /* Respect track colour in the gap area */
+  background: transparent;
+
+  animation: crescent-spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  flex-shrink: 0;
+}
+
+/* Slight colour shift when used inside light-mode pages */
+:root[data-theme="light"] .crescent-arc,
+.light-mode .crescent-arc {
+  --crescent-color: #0050e6;
+  --crescent-glow: rgba(0, 80, 230, 0.35);
+}
