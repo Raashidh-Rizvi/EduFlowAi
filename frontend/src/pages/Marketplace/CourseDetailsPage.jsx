@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ChevronLeft, ChevronDown, Clock, BookOpen, Layers, Users, BarChart3,
-  CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, Loader2, GraduationCap, Send,
+  CheckCircle2, PlayCircle, Star, ShieldCheck, AlertCircle, GraduationCap, Send,
   Zap, Award, Target, Globe2, Eye, Lock, X, ListChecks, FileText, List, Plus, Trash2, Edit3, Save, Wand2, Sparkles, MessageSquare, Bell, Type, ChevronRight, ChevronUp, MoreVertical
 } from 'lucide-react';
+import { InlineLoader } from '../../components/common/CrescentLoader';
 import Avatar from '../../components/marketplace/Avatar';
 import StarRating from '../../components/marketplace/StarRating';
 import { SkeletonBlock } from '../../components/marketplace/Skeletons';
@@ -123,7 +124,7 @@ function FreePreviewModal({ preview, loading, error, onClose }) {
 
         {loading && (
           <p style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-            <Loader2 size={16} className="spin" aria-hidden="true" /> Loading preview…
+            <InlineLoader size={16} label="Loading preview" />
           </p>
         )}
 
@@ -576,7 +577,7 @@ export default function CourseDetailsPage() {
             }
           >
             {enrollState.status === 'loading' ? (
-              <><Loader2 size={16} className="spin" aria-hidden="true" /> Submitting…</>
+              <><InlineLoader size={16} label="Submitting" /></>
             ) : enrollment?.status === 'Pending' ? (
               'Awaiting approval'
             ) : enrollment ? (
@@ -914,7 +915,7 @@ export default function CourseDetailsPage() {
               />
               <div className="mk-reviews__form-foot">
                 <button type="submit" className="btn-primary" disabled={reviewState.status === 'loading'}>
-                  {reviewState.status === 'loading' ? <Loader2 size={15} className="spin" aria-hidden="true" /> : <Send size={15} aria-hidden="true" />}
+                  {reviewState.status === 'loading' ? <span className="crescent-arc" style={{ '--crescent-size': '15px' }} aria-hidden="true" /> : <Send size={15} aria-hidden="true" />}
                   {myReview ? 'Update review' : 'Submit review'}
                 </button>
                 {myReview && (
@@ -998,3 +999,4 @@ export default function CourseDetailsPage() {
     </div>
   );
 }
+

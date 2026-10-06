@@ -1,5 +1,6 @@
 import React from 'react';
-import { Star, Inbox, Loader2, AlertTriangle } from 'lucide-react';
+import { Star, Inbox, AlertTriangle } from 'lucide-react';
+import CrescentLoader from '../../components/common/CrescentLoader';
 
 export const fmtDate = (value) => {
   if (!value) return '—';
@@ -148,3 +149,4 @@ export function Avatar({ name, url, size = 36, color = 'linear-gradient(135deg, 
     </div>
   );
 }
+
