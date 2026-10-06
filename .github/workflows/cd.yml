@@ -69,7 +69,7 @@ jobs:
           python-version: '3.11'
 
       - name: Deploy FastAPI AI Microservice to Vercel Production
-        uses: amondnet/vercel-action@v25
+        uses: amondnet/vercel-action@v42
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
@@ -91,7 +91,7 @@ jobs:
           node-version: '18'
 
       - name: Deploy Frontend to Vercel Production
-        uses: amondnet/vercel-action@v25
+        uses: amondnet/vercel-action@v42
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
