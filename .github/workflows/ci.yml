@@ -24,7 +24,7 @@ jobs:
       JwtSettings__Secret: "8f2e91ab4c3d7e6f1a0b5c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f"
       AiService__ApiKey: "ci-internal-test-token"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
@@ -59,7 +59,7 @@ jobs:
     name: Frontend CI (React 18 & Vite)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node.js 18.x
         uses: actions/setup-node@v4
@@ -87,7 +87,7 @@ jobs:
     name: Mobile CI (Flutter 3.x)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Java 17
         uses: actions/setup-java@v3
@@ -113,7 +113,7 @@ jobs:
     name: Agentic AI CI (LangGraph & Python 3.11)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
