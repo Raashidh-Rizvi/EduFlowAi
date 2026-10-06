@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Lock, GraduationCap } from 'lucide-react';
+import { Lock, GraduationCap } from 'lucide-react';
+import CrescentLoader from '../../components/common/CrescentLoader';
 import { enrollmentService } from '../../services/enrollmentService';
 import { useAuth } from '../../context/AuthContext';
 
@@ -45,7 +46,7 @@ export default function LearnEntry() {
   if (checking) {
     return (
       <div style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)' }}>
-        <Loader2 size={20} className="spin" aria-hidden="true" />
+        <span className="crescent-arc" style={{ '--crescent-size': '20px' }} aria-hidden="true" />
         <span>Checking your enrollment…</span>
       </div>
     );
@@ -93,3 +94,4 @@ export default function LearnEntry() {
     </div>
   );
 }
+

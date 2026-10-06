@@ -1,0 +1,80 @@
+name: Mobile (Flutter)
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  pull_request:
+    branches: [ "main", "dev" ]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  analyze-and-test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+        continue-on-error: true
+
+      - name: Static analysis
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests with coverage
+        run: flutter test --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-coverage
+          path: mobile/coverage/lcov.info
+          retention-days: 5
+
+  build-web:
+    name: Build Flutter web
+    needs: analyze-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web release
+        run: flutter build web --release --dart-define=API_BASE_URL=https://example.invalid/api
+
+      - name: Upload web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-web-build
+          path: mobile/build/web
+          retention-days: 5

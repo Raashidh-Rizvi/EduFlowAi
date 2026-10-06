@@ -149,3 +149,4 @@ export function Avatar({ name, url, size = 36, color = 'linear-gradient(135deg, 
     </div>
   );
 }
+
