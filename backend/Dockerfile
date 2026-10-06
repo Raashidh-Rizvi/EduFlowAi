@@ -14,7 +14,7 @@ COPY EduFlow.Infrastructure/ EduFlow.Infrastructure/
 COPY EduFlow.Api/ EduFlow.Api/
 RUN dotnet publish EduFlow.Api/EduFlow.Api.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
