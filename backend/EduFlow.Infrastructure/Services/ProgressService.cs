@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EduFlow.Core.Entities;
 using EduFlow.Core.Enums;
 using EduFlow.Core.Events;
 using EduFlow.Core.Interfaces;
@@ -27,14 +28,26 @@ public class ProgressService : IProgressService
 
     public async Task<CourseProgress> CalculateAsync(Guid courseId, Guid studentId, CancellationToken ct = default)
     {
+        var progress = await CalculateManyAsync(new[] { courseId }, studentId, ct);
+        return progress[courseId];
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, CourseProgress>> CalculateManyAsync(
+        IReadOnlyCollection<Guid> courseIds, Guid studentId, CancellationToken ct = default)
+    {
+        var ids = courseIds?.Distinct().ToList() ?? new List<Guid>();
+        var result = new Dictionary<Guid, CourseProgress>();
+        if (ids.Count == 0) return result;
+
+        // A fixed number of queries regardless of how many courses are requested.
         var modules = await _dbContext.Modules.AsNoTracking()
-            .Where(m => m.CourseId == courseId)
+            .Where(m => ids.Contains(m.CourseId))
             .OrderBy(m => m.OrderIndex)
-            .Select(m => new { m.Id, m.Title, m.OrderIndex })
+            .Select(m => new { m.Id, m.CourseId, m.Title, m.OrderIndex })
             .ToListAsync(ct);
 
         var items = await _dbContext.ContentItems.AsNoTracking()
-            .Where(ci => ci.Module!.CourseId == courseId && ci.Status == PublishedContentStatus)
+            .Where(ci => ids.Contains(ci.Module!.CourseId) && ci.Status == PublishedContentStatus)
             .Select(ci => new { ci.Id, ci.ModuleId })
             .ToListAsync(ct);
         var itemIds = items.Select(i => i.Id).ToList();
@@ -44,7 +57,7 @@ public class ProgressService : IProgressService
             .ToListAsync(ct)).ToHashSet();
 
         var assessments = await _dbContext.Assessments.AsNoTracking()
-            .Where(a => a.CourseId == courseId && a.Status == QuizStatus.Published)
+            .Where(a => ids.Contains(a.CourseId) && a.Status == QuizStatus.Published)
             .Select(a => new { a.Id, a.ModuleId })
             .ToListAsync(ct);
         var assessmentIds = assessments.Select(a => a.Id).ToList();
@@ -55,22 +68,30 @@ public class ProgressService : IProgressService
             .Distinct()
             .ToListAsync(ct)).ToHashSet();
 
-        var moduleProgress = modules.Select(m =>
-        {
-            int totalItems = items.Count(i => i.ModuleId == m.Id);
-            int doneItems = items.Count(i => i.ModuleId == m.Id && completedItemIds.Contains(i.Id));
-            int totalAssessments = assessments.Count(a => a.ModuleId == m.Id);
-            int passed = assessments.Count(a => a.ModuleId == m.Id && passedAssessmentIds.Contains(a.Id));
-            int total = totalItems + totalAssessments;
-            int done = doneItems + passed;
-            return new ModuleProgress(m.Id, m.Title, m.OrderIndex, totalItems, doneItems, totalAssessments, passed,
-                Percent(done, total), total > 0 && done == total);
-        }).ToList();
+        var itemsByModule = items.ToLookup(i => i.ModuleId);
+        var assessmentsByModule = assessments.ToLookup(a => a.ModuleId);
+        var modulesByCourse = modules.ToLookup(m => m.CourseId);
 
-        int totalUnits = moduleProgress.Sum(m => m.TotalContentItems + m.TotalAssessments);
-        int completedUnits = moduleProgress.Sum(m => m.CompletedContentItems + m.PassedAssessments);
-        return new CourseProgress(courseId, studentId, moduleProgress, totalUnits, completedUnits,
-            Percent(completedUnits, totalUnits), totalUnits > 0 && completedUnits == totalUnits);
+        foreach (var courseId in ids)
+        {
+            var moduleProgress = modulesByCourse[courseId].Select(m =>
+            {
+                int totalItems = itemsByModule[m.Id].Count();
+                int doneItems = itemsByModule[m.Id].Count(i => completedItemIds.Contains(i.Id));
+                int totalAssessments = assessmentsByModule[m.Id].Count();
+                int passed = assessmentsByModule[m.Id].Count(a => passedAssessmentIds.Contains(a.Id));
+                int total = totalItems + totalAssessments;
+                int done = doneItems + passed;
+                return new ModuleProgress(m.Id, m.Title, m.OrderIndex, totalItems, doneItems, totalAssessments, passed,
+                    Percent(done, total), total > 0 && done == total);
+            }).ToList();
+
+            int totalUnits = moduleProgress.Sum(m => m.TotalContentItems + m.TotalAssessments);
+            int completedUnits = moduleProgress.Sum(m => m.CompletedContentItems + m.PassedAssessments);
+            result[courseId] = new CourseProgress(courseId, studentId, moduleProgress, totalUnits, completedUnits,
+                Percent(completedUnits, totalUnits), totalUnits > 0 && completedUnits == totalUnits);
+        }
+        return result;
     }
 
     public async Task<CourseProgress?> RefreshEnrollmentAsync(Guid courseId, Guid studentId, CancellationToken ct = default)
@@ -83,11 +104,39 @@ public class ProgressService : IProgressService
         }
 
         var progress = await CalculateAsync(courseId, studentId, ct);
-        enrollment.ProgressPercentage = (double)progress.Percentage;
+        await StageAsync(enrollment, progress, onlyIfChanged: false, ct);
+        return progress;
+    }
 
+    public async Task<IReadOnlyDictionary<Guid, CourseProgress>> RefreshEnrollmentsAsync(
+        Guid studentId, IReadOnlyCollection<Enrollment> enrollments, CancellationToken ct = default)
+    {
+        var mine = enrollments.Where(e => e.StudentId == studentId).ToList();
+        var progress = await CalculateManyAsync(mine.Select(e => e.CourseId).ToList(), studentId, ct);
+        foreach (var enrollment in mine)
+        {
+            await StageAsync(enrollment, progress[enrollment.CourseId], onlyIfChanged: true, ct);
+        }
+        return progress;
+    }
+
+    /// <summary>
+    /// Stages the cached percentage and completion milestone on a tracked enrollment.
+    /// With <paramref name="onlyIfChanged"/>, an enrollment whose values are already current is
+    /// left untouched so read paths do not issue writes.
+    /// </summary>
+    private async Task StageAsync(Enrollment enrollment, CourseProgress progress, bool onlyIfChanged, CancellationToken ct)
+    {
+        var percentage = (double)progress.Percentage;
         // Completing every unit is a milestone: it is recorded once and not undone if the
         // instructor later adds content (the percentage still reflects the new content).
         bool becameComplete = progress.IsComplete && enrollment.Status == EnrollmentStatus.Active;
+        if (onlyIfChanged && !becameComplete && enrollment.ProgressPercentage.Equals(percentage))
+        {
+            return;
+        }
+
+        enrollment.ProgressPercentage = percentage;
         if (becameComplete)
         {
             enrollment.Status = EnrollmentStatus.Completed;
@@ -97,9 +146,8 @@ public class ProgressService : IProgressService
 
         if (becameComplete && _events != null)
         {
-            await _events.PublishAsync(new CourseCompleted(studentId, courseId), ct);
+            await _events.PublishAsync(new CourseCompleted(enrollment.StudentId, enrollment.CourseId), ct);
         }
-        return progress;
     }
 
     private static decimal Percent(int done, int total)

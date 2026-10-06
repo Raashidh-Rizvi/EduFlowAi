@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -11,6 +12,8 @@ using EduFlow.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using System.IO;
 using Microsoft.AspNetCore.Hosting;
@@ -1684,39 +1687,57 @@ public class CoursesController : BaseApiController
             return Unauthorized();
         }
 
+        var logger = HttpContext?.RequestServices?.GetService(typeof(ILogger<CoursesController>)) as ILogger
+            ?? NullLogger.Instance;
+        var sw = Stopwatch.StartNew();
+
+        // Course + instructor only; lesson ids are projected separately instead of loading every
+        // module and content body through Include.
         var enrollments = await DbContext.Enrollments
             .Where(e => e.StudentId == studentId
                 && (e.Status == EnrollmentStatus.Active || e.Status == EnrollmentStatus.Completed || e.Status == EnrollmentStatus.Pending))
             .Include(e => e.Course)
                 .ThenInclude(c => c!.Instructor)
-            .Include(e => e.Course)
-                .ThenInclude(c => c!.Modules)
-                    .ThenInclude(m => m.ContentItems)
+            .OrderBy(e => e.Id) // stable order (previously implied by the split-query include)
             .ToListAsync();
-
         var myCourseIds = enrollments.Select(e => e.CourseId).Distinct().ToList();
-        var ratingSummaries = await _ratingService.GetCourseSummariesAsync(myCourseIds);
-        var completedLessonIds = await DbContext.LessonCompletions
-            .Where(lc => lc.StudentId == studentId)
-            .Select(lc => lc.ContentItemId)
-            .Distinct()
-            .ToListAsync();
+        var lessonIdsByCourse = (await DbContext.ContentItems.AsNoTracking()
+                .Where(ci => myCourseIds.Contains(ci.Module!.CourseId))
+                .Select(ci => new { ci.Id, ci.Module!.CourseId })
+                .ToListAsync())
+            .ToLookup(ci => ci.CourseId, ci => ci.Id);
+        var loadMs = sw.ElapsedMilliseconds; sw.Restart();
 
-        // Progress for approved enrollments comes from the single progress formula.
-        var progressByCourse = new Dictionary<Guid, CourseProgress>();
-        foreach (var e in enrollments.Where(e => e.Status.GrantsAccess()))
+        var ratingSummaries = await _ratingService.GetCourseSummariesAsync(myCourseIds);
+        var ratingsMs = sw.ElapsedMilliseconds; sw.Restart();
+
+        var completedLessonIds = (await DbContext.LessonCompletions
+                .Where(lc => lc.StudentId == studentId && lc.ContentItemId != null)
+                .Select(lc => lc.ContentItemId!.Value)
+                .Distinct()
+                .ToListAsync())
+            .ToHashSet();
+
+        // Progress for approved enrollments comes from the single progress formula, calculated for
+        // all courses at once. Only enrollments whose cached progress changed are written.
+        await _progressService.RefreshEnrollmentsAsync(
+            studentId, enrollments.Where(e => e.Status.GrantsAccess()).ToList());
+        var progressMs = sw.ElapsedMilliseconds; sw.Restart();
+
+        var saved = 0;
+        if (DbContext.ChangeTracker.HasChanges())
         {
-            var refreshed = await _progressService.RefreshEnrollmentAsync(e.CourseId, studentId);
-            if (refreshed != null) progressByCourse[e.CourseId] = refreshed;
+            saved = await DbContext.SaveChangesAsync();
         }
-        await DbContext.SaveChangesAsync();
+        logger.LogDebug(
+            "GetMyCourses {Count} enrollments: load {LoadMs}ms, ratings {RatingsMs}ms, progress {ProgressMs}ms, save {SaveMs}ms ({Saved} rows)",
+            enrollments.Count, loadMs, ratingsMs, progressMs, sw.ElapsedMilliseconds, saved);
 
         var myCourses = enrollments.Select(e =>
         {
-            var courseLessons = e.Course?.Modules.SelectMany(m => m.ContentItems).ToList()
-                ?? new List<ContentItem>();
-            var totalLessons = courseLessons.Count;
-            var completedLessons = courseLessons.Count(l => completedLessonIds.Contains(l.Id));
+            var courseLessons = lessonIdsByCourse[e.CourseId];
+            var totalLessons = courseLessons.Count();
+            var completedLessons = courseLessons.Count(completedLessonIds.Contains);
 
             var rating = ratingSummaries.TryGetValue(e.CourseId, out var s)
                 ? s
