@@ -30,7 +30,7 @@ import { quizService } from '../../services/quizService';
 import { insightsService } from '../../services/insightsService';
 import { questionTypeName } from '../../constants/domain';
 import api from '../../services/api';
-import { mapAiError } from '../../utils/aiErrors';
+import { mapAiError, getApiErrorMessage } from '../../utils/aiErrors';
 
 export default function Dashboard({ onNavigateTo, currentUser }) {
   const userRole = currentUser?.role || (() => {
@@ -204,7 +204,7 @@ export default function Dashboard({ onNavigateTo, currentUser }) {
       // Publish the server-side draft instead of creating a second copy of the quiz.
       await quizService.publishQuiz(remediationDraft.quizId);
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Publishing failed.';
+      const errMsg = getApiErrorMessage(err, 'Publishing failed.');
       alert(`Could not publish the remediation quiz: ${errMsg} It is saved as a draft in Assessments.`);
       return;
     }

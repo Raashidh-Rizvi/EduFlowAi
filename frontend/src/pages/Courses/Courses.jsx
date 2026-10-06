@@ -54,7 +54,7 @@ import StudentJourneyMap from './StudentJourneyMap';
 import { quizService } from '../../services/quizService';
 import { questionTypeName, toQuestionTypeValue, toScopeTypeValue, QUIZ_STATUS } from '../../constants/domain';
 import { saveGeneratedQuiz, updateGeneratedQuiz, getGeneratedQuizzes, deleteGeneratedQuiz, deleteGeneratedQuizzesWhere } from '../../utils/quizStorageHelper';
-import { mapAiError } from '../../utils/aiErrors';
+import { mapAiError, getApiErrorMessage } from '../../utils/aiErrors';
 import AiProviderPicker from '../../components/common/AiProviderPicker';
 
 // ── MATCHING QUESTION HELPERS ───────────────────────────────────────────────
@@ -968,7 +968,7 @@ function InstructorCourses({ currentUser, initialCourseId = null, onCourseChange
         createdQuizId = created?.id || null;
       }
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Publishing failed.';
+      const errMsg = getApiErrorMessage(err, 'Publishing failed.');
       alert(`Could not publish the AI quiz: ${errMsg}`);
       return; // Stay in review mode — never fake a successful publish locally.
     }

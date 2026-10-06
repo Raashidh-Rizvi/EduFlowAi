@@ -83,6 +83,7 @@ class SimpleRagService:
         # External Tools & Plugins (Centralized MCP Tool Hub)
         self.web_search_enabled = os.environ.get("ENABLE_WEB_SEARCH_FALLBACK", "true").lower() == "true"
         self.relevance_threshold = float(os.environ.get("RAG_RELEVANCE_THRESHOLD", "0.45"))
+        self.scoped_relevance_threshold = float(os.environ.get("RAG_SCOPED_RELEVANCE_THRESHOLD", "0.15"))
         self.mcp_hub: MCPToolHub = get_default_mcp_hub()
 
     # -------------------------------------------------------------------------
@@ -339,8 +340,15 @@ class SimpleRagService:
         # ChromaDB converts cosine distance into a 0.0 - 1.0 similarity score:
         # - Score >= 0.45: Lecture slides contain high/medium confidence matching facts.
         # - Score < 0.45 or empty: Out-of-syllabus query or topic missing from slides.
-        has_relevant_slides = bool(
-            search_results and any(res.get("relevance_score", 0.0) >= self.relevance_threshold for res in search_results)
+        # Short/conversational queries ("i want to learn agentic ai") embed poorly against
+        # long slide chunks, so raw cosine alone under-reports relevance. Two safeguards:
+        #  - keyword overlap: a topic term literally present in a retrieved chunk is relevant;
+        #  - scoped lecture: the student picked this deck, so use a much lower bar and let the
+        #    post-generation CRAG check (STEP 5) decide if the slides truly lack the answer.
+        scoped_threshold = min(self.relevance_threshold, self.scoped_relevance_threshold) if source_file else self.relevance_threshold
+        has_relevant_slides = bool(search_results) and (
+            any(res.get("relevance_score", 0.0) >= scoped_threshold for res in search_results)
+            or self._has_keyword_overlap(search_query or question, search_results)
         )
 
         # ---------------------------------------------------------------------
@@ -472,6 +480,26 @@ class SimpleRagService:
             source=f"{active_provider}_rag",
             confidence_score=0.96
         )
+
+    _QUERY_STOPWORDS = frozenset({
+        "i", "wan", "want", "tot", "to", "learn", "learning", "know", "about", "explain", "tell", "me",
+        "what", "is", "are", "the", "a", "an", "of", "in", "on", "how", "why", "does", "do", "can",
+        "you", "please", "give", "show", "teach", "understand", "study", "my", "and", "or", "for",
+        "with", "this", "that", "it", "more", "lecture", "slide", "slides", "topic", "us",
+    })
+
+    def _has_keyword_overlap(self, query: str, search_results: List[Dict[str, Any]]) -> bool:
+        """True if every distinctive query term (or the whole phrase) appears in a retrieved chunk."""
+        terms = [t for t in re.findall(r"[a-z0-9]+", (query or "").lower())
+                 if t not in self._QUERY_STOPWORDS and len(t) > 1]
+        if not terms:
+            return False
+        phrase = " ".join(terms)
+        for res in search_results:
+            text = (res.get("text") or "").lower()
+            if phrase in text or all(t in text for t in terms):
+                return True
+        return False
 
     def _is_missing_knowledge_answer(self, text: str) -> bool:
         """

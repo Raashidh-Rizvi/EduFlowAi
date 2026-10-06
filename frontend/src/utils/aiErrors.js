@@ -194,3 +194,18 @@ export function mapAiError(err) {
 }
 
 export default mapAiError;
+
+/**
+ * Readable text for any API failure. Validation responses look like
+ * { message, errors: [...] }; showing only `message` hides the actual reason
+ * (e.g. "XP reward (289) exceeds platform maximum of 250 XP."), so the list is
+ * appended one problem per line.
+ */
+export function getApiErrorMessage(err, fallback = 'Something went wrong. Please try again.') {
+  const data = err?.response?.data;
+  const message = data?.message || err?.message || fallback;
+  const list = Array.isArray(data?.errors)
+    ? data.errors.filter((e) => typeof e === 'string' && e.trim())
+    : [];
+  return list.length ? `${message}\n\n${list.map((e) => `• ${e}`).join('\n')}` : message;
+}

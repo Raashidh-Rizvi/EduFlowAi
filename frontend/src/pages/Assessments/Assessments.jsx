@@ -32,7 +32,7 @@ import { quizService } from '../../services/quizService';
 import { courseService } from '../../services/courseService';
 import { questionTypeName, toQuestionTypeValue, toScopeTypeValue } from '../../constants/domain';
 import { getGeneratedQuizzes, saveGeneratedQuiz, deleteGeneratedQuiz } from '../../utils/quizStorageHelper';
-import { mapAiError } from '../../utils/aiErrors';
+import { mapAiError, getApiErrorMessage } from '../../utils/aiErrors';
 import AiProviderPicker from '../../components/common/AiProviderPicker';
 
 // Quizzes saved on the server have GUID ids; local-only drafts use `q-<timestamp>` ids.
@@ -892,7 +892,7 @@ export default function Assessments({ currentUser }) {
       }
       setTimeout(() => loadAssessmentsForCourse(quizCourseId), 500);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to update quiz status.';
+      const msg = getApiErrorMessage(err, 'Failed to update quiz status.');
       alert(`Error: ${msg}`);
     }
   };
@@ -906,7 +906,7 @@ export default function Assessments({ currentUser }) {
       const warnSection = result.warnings?.length > 0 ? `\n\nWarnings:\n${result.warnings.join('\n')}` : '';
       alert(`${statusMsg} — ${result.validatedQuestionCount} questions, ${result.totalMarks} total marks${errSection}${warnSection}`);
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Validation request failed.';
+      const msg = getApiErrorMessage(err, 'Validation request failed.');
       alert(`Validation error: ${msg}`);
     }
   };
