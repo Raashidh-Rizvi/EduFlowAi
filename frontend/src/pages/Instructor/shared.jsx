@@ -1,5 +1,6 @@
 import React from 'react';
-import { Star, Inbox, Loader2, AlertTriangle } from 'lucide-react';
+import { Star, Inbox, AlertTriangle } from 'lucide-react';
+import CrescentLoader from '../../components/common/CrescentLoader';
 
 export const fmtDate = (value) => {
   if (!value) return '—';
@@ -88,7 +89,7 @@ export function SectionHeading({ title, subtitle, actions }) {
 export function LoadingBlock({ label = 'Loading' }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '64px 16px', color: 'var(--text-muted)', fontSize: '13.5px' }}>
-      <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+      <CrescentLoader size={22} />
       {label}…
     </div>
   );
