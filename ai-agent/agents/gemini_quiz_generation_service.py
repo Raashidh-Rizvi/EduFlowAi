@@ -787,7 +787,8 @@ class GeminiQuizGenerationService:
 
         citation = str(q.get("slide_citation") or "").strip()
         if total_slides > 0:
-            match = re.search(r"slide\s*(\d+)", citation, flags=re.IGNORECASE)
+            # Accept "Slide 3", "Slides 12 and 15", "Slides 3-5" (first number must be real).
+            match = re.search(r"slides?\s*(\d+)", citation, flags=re.IGNORECASE)
             if not match or not (1 <= int(match.group(1)) <= total_slides):
                 errors.append(
                     f"{label} slide_citation must reference a real slide number (1-{total_slides}), e.g. "
